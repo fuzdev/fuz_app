@@ -42,6 +42,18 @@ fuz_app's own suites reach a database two ways:
   `#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
   defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`.
 
+Lock and ordering tests only real Postgres can show — the in-memory drivers
+have one connection and serialize every transaction — run only with
+`TEST_DATABASE_URL` (CI sets it; a local `gro check` without it skips them):
+`auth/credential_mint_race.db.test.ts` (a mint and a password change or
+delete wait on each other's account-row lock),
+`auth/account_delete.races.db.test.ts` (an offer or invite create across a
+delete, the last-admin guard's order), `auth/password_change.race.db.test.ts`,
+`auth/connection_closer.admission.db.test.ts`,
+`auth/cleanup.sessions.refused_commit.db.test.ts`. Each module doc names its
+Postgres-only half. A change to a row lock, a locking read or a `RETURNING`
+order runs them locally first.
+
 **Choosing drivers.** These env vars are read once per run — the first picks the
 default factory's driver, the other two add legs to the four-driver set:
 

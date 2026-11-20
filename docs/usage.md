@@ -19,6 +19,16 @@ requires an account), `credential`, `client_ip`, `signal`, `db`, and the
 readers for what the pipeline doesn't validate (`request`, `query_pairs`,
 `read_json_body`, `header_lines`).
 
+A handler reading a query key its `query` schema doesn't declare reads
+`route.query_pairs` — the query decoded strictly, or why it doesn't decode —
+and answers the refusal itself: `if (!route.query_pairs.ok) return
+route_fail(REST_INVALID_QUERY_PARAMS);` then `query_first(route.query_pairs.value,
+'key')` (`http/request_target.ts`). A route a consumer adds outside the route
+system (`post_route_middleware`, a raw `app.get`) is matched on the raw path,
+and Hono's `c.req.query()` / `c.req.param()` decode leniently — read through
+`read_request_query_pairs(c)` / `read_request_route_params(c)` instead. A
+method such a path doesn't serve answers the app's 405 with `Allow`.
+
 A handler returns a result and the framework builds the response:
 `route_ok(value)` answers `value` as JSON at 200, `route_fail(def, fields?)`
 the definition's body at its status with its headers (`Retry-After`), and
@@ -379,7 +389,10 @@ returns the path-keyed `ConnectionRegistry` map for broadcast.
 auth middleware -> bootstrap status -> consumer route specs -> factory-managed
 routes (bootstrap, RPC endpoints, surface) -> surface generation -> Hono app
 assembly (routes, then WS endpoints) -> `post_route_middleware` -> static
-serving -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
+serving -> the unmatched-route handler (`server/unmatched_route.ts`: a method
+the path doesn't serve is 405 `method_not_allowed` with `Allow`; a path
+nothing serves is 404, JSON `route_not_found` under `/api/`, plain text
+elsewhere — a consumer's own routes included) -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
 below). Migrations run earlier, in `create_app_backend`.
 A consumer migration namespace must not bear a `reserved_migration_namespaces` name (`fuz_auth`, `fuz_cell`, `fuz_facts`) — `run_migrations` (so `create_app_backend` and every direct caller) throws a `namespace-reserved` `MigrationError` naming it, before touching the database. The spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS` are admitted by identity (splice the imported objects, not copies); auth always runs first, so passing `AUTH_MIGRATION_NS` again is a no-op.
 
@@ -391,12 +404,12 @@ adds a security warning to the startup diagnostics. An empty
 `allowed_origins` throws at assembly, on the server or on a WS endpoint.
 
 Custom middleware goes in through `transform_middleware`, which receives
-shallow copies of the trusted-proxy spec followed by the auth stack, in a fresh
+shallow copies of the host gate (unless `host_gate: false`), the trusted-proxy spec and the auth stack, in a fresh
 array, and returns the list to mount. Add layers anywhere — before the proxy,
 after the stack, between its layers — but leave each of those specs in place:
 assembly throws (`assert_middleware_stack_mounted`) unless every one, matched
 by its `handler` rather than its `name`, is still mounted exactly once at its
-original path (`'*'` for the proxy and the origin check, `AUTH_MIDDLEWARE_PATH`
+original path (`'*'` for the host gate, the proxy and the origin check, `AUTH_MIDDLEWARE_PATH`
 for the rest of auth) in its
 original order. The endpoint auth-scope check assumes the auth stack is there,
 and the IP-keyed rate limiters assume the proxy ran first — without it

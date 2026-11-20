@@ -179,7 +179,9 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 	runtime_resolves_dot_segments: true,
 	// `create_app_server`'s unmatched-route handler answers outside `/api`
 	// unless the backend mounts a static fallback of its own there.
-	spine_fallback: true
+	spine_fallback: true,
+	// `create_app_server` mounts the host gate unless `host_gate: false`.
+	host_gate: true
 });
 
 /**
@@ -206,7 +208,9 @@ export const rust_default_capabilities: FamilyDefaultCapabilities = Object.freez
 	runtime_resolves_dot_segments: false,
 	// `fuz_actions::server::fallback_group` answers outside `/api` unless the
 	// backend's fallback group is its own.
-	spine_fallback: true
+	spine_fallback: true,
+	// `compose_stack` mounts the host gate unless `StackOptions::host_gate` is off.
+	host_gate: true
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

@@ -357,11 +357,13 @@ handlers for SvelteKit static builds:
 - **Step 3** (optional): SPA fallback for client-side routes (`spa_fallback: '/200.html'`)
 
 The app routes on the raw path, and Hono's `serveStatic` refuses a request
-path holding a `%`, so each step names its file outright
-(`ServeStaticOptions.path`): a path with an escape is decoded once by
-`to_static_file_path` — refused if it doesn't decode or decodes to a dot
-segment, a backslash or a NUL — and the SPA step serves the fallback file
-whatever the client route's spelling. A request nothing here serves falls
+path holding a `%`, so a path with an escape is decoded once by
+`to_static_file_path` and handed over as the file to serve
+(`ServeStaticOptions.path`) — no file if a segment doesn't decode or decodes
+to a `/` or `%`, or the decoded path holds a dot or empty segment, a
+backslash or a NUL; a path with no escape goes to `serveStatic` as is. The
+`.html` step and the SPA step name their files outright, so the SPA fallback
+is served whatever the client route's spelling. A request nothing here serves falls
 through to the unmatched-route handler (`server/unmatched_route.ts`).
 
 The `serve_static` parameter accepts any factory matching Hono's `serveStatic`

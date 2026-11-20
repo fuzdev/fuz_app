@@ -1165,11 +1165,11 @@ have files of their own.
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` /
   `fact_serving_admin_hash` / `ready` /
-  `account_status` / `peer_request` /
+  `account_status` / `spine_fallback` / `host_gate` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` /
-  `ws_role_gated` / `rooms` / `ws_refusal_body` — each has a `test_if`
-  reader (`ws_refusal_body` picks how the front-door table and the WS suite's
-  disallowed-origin case read a WS refusal instead) — and the list
+  `ws_role_gated` / `rooms` — each read by `test_if` or a row's `requires` —
+  the non-gating `ws_refusal_body` and `runtime_resolves_dot_segments`, which
+  pick how a case reads its answer, and the list
   `ws_upgrade_runtime_refusals`, the upgrades the backend's runtime answers
   before the app runs (`['empty_host']` on `@hono/node-server`, `[]` on Bun
   and the Rust spine), which the request-header wire suite holds to exactly
@@ -1194,7 +1194,9 @@ have files of their own.
   family defaults carry the declared surface's mounts (`account_lifecycle`,
   `account_status`, and `spine_fallback` — an unmatched path outside the auth
   scope answered by the spine's own fallback, which a backend serving a static
-  or SPA fallback of its own states `false`) and the runtime-behavior flags
+  or SPA fallback of its own states `false`; and `host_gate`, the DNS-rebinding
+  gate on, which a backend running with it off states `false`) and the
+  runtime-behavior flags
   (`ws_handshake_pipelining`, `ws_refusal_body`, `ws_upgrade_runtime_refusals`,
   `runtime_resolves_dot_segments`) of the family's reference runtime — Node for TS, hyper
   for Rust; a backend on another runtime (Bun) overrides them. `cell_crud`
@@ -1695,7 +1697,7 @@ without.
 
 | suite | pins | gate |
 | --- | --- | --- |
-| `account_lifecycle` | soft delete → undelete, keeper-confirmed purge, the `cannot_delete_keeper` guard, session-only self-delete, a deleted account's credentials refused — and still refused after the undelete, a fresh login working — each audit row, the `include_deleted` listing; and, ungated, a password change ending every session and API token of the account while another account's stay live | `account_lifecycle` (all but the password case) |
+| `account_lifecycle` | soft delete → undelete, keeper-confirmed purge, the `cannot_delete_keeper` guard, session-only self-delete, a deleted account's credentials refused — and still refused after the undelete, a fresh login working; role grants kept through the delete and conferring again after the undelete, offers made to the account staying superseded, its unclaimed invites void (a claimed one untouched) — each audit row, the `include_deleted` listing; and, ungated, a password change ending every session and API token of the account while another account's stay live | `account_lifecycle` (all but the password case) |
 | `actor_lookup` | the keeper resolves its own actor in the leak-safe wire shape (the refusals are table rows) | — |
 | `app_settings` | an anonymous signup reads `open_signup` fresh after `app_settings_update` | — |
 | `body_size` | the 1 MiB body cap: cap+1 → 413 `payload_too_large`, exactly the cap not size-rejected, an over-cap chunked body → 413, no upload racing the close | — |
@@ -1711,7 +1713,7 @@ without.
 | `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
 | `credential_conformance` | every row of `credential_conformance.json` through `_testing_credential_read`: how the backend reads the session cookie, the bearer and the daemon token out of a request's header lines, and the lines it refuses as no header lines | `_testing_credential_read` |
 | `credential_conformance_wire` | raw socket: each row's header lines sent as an RPC `POST` and as a WebSocket upgrade — which credential authenticated (the account `account_verify` answers) and the exact clearing `Set-Cookie`, or none; the clear's scope, its order ahead of a login's new cookie, and a minted cookie authenticating as sent | `ws` (the upgrade leg; with `ws_account_actions` an accepted upgrade also answers `account_verify` on the socket, naming the credential) |
-| `request_header_conformance_wire` | raw socket: each row of `request_header_conformance.json` sent as an RPC `POST` and as a WebSocket upgrade — an empty, repeated or off-grammar `Origin`, `Host` or `Content-Type` refused with its code, any `Origin` or `Referer` line discarding a bearer or daemon token, the gates' order; the accounts and raw sends shared with the credential wire suite (`credential_wire.ts`). Assumes the host gate on and the backend's own origin allowed | `ws` (the upgrade leg), `ws_refusal_body`, `ws_upgrade_runtime_refusals` (per row) |
+| `request_header_conformance_wire` | raw socket: each row of `request_header_conformance.json` sent as an RPC `POST` and as a WebSocket upgrade — an empty, repeated or off-grammar `Origin`, `Host` or `Content-Type` refused with its code, any `Origin` or `Referer` line discarding a bearer or daemon token, the gates' order; the accounts and raw sends shared with the credential wire suite (`credential_wire.ts`). Assumes the backend's own origin allowed (`overrides` names another) | `ws` (the upgrade leg), `ws_refusal_body`, `ws_upgrade_runtime_refusals` (per row), `host_gate` (the rows the host gate refuses) |
 | `request_target_conformance_wire` | raw socket: each `wire` row of `request_target_conformance.json` sent as written — an escape that doesn't decode refused in each surface's shape (the RPC `GET`'s `invalid_request` envelope, 400 `invalid_query_params` on a REST query and the WS upgrade, 400 `invalid_route_params` on a path param, always JSON), the decodable controls echoed exactly, a route that reads no query refusing nothing in it; and the routing rows — a method a routed path doesn't serve → 405 with `Allow` (compared as a set, absent on a gate's refusal) and `method_not_allowed`, an unmatched path → `route_not_found` under `/api/` and the plain-text 404 elsewhere, an encoded or doubled-slash spelling of a routed path unrouted, dot segments per `runtime_resolves_dot_segments`. A row's `requires` is a list of capabilities and each requirement set is its own test, skipped when the backend doesn't declare it | `ws`, `sse`, `account_status`, `fact_serving`, `fact_serving_admin_hash`, `spine_fallback` (per row), `ws_refusal_body`, `runtime_resolves_dot_segments` |
 | `credential_header_robustness` | raw socket: an oversized or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server (a duplicated one is `credential_conformance_wire`'s) | — |
 | `fact_serving` | `GET /api/cells/:cell_id/facts/:hash` per reference, the hardening headers, bodyless masked 404s; the admin-only `GET /api/facts/:hash` | `fact_serving` (bare-hash cases also `fact_serving_admin_hash`) |
@@ -1723,7 +1725,7 @@ without.
 | `query_shape` | duplicate-key, unknown-key, and phase-order query semantics on the status route, the RPC `GET`, and the bare-hash fact route | `account_status`, `fact_serving_admin_hash` (per case) |
 | `ready` | anonymous `GET /ready` → `200 {ready: true}` over the committed `expected_schema.json` | `ready` |
 | `role_grant_offer_enumeration` | `role_grant_offer_accept`'s deliberate split: a nonexistent offer → 404 `role_grant_offer_not_found`, a sibling actor's on the caller's own account → 403 `role_grant_offer_actor_mismatch` | — |
-| `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; an accept after a decline or a retract the same, granting nothing, and a replayed accept answering the first grant; one audit row per success, none per refusal; lost grantor authority supersedes pending offers | — |
+| `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; an accept after a decline or a retract the same, granting nothing, and a replayed accept answering the first grant; one audit row per success, none per refusal; lost grantor authority supersedes pending offers; a recipient's delete supersedes every pending offer to it, and an offer to a deleted account or actor answers as one to a missing one | — |
 | `role_grant_offer_notification_ws` | each offer and role-grant notification strict-parsed against its params schema, with a bystander socket that must receive nothing behind a `heartbeat` barrier | `ws` |
 | `role_grant_participation` | the success paths of app-role conferral: assign + idempotency, a scoped assign, offer → accept, offer replay | — |
 | `role_grant_role_grammar` | an off-grammar `role` or scope kind on the grant verbs → `invalid_params` with no reason and no audit row | — |
@@ -1735,7 +1737,7 @@ without.
 | `sse_round_trip` | the audit stream: connect, a data frame, a close on each revocation of a stream proven admitted, a session-scoped revoke leaving a sibling session's stream open, the per-session stream cap | `sse` (delete and purge also `account_lifecycle`) |
 | `standard` | the `describe_standard_cross_process_tests` bundle: integration, admin, round trip, RPC round trip, data exposure | `account_status` (the status wire-shape case) |
 | `testing_backdoor` | the backdoor declaration, and every declared `_testing_*` action refusing anonymous, session, and bearer callers | `testing_backdoors` (the declaration) |
-| `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token or a winning session never touched, the request acting as the winner's account | — |
+| `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token or a winning session never touched, the request acting as the winner's account; an invalid daemon token falls through to the bearer beside it | — |
 | `token_scope_surface` | the `surface:<name>` half of token scoping: a narrowed bearer refused the audit stream and the bare-hash fact read, anonymous on the status read; scope outranks role | `sse`, `fact_serving_admin_hash`, `account_status` (per case) |
 | `transport_composition` | the front-door table over REST, RPC `POST` and `GET`, the WS upgrade, and the audit stream: foreign `Origin` → 403, over-cap length → 413, no credential → 401, a narrowed bearer → each surface's denial | `ws`, `sse`, `ws_refusal_body` (per row) |
 | `ws_connection_cap` | one socket past the per-account cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT` and nothing else; a closed connection frees its slot | `ws` |

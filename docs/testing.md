@@ -1025,6 +1025,9 @@ consumer config.
 - `rooms` — Backend mounts the room verbs on its WebSocket endpoint over an exclusive registry and the test room authorizer, with `_testing_room_evict` (`true` only on the reference spine binaries and a consumer test binary mounting the same; a consumer with its own room authorizer states `false`). Gates `describe_rooms_ws_cross_tests`.
 - `ws_refusal_body` — Not a gate: whether a refused WebSocket upgrade carries its refusal body (`false` on Node, where `@hono/node-server` drops it; `true` on Bun and the Rust spine). Picks how the front-door table reads its WS rows and how the WS suite's disallowed-origin case reads its refusal.
 - `ws_upgrade_runtime_refusals` — Not a gate: the WebSocket upgrades the backend's runtime answers before the app runs (`['empty_host']` on Node, where `@hono/node-server` answers an upgrade whose first `Host` line is empty with a bodiless 400; `[]` on Bun and the Rust spine). The request-header wire suite holds those rows to exactly that answer, so the entry fails the day the runtime changes.
+- `runtime_resolves_dot_segments` — Not a gate: the backend's runtime resolves `.` and `..` (literal or `%2e`) before the app sees the request (`true` on Node, Bun and in-process; `false` on the Rust spine, which routes the raw path). The request-target wire suite expects a dot-segment row's `expect_where_dot_segments_resolved` answer where it is `true`, so the entry fails the day the runtime changes.
+- `spine_fallback` — An unmatched path outside `/api` is answered by the spine's own fallback (the plain-text `404 Not Found`). Gates the request-target wire suite's rows that land outside `/api`; a backend serving a static or SPA fallback of its own there states `false`, and those rows show as skipped.
+- `host_gate` — The host gate (DNS rebinding) is on. Gates the request-header wire suite's rows the host gate refuses; a backend running with `host_gate: false` states `false`, and those rows show as skipped.
 - `testing_backdoors` — Not a flag: the `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS`. Checked by `describe_testing_backdoor_cross_tests`, which fires its credential rows at the ones listed; `describe_spine_cross_suites` gates suites on it (below). `[]` in-process.
 
 Wiring facts that gate nothing are not capabilities, and the harness doesn't record them.
@@ -1034,8 +1037,12 @@ Wiring facts that gate nothing are not capabilities, and the harness doesn't rec
 starting points consumers extend.
 
 A family default carries only what the family guarantees: the declared spine
-surface's mounts (`account_lifecycle`, `account_status`) and the
-runtime-behavior flags (`ws_handshake_pipelining`, `ws_refusal_body`) of its
+surface's mounts, fallback and host gate (`account_lifecycle`,
+`account_status`, `spine_fallback`, `host_gate` — a backend serving a static
+or SPA fallback of its own outside `/api`, or running with the host gate off,
+states `false` and skips just the rows that need it) and the runtime-behavior
+flags (`ws_handshake_pipelining`, `ws_refusal_body`,
+`ws_upgrade_runtime_refusals`, `runtime_resolves_dot_segments`) of its
 reference runtime — Node for TS, hyper for Rust; a backend on another runtime
 (Bun) overrides them. The flags that describe a backend's own mounts —
 `MountFlag`: `ws`, `sse`, `cell_crud`, `cell_relations`, `cell_gated_create`,
@@ -1294,7 +1301,24 @@ capabilities, so state every mount flag truthfully and the rest follows.
   `DEFAULT_WS_MAX_MESSAGE_BYTES`): the body-size suites, the front-door
   table's RPC over-cap row, and the WS oversized-message case probe them.
 - A backend whose fallback serves an SPA shell answers an unrouted `GET` `200`:
-  pass `overrides: {origin_scope: {unrouted_status: 200}}`.
+  state `spine_fallback: false` in its capabilities (the request target wire
+  suite skips the rows that land outside `/api`) and pass
+  `overrides: {origin_scope: {unrouted_status: 200}}`.
+- The two request wire suites (`request_header_conformance_wire`,
+  `request_target_conformance_wire`) write raw bytes to `base_url` and need
+  no backdoor. The header suite needs what `credential_conformance_wire`
+  needs — `account_verify` on `rpc_path` and on the socket, the login route,
+  the seeded session and bearer accounts, no `extra_actors` — plus an
+  allowlist admitting the backend's own origin (`overrides` names another);
+  a backend with the host gate off states `host_gate: false`. The target
+  suite needs `account_verify`, the account status and login routes, the WS
+  endpoint, the audit stream, `GET` alone on `health_path`, nothing at the
+  paths its routing rows name as unmatched, and a single-actor keeper holding
+  the WS upgrade's roles; its rows run one test per `requires` set, skipped
+  visibly where a flag is off. Each module's TSDoc lists the rest.
+- `account_lifecycle`'s password case is ungated: it drives the REST login
+  and password routes on every backend, so a backend without them excludes
+  it with `exclude_cases`.
 - An input the handle doesn't carry comes from `overrides` — or from the
   config when it can (the `cookie_keys` of `session_cookie_codec` and the two
   credential conformance suites, from `SECRET_FUZ_COOKIE_KEYS`); with neither, the call throws naming the suite.

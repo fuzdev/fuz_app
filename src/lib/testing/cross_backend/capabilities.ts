@@ -32,8 +32,8 @@ import '../assert_dev_env.ts';
  * (a `MountFlag`) is never inherited, nor is the `testing_backdoors` list: the
  * family defaults are `FamilyDefaultCapabilities`, which omits them, so every
  * backend config states each one. The family defaults carry only what the family guarantees — the
- * declared spine surface's mounts and fallback (`account_lifecycle`,
- * `account_status`, `spine_fallback`) and the runtime behavior of its
+ * declared spine surface's mounts, fallback and host gate (`account_lifecycle`,
+ * `account_status`, `spine_fallback`, `host_gate`) and the runtime behavior of its
  * reference runtime (`ws_handshake_pipelining`,
  * `ws_refusal_body`: Node for TS, hyper for Rust), which a backend on another
  * runtime overrides.
@@ -320,6 +320,19 @@ export interface BackendCapabilities {
 	 */
 	readonly spine_fallback: boolean;
 	/**
+	 * The host gate (DNS rebinding) is on, refusing a `Host` that is neither
+	 * loopback nor allowlisted with 403 `forbidden_host`. Gates the request
+	 * header wire leg's rows the table expects the host gate to refuse
+	 * (`describe_request_header_conformance_wire_cross_tests`), so a backend
+	 * running with the gate off (`host_gate: false` on `create_app_server`)
+	 * declares `false` and keeps the rest of the leg; those rows then show as a
+	 * skipped test.
+	 *
+	 * `true` in both families' defaults, on fuz_app's spine presets and
+	 * in-process — the gate is on by default on both spines.
+	 */
+	readonly host_gate: boolean;
+	/**
 	 * The `_testing_*` backdoors the backend mounts on its RPC endpoint, from
 	 * `TESTING_BACKDOOR_METHODS` (a consumer's own seams stay off it). Not a
 	 * flag, but declared like a `MountFlag`: no family default, so every config
@@ -433,6 +446,8 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	runtime_resolves_dot_segments: true,
 	// The test app serves no fallback of its own.
 	spine_fallback: true,
+	// `create_app_server` mounts the host gate by default.
+	host_gate: true,
 	// The in-process app mounts no `_testing_*` action; the suites reading this
 	// are cross-process only.
 	testing_backdoors: Object.freeze([])

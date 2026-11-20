@@ -2390,10 +2390,19 @@ sees the request, while the Rust spine matches the path as sent and answers
 404. Neither reading crosses a scope, since each spine routes and scopes on
 the one path it has.
 
+The query and path params decode the same way on both spines: every read
+goes through the strict readers (`http/request_target.ts`, twin of
+`fuz_http::request_target`), and an escape that doesn't decode (`%` without
+two hex digits, bytes that aren't UTF-8) is refused — 400
+`invalid_query_params` / `invalid_route_params`, `invalid_request` on the RPC
+`GET` — never left literal or replaced with U+FFFD, so one target never reads
+as two values on two spines.
+
 A method a routed path doesn't serve answers 405 with `Allow`, and a path no
 route serves answers 404 — `{"error": "route_not_found"}` under `/api/`, plain
-text elsewhere — after the host gate and the origin check and ahead of
-authentication, on both spines.
+text elsewhere — after the host gate and the origin check and ahead of any
+authentication refusal (an anonymous `PUT` on the RPC path is the 405, not a
+401), on both spines.
 
 ## DNS Rebinding (Host Gate)
 
@@ -2770,6 +2779,11 @@ the active admins with `SELECT … FOR UPDATE` inside the removal's transaction,
 locking every counted `role_grant`, `actor`, and `account` row. Two concurrent
 removals targeting the last two active admins serialize: the second waits for
 the first to commit, re-reads the rows it changed, counts one, and is refused.
+The count locks its rows in id order — account, then actor, then grant — the
+order every multi-account locker takes account rows in
+(`query_account_lock_live_many`, offer-create's lock on its grantor and
+recipient), so an offer between two admins and an admin's removal never wait
+on each other in opposite orders.
 No web path grants admin back once the last active admin is gone, so the guard
 holds as an invariant rather than a recoverable foot-gun stop.
 

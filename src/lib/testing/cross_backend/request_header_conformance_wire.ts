@@ -38,15 +38,17 @@ import '../assert_dev_env.ts';
  * needs — `account_verify` on `rpc_path` and on the socket, the login route,
  * the seeded accounts, no `extra_actors` — and an allowlist admitting
  * `origin` (default the origin of `base_url`) and refusing
- * `REQUEST_HEADER_WIRE_FOREIGN_ORIGIN`, with the host gate on and refusing
- * `REQUEST_HEADER_WIRE_FOREIGN_HOST`.
+ * `REQUEST_HEADER_WIRE_FOREIGN_ORIGIN`. The rows the table expects the host
+ * gate to refuse run where `capabilities.host_gate` says the gate is on, and
+ * the gate must refuse `REQUEST_HEADER_WIRE_FOREIGN_HOST`; a backend with the
+ * gate off declares `false`, and those rows show as skipped tests.
  *
  * Raw-socket by necessity, so **cross-process only**.
  *
  * @module
  */
 
-import { assert, describe, test } from 'vitest';
+import { assert, describe } from 'vitest';
 
 import {
 	ERROR_FORBIDDEN_HOST,
@@ -104,8 +106,9 @@ export interface RequestHeaderConformanceWireCrossTestOptions {
 	/**
 	 * `ws` gates the upgrade leg, `ws_account_actions` its `account_verify`
 	 * frame on each accepted socket, `ws_refusal_body` whether a refused
-	 * upgrade's code is read, and `ws_upgrade_runtime_refusals` the rows that
-	 * expect the runtime's own refusal.
+	 * upgrade's code is read, `ws_upgrade_runtime_refusals` the rows that
+	 * expect the runtime's own refusal, and `host_gate` the rows the host gate
+	 * refuses.
 	 */
 	readonly capabilities: BackendCapabilities;
 	/** Base URL the spawned backend is reachable at (e.g. `http://localhost:1178`). */
@@ -152,6 +155,10 @@ interface WireCheck {
 
 const format_outcome = (outcome: RequestHeaderConformanceOutcome): string =>
 	'refused' in outcome ? `refused ${outcome.refused}` : String(outcome.authenticates);
+
+/** Whether the table expects the host gate to refuse `outcome`. */
+const is_host_gate_refusal = (outcome: RequestHeaderConformanceOutcome): boolean =>
+	'refused' in outcome && outcome.refused === ERROR_FORBIDDEN_HOST;
 
 export const describe_request_header_conformance_wire_cross_tests = (
 	options: RequestHeaderConformanceWireCrossTestOptions
@@ -327,55 +334,88 @@ export const describe_request_header_conformance_wire_cross_tests = (
 		}
 	};
 
-	describe('request header conformance on the wire', () => {
-		test('every row answers an RPC POST and a login as the table says', async () => {
-			const fixture = await setup_test();
-			const accounts = read_credential_wire_accounts(fixture);
-			const checks = wire_checks(accounts);
-			const failures: Array<string> = [];
-			for (const check of checks) {
-				const label = `${check.row.name} [post, expected ${format_outcome(check.post)}]`;
-				for (const failure of await check_post(check, accounts)) {
-					failures.push(`${label}: ${failure}`);
-				}
-				if (!check.has_content_type) continue;
-				for (const failure of await check_login(check)) {
-					failures.push(`${label}: ${failure}`);
-				}
+	/** Send every row of `checks` as an RPC `POST` (and a login, when it carries a `Content-Type`). */
+	const run_post_rows = async (
+		checks: Array<WireCheck>,
+		accounts: CredentialWireAccounts
+	): Promise<Array<string>> => {
+		const failures: Array<string> = [];
+		for (const check of checks) {
+			const label = `${check.row.name} [post, expected ${format_outcome(check.post)}]`;
+			for (const failure of await check_post(check, accounts)) {
+				failures.push(`${label}: ${failure}`);
 			}
-			assert.ok(checks.length > 0, 'the table has wire rows');
-			assert.ok(
-				failures.length === 0,
-				`${failures.length} request header conformance rows disagree on a POST:\n${failures.join('\n')}`
-			);
-		});
+			if (!check.has_content_type) continue;
+			for (const failure of await check_login(check)) {
+				failures.push(`${label}: ${failure}`);
+			}
+		}
+		return failures;
+	};
 
-		test_if(
-			capabilities.ws,
-			'every row answers a WebSocket upgrade as the table says',
-			async () => {
-				const fixture = await setup_test();
-				assert.strictEqual(
-					fixture.extra_actors.length,
-					0,
-					"the suite's setup_test must seed no extra_actors: the upgrades carry no acting selector"
-				);
-				const accounts = read_credential_wire_accounts(fixture);
-				const checks = wire_checks(accounts);
-				const failures: Array<string> = [];
-				for (const check of checks) {
-					const label = `${check.row.name} [upgrade, expected ${format_outcome(check.upgrade)}]`;
-					for (const failure of await check_upgrade(check, accounts)) {
-						failures.push(`${label}: ${failure}`);
-					}
-				}
-				assert.ok(checks.length > 0, 'the table has wire rows');
-				assert.ok(
-					failures.length === 0,
-					`${failures.length} request header conformance rows disagree on a WebSocket upgrade:\n` +
-						failures.join('\n')
-				);
+	/** Send every row of `checks` as a WebSocket upgrade. */
+	const run_upgrade_rows = async (
+		checks: Array<WireCheck>,
+		accounts: CredentialWireAccounts
+	): Promise<Array<string>> => {
+		const failures: Array<string> = [];
+		for (const check of checks) {
+			const label = `${check.row.name} [upgrade, expected ${format_outcome(check.upgrade)}]`;
+			for (const failure of await check_upgrade(check, accounts)) {
+				failures.push(`${label}: ${failure}`);
 			}
-		);
+		}
+		return failures;
+	};
+
+	describe('request header conformance on the wire', () => {
+		// Each leg runs in two tests: the rows the host gate refuses, gated on
+		// `capabilities.host_gate`, and the rest.
+		for (const host_gate_rows of [false, true]) {
+			const which = host_gate_rows
+				? 'every row the host gate refuses'
+				: 'every row the host gate passes';
+			test_if(
+				!host_gate_rows || capabilities.host_gate,
+				`${which} answers an RPC POST and a login as the table says`,
+				async () => {
+					const fixture = await setup_test();
+					const accounts = read_credential_wire_accounts(fixture);
+					const checks = wire_checks(accounts).filter(
+						(check) => is_host_gate_refusal(check.post) === host_gate_rows
+					);
+					const failures = await run_post_rows(checks, accounts);
+					assert.ok(checks.length > 0, 'the table has wire rows');
+					assert.ok(
+						failures.length === 0,
+						`${failures.length} request header conformance rows disagree on a POST:\n${failures.join('\n')}`
+					);
+				}
+			);
+
+			test_if(
+				capabilities.ws && (!host_gate_rows || capabilities.host_gate),
+				`${which} answers a WebSocket upgrade as the table says`,
+				async () => {
+					const fixture = await setup_test();
+					assert.strictEqual(
+						fixture.extra_actors.length,
+						0,
+						"the suite's setup_test must seed no extra_actors: the upgrades carry no acting selector"
+					);
+					const accounts = read_credential_wire_accounts(fixture);
+					const checks = wire_checks(accounts).filter(
+						(check) => is_host_gate_refusal(check.upgrade) === host_gate_rows
+					);
+					const failures = await run_upgrade_rows(checks, accounts);
+					assert.ok(checks.length > 0, 'the table has wire rows');
+					assert.ok(
+						failures.length === 0,
+						`${failures.length} request header conformance rows disagree on a WebSocket upgrade:\n` +
+							failures.join('\n')
+					);
+				}
+			);
+		}
 	});
 };
