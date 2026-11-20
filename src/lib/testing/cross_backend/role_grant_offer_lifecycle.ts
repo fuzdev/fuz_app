@@ -21,6 +21,11 @@ import '../assert_dev_env.ts';
  * - **already decided → 400** `invalid_request` with reason
  *   `role_grant_offer_terminal` — a decline or retract after an accept, a
  *   second decline, a second retract, and either one after the other.
+ * - **a decided offer can't be accepted.** An accept after a decline or a
+ *   retract is `role_grant_offer_terminal` and grants nothing — the
+ *   recipient holds no grant of the role and the offer reads back unaccepted.
+ *   A second accept of an accepted offer is the idempotent replay: it answers
+ *   the grant the first one minted, and the recipient holds that one grant.
  * - **a grantor's lost authority ends its pending offers.** Revoking a
  *   grantor's grant, or deleting its account, supersedes every pending offer
  *   it made — gone from the recipient's inbox, an accept answers
@@ -310,6 +315,69 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 				await decline(fixture, retracted.id, recipient_headers),
 				'a decline after retract'
 			);
+		});
+
+		test('an accept after a decline or a retract → 400 role_grant_offer_terminal, granting nothing; a second accept answers the first grant', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'lifecycle_late_accept' });
+			const recipient_headers = recipient.create_session_headers();
+			const grantor_headers = fixture.create_session_headers();
+
+			/** The recipient's active grants of `role`, by id. */
+			const held_grant_ids = async (): Promise<Array<string>> => {
+				const listed = expect_output(
+					await rpc(fixture, 'admin_account_list', {}, grantor_headers),
+					AdminAccountListOutput
+				);
+				const entry = listed.accounts.find((a) => a.account.id === recipient.account.id);
+				assert.ok(entry, 'the recipient is listed');
+				return entry.role_grants.filter((g) => g.role === role).map((g) => g.id);
+			};
+
+			const declined = await create_offer(fixture, recipient);
+			assert_ok(await decline(fixture, declined.id, recipient_headers), 'decline');
+			assert_terminal(
+				await accept(fixture, declined.id, recipient_headers),
+				'an accept after decline'
+			);
+			const retracted = await create_offer(fixture, recipient);
+			assert_ok(await retract(fixture, retracted.id, grantor_headers), 'retract');
+			assert_terminal(
+				await accept(fixture, retracted.id, recipient_headers),
+				'an accept after retract'
+			);
+
+			// the refused accepts changed nothing: no grant, and each offer still
+			// reads as it was decided
+			assert.deepStrictEqual(await held_grant_ids(), [], 'a refused accept grants nothing');
+			const { offers } = expect_output(
+				await rpc(fixture, 'role_grant_offer_history', {}, grantor_headers),
+				RoleGrantOfferHistoryOutput
+			);
+			for (const [offer_id, label] of [
+				[declined.id, 'declined'],
+				[retracted.id, 'retracted']
+			] as const) {
+				const offer = offers.find((o) => o.id === offer_id);
+				assert.ok(offer, `the ${label} offer is in the history`);
+				assert.strictEqual(offer.accepted_at, null, `the ${label} offer stays unaccepted`);
+				assert.strictEqual(offer.resulting_role_grant_id, null, label);
+			}
+
+			// a replayed accept is idempotent: the grant the first one minted,
+			// and no second grant
+			const accepted = await create_offer(fixture, recipient);
+			const first = await accept(fixture, accepted.id, recipient_headers);
+			assert.ok(first.ok, `the first accept must succeed: ${JSON.stringify(first)}`);
+			const second = await accept(fixture, accepted.id, recipient_headers);
+			assert.ok(second.ok, `a second accept must answer: ${JSON.stringify(second)}`);
+			const { role_grant_id } = first.result as { role_grant_id: string };
+			assert.strictEqual(
+				(second.result as { role_grant_id: string }).role_grant_id,
+				role_grant_id,
+				'a second accept answers the first grant'
+			);
+			assert.deepStrictEqual(await held_grant_ids(), [role_grant_id], 'one grant, not two');
 		});
 
 		test('a decline and a retract each write one audit row; their refusals write none', async () => {

@@ -22,10 +22,19 @@ import '../assert_dev_env.ts';
  * an `outcome: 'failure'` row; `admin_account_list` with `include_deleted`
  * lists tombstoned rows with `deleted_at` set.
  *
+ * Two credential end states, each proven live before it is killed: a session
+ * and an API token minted before a soft delete stay dead after the undelete
+ * (the delete removed their rows, and the undelete clears only the
+ * tombstones), each answering as an anonymous request does, while a fresh
+ * login authenticates; and a password change made over one session ends the
+ * account's other session and its API token as well as its own, leaves
+ * another account's session live, and only the new password logs in. The
+ * password case needs no lifecycle verb, so it runs on every backend.
+ *
  * @module
  */
 
-import { describe, assert } from 'vitest';
+import { describe, assert, test } from 'vitest';
 
 import {
 	AccountDeleteOutput,
@@ -44,22 +53,106 @@ import { assert_audit_metadata_fields, list_audit_events } from './audit_cross_h
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
-import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
-import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { create_test_request_headers } from '../test_origin.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions, TestFixture } from './setup.ts';
+import {
+	SPINE_ACCOUNT_LOGIN_PATH,
+	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_RPC_PATH
+} from './spine_surface_constants.ts';
 
 /**
- * Options for the account-lifecycle parity suite. The standard
+ * Options for the account-lifecycle parity suite: the standard
  * capability-gating RPC-dispatched cross-suite shape (`setup_test` /
- * `capabilities` / `rpc_path`); aliases
- * `RpcPathCapabilityGatedCrossSuiteOptions` rather than duplicating.
+ * `capabilities` / `rpc_path`) plus the two REST account routes the
+ * credential cases call.
  */
-export type AccountLifecycleCrossTestOptions = RpcPathCapabilityGatedCrossSuiteOptions;
+export interface AccountLifecycleCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
+	/** REST login route path. Default `/api/account/login`. */
+	readonly login_path?: string;
+	/** REST password-change route path. Default `/api/account/password`. */
+	readonly password_path?: string;
+}
+
+/** The password the credential cases create their accounts with. */
+const LIFECYCLE_PASSWORD = 'lifecycle-password-before';
+
+/** The password the password-change case changes to. */
+const LIFECYCLE_PASSWORD_CHANGED = 'lifecycle-password-after';
 
 export const describe_account_lifecycle_cross_tests = (
 	options: AccountLifecycleCrossTestOptions
 ): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
+	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
+
+	/**
+	 * `account_verify` carrying `headers` and no other credential — a
+	 * cookie-free transport, no `Origin` added (a bearer beside one is
+	 * discarded as browser context).
+	 */
+	const verify = (fixture: TestFixture, headers: Record<string, string>) =>
+		cross_rpc_call(
+			fixture.fresh_transport({ origin: null }),
+			rpc_path,
+			'account_verify',
+			undefined,
+			headers
+		);
+
+	/** Who `headers` authenticate as: the account id `account_verify` answers, or `null`. */
+	const verified_account_id = async (
+		fixture: TestFixture,
+		headers: Record<string, string>
+	): Promise<string | null> => {
+		const res = await verify(fixture, headers);
+		return res.ok ? (res.result as { id: string }).id : null;
+	};
+
+	/** A request carrying no credential, with `account`'s non-credential headers. */
+	const anonymous_headers = (account: TestAccount): Record<string, string> => {
+		const { authorization: _, ...rest } = account.create_bearer_headers();
+		return rest;
+	};
+
+	/**
+	 * Assert `headers` answer exactly as an anonymous request does — a dead
+	 * credential must not be told apart from no credential.
+	 */
+	const assert_answers_as_anonymous = async (
+		fixture: TestFixture,
+		account: TestAccount,
+		headers: Record<string, string>,
+		label: string
+	): Promise<void> => {
+		const dead = await verify(fixture, headers);
+		const anonymous = await verify(fixture, anonymous_headers(account));
+		assert.strictEqual(anonymous.status, 401, 'the anonymous control is refused');
+		assert.strictEqual(dead.status, anonymous.status, label);
+		assert.strictEqual(error_reason(dead), ERROR_AUTHENTICATION_REQUIRED, label);
+		assert.deepStrictEqual(dead.error, anonymous.error, label);
+	};
+
+	/** Log in on a fresh transport; the session cookie the login sets, as a `Cookie` value. */
+	const login = async (
+		fixture: TestFixture,
+		username: string,
+		password: string
+	): Promise<{ status: number; cookie: string | null }> => {
+		const res = await fixture.fresh_transport()(login_path, {
+			method: 'POST',
+			headers: create_test_request_headers({ 'content-type': 'application/json' }),
+			body: JSON.stringify({ username, password })
+		});
+		await res.body?.cancel();
+		const lines = res.headers.getSetCookie();
+		if (res.status !== 200) return { status: res.status, cookie: null };
+		assert.strictEqual(lines.length, 1, 'a login sets exactly the session cookie');
+		return { status: res.status, cookie: lines[0]!.split(';')[0]! };
+	};
 
 	describe('account lifecycle parity', () => {
 		test_if(
@@ -480,5 +573,136 @@ export const describe_account_lifecycle_cross_tests = (
 				assert_iso8601_seconds(row.account.deleted_at, 'admin_account_list.deleted_at');
 			}
 		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'credentials minted before a delete stay dead after the undelete; a fresh login authenticates',
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({
+					username: 'lifecycle_revived',
+					password_value: LIFECYCLE_PASSWORD
+				});
+				const admin_headers = fixture.create_session_headers();
+				const victim_id = victim.account.id;
+
+				// each credential authenticates as the victim before the delete, so
+				// its refusal after the undelete is a transition
+				assert.strictEqual(
+					await verified_account_id(fixture, victim.create_session_headers()),
+					victim_id
+				);
+				assert.strictEqual(
+					await verified_account_id(fixture, victim.create_bearer_headers()),
+					victim_id
+				);
+
+				for (const method of ['account_delete', 'account_undelete']) {
+					const res = await cross_rpc_call(
+						fixture.fresh_transport(),
+						rpc_path,
+						method,
+						{ account_id: victim_id },
+						admin_headers
+					);
+					assert.ok(res.ok, `${method} must succeed: ${JSON.stringify(res)}`);
+				}
+
+				await assert_answers_as_anonymous(
+					fixture,
+					victim,
+					victim.create_session_headers(),
+					'a session minted before the delete stays dead after the undelete'
+				);
+				await assert_answers_as_anonymous(
+					fixture,
+					victim,
+					victim.create_bearer_headers(),
+					'an API token minted before the delete stays dead after the undelete'
+				);
+
+				const fresh = await login(fixture, victim.account.username, LIFECYCLE_PASSWORD);
+				assert.strictEqual(fresh.status, 200, 'the reactivated account logs in');
+				assert.ok(fresh.cookie);
+				assert.strictEqual(
+					await verified_account_id(fixture, {
+						...anonymous_headers(victim),
+						cookie: fresh.cookie
+					}),
+					victim_id,
+					'the fresh session authenticates as the reactivated account'
+				);
+			}
+		);
+
+		test('a password change ends every session and API token of the account, and only the new password logs in', async () => {
+			const fixture = await setup_test();
+			const account = await fixture.create_account({
+				username: 'lifecycle_rotated',
+				password_value: LIFECYCLE_PASSWORD
+			});
+			const account_id = account.account.id;
+			const sibling = await login(fixture, account.account.username, LIFECYCLE_PASSWORD);
+			assert.strictEqual(sibling.status, 200, 'a second session for the account');
+			assert.ok(sibling.cookie);
+			const sibling_headers = { ...anonymous_headers(account), cookie: sibling.cookie };
+
+			// both sessions and the token authenticate as the account first
+			assert.strictEqual(
+				await verified_account_id(fixture, account.create_session_headers()),
+				account_id
+			);
+			assert.strictEqual(await verified_account_id(fixture, sibling_headers), account_id);
+			assert.strictEqual(
+				await verified_account_id(fixture, account.create_bearer_headers()),
+				account_id
+			);
+
+			// the change goes through the sibling session; the account's first
+			// session is the other one
+			const change = await fixture.fresh_transport()(password_path, {
+				method: 'POST',
+				headers: create_test_request_headers({
+					'content-type': 'application/json',
+					cookie: sibling.cookie
+				}),
+				body: JSON.stringify({
+					current_password: LIFECYCLE_PASSWORD,
+					new_password: LIFECYCLE_PASSWORD_CHANGED
+				})
+			});
+			await change.body?.cancel();
+			assert.strictEqual(change.status, 200, 'the password change succeeds');
+
+			await assert_answers_as_anonymous(
+				fixture,
+				account,
+				account.create_session_headers(),
+				'the session the change was not made on is ended'
+			);
+			await assert_answers_as_anonymous(
+				fixture,
+				account,
+				sibling_headers,
+				'the session the change was made on is ended'
+			);
+			await assert_answers_as_anonymous(
+				fixture,
+				account,
+				account.create_bearer_headers(),
+				'the account’s API token is ended'
+			);
+			// scoped to the account: the keeper's session is untouched
+			assert.strictEqual(
+				await verified_account_id(fixture, fixture.create_session_headers()),
+				fixture.account.id,
+				'another account’s session stays live'
+			);
+
+			const old_login = await login(fixture, account.account.username, LIFECYCLE_PASSWORD);
+			assert.strictEqual(old_login.status, 401, 'the old password no longer logs in');
+			const new_login = await login(fixture, account.account.username, LIFECYCLE_PASSWORD_CHANGED);
+			assert.strictEqual(new_login.status, 200, 'the new password logs in');
+		});
 	});
 };

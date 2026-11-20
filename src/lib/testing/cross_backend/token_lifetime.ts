@@ -48,8 +48,17 @@ import '../assert_dev_env.ts';
  *   daemon token and a bearer never validates the bearer: its
  *   `last_used_at` stays `null`. A spine resolving the bearer first (or both)
  *   bumps it. The positive control is a second token used alone, read back
- *   with a `last_used_at` — sent after the first request, so once its touch
- *   is visible the first's would be too.
+ *   with a `last_used_at` — sent after the first request, so by the time its
+ *   touch is visible the first's has had longer to land (the touches are
+ *   independent writes; nothing stronger orders them).
+ * - **A token sent beside a winning session is never used** — the session
+ *   leg runs ahead of the bearer leg, so a request carrying one account's
+ *   session cookie and another account's bearer, with no `Origin` to discard
+ *   the bearer as browser context, acts as the session's account and leaves
+ *   the bearer's `last_used_at` `null`. The session is proven alone first; a
+ *   second token sent alone after the combined request is the control, its
+ *   touch landing; and the token sent beside the session, used alone last,
+ *   authenticates as its own account, so it was live all along.
  * - **An invalid daemon token falls through to the bearer beside it** — the
  *   daemon leg soft-fails a token that is not the current one, so the bearer
  *   leg still runs: the request authenticates on the token, which records its
@@ -309,6 +318,104 @@ export const describe_token_lifetime_cross_tests = (
 				null,
 				'a bearer sent beside a winning daemon token is never validated, so never touched'
 			);
+		});
+
+		test('a token sent beside a winning session is never used; the request acts as the session’s account', async () => {
+			const fixture = await setup_test();
+			const session_account = await fixture.create_account({ username: 'lifetime_by_session' });
+			const bearer_account = await fixture.create_account({ username: 'lifetime_by_bearer' });
+			/** Mint a token on the bearer account over its session. */
+			const mint = async (name: string): Promise<TokenCreateOutput> =>
+				expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport(),
+						rpc_path,
+						account_token_create_action_spec.method,
+						{ name, scope: { kind: 'full' }, lifetime: { kind: 'eternal' } },
+						bearer_account.create_session_headers()
+					),
+					TokenCreateOutput
+				);
+			/** The bearer account's tokens' `last_used_at`, by id. */
+			const read_last_used = async (): Promise<Map<string, string | null>> => {
+				const listed = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport(),
+						rpc_path,
+						account_token_list_action_spec.method,
+						undefined,
+						bearer_account.create_session_headers()
+					),
+					TokenListOutput
+				);
+				return new Map(listed.tokens.map((t) => [t.id, t.last_used_at]));
+			};
+			/** `account_verify` over a cookie-free, `Origin`-free transport. */
+			const verify = (headers: Record<string, string>) =>
+				cross_rpc_call(
+					fixture.fresh_transport({ origin: null }),
+					rpc_path,
+					'account_verify',
+					undefined,
+					headers
+				);
+			const beside = await mint('beside-session');
+			const alone = await mint('used-alone');
+			const before = await read_last_used();
+			assert.strictEqual(before.get(beside.id), null, 'a fresh token is unused');
+			assert.strictEqual(before.get(alone.id), null, 'a fresh token is unused');
+
+			// the session cookie alone, with no `Origin` — a bearer beside one is
+			// discarded as browser context, which would hide the leg order
+			const { origin: _, ...session_headers } = session_account.create_session_headers();
+			const on_session = await verify(session_headers);
+			assert.ok(on_session.ok, 'the session alone authenticates');
+			assert.strictEqual(
+				(on_session.result as { id: string }).id,
+				session_account.account.id,
+				'the session authenticates as its own account'
+			);
+
+			// one request carrying the session and the other account's bearer
+			const both = await verify({ ...session_headers, authorization: `Bearer ${beside.token}` });
+			assert.ok(both.ok, 'the request with both credentials authenticates');
+			assert.strictEqual(
+				(both.result as { id: string }).id,
+				session_account.account.id,
+				'the session leg wins: the request acts as the session’s account'
+			);
+
+			// the positive control, sent after it: the bearer alone is used, and
+			// authenticates as its own account
+			const on_bearer = await verify({ authorization: `Bearer ${alone.token}` });
+			assert.ok(on_bearer.ok, 'the bearer alone authenticates');
+			assert.strictEqual(
+				(on_bearer.result as { id: string }).id,
+				bearer_account.account.id,
+				'the bearer authenticates as its own account'
+			);
+
+			// the touch is fire-and-forget on both spines, so wait for the control's
+			const deadline = Date.now() + LAST_USED_WAIT_MS;
+			let after = await read_last_used();
+			while (after.get(alone.id) === null && Date.now() < deadline) {
+				await new Promise((resolve) => setTimeout(resolve, 50));
+				after = await read_last_used();
+			}
+			assert.notStrictEqual(
+				after.get(alone.id),
+				null,
+				'a bearer used alone records its last use (the positive control)'
+			);
+			assert.strictEqual(
+				after.get(beside.id),
+				null,
+				'a bearer sent beside a winning session is never validated, so never touched'
+			);
+			// and it was live all along: alone, it authenticates as its account
+			const beside_alone = await verify({ authorization: `Bearer ${beside.token}` });
+			assert.ok(beside_alone.ok, 'the token sent beside the session is live');
+			assert.strictEqual((beside_alone.result as { id: string }).id, bearer_account.account.id);
 		});
 
 		test('an invalid daemon token falls through to the bearer beside it', async () => {

@@ -304,9 +304,11 @@ legitimate operator.
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached, and the connections it opened are
   closed once the login commits
-- **Password change**: Revokes all sessions and API tokens and clears the
+- **Password change**: Revokes all sessions and API tokens — every session
+  of the account, not only the one the change was made on — and clears the
   session cookie, so a compromised credential does not persist after
-  rotation. The handler closes the account's WebSockets and SSE streams once
+  rotation. Only the new password logs in afterwards; other accounts'
+  sessions are untouched. The handler closes the account's WebSockets and SSE streams once
   the change commits (see [Closing on Revocation](#closing-on-revocation))
 
 ### Cookie Signing Keys
@@ -1633,6 +1635,11 @@ can itself be removed once another active admin exists. The count locks the rows
 it counted (`FOR UPDATE`), so two removals racing for the last two admins
 serialize and the second is refused.
 
+**An undelete restores the account, never a credential.** `account_undelete`
+clears the tombstones of the account and its actors; the sessions and API
+tokens the delete revoked stay revoked, each answering as an anonymous
+request does, and the account's owner logs in fresh.
+
 **Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
 grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`
 (403) refuses the keeper account's — no web path grants it back (bootstrap is
@@ -2343,6 +2350,11 @@ token cannot be replayed from a browser context. Daemon tokens carry the same
 guard for symmetry — they are loopback-only and never legitimately carry an
 `Origin`, so a header-bearing daemon token is dropped (and the request falls
 through to `credential_type_required` downstream rather than a hard fail).
+
+The credential legs run daemon token, then session cookie, then bearer, and
+the first that authenticates wins: a bearer sent beside a winning session or
+daemon token is never looked up (its `last_used_at` does not move), and the
+request acts as the winning credential's account.
 
 **One spelling per path.** The server routes on the raw request path: nothing
 is percent-decoded before the router, so `/%61pi/x` is not `/api/x` — it is an

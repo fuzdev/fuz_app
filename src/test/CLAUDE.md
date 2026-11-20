@@ -242,7 +242,7 @@ runs cross-process only:
 
 | suite | in-process leg |
 | --- | --- |
-| `account_lifecycle` | `auth/account_lifecycle_parity.db.test.ts` |
+| `account_lifecycle` | `auth/account_lifecycle_parity.db.test.ts` (mounts the spine's account routes beside the RPC endpoint, so login and password change run in-process) |
 | `actor_lookup` | `auth/actor_lookup_parity.db.test.ts` |
 | `app_settings` | `auth/app_settings_parity.db.test.ts` |
 | `body_size` | `auth/body_size_parity.db.test.ts` |

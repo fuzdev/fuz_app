@@ -1695,7 +1695,7 @@ without.
 
 | suite | pins | gate |
 | --- | --- | --- |
-| `account_lifecycle` | soft delete → undelete, keeper-confirmed purge, the `cannot_delete_keeper` guard, session-only self-delete, a deleted account's credentials refused, each audit row, the `include_deleted` listing | `account_lifecycle` |
+| `account_lifecycle` | soft delete → undelete, keeper-confirmed purge, the `cannot_delete_keeper` guard, session-only self-delete, a deleted account's credentials refused — and still refused after the undelete, a fresh login working — each audit row, the `include_deleted` listing; and, ungated, a password change ending every session and API token of the account while another account's stay live | `account_lifecycle` (all but the password case) |
 | `actor_lookup` | the keeper resolves its own actor in the leak-safe wire shape (the refusals are table rows) | — |
 | `app_settings` | an anonymous signup reads `open_signup` fresh after `app_settings_update` | — |
 | `body_size` | the 1 MiB body cap: cap+1 → 413 `payload_too_large`, exactly the cap not size-rejected, an over-cap chunked body → 413, no upload racing the close | — |
@@ -1723,7 +1723,7 @@ without.
 | `query_shape` | duplicate-key, unknown-key, and phase-order query semantics on the status route, the RPC `GET`, and the bare-hash fact route | `account_status`, `fact_serving_admin_hash` (per case) |
 | `ready` | anonymous `GET /ready` → `200 {ready: true}` over the committed `expected_schema.json` | `ready` |
 | `role_grant_offer_enumeration` | `role_grant_offer_accept`'s deliberate split: a nonexistent offer → 404 `role_grant_offer_not_found`, a sibling actor's on the caller's own account → 403 `role_grant_offer_actor_mismatch` | — |
-| `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; one audit row per success, none per refusal; lost grantor authority supersedes pending offers | — |
+| `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; an accept after a decline or a retract the same, granting nothing, and a replayed accept answering the first grant; one audit row per success, none per refusal; lost grantor authority supersedes pending offers | — |
 | `role_grant_offer_notification_ws` | each offer and role-grant notification strict-parsed against its params schema, with a bystander socket that must receive nothing behind a `heartbeat` barrier | `ws` |
 | `role_grant_participation` | the success paths of app-role conferral: assign + idempotency, a scoped assign, offer → accept, offer replay | — |
 | `role_grant_role_grammar` | an off-grammar `role` or scope kind on the grant verbs → `invalid_params` with no reason and no audit row | — |
@@ -1735,7 +1735,7 @@ without.
 | `sse_round_trip` | the audit stream: connect, a data frame, a close on each revocation of a stream proven admitted, a session-scoped revoke leaving a sibling session's stream open, the per-session stream cap | `sse` (delete and purge also `account_lifecycle`) |
 | `standard` | the `describe_standard_cross_process_tests` bundle: integration, admin, round trip, RPC round trip, data exposure | `account_status` (the status wire-shape case) |
 | `testing_backdoor` | the backdoor declaration, and every declared `_testing_*` action refusing anonymous, session, and bearer callers | `testing_backdoors` (the declaration) |
-| `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token never touched | — |
+| `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token or a winning session never touched, the request acting as the winner's account | — |
 | `token_scope_surface` | the `surface:<name>` half of token scoping: a narrowed bearer refused the audit stream and the bare-hash fact read, anonymous on the status read; scope outranks role | `sse`, `fact_serving_admin_hash`, `account_status` (per case) |
 | `transport_composition` | the front-door table over REST, RPC `POST` and `GET`, the WS upgrade, and the audit stream: foreign `Origin` → 403, over-cap length → 413, no credential → 401, a narrowed bearer → each surface's denial | `ws`, `sse`, `ws_refusal_body` (per row) |
 | `ws_connection_cap` | one socket past the per-account cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT` and nothing else; a closed connection frees its slot | `ws` |
