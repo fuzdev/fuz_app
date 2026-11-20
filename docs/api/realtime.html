@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BS0sHHyl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C7d70emn.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DHINP09T.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CdNozeRl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -106,13 +106,12 @@ WebSocket or an SSE stream.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[-
 from anywhere, so a client that stopped reading makes the server hold what it
 has not taken. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/outbound_budget.ts#OutboundBudget"><!--[0--><!--[-1-->OutboundBudget<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is the bound on that, and it is accounting
 only — its owner holds the frames and decides what "waiting" means for its
-connection (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/ws_outbound_writer.ts#WsOutboundWriter"><!--[0--><!--[-1-->WsOutboundWriter<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for a WebSocket, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse.ts#create_sse_response"><!--[0--><!--[-1-->create_sse_response<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for an
-SSE stream).<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->The charge.<!--]--><!--]--><!----></strong><!--]--><!--[2--> Each waiting frame is charged its payload bytes — the
+connection (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/ws_outbound_writer.ts#WsOutboundWriter"><!--[0--><!--[-1-->WsOutboundWriter<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for a WebSocket, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse.ts#create_sse_stream"><!--[0--><!--[-1-->create_sse_stream<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for an SSE stream).<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->The charge.<!--]--><!--]--><!----></strong><!--]--><!--[2--> Each waiting frame is charged its payload bytes — the
 UTF-8 length of its text — plus <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/outbound_budget.ts#OUTBOUND_FRAME_OVERHEAD_BYTES"><!--[0--><!--[-1-->OUTBOUND_FRAME_OVERHEAD_BYTES<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->The rule.<!--]--><!--]--><!----></strong><!--]--><!--[2--> A frame is admitted when the charges already waiting plus
 its own stay within the budget — and, whatever its size, when nothing is
 waiting, so a single message larger than the whole budget is deliverable.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Nothing counts frames: any number may wait while their charges fit. The twin
 of the Rust spine's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_realtime<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> outbound queue, with the same charge and
-the same rule.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse_constants.ts"><!--[-1-->realtime/sse_constants.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono-free SSE wire constants, and the keep-alive interval's check.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sse.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/streaming<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->streamSSE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) so the
+the same rule.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse_constants.ts"><!--[-1-->realtime/sse_constants.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono-free SSE wire constants, and the keep-alive interval's check.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->sse.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/streaming<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SSEStreamingApi<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) so the
 stream-framing constants are importable by cross-process test suites
 asserting on the wire without dragging in the in-process Hono SSE
 implementation.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse_registry.ts"><!--[-1-->realtime/sse_registry.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Generic registry of SSE streams for broadcasting to SSE clients.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Supports channel-based filtering — subscribers connect with optional
@@ -145,16 +144,16 @@ and the timer stops when the stream closes. <!--]--><!--[3--><!--[0--><!--[--><!
 			
 			<script>
 				{
-					__sveltekit_1gegph5 = {
+					__sveltekit_g787na = {
 						base: "",
-						version: "28779b721f6807ed678cf2251404aa4c9c8a8ec5"
+						version: "0114ee449d883bdde68886e245dc348c93529924"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1gegph5);
-						const app = await import("/_app/immutable/entry/app.BS0sHHyl.js");
+						kit.init(__sveltekit_g787na);
+						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

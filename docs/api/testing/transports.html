@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BS0sHHyl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C7d70emn.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DHINP09T.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CdNozeRl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -115,7 +115,10 @@ without an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!-
 configured <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->base_url<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is safe.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The cookie jar is intentionally simple — it does not honour <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Domain<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Path<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Expires<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SameSite<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> attributes. Cross-process tests
 always hit a single host:port, so name-keyed last-write-wins matches
-the behaviour real browsers exhibit against the same surface.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/transports/raw_http.ts"><!--[-1-->testing/transports/raw_http.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw-socket HTTP/1.1 exchanges, for tests that need to control exactly which
+the behaviour real browsers exhibit against the same surface. It does
+honour a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Max-Age<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> of zero or less, dropping the cookie as a browser does:
+a cleared session cookie kept as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->name=<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would be re-sent as an invalid
+cookie, which both spines answer by clearing it again.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/transports/raw_http.ts"><!--[-1-->testing/transports/raw_http.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw-socket HTTP/1.1 exchanges, for tests that need to control exactly which
 bytes reach the server.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fetch<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> frames a request itself and sends all of it, so some server
 behaviors can't be reached through it: what a server does with two requests
 in one write, with duplicate or malformed headers, with a request head whose
@@ -162,16 +165,16 @@ themselves (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->npm inst
 			
 			<script>
 				{
-					__sveltekit_1gegph5 = {
+					__sveltekit_g787na = {
 						base: "",
-						version: "28779b721f6807ed678cf2251404aa4c9c8a8ec5"
+						version: "0114ee449d883bdde68886e245dc348c93529924"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1gegph5);
-						const app = await import("/_app/immutable/entry/app.BS0sHHyl.js");
+						kit.init(__sveltekit_g787na);
+						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

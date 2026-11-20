@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BS0sHHyl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C7d70emn.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DHINP09T.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CdNozeRl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -110,13 +110,13 @@ wire response — directly assertable.<!--]--><!--]--><!----></p><!--]--><!--[8-
 (via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/ws_transport.ts#create_ws_transport"><!--[0--><!--[-1-->create_ws_transport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s seam) so the server-initiated request is
 answered as soon as it arrives. Security negatives use the raw
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WsClient.send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to inject unsolicited / cross-connection frames.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Per-spec auth.<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->peer/ping<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth: public<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (a liveness echo is
-non-sensitive — see the design doc); the WS upgrade itself still
+non-sensitive); the WS upgrade itself still
 authenticates, so the suite drives it over the keeper's session.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilities.peer_request<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which a backend declares once it
 mounts <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->peer/ping<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on a WS endpoint and the HTTP RPC endpoint — the TS
 spine binaries (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ConnectionRegistry.request_connection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the
 Rust spine both do. Cross-process only: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/ws_transport.ts#create_ws_transport"><!--[0--><!--[-1-->create_ws_transport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> needs a real bound
 socket, so wire it from a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*.cross.test.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[--><!--]--> <!--[-1--><!--]--></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/cross_backend/peer_ping_ws.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="block relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->2 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">describe_peer_ping_ws_tests</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#describe_peer_ping_ws_tests"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="describe_peer_ping_ws_tests" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="describe_peer_ping_ws_tests"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/peer_ping_ws.ts"><!--[-1-->testing/cross_backend/peer_ping_ws.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/cross_backend/peer_ping_ws.ts#L95" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>options<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">PeerPingWsTestOptions</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_keyword">void</span></span></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>describe_peer_ping_ws_tests<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/cross_backend/peer_ping_ws.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Register the server-initiated <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->peer/ping<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> suite — a positive round-trip
-plus the security negatives the design doc's §Security surface mandates
+plus the security negatives
 (unsolicited-response rejection, per-connection id isolation, never-reply
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Timeout<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, wrong-shape reply rejection, plus client-error forwarding, the
 reading of a malformed client error, and the HTTP no-transport path).
@@ -124,16 +124,16 @@ Gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilitie
 			
 			<script>
 				{
-					__sveltekit_1gegph5 = {
+					__sveltekit_g787na = {
 						base: "",
-						version: "28779b721f6807ed678cf2251404aa4c9c8a8ec5"
+						version: "0114ee449d883bdde68886e245dc348c93529924"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1gegph5);
-						const app = await import("/_app/immutable/entry/app.BS0sHHyl.js");
+						kit.init(__sveltekit_g787na);
+						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

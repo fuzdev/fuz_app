@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BS0sHHyl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C7d70emn.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DHINP09T.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CdNozeRl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -450,11 +450,15 @@ reach whatever the account's connection reaches, with no per-recipient
 filter to narrow them by, so a scoped token that could upgrade would
 observe far more than it was granted.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Authorization phase<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#run_authorization_phase"><!--[0--><!--[-1-->run_authorization_phase<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — the acting actor
 from the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?acting=&lt;uuid><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> query string (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/auth_shape.ts#parse_acting"><!--[0--><!--[-1-->parse_acting<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->; malformed reads
-as omitted), against the authenticated account, building the
+as omitted, but a query holding an escape that doesn't decode, in any
+key, is a 400 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_query_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/request_target.ts#read_request_query_pairs"><!--[0--><!--[-1-->read_request_query_pairs<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->),
+against the authenticated account, building the
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> per-message dispatch reads (400s on actor selection).
 Multi-actor accounts must supply <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?acting<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; single-actor accounts work
 without it.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->require_role(required_roles)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, for a gated endpoint (403).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ol><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Only <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is mounted (Hono serves <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->HEAD<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> through it), so any other method
-on the path is a 404. The guards run as middleware ahead of
+on the path is the assembled server's 405 (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/server/unmatched_route.ts"><!--[0--><!--[-1-->server/unmatched_route.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->),
+and a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the guards admit that asks for no upgrade passes on to its
+404. The guards run as middleware ahead of
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->upgradeWebSocket<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, whose callback must return <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WSEvents<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and so cannot
 produce a refusal.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Symmetric to <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_rpc.ts#create_rpc_endpoint"><!--[0--><!--[-1-->create_rpc_endpoint<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (from <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/actions/action_rpc.ts"><!--[0--><!--[-1-->actions/action_rpc.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->):
 both transports parse their wire envelope, then call the shared
@@ -804,16 +808,16 @@ everything and answers nothing.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_1gegph5 = {
+					__sveltekit_g787na = {
 						base: "",
-						version: "28779b721f6807ed678cf2251404aa4c9c8a8ec5"
+						version: "0114ee449d883bdde68886e245dc348c93529924"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1gegph5);
-						const app = await import("/_app/immutable/entry/app.BS0sHHyl.js");
+						kit.init(__sveltekit_g787na);
+						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

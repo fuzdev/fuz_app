@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BS0sHHyl.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.C7d70emn.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DHINP09T.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CdNozeRl.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -155,9 +155,9 @@ registry<span class="token_punctuation">.</span><span class="token_function">clo
 <span class="token_keyword">const</span> pending <span class="token_operator">=</span> registry<span class="token_punctuation">.</span><span class="token_function">subscribe_pending</span><span class="token_punctuation">({</span>scope<span class="token_operator">:</span> session_hash<span class="token_punctuation">,</span> groups<span class="token_operator">:</span> <span class="token_punctuation">[</span>account_id<span class="token_punctuation">]});</span>
 <span class="token_special_keyword">if</span> <span class="token_punctuation">(</span><span class="token_operator">!</span><span class="token_punctuation">(</span><span class="token_special_keyword">await</span> <span class="token_function">credential_is_still_live</span><span class="token_punctuation">()))</span> <span class="token_punctuation">{</span>
   pending<span class="token_punctuation">.</span><span class="token_function">unsubscribe</span><span class="token_punctuation">();</span>
-  <span class="token_special_keyword">return</span> <span class="token_function">unauthorized</span><span class="token_punctuation">();</span>
+  <span class="token_special_keyword">return</span> <span class="token_function">route_fail</span><span class="token_punctuation">(</span><span class="token_constant">REST_AUTHENTICATION_REQUIRED</span><span class="token_punctuation">);</span>
 <span class="token_punctuation">}</span>
-<span class="token_keyword">const</span> <span class="token_punctuation">{</span>response<span class="token_punctuation">,</span> stream<span class="token_punctuation">}</span> <span class="token_operator">=</span> <span class="token_function">create_sse_response</span><span class="token_punctuation">(</span>c<span class="token_punctuation">,</span> log<span class="token_punctuation">);</span>
+<span class="token_keyword">const</span> stream <span class="token_operator">=</span> route<span class="token_punctuation">.</span><span class="token_function">open_sse</span><span class="token_punctuation">();</span>
 <span class="token_comment">// first: a client that already left closes the stream, its listener runs at</span>
 <span class="token_comment">// once, and `admit` then refuses the removed registration</span>
 stream<span class="token_punctuation">.</span><span class="token_function">on_close</span><span class="token_punctuation">(</span>pending<span class="token_punctuation">.</span>unsubscribe<span class="token_punctuation">);</span>
@@ -171,7 +171,7 @@ stream<span class="token_punctuation">.</span><span class="token_function">on_cl
     <span class="token_punctuation">)</span>
   <span class="token_punctuation">);</span>
 <span class="token_punctuation">}</span>
-<span class="token_special_keyword">return</span> response<span class="token_punctuation">;</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></section><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>constructor<!--[-1--><!--]--></code></h4> <!--[-1--><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_keyword">new</span> <span class="token_operator">&lt;</span><span class="token_capitalized_identifier token_class_name">T</span><span class="token_operator">></span><span class="token_punctuation">(</span>options<span class="token_operator">?</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">SseRegistryOptions</span> <span class="token_operator">|</span> <span class="token_keyword">undefined</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">SseRegistry</span><span class="token_operator">&lt;</span><span class="token_type_name token_class_name">T</span><span class="token_operator">></span></span></span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>options<!--[0--><strong>?</strong><!--]--></code></h4> <!--[-1--><!--]--> <div class="row gap_md mb_sm"><strong>type</strong> <!--[1--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse_registry.ts#SseRegistryOptions"><!--[-1-->SseRegistryOptions<!--]--></a><!--]--><!--]--><!----></div> <!--[0--><div class="row gap_md"><!--[0--><strong>optional</strong><!--]--> <!--[-1--><!--]--></div><!--]--></section><!--]--></section><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>subscribe<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Add a subscriber, admitted at once — the one-step form of
+<span class="token_special_keyword">return</span> <span class="token_function">route_sse</span><span class="token_punctuation">(</span>stream<span class="token_punctuation">);</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></section><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>constructor<!--[-1--><!--]--></code></h4> <!--[-1--><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_keyword">new</span> <span class="token_operator">&lt;</span><span class="token_capitalized_identifier token_class_name">T</span><span class="token_operator">></span><span class="token_punctuation">(</span>options<span class="token_operator">?</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">SseRegistryOptions</span> <span class="token_operator">|</span> <span class="token_keyword">undefined</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">SseRegistry</span><span class="token_operator">&lt;</span><span class="token_type_name token_class_name">T</span><span class="token_operator">></span></span></span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><section class="svelte-pitz0d"><!--[--><section class="svelte-pitz0d"><h4><code>options<!--[0--><strong>?</strong><!--]--></code></h4> <!--[-1--><!--]--> <div class="row gap_md mb_sm"><strong>type</strong> <!--[1--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse_registry.ts#SseRegistryOptions"><!--[-1-->SseRegistryOptions<!--]--></a><!--]--><!--]--><!----></div> <!--[0--><div class="row gap_md"><!--[0--><strong>optional</strong><!--]--> <!--[-1--><!--]--></div><!--]--></section><!--]--></section><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>subscribe<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Add a subscriber, admitted at once — the one-step form of
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->subscribe_pending<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Not for a route that authenticated a revocable credential<!--]--><!--]--><!----></strong><!--]--><!--[2-->: a
 revocation landing between that route's gates and this call closes
 nothing, and the stream would open on a dead credential (class doc,
@@ -216,16 +216,16 @@ but NOT subject to the cap. Use for coarse-targeted close.<!--]--><!--]--><!----
 			
 			<script>
 				{
-					__sveltekit_1gegph5 = {
+					__sveltekit_g787na = {
 						base: "",
-						version: "28779b721f6807ed678cf2251404aa4c9c8a8ec5"
+						version: "0114ee449d883bdde68886e245dc348c93529924"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1gegph5);
-						const app = await import("/_app/immutable/entry/app.BS0sHHyl.js");
+						kit.init(__sveltekit_g787na);
+						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
