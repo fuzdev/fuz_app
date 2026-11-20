@@ -205,7 +205,7 @@ spines, and an authorized one is `invalid_params`.
 
 Shim responsibilities (per-request):
 
-1. Parse envelope (POST body / GET query string, each through `parse_json_text`, `http/json_text.ts`, so JSON the Rust spine refuses is refused here too); parse errors → `parse_error` 400, a `GET` `params` that is no JSON `invalid_params`. GET reads `method` / `id` / `params` through `route.query_first` (Hono's `c.req.query(name)`) — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
+1. Parse envelope (POST body / GET query string, each through `parse_json_text`, `http/json_text.ts`, so JSON the Rust spine refuses is refused here too); parse errors → `parse_error` 400, a `GET` `params` that is no JSON `invalid_params`. GET reads `method` / `id` / `params` with `query_first` over `route.query_pairs` (the query decoded strictly, `http/request_target.ts`) — a query holding an escape that doesn't decode is `invalid_request` on `id: null` with reason `undecodable query string` (`RPC_GET_UNDECODABLE_QUERY_REASON`), ahead of the method lookup; first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
 3. GET read restriction — GET rejected for `side_effects: true` actions. Every answer of the GET route carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`), declared as the spec's `response_headers`, so the handler's refusals and the error catch's 500 carry it too; a refusal by middleware ahead of the route, like the origin 403, does not: a read answers one caller at one moment.
 4. Build `PerformActionInput` from the route context: `route.credential`, `route.client_ip`, `route.signal`. The test-preset escape hatch reads `route.has_test_context_preset` and `route.auth`.
@@ -841,7 +841,7 @@ shape `{account: 'required', actor: 'required', roles?, required_scope:
 1. `verify_request_source(allowed_origins)` — 403
 2. `require_auth` — 401
 3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket (403 `token_scope_required`)
-4. The authorization phase (`run_authorization_phase`, `auth/request_context.ts`) — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted, and the route declares no query schema, so a credential-less `?acting=garbage` is still the 401), seeds `REQUEST_CONTEXT_KEY`
+4. The authorization phase (`run_authorization_phase`, `auth/request_context.ts`) — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted, and the route declares no query schema, so a credential-less `?acting=garbage` is still the 401; a query holding an escape that doesn't decode is refused here, 400 `invalid_query_params`, after the 401 and the scope gate), seeds `REQUEST_CONTEXT_KEY`
 5. `require_role(required_roles)` when the endpoint is gated — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
 6. `upgradeWebSocket`
 

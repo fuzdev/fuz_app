@@ -16,7 +16,7 @@ validated data as `route.input` (and `route.params`, `route.query`), typed
 from the spec's schemas. It never receives the Hono context: `route` also
 carries `auth` (the request context, non-null by type on a route that
 requires an account), `credential`, `client_ip`, `signal`, `db`, and the
-readers for what the pipeline doesn't validate (`request`, `query_first`,
+readers for what the pipeline doesn't validate (`request`, `query_pairs`,
 `read_json_body`, `header_lines`).
 
 A handler returns a result and the framework builds the response:

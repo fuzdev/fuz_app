@@ -54,8 +54,8 @@ import {
 	ERROR_UNSUPPORTED_CONTENT_TYPE
 } from '../../http/error_schemas.ts';
 import {
+	raw_http_error_code,
 	raw_http_exchange,
-	raw_http_parse_json,
 	raw_http_parse_response,
 	raw_http_request,
 	RAW_HTTP_READ_TIMEOUT_MS,
@@ -150,12 +150,6 @@ interface WireCheck {
 	readonly has_content_type: boolean;
 }
 
-/** The refusal code of an error body, or `null` for a body that names none. */
-const error_code_of = (response: RawHttpResponse): string | null => {
-	const body = raw_http_parse_json(response.body) as { error?: unknown } | undefined;
-	return typeof body?.error === 'string' ? body.error : null;
-};
-
 const format_outcome = (outcome: RequestHeaderConformanceOutcome): string =>
 	'refused' in outcome ? `refused ${outcome.refused}` : String(outcome.authenticates);
 
@@ -221,7 +215,7 @@ export const describe_request_header_conformance_wire_cross_tests = (
 			return [`expected ${status} ${code}, got ${response.status} (${response.body.slice(0, 80)})`];
 		}
 		if (body_optional && response.body === '') return [];
-		const got = error_code_of(response);
+		const got = raw_http_error_code(response);
 		return got === code ? [] : [`expected the code ${code}, got ${String(got)}`];
 	};
 

@@ -1,0 +1,10 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: the query string and path params are decoded strictly — an escape that doesn't decode is refused, never left literal
+
+- break: every query and path-param read goes through the readers of the new `http/request_target.ts` — `read_query_pairs` and `read_path_segment`, each a `Result` refusing a `%` not followed by two hex digits (`malformed_escape`) and decoded bytes that are not UTF-8 (`invalid_utf8`). Hono left a whole run of escapes literal when one failed, so `%FF` and `%25FF` reached a handler as the same text; the Rust spine wrote U+FFFD. Both now refuse, by the same rule (`fuz_http::request_target`), held to `testing/cross_backend/request_target_conformance.json`. `+` is still a space and the first occurrence of a key still wins
+- break: a route with a `params` schema answers 400 `invalid_route_params` (no `issues`) to a param that doesn't decode, whatever the schema — a free-text param no longer receives `%FF` as text. A route with a `query` schema answers 400 `invalid_query_params` to an undecodable escape in any key or value. The RPC `GET` answers `invalid_request` on `id: null` with reason `undecodable query string` (`RPC_GET_UNDECODABLE_QUERY_REASON`), ahead of the method lookup and the per-action 401. A WebSocket upgrade answers 400 `invalid_query_params` after the 401 and the scope gate; `GET /account/status` the same after its anonymous 401, and declares it. A route that reads no query refuses nothing in it
+- break: `RouteContext.query_first(name)` is replaced by `RouteContext.query_pairs` (a `QueryPairsRead`), read with `query_first(pairs, key)` from `http/request_target.ts` — a handler reading an undeclared key decides how an undecodable query is refused in its own shape
+- testing: the `request_target_conformance_wire` suite joins `describe_spine_cross_suites` (each `wire` row sent over a raw socket as written); `create_rpc_envelope_cases` gains the GET undecodable-query case; `raw_http_error_code` reads a JSON refusal's `error`. A consumer's Rust backend needs the fuz spine of the same change

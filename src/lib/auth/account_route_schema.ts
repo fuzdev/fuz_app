@@ -30,7 +30,8 @@ import { Password, PasswordProvided } from './password.ts';
 import { define_route_shape } from '../http/route_spec.ts';
 import {
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
-	REST_INVALID_CREDENTIALS
+	REST_INVALID_CREDENTIALS,
+	REST_INVALID_QUERY_PARAMS
 } from '../http/error_schemas.ts';
 
 /** Input for `GET /api/account/status`, `literal(null)`. No parameters — caller is the subject. */
@@ -137,7 +138,8 @@ export const account_status_route_shape = define_route_shape({
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
-	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP]
+	// the query is read after the anonymous 401, decoded strictly
+	errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, REST_INVALID_QUERY_PARAMS]
 });
 
 /** Option inputs that shape the account route metadata (not its handlers). */

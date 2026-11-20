@@ -37,6 +37,11 @@ import {
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { ERROR_INTERNAL_ERROR, REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
+import { query_first, type QueryPairsRead } from '#lib/http/request_target.ts';
+
+/** A query key's first value, as a handler reads one off `route.query_pairs`. */
+const query_of = (route: { query_pairs: QueryPairsRead }, name: string): string | undefined =>
+	route.query_pairs.ok ? query_first(route.query_pairs.value, name) : undefined;
 
 const log = new Logger('test', { level: 'off' });
 
@@ -98,7 +103,7 @@ const echo_route = define_route({
 			preset: route.has_test_context_preset,
 			signal_is_signal: route.signal instanceof AbortSignal,
 			request_url: new URL(route.request.url).pathname,
-			extra: route.query_first('extra') ?? null,
+			extra: query_of(route, 'extra') ?? null,
 			header_lines: route.header_lines('x-probe'),
 			// the pipeline's read, shared: a second read of the body would fail
 			body_read: body.ok ? body.value : 'refused'
@@ -239,7 +244,7 @@ describe('RouteContext.close_connection', () => {
 			...shape,
 			path: '/close/maybe',
 			handler: (route) => {
-				if (route.query_first('close') === '1') route.close_connection();
+				if (query_of(route, 'close') === '1') route.close_connection();
 				return route_ok({});
 			}
 		})

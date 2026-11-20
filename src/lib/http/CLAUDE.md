@@ -35,6 +35,7 @@ effects, see ../../../docs/architecture.md.
 - `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and its own `parse_ipv4_bits` / `parse_ipv6_bits` (the grammar of Rust's `IpAddr::from_str`); `IP_LITERAL_CHARS` regex. Imports nothing — the dispatcher keys its IP limiter through it, so it must stay hono-free (`src/test/hono_free_modules.test.ts` walks every `src/lib` module's graph).
 - `http/header_lines.ts` — `get_header_lines(c, name)`: a request header as the lines the client sent — Node's raw header list where `@hono/node-server` provides it (`c.env.incoming.rawHeaders`, plain requests and WebSocket upgrades alike), else the Fetch value as one line (Bun, in-process `app.request`: repeated lines arrive joined) — and `trim_optional_whitespace` (SP and HTAB only). What the credential readers (`auth/credential_headers.ts`) and the gate readers (`http/request_headers.ts`) read, so a header sent twice or empty is seen as such.
 - `http/request_headers.ts` — the gates' header grammar as pure readers over header lines, hono-free: `read_origin`, `read_host`, `read_content_type` (each a `HeaderRead` — `absent`, `one` well-formed line, or `refused`: an empty line, a second line, a byte off the grammar, a comma anywhere) and `is_browser_context(origin_lines, referer_lines)` (any line, an empty one included). A comma is refused so a repeat reads the same joined (Bun, in-process) as it does line by line. Twin of the Rust `fuz_http::request_headers`; both held to `testing/cross_backend/request_header_conformance.json`. `src/test/request_reads_census.test.ts` holds every raw request read in `src/lib` to a per-module allowlist, and these headers and the credential ones to `get_header_lines`.
+- `http/request_target.ts` — the strict readers of the request target: `read_query_pairs` (the query string to its decoded pairs) and `read_path_segment` (one path segment to its text), each a `Result` that refuses an escape that doesn't decode (`PercentDecodeError`: `malformed_escape`, `invalid_utf8`) — never left literal, never replaced with U+FFFD — plus `query_first` / `to_query_record` over the pairs and the two Hono-bound readers every query and param read in the spine goes through (`read_request_query_pairs`, `read_request_route_params`). `+` is a space and the first occurrence of a key wins, as before. Twin of the Rust `fuz_http::request_target`; both held to `testing/cross_backend/request_target_conformance.json`.
 - `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
 - `http/host.ts` — the host gate (DNS rebinding): `is_loopback_host`, `allows_host` / `allows_request_hosts` over the origin matchers, `create_host_gate_middleware_spec` (`'*'`, 403 `forbidden_host`, on by default in `create_app_server`) and its rate-limited refusal warning (`format_host_refusal_warning`). Twin of the Rust `fuz_http::host`; reads the `Host` lines through `read_host`; verdicts pinned by the host rows of `testing/cross_backend/origin_conformance.json` and, over repeated and empty lines on the wire, by `request_header_conformance.json` (../../../docs/security.md §DNS Rebinding).
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset, fuz_schema), `JsonrpcErrorCode`.
@@ -186,7 +187,7 @@ interface RouteContext<TAuth, TInput, TParams, TQuery> {
 	query: TQuery; // validated query; undefined without a `query` schema
 	has_test_context_preset: boolean; // a harness pre-built `auth`; never in production
 	request: Request; // the raw request: a `raw_body` stream, the undecoded URL
-	query_first: (name: string) => string | undefined; // an undeclared query key, as Hono decodes it
+	query_pairs: QueryPairsRead; // the query decoded strictly, or why it doesn't decode; a key read with `query_first(pairs, key)`
 	read_json_body: () => Promise<JsonBodyResult>; // the once-per-request JSON read
 	header_lines: (name: string) => Array<string>; // a header as the lines sent
 	close_connection: () => void; // answer with `Connection: close`
@@ -215,9 +216,13 @@ interface RouteContext<TAuth, TInput, TParams, TQuery> {
   not normalized (`::ffff:127.0.0.1` stays that) — for a route that admits
   loopback callers only. `null` when the trusted-proxy middleware isn't
   mounted.
-- **Reading the request.** `query_first(name)` is Hono's `c.req.query(name)`
-  — first occurrence, Hono's decoding, `''` for a key with no value — the
-  cross-implementation contract the `query_shape` suite pins;
+- **Reading the request.** `query_pairs` is the query string read by
+  `read_query_pairs` (`http/request_target.ts`): every pair percent-decoded,
+  or the reason it doesn't decode — a handler that reads an undeclared key
+  refuses an undecodable query in its own shape (the RPC `GET` its envelope)
+  and reads a key with `query_first(pairs, key)` — first occurrence, `''`
+  for a key with no value, the cross-implementation contract the
+  `query_shape` suite pins;
   `read_json_body()` shares the one body read with the authorization phase
   and input validation; `request` is the raw `Request`, whose body is
   already used on a route the pipeline read a JSON input for.
@@ -260,8 +265,8 @@ wrapper). See `auth/signup_routes.ts`.
 one stage that writes the spec's `response_headers` on the context (when it
 declares any), so every stage after it answers with them:
 
-1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with `issues`
-2. **Query validation** — `spec.query` → `validated_query`; mismatch returns 400 `ERROR_INVALID_QUERY_PARAMS`
+1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with `issues`. Each param is decoded strictly from the raw target first (`read_request_route_params`): an escape that doesn't decode is the same 400 with no `issues`, whatever the schema
+2. **Query validation** — `spec.query` → `validated_query`; mismatch returns 400 `ERROR_INVALID_QUERY_PARAMS`. The query is decoded strictly first (`read_request_query_pairs`): an escape that doesn't decode, in any key or value, is the same 400
 3. **Pre-authorization auth guards** — every gate that reads only what the auth middleware set, in coarse-to-fine order: `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`; `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) when `auth.credential_types?.length`; `require_token_scope(capability)` (403 `ERROR_TOKEN_SCOPE_REQUIRED` with `required_scope`, the token-scope refusal) when `auth.required_scope` names a capability. All fire before any body parsing — so a caller they refuse never sees route-shape information from input parse failures — and before actor resolution, so a wrong channel costs no DB work and never learns account state (e.g. that the account is multi-actor). The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_authorization: Array<MiddlewareHandler>`.
 4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.

@@ -334,6 +334,17 @@ export const raw_http_parse_json = (body: string): unknown => {
 };
 
 /**
+ * The REST error code of a response body — its `error` member — or `null`
+ * for a body that names none (not JSON, no `error` string).
+ *
+ * @param response - the parsed response
+ */
+export const raw_http_error_code = (response: RawHttpResponse): string | null => {
+	const body = raw_http_parse_json(response.body) as { error?: unknown } | undefined;
+	return typeof body?.error === 'string' ? body.error : null;
+};
+
+/**
  * Count HTTP response status lines in a raw byte stream. Deliberately
  * **unanchored** (no `^`/`m`): a second pipelined response is concatenated
  * straight after the first response's body, which carries no trailing newline,

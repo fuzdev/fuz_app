@@ -28,6 +28,11 @@ import {
 	rest_error
 } from '#lib/http/error_schemas.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
+import { query_first, type QueryPairsRead } from '#lib/http/request_target.ts';
+
+/** A query key's first value, as a handler reads one off `route.query_pairs`. */
+const query_of = (route: { query_pairs: QueryPairsRead }, name: string): string | undefined =>
+	route.query_pairs.ok ? query_first(route.query_pairs.value, name) : undefined;
 
 const servers: Array<AppServer> = [];
 afterEach(async () => {
@@ -52,8 +57,8 @@ const echo_route = (errors?: RouteSpec['errors']): RouteSpec => {
 		input: literal(null),
 		output: object({ ok: literal(true) }),
 		handler: (route) => {
-			const code = route.query_first('code');
-			const status = Number(route.query_first('status'));
+			const code = query_of(route, 'code');
+			const status = Number(query_of(route, 'status'));
 			return code ? json_raw({ error: code }, status) : route_ok({ ok: true });
 		}
 	});

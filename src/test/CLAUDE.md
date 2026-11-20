@@ -256,6 +256,7 @@ runs cross-process only:
 | `origin_conformance` | `http/origin.conformance.test.ts` (TS unit leg) |
 | `origin_scope` | `cross_backend/origin_scope_parity.db.test.ts` |
 | `request_header_conformance_wire` | `http/request_header_conformance.test.ts` (TS unit leg: the pure readers over every row, and each row read the same joined) |
+| `request_target_conformance_wire` | `http/request_target_conformance.test.ts` (TS unit leg: the pure readers over every `query` and `param` row) |
 | `ready` | `cross_backend/ready_parity.db.test.ts` (fixture guard `cross_backend/spine_expected_schema.db.test.ts`) |
 | `role_grant_offer_lifecycle` | `cross_backend/conformance_participation.db.test.ts` |
 | `role_grant_participation` | `cross_backend/conformance_participation.db.test.ts` |
@@ -338,7 +339,8 @@ differences live in `differential_known_divergences.ts`, each with its
 tracking id and the paths it differs at, and the ledger's closing test fails
 on an entry that no longer differs; and
 `conformance_table_copies.cross.test.ts` holds each twin table
-(`credential_conformance.json`, `request_header_conformance.json`) byte-equal
+(`credential_conformance.json`, `request_header_conformance.json`,
+`request_target_conformance.json`) byte-equal
 to the copy the Rust spine embeds, failing when the checkout the stub builds
 from lacks one
 — all under `npm run test:cross:parity`.

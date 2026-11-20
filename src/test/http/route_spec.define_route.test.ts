@@ -34,6 +34,7 @@ import type { ResolvedAuth } from '#lib/auth/resolved_auth.ts';
 import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 import { route_fail, route_ok, route_raw, route_sse } from '#lib/http/route_result.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
+import { query_first, type QueryPairsRead } from '#lib/http/request_target.ts';
 import {
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TOKEN_SCOPE_REQUIRED,
@@ -51,6 +52,10 @@ import {
 	type RestErrorDef
 } from '#lib/http/error_schemas.ts';
 
+/** A query key's first value, as a handler reads one off `route.query_pairs`. */
+const query_of = (route: { query_pairs: QueryPairsRead }, name: string): string | undefined =>
+	route.query_pairs.ok ? query_first(route.query_pairs.value, name) : undefined;
+
 const shape = {
 	method: 'GET',
 	path: '/x',
@@ -66,7 +71,7 @@ const unreachable = (): never => {
 };
 
 const prebuilt = (route: RouteContext) =>
-	route.query_first('x') ? route_fail(REST_ROW_NOT_FOUND) : route_ok({ n: 1 });
+	query_of(route, 'x') ? route_fail(REST_ROW_NOT_FOUND) : route_ok({ n: 1 });
 
 const split_shape = define_route_shape({ ...shape, errors: [REST_TABLE_NOT_FOUND] });
 
@@ -78,13 +83,13 @@ export const type_cases = (c: Context): Array<unknown> => [
 		...shape,
 		errors: [REST_TABLE_NOT_FOUND],
 		handler: async (route) => {
-			if (route.query_first('a')) return route_fail(REST_TABLE_NOT_FOUND);
-			if (route.query_first('b')) return route_fail(REST_INTERNAL_ERROR);
-			if (route.query_first('c')) return route_fail(REST_SERVICE_UNAVAILABLE);
-			if (route.query_first('d')) {
+			if (query_of(route, 'a')) return route_fail(REST_TABLE_NOT_FOUND);
+			if (query_of(route, 'b')) return route_fail(REST_INTERNAL_ERROR);
+			if (query_of(route, 'c')) return route_fail(REST_SERVICE_UNAVAILABLE);
+			if (query_of(route, 'd')) {
 				return route_raw({ status: 200, headers: { 'Content-Type': 'text/plain' }, body: 'bytes' });
 			}
-			if (route.query_first('e')) return route_sse(null as unknown as SseStream<{ n: number }>);
+			if (query_of(route, 'e')) return route_sse(null as unknown as SseStream<{ n: number }>);
 			return route_ok({ n: 1 });
 		}
 	}),
@@ -172,9 +177,9 @@ export const type_cases = (c: Context): Array<unknown> => [
 		...shape,
 		errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP],
 		handler: (route) =>
-			route.query_first('a')
+			query_of(route, 'a')
 				? route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP)
-				: route.query_first('b')
+				: query_of(route, 'b')
 					? route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, {})
 					: route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, { bootstrap_available: true })
 	}),
@@ -224,7 +229,7 @@ export const type_cases = (c: Context): Array<unknown> => [
 		...shape,
 		auth: { account: 'required', actor: 'none', roles: ['admin'], credential_types: ['session'] },
 		handler: (route) =>
-			route.query_first('a')
+			query_of(route, 'a')
 				? route_fail(REST_INSUFFICIENT_PERMISSIONS, { required_roles: ['admin'] })
 				: route_fail(REST_CREDENTIAL_TYPE_REQUIRED, { required_credential_types: ['session'] })
 	}),

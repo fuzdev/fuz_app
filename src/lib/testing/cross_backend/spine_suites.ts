@@ -172,6 +172,10 @@ import {
 	type RequestHeaderConformanceWireCrossTestOptions
 } from './request_header_conformance_wire.ts';
 import {
+	describe_request_target_conformance_wire_cross_tests,
+	type RequestTargetConformanceWireCrossTestOptions
+} from './request_target_conformance_wire.ts';
+import {
 	describe_role_grant_offer_enumeration_cross_tests,
 	OFFER_GRANTOR_USERNAME,
 	type RoleGrantOfferEnumerationCrossTestOptions
@@ -305,6 +309,7 @@ export const SUITE_NAMES = [
 	'query_shape',
 	'ready',
 	'request_header_conformance_wire',
+	'request_target_conformance_wire',
 	'role_grant_offer_enumeration',
 	'role_grant_offer_lifecycle',
 	'role_grant_offer_notification_ws',
@@ -390,6 +395,7 @@ export interface SuiteOptionsMap {
 	query_shape: QueryShapeCrossTestOptions;
 	ready: ReadyCrossTestOptions;
 	request_header_conformance_wire: RequestHeaderConformanceWireCrossTestOptions;
+	request_target_conformance_wire: RequestTargetConformanceWireCrossTestOptions;
 	role_grant_offer_enumeration: RoleGrantOfferEnumerationCrossTestOptions;
 	role_grant_offer_lifecycle: RoleGrantOfferLifecycleCrossTestOptions;
 	role_grant_offer_notification_ws: RoleGrantOfferNotificationWsTestOptions;
@@ -822,6 +828,23 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			cookie_name: true,
 			daemon_token: true
 		}
+	},
+	request_target_conformance_wire: {
+		// the keeper holds the upgrade's roles, so its session can open a socket
+		// (it already holds the builtin ones)
+		derive: (c) => ({
+			setup_test: c.setup({
+				extra_keeper_roles: (c.options.ws_required_roles ?? []).filter(
+					(role) => role !== ROLE_KEEPER && role !== ROLE_ADMIN
+				)
+			}),
+			capabilities: c.config.capabilities,
+			base_url: c.config.base_url,
+			rpc_path: c.config.rpc_path,
+			ws_path: c.config.ws_path
+		}),
+		describe: describe_request_target_conformance_wire_cross_tests,
+		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	role_grant_offer_enumeration: {
 		// a sibling actor for the wrong-persona arm, and a single-actor admin

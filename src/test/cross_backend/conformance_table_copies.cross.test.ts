@@ -19,6 +19,7 @@ import { describe, test, assert } from 'vitest';
 
 import { CREDENTIAL_CONFORMANCE_URL } from '#lib/testing/cross_backend/credential_conformance.ts';
 import { REQUEST_HEADER_CONFORMANCE_URL } from '#lib/testing/cross_backend/request_header_conformance.ts';
+import { REQUEST_TARGET_CONFORMANCE_URL } from '#lib/testing/cross_backend/request_target_conformance.ts';
 
 import { resolve_rust_spine_stub_workspace_dir } from './global_setup_helpers.ts';
 
@@ -39,6 +40,11 @@ const TWIN_TABLES: ReadonlyArray<TwinTable> = [
 		name: 'request_header_conformance.json',
 		ts_url: REQUEST_HEADER_CONFORMANCE_URL,
 		rust_path: 'crates/fuz_http/src/request_header_conformance.json'
+	},
+	{
+		name: 'request_target_conformance.json',
+		ts_url: REQUEST_TARGET_CONFORMANCE_URL,
+		rust_path: 'crates/fuz_http/src/request_target_conformance.json'
 	}
 ];
 

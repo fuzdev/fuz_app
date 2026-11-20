@@ -84,6 +84,12 @@ import { assert_validation_schema, to_wire_issues } from '../schema_issues.ts';
 import { read_json_body, type JsonBodyResult } from './json_text.ts';
 import { get_client_ip } from './client_ip.ts';
 import { get_header_lines } from './header_lines.ts';
+import {
+	read_request_query_pairs,
+	read_request_route_params,
+	to_query_record,
+	type QueryPairsRead
+} from './request_target.ts';
 import { CONNECTION_IP_KEY, has_test_context_preset, RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import type { RequestContext, RequestContextForAuth } from '../auth/request_context.ts';
 import type { ResolvedAuth } from '../auth/resolved_auth.ts';
@@ -223,12 +229,15 @@ export interface RouteContext<
 	 */
 	request: Request;
 	/**
-	 * A query parameter's first value as Hono decodes it (`c.req.query(name)`):
-	 * `''` for a key with no value, `undefined` when absent — for a parameter
-	 * the route's `query` schema does not declare. A repeated key's later
-	 * values are ignored, as on the Rust spine's `query_first`.
+	 * The query string decoded strictly (`read_query_pairs`,
+	 * `http/request_target.ts`) — every pair in order, or the refusal when
+	 * any escape in it doesn't decode — for a route reading a parameter its
+	 * `query` schema does not declare. Read a key with `query_first`; on a
+	 * refusal answer `REST_INVALID_QUERY_PARAMS` (or the transport's own
+	 * refusal), at the point the route reads the query, as the Rust spine's
+	 * `read_query_pairs` callers do.
 	 */
-	query_first: (name: string) => string | undefined;
+	query_pairs: QueryPairsRead;
 	/**
 	 * The body read as JSON text (`read_json_body`, `http/json_text.ts`), the
 	 * one read the authorization phase and input validation share — for a
@@ -1186,8 +1195,11 @@ const create_input_validation = (input_schema: AnySchema): Array<MiddlewareHandl
  * Create params validation middleware for a route spec.
  *
  * Returns an empty array when no params schema is defined.
- * For routes with params schemas, returns a middleware that validates
- * `c.req.param()` against the schema, storing the result on the context as `validated_params`.
+ * For routes with params schemas, returns a middleware that reads the params
+ * strictly (`read_request_route_params`) and validates them against the
+ * schema, storing the result on the context as `validated_params`. A path
+ * holding an escape that doesn't decode is refused whatever the schema, so a
+ * free-text param never receives an undecodable escape as text.
  *
  * @mutates `c.var.validated_params` - set to the parsed and validated path params on success
  */
@@ -1195,8 +1207,9 @@ const create_params_validation = (params_schema?: AnySchema): Array<MiddlewareHa
 	if (!params_schema) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-		const raw_params = c.req.param();
-		const result = parse(params_schema, raw_params);
+		const raw_params = read_request_route_params(c);
+		if (!raw_params.ok) return c.json({ error: ERROR_INVALID_ROUTE_PARAMS }, 400);
+		const result = parse(params_schema, raw_params.value);
 		if (!result.ok) {
 			return c.json(
 				{
@@ -1216,8 +1229,11 @@ const create_params_validation = (params_schema?: AnySchema): Array<MiddlewareHa
  * Create query params validation middleware for a route spec.
  *
  * Returns an empty array when no query schema is defined.
- * For routes with query schemas, returns a middleware that validates
- * `c.req.query()` against the schema, storing the result on the context as `validated_query`.
+ * For routes with query schemas, returns a middleware that reads the query
+ * strictly (`read_request_query_pairs`) and validates its record
+ * (`to_query_record` — each name's first value) against the schema, storing
+ * the result on the context as `validated_query`. A query holding an escape
+ * that doesn't decode, in any key or value, is refused before the schema.
  *
  * @mutates `c.var.validated_query` - set to the parsed and validated query params on success
  */
@@ -1225,8 +1241,9 @@ const create_query_validation = (query_schema?: AnySchema): Array<MiddlewareHand
 	if (!query_schema) return [];
 
 	const validate: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-		const raw_query = c.req.query();
-		const result = parse(query_schema, raw_query);
+		const raw_query = read_request_query_pairs(c);
+		if (!raw_query.ok) return c.json({ error: ERROR_INVALID_QUERY_PARAMS }, 400);
+		const result = parse(query_schema, to_query_record(raw_query.value));
 		if (!result.ok) {
 			return c.json(
 				{
@@ -1539,7 +1556,7 @@ export const apply_route_specs = (
 				query: spec.query ? c.var.validated_query : undefined,
 				has_test_context_preset: has_test_context_preset(c),
 				request: c.req.raw,
-				query_first: (name) => c.req.query(name),
+				query_pairs: read_request_query_pairs(c),
 				read_json_body: () => read_json_body(c.req),
 				header_lines: (name) => get_header_lines(c, name),
 				close_connection: () => {

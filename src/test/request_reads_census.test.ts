@@ -4,6 +4,10 @@
  * header list, the query, the path params, the URL — is one the module is
  * listed for here, with its reason.
  *
+ * The query string and the path params are read only by `http/request_target.ts`,
+ * through its strict readers — never Hono's `c.req.query` or `c.req.param`
+ * decoding, which leaves an escape that doesn't decode in the value as text.
+ *
  * The gate headers and the credential headers — `Origin`, `Referer`, `Host`,
  * `Content-Type`, `Cookie`, `Authorization`, `X-Daemon-Token` — are read only
  * through `get_header_lines` (`http/header_lines.ts`), the lines the client
@@ -75,15 +79,12 @@ const ALLOWED: ReadonlyMap<string, { reads: ReadonlyArray<RequestRead>; reason: 
 			{ reads: ['c.req.header'], reason: '`Upgrade`, DEV only, to skip an accepted upgrade' }
 		],
 		[
-			'http/route_spec.ts',
+			'http/request_target.ts',
 			{
-				reads: ['c.req.param', 'c.req.query'],
-				reason: "the params and query stages and `RouteContext.query_first`, on Hono's decoding"
+				reads: ['c.req.url', 'c.req.param'],
+				reason:
+					'`read_request_query_pairs` and `read_request_route_params`: the query and the path params, decoded strictly'
 			}
-		],
-		[
-			'actions/register_action_ws.ts',
-			{ reads: ['c.req.query'], reason: "the upgrade's `acting` selector" }
 		]
 	]
 );

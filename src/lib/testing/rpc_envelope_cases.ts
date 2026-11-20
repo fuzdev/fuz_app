@@ -215,6 +215,13 @@ export const create_rpc_envelope_cases = (
 			id: null,
 			reason: 'missing id query parameter'
 		});
+		// the whole query is decoded before any key is read, so the refusal
+		// echoes no id — a key the endpoint never reads included
+		get('GET undecodable query → invalid_request', `?method=${q(m)}&id=${id}&junk=%FF`, {
+			...invalid_request,
+			id: null,
+			reason: 'undecodable query string'
+		});
 		get('GET invalid JSON params → invalid_params', `?method=${q(m)}&id=${id}&params=not-json`, {
 			status: 400,
 			code: JSONRPC_ERROR_CODES.invalid_params,

@@ -488,9 +488,11 @@ exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 
 `RouteSpec.query?: AnySchema` declares an optional query parameter
 schema, an object schema. When
-present, `apply_route_specs` adds query validation middleware that parses
-`c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
-on failure. A handler reads the validated query as `route.query`. The query
+present, `apply_route_specs` adds query validation middleware that decodes
+the query strictly (`read_request_query_pairs` — an escape that doesn't
+decode is refused, never left literal or replaced), takes each name's first
+value, parses the result against the schema, and returns 400
+(`ERROR_INVALID_QUERY_PARAMS`) on either failure. A handler reads the validated query as `route.query`. The query
 schema appears in the surface as `query_schema` on each route.
 
 All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —

@@ -22,7 +22,9 @@
  *    observe far more than it was granted.
  * 4. **Authorization phase** (`run_authorization_phase`) — the acting actor
  *    from the `?acting=<uuid>` query string (`parse_acting`; malformed reads
- *    as omitted), against the authenticated account, building the
+ *    as omitted, but a query holding an escape that doesn't decode, in any
+ *    key, is a 400 `invalid_query_params` — `read_request_query_pairs`),
+ *    against the authenticated account, building the
  *    `RequestContext` per-message dispatch reads (400s on actor selection).
  *    Multi-actor accounts must supply `?acting`; single-actor accounts work
  *    without it.
@@ -72,6 +74,8 @@ import { get_resolved_auth } from '../auth/resolved_auth.ts';
 import { verify_request_source } from '../http/origin.ts';
 import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
+import { ERROR_INVALID_QUERY_PARAMS } from '../http/error_schemas.ts';
+import { query_first, read_request_query_pairs } from '../http/request_target.ts';
 import type { EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { has_test_context_preset } from '../hono_context.ts';
@@ -442,11 +446,15 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		verify_request_source(allowed_origins),
 		...pre_authorization,
 		async (c, next) => {
+			// the query is decoded strictly, every key, before `acting` is read;
+			// a malformed but decodable `acting` still reads as omitted
+			const query = read_request_query_pairs(c);
+			if (!query.ok) return c.json({ error: ERROR_INVALID_QUERY_PARAMS }, 400);
 			const refused = await run_authorization_phase(
 				c,
 				{ db },
 				upgrade_auth,
-				parse_acting(c.req.query('acting'))
+				parse_acting(query_first(query.value, 'acting'))
 			);
 			if (refused) return refused;
 			return next();

@@ -62,8 +62,10 @@ import {
 import {
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	REST_INVALID_CREDENTIALS,
+	REST_INVALID_QUERY_PARAMS,
 	REST_RATE_LIMIT_EXCEEDED
 } from '../http/error_schemas.ts';
+import { query_first } from '../http/request_target.ts';
 
 /**
  * Create the account status route spec.
@@ -128,7 +130,11 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			// surface a persona picker. The selector goes through the `ActingActor`
 			// schema, lowercased; a malformed value is a missing persona —
 			// account-only, never a default-actor resolve (as on the Rust spine).
-			const acting_raw = route.query_first('acting');
+			// A query that doesn't decode is refused here, where it is read —
+			// after the anonymous 401, so a caller with no account learns nothing
+			// of the query.
+			if (!route.query_pairs.ok) return route_fail(REST_INVALID_QUERY_PARAMS);
+			const acting_raw = query_first(route.query_pairs.value, 'acting');
 			const acting = parse_acting(acting_raw);
 			const acting_result =
 				acting_raw !== undefined && acting === undefined

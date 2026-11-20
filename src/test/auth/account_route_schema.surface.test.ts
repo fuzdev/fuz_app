@@ -27,7 +27,8 @@
  * beside the derived one; the rate limit's `retry_after` is a
  * non-negative integer (it was any number); and `/bootstrap` declares the
  * `token_file_undeletable` 500 its handler answers when the token's burn
- * fails (it had no 500).
+ * fails (it had no 500); and `/status` declares the `invalid_query_params`
+ * 400 its handler answers for a query that doesn't decode (it had no 400).
  *
  * @module
  */
@@ -57,6 +58,7 @@ import {
 	REST_AUTHENTICATION_REQUIRED,
 	REST_INVALID_CREDENTIALS,
 	REST_INVALID_JSON_BODY,
+	REST_INVALID_QUERY_PARAMS,
 	REST_INVALID_REQUEST_BODY,
 	REST_RATE_LIMIT_EXCEEDED,
 	REST_TOKEN_FILE_UNDELETABLE
@@ -174,6 +176,7 @@ const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
 		401: { from: ['*'], to: [REST_AUTHENTICATION_REQUIRED, REST_INVALID_CREDENTIALS] },
 		429: RATE_429
 	},
+	'GET /status': { 400: { from: [], to: [REST_INVALID_QUERY_PARAMS] } },
 	'POST /signup': { 400: BODY_400, 429: RATE_429 },
 	'POST /bootstrap': {
 		400: BODY_400,

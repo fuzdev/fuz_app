@@ -35,6 +35,7 @@ import {
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
 import { parse_json_text } from '../http/json_text.ts';
+import { query_first } from '../http/request_target.ts';
 
 /**
  * The `Cache-Control` every answer of the RPC endpoint's `GET` route carries
@@ -42,6 +43,14 @@ import { parse_json_text } from '../http/json_text.ts';
  * the route's `response_headers`, so the error catch's answer carries it too.
  */
 export const RPC_GET_CACHE_CONTROL = 'no-store';
+
+/**
+ * The `data.reason` of the RPC `GET`'s `invalid_request` when an escape in
+ * its query string doesn't decode (`read_query_pairs`) — before any key is
+ * read, so the answer echoes no id. The Rust spine's `rpc_get_handler`
+ * answers the same literal.
+ */
+export const RPC_GET_UNDECODABLE_QUERY_REASON = 'undecodable query string';
 
 /** Options for `create_rpc_endpoint`. */
 export interface CreateRpcEndpointOptions {
@@ -264,8 +273,17 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 	// GET handler — extract method and params from query string
 	const get_handler = async (route: RouteContext): Promise<RouteRaw> => {
-		// step 1: parse from query string
-		const method_name = route.query_first('method');
+		// step 1: parse from query string, every escape in it decoded strictly
+		// before any key is read, so no key reads a query another would refuse
+		const query = route.query_pairs;
+		if (!query.ok) {
+			const error = create_jsonrpc_error_response(
+				null,
+				jsonrpc_error_messages.invalid_request({ reason: RPC_GET_UNDECODABLE_QUERY_REASON })
+			);
+			return envelope_response(error, 400);
+		}
+		const method_name = query_first(query.value, 'method');
 		if (!method_name) {
 			const error = create_jsonrpc_error_response(
 				null,
@@ -274,7 +292,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			return envelope_response(error, 400);
 		}
 
-		const id_raw = route.query_first('id');
+		const id_raw = query_first(query.value, 'id');
 		if (!id_raw) {
 			const error = create_jsonrpc_error_response(
 				null,
@@ -290,7 +308,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			Number.isInteger(id_num) && String(id_num) === id_raw ? id_num : id_raw;
 
 		// parse params from query string (optional — null input schemas need no params)
-		const params_raw = route.query_first('params');
+		const params_raw = query_first(query.value, 'params');
 		let params: unknown;
 		if (params_raw !== undefined) {
 			try {
