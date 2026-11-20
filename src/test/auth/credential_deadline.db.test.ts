@@ -130,12 +130,12 @@ describe_db('credential deadline', (get_db) => {
 			null
 		);
 		const deps = { db, log: new Logger('test', { level: 'off' }) };
-		const eternal = await query_validate_api_token(deps, minted.token, undefined, undefined);
+		const eternal = await query_validate_api_token(deps, minted.token);
 		assert.ok(eternal);
 		assert.strictEqual(eternal.expires_in_ms, null);
 
 		await set_expiry(db, 'api_token', '36500 days');
-		const far = await query_validate_api_token(deps, minted.token, undefined, undefined);
+		const far = await query_validate_api_token(deps, minted.token);
 		assert_near(far?.expires_in_ms ?? null, 36_500 * DAY_MS, 'far token row');
 	});
 

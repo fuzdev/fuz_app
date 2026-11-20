@@ -379,6 +379,12 @@ export const create_request_context_middleware = (
 			await next();
 			return;
 		}
+		// a tombstoned account authenticates nothing — its session resolves as
+		// no credential, the anonymous caller, as on the Rust spine
+		if (!(await query_account_by_id(deps, session.account_id))) {
+			await next();
+			return;
+		}
 
 		// The earlier of the signed cookie's expiry (this server's wall clock,
 		// which signed it) and the row's (read on the database clock).

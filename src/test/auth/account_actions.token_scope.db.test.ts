@@ -170,12 +170,12 @@ describe_db('a stored scope at the byte cap', (get_db) => {
 
 		const deps = { db, log };
 		for (const [name, methods] of documents.slice(0, 2)) {
-			const validated = await query_validate_api_token(deps, tokens.get(name)!, undefined, []);
+			const validated = await query_validate_api_token(deps, tokens.get(name)!);
 			assert.ok(validated, `${name}: a scope at the cap resolves`);
 			assert.deepStrictEqual(validated.scope, token_scope_methods(methods));
 		}
 		assert.strictEqual(
-			await query_validate_api_token(deps, tokens.get('over')!, undefined, []),
+			await query_validate_api_token(deps, tokens.get('over')!),
 			undefined,
 			'a scope past the cap fails closed'
 		);

@@ -308,7 +308,13 @@ legitimate operator.
   of the account, not only the one the change was made on — and clears the
   session cookie, so a compromised credential does not persist after
   rotation. Only the new password logs in afterwards; other accounts'
-  sessions are untouched. The handler closes the account's WebSockets and SSE streams once
+  sessions are untouched. A login or an API-token creation in flight when
+  the change commits does not outlast it: each mints inside a transaction
+  that first locks the account row and re-checks it (the login, that the
+  account still holds the hash it verified; the token creation, that the
+  session authorizing it still exists), so it either waits for the change
+  and is refused — the login exactly as a wrong password is — or commits
+  first and is revoked with the rest. The handler closes the account's WebSockets and SSE streams once
   the change commits (see [Closing on Revocation](#closing-on-revocation))
 
 ### Cookie Signing Keys
@@ -1638,7 +1644,10 @@ serialize and the second is refused.
 **An undelete restores the account, never a credential.** `account_undelete`
 clears the tombstones of the account and its actors; the sessions and API
 tokens the delete revoked stay revoked, each answering as an anonymous
-request does, and the account's owner logs in fresh.
+request does, and the account's owner logs in fresh. A login or token
+creation in flight across the delete is refused or revoked under the same
+account-row lock as across a password change, and a credential whose account
+is tombstoned resolves as no credential on both spines.
 
 **Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
 grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`

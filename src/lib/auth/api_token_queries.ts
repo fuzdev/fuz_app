@@ -125,22 +125,17 @@ export const query_create_api_token = async (
  * Hashes the token with blake3, looks up the hash, and checks
  * expiration, reading how long the token has left on the database clock in
  * the same statement. A row whose stored scope is unreadable is refused like an
- * unknown hash. Updates `last_used_at` and `last_used_ip` on success
- * (fire-and-forget — errors logged, never thrown).
+ * unknown hash. Records no use: the caller touches the token
+ * (`query_api_token_touch`) once it has also found the account live, so a
+ * token on a tombstoned account records none — the Rust twin's order.
  *
  * @param deps - query dependencies with logger
  * @param raw_token - the raw API token from the Authorization header
- * @param ip - the client IP address (for audit)
- * @param pending_effects - optional array to register the usage-tracking effect for later awaiting
  * @returns the token record with its parsed scope if valid, or `undefined`
- * @mutates `api_token` row - fire-and-forget UPDATE of `last_used_at` / `last_used_ip` on a valid token
- * @mutates `pending_effects` - pushes the in-flight tracking promise when provided
  */
 export const query_validate_api_token = async (
 	deps: ApiTokenQueryDeps,
-	raw_token: string,
-	ip: string | undefined,
-	pending_effects: Array<Promise<void>> | undefined
+	raw_token: string
 ): Promise<ValidatedApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
 	const row = await deps.db.query_one<ApiToken & { expires_in_ms: number | null }>(
@@ -162,19 +157,29 @@ export const query_validate_api_token = async (
 		return undefined;
 	}
 
-	// Fire-and-forget usage tracking
-	const p: Promise<void> = deps.db
-		.query(`UPDATE api_token SET last_used_at = NOW(), last_used_ip = $1 WHERE id = $2`, [
-			ip ?? null,
-			row.id
-		])
-		.then(() => {})
-		.catch((err) => {
-			deps.log.error('Failed to update last_used_at:', err);
-		});
-	pending_effects?.push(p);
-
 	return { ...row, scope };
+};
+
+/**
+ * Record a use of an API token: `last_used_at` now, `last_used_ip` the
+ * client's address (`null` when none resolved). The bearer leg runs it
+ * fire-and-forget once the token has authenticated. Twin of the Rust
+ * `fuz_auth::query_api_token_touch`.
+ *
+ * @param deps - query dependencies
+ * @param id - the public token id
+ * @param ip - the client IP address
+ * @mutates `api_token` row - sets `last_used_at` and `last_used_ip`
+ */
+export const query_api_token_touch = async (
+	deps: QueryDeps,
+	id: string,
+	ip: string | undefined
+): Promise<void> => {
+	await deps.db.query(
+		`UPDATE api_token SET last_used_at = NOW(), last_used_ip = $1 WHERE id = $2`,
+		[ip ?? null, id]
+	);
 };
 
 /**

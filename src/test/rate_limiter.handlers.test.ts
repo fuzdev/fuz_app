@@ -87,7 +87,9 @@ vi.mock('#lib/auth/account_queries.ts', () => ({
 		const actor = await mock_resolve_actor(..._a);
 		return actor ? [actor] : [];
 	},
-	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a)
+	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a),
+	// the login's locked re-read finds the account as its verify read it
+	query_account_lock_verified: async () => true
 }));
 
 vi.mock('#lib/auth/invite_queries.ts', () => ({
@@ -113,7 +115,8 @@ vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
 });
 
 vi.mock('#lib/auth/api_token_queries.ts', () => ({
-	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a)
+	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a),
+	query_api_token_touch: async () => {}
 }));
 
 // Audit fan-out is mocked via the `audit` slot on the deps factory below

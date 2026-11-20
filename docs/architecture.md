@@ -668,8 +668,9 @@ patterns:
   credentials (`create_account_actions`, `create_admin_actions`, and the
   `create_standard_rpc_actions` bundle over them) take
   `RevokingActionFactoryDeps`, which adds `connection_closer`.
-- `query_validate_api_token(deps, raw_token, ip, pending_effects)` keeps its
-  `pending_effects: Array<Promise<void>> | undefined` shape — it runs from
+- `query_validate_api_token(deps, raw_token)` only validates; the usage record
+  is `query_api_token_touch(deps, id, ip)`, which the bearer middleware runs
+  fire-and-forget once the token's account is found live — it runs from
   middleware (no `RouteContext` / `ActionContext` in scope) and doesn't need
   the audit-emit envelope.
 

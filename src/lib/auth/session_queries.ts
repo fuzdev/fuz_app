@@ -129,6 +129,37 @@ export const query_session_get_valid = async (
 };
 
 /**
+ * Whether the session that authorized a credential mint still lives, read in
+ * the mint's transaction after `query_account_lock_live`.
+ *
+ * The session was resolved before the transaction, so a password change can
+ * commit in between and revoke it. The account lock orders the two — the
+ * change writes the account row before it revokes — so this read either sees
+ * the change's revoke (it committed before the lock was granted) or runs
+ * ahead of it (the change then waits on the lock, and its revoke takes what
+ * the mint wrote). The row is not locked: a plain revoke of one session
+ * touches no account row, and a token minted just before a logout outlives it
+ * anyway, so ordering against one buys nothing. Twin of the Rust
+ * `fuz_auth::query_session_is_live`.
+ *
+ * @param deps - query dependencies (must be the mint's transaction)
+ * @param id - the session's id, its token hash
+ * @param account_id - the account the session must belong to
+ * @returns `true` when the session exists, belongs to the account, and has not expired
+ */
+export const query_session_is_live = async (
+	deps: QueryDeps,
+	id: string,
+	account_id: string
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{ id: string }>(
+		`SELECT id FROM auth_session WHERE id = $1 AND account_id = $2 AND expires_at > NOW()`,
+		[id, account_id]
+	);
+	return row !== undefined;
+};
+
+/**
  * Revoke (delete) a session by its token hash, with no account scoping.
  *
  * The `_unscoped` suffix is the safety signal — there is no `account_id`

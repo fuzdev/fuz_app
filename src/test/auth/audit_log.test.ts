@@ -96,7 +96,9 @@ let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
-	query_admin_account_list: vi.fn(() => Promise.resolve([]))
+	query_admin_account_list: vi.fn(() => Promise.resolve([])),
+	// the login's locked re-read finds the account as its verify read it
+	query_account_lock_verified: vi.fn(() => Promise.resolve(true))
 }));
 
 vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {

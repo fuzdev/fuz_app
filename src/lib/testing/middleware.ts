@@ -22,7 +22,7 @@ import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_bearer_auth_middleware } from '../auth/bearer_auth.ts';
 import { AUTH_MIDDLEWARE_PATH, ORIGIN_MIDDLEWARE_PATH } from '../auth/middleware.ts';
-import { query_validate_api_token } from '../auth/api_token_queries.ts';
+import { query_api_token_touch, query_validate_api_token } from '../auth/api_token_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
@@ -51,7 +51,8 @@ import type { RestErrorDef } from '../http/error_schemas.ts';
 // Mock the query modules so test cases can control return values.
 // vi.mock() is hoisted by vitest, so these run before any imports resolve.
 vi.mock('../auth/api_token_queries.js', () => ({
-	query_validate_api_token: vi.fn()
+	query_validate_api_token: vi.fn(),
+	query_api_token_touch: vi.fn()
 }));
 
 vi.mock('../auth/account_queries.js', () => ({
@@ -120,6 +121,8 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 /** Mocks bundle returned by `create_bearer_auth_mocks`. */
 export interface BearerAuthMocks {
 	mock_validate: ReturnType<typeof vi.fn>;
+	/** `query_api_token_touch` — the usage record a token that authenticated gets. */
+	mock_touch: ReturnType<typeof vi.fn>;
 	mock_find_by_id: ReturnType<typeof vi.fn>;
 	mock_find_actor_by_id: ReturnType<typeof vi.fn>;
 	mock_find_actors_by_account: ReturnType<typeof vi.fn>;
@@ -143,6 +146,7 @@ const STUB_DEPS: QueryDeps = { db: {} as any };
  */
 export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
+	const mock_touch = vi.mocked(query_api_token_touch);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
 	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
 	const mock_find_actors_by_account = vi.mocked(query_active_actors_by_account);
@@ -151,6 +155,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	mock_validate
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_validate_result) as any);
+	mock_touch.mockReset().mockImplementation(() => Promise.resolve());
 	mock_find_by_id
 		.mockReset()
 		.mockImplementation(() => Promise.resolve(tc.mock_find_by_id_result) as any);
@@ -172,6 +177,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 
 	return {
 		mock_validate,
+		mock_touch,
 		mock_find_by_id,
 		mock_find_actor_by_id,
 		mock_find_actors_by_account,
@@ -424,6 +430,9 @@ export const create_test_middleware_stack_app = (
 	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined));
+	vi.mocked(query_api_token_touch)
+		.mockReset()
+		.mockImplementation(() => Promise.resolve());
 	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined));
 	mock_find_actor_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined));
 	mock_find_actors_by_account.mockReset().mockImplementation(() => Promise.resolve([]));

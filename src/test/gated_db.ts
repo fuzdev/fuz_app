@@ -1,7 +1,8 @@
 /**
- * A `Db` wrapper that can hold one chosen query in flight, or one
- * transaction open just before it commits — the stall seams for tests that
- * need something to happen *between* two of a request's database steps (a
+ * A `Db` wrapper that can hold one chosen query in flight, one transaction
+ * before it begins, or one transaction open just before it commits — the
+ * stall seams for tests that need something to happen *between* two of a
+ * request's database steps (a
  * revocation landing between a credential's first read and its admission
  * re-read, say, or a connection opening while a revocation's transaction is
  * still uncommitted).
@@ -51,6 +52,14 @@ export interface HeldCommit {
 	fail: (error: Error) => void;
 }
 
+/** One armed begin hold — see `GatedDb.hold_begin`. */
+export interface HeldBegin {
+	/** Resolves once a transaction is waiting to begin. */
+	reached: Promise<void>;
+	/** Let the held transaction begin. */
+	release: () => void;
+}
+
 /** A pass-through `Db` plus the controls to stall one query or one commit. */
 export interface GatedDb {
 	/** The wrapper to inject in place of the pool-level `Db`. */
@@ -67,6 +76,12 @@ export interface GatedDb {
 	 * transaction. A callback that throws rolls back without being held.
 	 */
 	hold_commit: () => HeldCommit;
+	/**
+	 * Hold the next transaction before it begins — nothing of it has run, and
+	 * no connection is taken for it. One hold is armed at a time; it disarms
+	 * once it holds a transaction.
+	 */
+	hold_begin: () => HeldBegin;
 	/**
 	 * Refuse the next statement run inside a transaction whose SQL text
 	 * satisfies `match`: it throws `error` without reaching the database, as a
@@ -98,6 +113,7 @@ export const create_gated_db = (inner: Db): GatedDb => {
 	} | null = null;
 
 	let armed_commit: { reached: () => void; held: Promise<void> } | null = null;
+	let armed_begin: { reached: () => void; held: Promise<void> } | null = null;
 	let armed_refusal: { match: (sql: string) => boolean; error: Error } | null = null;
 	let open_transactions = 0;
 
@@ -118,6 +134,12 @@ export const create_gated_db = (inner: Db): GatedDb => {
 			}
 		},
 		transaction: async (fn) => {
+			const begin = armed_begin;
+			if (begin) {
+				armed_begin = null;
+				begin.reached();
+				await begin.held;
+			}
 			open_transactions++;
 			try {
 				return await inner.transaction(async (inner_tx) => {
@@ -177,6 +199,12 @@ export const create_gated_db = (inner: Db): GatedDb => {
 			held.promise.catch(() => {});
 			armed_commit = { reached: reached.resolve, held: held.promise };
 			return { reached: reached.promise, release: held.resolve, fail: held.reject };
+		},
+		hold_begin: () => {
+			const reached = Promise.withResolvers<void>();
+			const held = Promise.withResolvers<void>();
+			armed_begin = { reached: reached.resolve, held: held.promise };
+			return { reached: reached.promise, release: held.resolve };
 		},
 		refuse_in_transaction: (match, error) => {
 			armed_refusal = { match, error };

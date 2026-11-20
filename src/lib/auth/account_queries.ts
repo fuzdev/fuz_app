@@ -220,6 +220,69 @@ export const query_update_account_password = async (
 };
 
 /**
+ * Lock an account row for a credential mint, when the account is live and
+ * still holds the password hash its authorization verified.
+ *
+ * A login verifies the password outside any transaction, so a password change
+ * or an account delete can commit between the verify and the session insert —
+ * and revoke "every session" before the new one exists. Run first in the
+ * mint's transaction, this read waits on the row lock either writer holds and
+ * then rereads the row as they committed it, so the mint is refused when the
+ * hash changed or the tombstone landed; and once it holds the lock, either
+ * writer waits for the mint to commit and then revokes what it minted. Both
+ * writers write the account row before they revoke, which is what makes the
+ * lock order them.
+ *
+ * `FOR SHARE` is the weakest lock that conflicts with their `UPDATE`s (the
+ * session insert's foreign-key `FOR KEY SHARE` does not), and concurrent
+ * logins of one account share it. Twin of the Rust
+ * `fuz_auth::query_account_lock_verified`.
+ *
+ * @param deps - query dependencies (must be the mint's transaction)
+ * @param id - the account the credential is for
+ * @param password_hash - the hash the password was verified against
+ * @returns `true` when the row is locked and current, `false` when it was deleted, tombstoned, or its hash changed
+ */
+export const query_account_lock_verified = async (
+	deps: QueryDeps,
+	id: string,
+	password_hash: string
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{ id: string }>(
+		`SELECT id FROM account
+		 WHERE id = $1 AND deleted_at IS NULL AND password_hash = $2
+		 FOR SHARE`,
+		[id, password_hash]
+	);
+	return row !== undefined;
+};
+
+/**
+ * Lock a live account row for a credential mint authorized by a credential
+ * the account already holds (`account_token_create`).
+ *
+ * The request's credential was resolved outside the mint's transaction, so an
+ * account delete can commit between that read and the insert, revoking every
+ * token before the new one exists. Run first in the mint's transaction, this
+ * read waits on the delete's row lock and then sees its tombstone; once it
+ * holds the lock, a delete waits for the mint to commit and then revokes the
+ * token. The password is not re-checked: the mint verified none. Twin of the
+ * Rust `fuz_auth::query_account_lock_live`; `query_account_lock_verified` has
+ * why `FOR SHARE`.
+ *
+ * @param deps - query dependencies (must be the mint's transaction)
+ * @param id - the account the credential is for
+ * @returns `true` when the row is locked and not tombstoned, `false` when it was deleted or tombstoned
+ */
+export const query_account_lock_live = async (deps: QueryDeps, id: string): Promise<boolean> => {
+	const row = await deps.db.query_one<{ id: string }>(
+		`SELECT id FROM account WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
+		[id]
+	);
+	return row !== undefined;
+};
+
+/**
  * Identifying values snapshotted into a deletion/purge audit event so the
  * identity behind a now-orphaned `audit_log` id isn't lost. Mirrors the
  * Rust `AccountIdentitySnapshot`.

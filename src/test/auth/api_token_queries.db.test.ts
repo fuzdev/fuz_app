@@ -9,6 +9,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
+	query_api_token_touch,
 	query_create_api_token,
 	query_validate_api_token,
 	query_revoke_all_api_tokens_for_account,
@@ -118,7 +119,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const { id, token, token_hash } = generate_api_token();
 			await query_create_api_token(deps, id, account_id, 'valid', token_hash, token_scope_full());
 
-			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
+			const result = await query_validate_api_token({ db, log }, token);
 
 			assert.ok(result);
 			assert.strictEqual(result.id, id);
@@ -133,7 +134,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const scope = token_scope_methods(['account_verify']);
 			await query_create_api_token(deps, id, account_id, 'narrowed', token_hash, scope);
 
-			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
+			const result = await query_validate_api_token({ db, log }, token);
 
 			assert.ok(result);
 			assert.deepStrictEqual(result.scope, scope);
@@ -151,7 +152,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 				id
 			]);
 
-			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
+			const result = await query_validate_api_token({ db, log }, token);
 
 			assert.strictEqual(result, undefined);
 		});
@@ -159,12 +160,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		test('returns undefined for unknown token', async () => {
 			const db = get_db();
 
-			const result = await query_validate_api_token(
-				{ db, log },
-				'secret_fuz_token_unknown',
-				'127.0.0.1',
-				undefined
-			);
+			const result = await query_validate_api_token({ db, log }, 'secret_fuz_token_unknown');
 
 			assert.strictEqual(result, undefined);
 		});
@@ -185,48 +181,26 @@ describe_db('ApiTokenQueries', (get_db) => {
 				past
 			);
 
-			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
+			const result = await query_validate_api_token({ db, log }, token);
 
 			assert.strictEqual(result, undefined);
 		});
 
-		test('tracks usage in pending_effects', async () => {
+		test('records no use', async () => {
 			const { account_id } = await setup_account(get_db);
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'tracked', token_hash, token_scope_full());
+			await query_create_api_token(deps, id, account_id, 'unused', token_hash, token_scope_full());
 
-			const effects: Array<Promise<void>> = [];
-			await query_validate_api_token({ db, log }, token, '10.0.0.1', effects);
+			assert.ok(await query_validate_api_token({ db, log }, token));
 
-			assert.strictEqual(effects.length, 1);
-			await Promise.all(effects);
-
-			// Verify last_used_ip was updated
-			const rows = await db.query<{ last_used_ip: string | null }>(
-				`SELECT last_used_ip FROM api_token WHERE id = $1`,
+			// the bearer leg touches the token once its account is also live
+			const rows = await db.query<{ last_used_at: string | null; last_used_ip: string | null }>(
+				`SELECT last_used_at, last_used_ip FROM api_token WHERE id = $1`,
 				[id]
 			);
-			assert.strictEqual(rows[0]?.last_used_ip, '10.0.0.1');
-		});
-
-		test('updates last_used_at on validate', async () => {
-			const { account_id } = await setup_account(get_db);
-			const db = get_db();
-			const deps = { db };
-			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'usage', token_hash, token_scope_full());
-
-			const effects: Array<Promise<void>> = [];
-			await query_validate_api_token({ db, log }, token, undefined, effects);
-			await Promise.all(effects);
-
-			const rows = await db.query<{ last_used_at: string | null }>(
-				`SELECT last_used_at FROM api_token WHERE id = $1`,
-				[id]
-			);
-			assert.ok(rows[0]?.last_used_at);
+			assert.deepStrictEqual(rows[0], { last_used_at: null, last_used_ip: null });
 		});
 	});
 
@@ -268,7 +242,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			);
 			await query_revoke_api_token_for_account(deps, id, account_id);
 
-			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
+			const result = await query_validate_api_token({ db, log }, token);
 
 			assert.strictEqual(result, undefined);
 		});
@@ -398,12 +372,12 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 	});
 
-	describe('validate with ip and usage tracking', () => {
-		test('sets last_used_ip and last_used_at after validation', async () => {
+	describe('touch', () => {
+		test('sets last_used_ip and last_used_at', async () => {
 			const { account_id } = await setup_account(get_db);
 			const db = get_db();
 			const deps = { db };
-			const { id, token, token_hash } = generate_api_token();
+			const { id, token_hash } = generate_api_token();
 			await query_create_api_token(
 				deps,
 				id,
@@ -413,31 +387,32 @@ describe_db('ApiTokenQueries', (get_db) => {
 				token_scope_full()
 			);
 
-			// Verify initial state — no usage yet
-			const before = await db.query<{ last_used_ip: string | null; last_used_at: string | null }>(
-				`SELECT last_used_ip, last_used_at FROM api_token WHERE id = $1`,
-				[id]
-			);
-			assert.strictEqual(before[0]?.last_used_ip, null);
-			assert.strictEqual(before[0]?.last_used_at, null);
+			await query_api_token_touch(deps, id, '203.0.113.42');
 
-			// Validate with a specific IP and flush the fire-and-forget effect
-			const effects: Array<Promise<void>> = [];
-			const result = await query_validate_api_token({ db, log }, token, '203.0.113.42', effects);
-			assert.ok(result);
-			await Promise.all(effects);
-
-			// Verify both last_used_ip and last_used_at are set
 			const after = await db.query<{ last_used_ip: string | null; last_used_at: string | null }>(
 				`SELECT last_used_ip, last_used_at FROM api_token WHERE id = $1`,
 				[id]
 			);
 			assert.strictEqual(after[0]?.last_used_ip, '203.0.113.42');
-			assert.ok(after[0]?.last_used_at, 'last_used_at should be set after validation');
+			assert.ok(after[0]?.last_used_at, 'last_used_at should be set by the touch');
 		});
 
-		// Note: the api_token table has no user_agent / last_used_ua column.
-		// Only last_used_ip and last_used_at are tracked by query_validate_api_token.
+		test('an unresolved client IP records null', async () => {
+			const { account_id } = await setup_account(get_db);
+			const db = get_db();
+			const deps = { db };
+			const { id, token_hash } = generate_api_token();
+			await query_create_api_token(deps, id, account_id, 'no-ip', token_hash, token_scope_full());
+
+			await query_api_token_touch(deps, id, undefined);
+
+			const after = await db.query<{ last_used_ip: string | null; last_used_at: string | null }>(
+				`SELECT last_used_ip, last_used_at FROM api_token WHERE id = $1`,
+				[id]
+			);
+			assert.strictEqual(after[0]?.last_used_ip, null);
+			assert.ok(after[0]?.last_used_at);
+		});
 	});
 
 	// Table-driven enforce_token_limit matrix

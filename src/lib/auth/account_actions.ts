@@ -32,9 +32,12 @@ import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_types.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { to_session_account, type SessionAccountJson } from './account_schema.ts';
+import { query_account_lock_live } from './account_queries.ts';
 import {
+	query_session_is_live,
 	query_session_list_for_account,
 	query_session_revoke_for_account,
 	query_session_revoke_all_for_account
@@ -205,6 +208,23 @@ export const create_account_actions = (
 		// `input.lifetime` is required for the same reason — an omitted lifetime
 		// is a validation error, never an eternal token.
 		const expires_at = token_lifetime_to_expires_at(input.lifetime);
+		// The session that authorized this was read before the transaction. A
+		// delete or a password change committed since mints nothing — refused as
+		// the dead session it now is, the two losers one answer — and one still
+		// to commit waits on the account lock and then revokes the token: both
+		// write the account row before they revoke (`query_account_lock_live`,
+		// then `query_session_is_live`, which sees a revoke committed before
+		// the lock was granted).
+		const session_hash = ctx.session_hash;
+		if (
+			!(await query_account_lock_live(ctx, ctx.auth.account.id)) ||
+			session_hash === null ||
+			!(await query_session_is_live(ctx, session_hash, ctx.auth.account.id))
+		) {
+			throw jsonrpc_errors.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED
+			});
+		}
 		await query_create_api_token(
 			ctx,
 			id,

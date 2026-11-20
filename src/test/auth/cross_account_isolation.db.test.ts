@@ -229,8 +229,8 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		await query_create_api_token(deps, tok_a, alice.account_id, 'alice', h_a, token_scope_full());
 		await query_create_api_token(deps, tok_b, bob.account_id, 'bob', h_b, token_scope_full());
 
-		const result_a = await query_validate_api_token({ db, log }, raw_a, '127.0.0.1', undefined);
-		const result_b = await query_validate_api_token({ db, log }, raw_b, '127.0.0.1', undefined);
+		const result_a = await query_validate_api_token({ db, log }, raw_a);
+		const result_b = await query_validate_api_token({ db, log }, raw_b);
 
 		assert.ok(result_a);
 		assert.ok(result_b);

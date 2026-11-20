@@ -23,7 +23,8 @@ import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
 import { get_resolved_auth } from './resolved_auth.ts';
 import { read_bearer_token } from './credential_headers.ts';
-import { query_validate_api_token } from './api_token_queries.ts';
+import { query_api_token_touch, query_validate_api_token } from './api_token_queries.ts';
+import { query_account_by_id } from './account_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_header_lines } from '../http/header_lines.ts';
@@ -104,15 +105,7 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 			return;
 		}
 
-		// `ip` feeds the token's `last_used_ip` bookkeeping, not a limiter.
-		const ip = get_client_ip(c);
-
-		const api_token = await query_validate_api_token(
-			{ ...deps, log },
-			raw_token,
-			ip,
-			c.var.pending_effects
-		);
+		const api_token = await query_validate_api_token({ ...deps, log }, raw_token);
 		if (!api_token) {
 			// Invalid or expired token — soft-fail, indistinguishable from
 			// sending no credential at all.
@@ -120,6 +113,21 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 			await next();
 			return;
 		}
+		// a tombstoned account authenticates nothing — its token resolves as no
+		// credential, the anonymous caller, as on the Rust spine
+		if (!(await query_account_by_id(deps, api_token.account_id))) {
+			log.debug('bearer auth soft-fail: account not found or deleted');
+			await next();
+			return;
+		}
+
+		// Fire-and-forget usage tracking, once the token has authenticated —
+		// after the account check, so a token on a tombstoned account records
+		// no use. `ip` feeds `last_used_ip`, not a limiter.
+		const touch = query_api_token_touch(deps, api_token.id, get_client_ip(c)).catch((err) => {
+			log.error('Failed to update last_used_at:', err);
+		});
+		c.var.pending_effects?.push(touch);
 
 		c.set(RESOLVED_AUTH_KEY, {
 			credential_type: 'api_token',

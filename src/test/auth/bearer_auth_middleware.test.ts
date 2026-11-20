@@ -18,6 +18,7 @@ import {
 } from '#lib/testing/middleware.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import {
+	create_test_account,
 	create_test_raw_api_token,
 	create_test_validated_api_token
 } from '#lib/testing/entities.ts';
@@ -40,6 +41,9 @@ const MOCK_API_TOKEN = create_test_validated_api_token({
 	id: 'tok_1',
 	scope: MOCK_SCOPE
 });
+// the token's live account, which the middleware re-reads (a tombstoned one
+// resolves nothing)
+const MOCK_ACCOUNT = create_test_account({ id: 'acc_1' });
 
 // --- Test case table ---
 
@@ -190,7 +194,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			// validate was called with (deps, raw_token, ip, pending_effects)
 			assert.strictEqual(mocks.mock_validate.mock.calls.length, 1);
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], TOKEN_BAD);
-			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
+			assert.strictEqual(mocks.mock_touch.mock.calls.length, 0, 'a refused token records no use');
 		}
 	},
 	// success path — bearer auth sets the account-grain identity from the
@@ -201,6 +205,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		name: 'valid token — sets account_id, credential_type, api_token_id, and token scope',
 		headers: { Authorization: `Bearer ${TOKEN_GOOD}` },
 		mock_validate_result: MOCK_API_TOKEN,
+		mock_find_by_id_result: MOCK_ACCOUNT,
 		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_account_set: true,
@@ -210,11 +215,16 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		// an eternal token has no deadline
 		expected_credential_deadline_ms: null,
 		assert_mocks: (mocks) => {
-			// validate called with (deps, raw_token, ip, pending_effects)
+			// validate called with (deps, raw_token); the use is recorded by the
+			// touch, with the client's address, once the account is live too
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], TOKEN_GOOD);
-			assert.strictEqual(mocks.mock_validate.mock.calls[0]![2], TEST_CLIENT_IP);
-			// account/actor/role_grant queries are not the bearer middleware's concern
-			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 0);
+			assert.strictEqual(mocks.mock_touch.mock.calls.length, 1);
+			assert.strictEqual(mocks.mock_touch.mock.calls[0]![1], 'tok_1');
+			assert.strictEqual(mocks.mock_touch.mock.calls[0]![2], TEST_CLIENT_IP);
+			// the token's account is re-read for its tombstone; actor and role_grant
+			// queries are not the bearer middleware's concern
+			assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1);
+			assert.strictEqual(mocks.mock_find_by_id.mock.calls[0]![1], 'acc_1');
 			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 0);
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);
 		}
@@ -223,6 +233,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		name: 'a token with an expiry sets the credential deadline to the row lifetime',
 		headers: { Authorization: `Bearer ${TOKEN_GOOD}` },
 		mock_validate_result: { ...MOCK_API_TOKEN, expires_in_ms: 5000 },
+		mock_find_by_id_result: MOCK_ACCOUNT,
 		expected_status: 'next',
 		validate_expectation: 'called',
 		assert_account_set: true,
@@ -255,6 +266,31 @@ describe('bearer token refused by the query', () => {
 
 		assert.strictEqual(mocks.mock_validate.mock.calls.length, 1, 'the lookup ran');
 		assert.strictEqual(body.resolved_auth, null);
+	});
+});
+
+// --- A token whose account is tombstoned sets nothing ---
+
+describe('bearer token on a tombstoned account', () => {
+	// `query_account_by_id` reads active accounts only; the token row
+	// outliving its account's soft delete authenticates nothing — the anonymous
+	// caller, as on the Rust spine, never a torn read at authorization.
+	test('resolves no credential', async () => {
+		const { app, mocks } = create_bearer_auth_test_app({
+			name: 'tombstoned account',
+			mock_validate_result: MOCK_API_TOKEN,
+			mock_find_by_id_result: undefined,
+			expected_status: 'next'
+		});
+
+		const res = await app.request('/api/test', {
+			headers: { Authorization: `Bearer ${TOKEN_GOOD}` }
+		});
+		const body = await res.json();
+
+		assert.strictEqual(mocks.mock_find_by_id.mock.calls.length, 1, 'the account was re-read');
+		assert.strictEqual(body.resolved_auth, null);
+		assert.strictEqual(mocks.mock_touch.mock.calls.length, 0, 'no use is recorded');
 	});
 });
 

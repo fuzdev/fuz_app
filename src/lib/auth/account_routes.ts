@@ -38,6 +38,7 @@ import {
 } from './session_queries.ts';
 import {
 	query_account_by_username_or_email,
+	query_account_lock_verified,
 	query_update_account_password
 } from './account_queries.ts';
 import { query_revoke_all_api_tokens_for_account } from './api_token_queries.ts';
@@ -377,7 +378,45 @@ export const create_account_route_specs = (
 				}
 
 				const valid = await password.verify_password(pw, account.password_hash);
-				if (!valid) {
+
+				// The session INSERT and the cap eviction are the route's only
+				// writes, and only atomic together: one transaction around just
+				// them (the route is `transaction: false`, so the reservation
+				// waits above and the Argon2 verify held no connection). Twin of
+				// the Rust login's transaction around `create_capped_session`. It
+				// first locks the account row as the verify read it — live, the
+				// verified hash — so a password change or a delete that committed
+				// since mints nothing, and one still to commit waits and then
+				// revokes this session (`query_account_lock_verified`). The
+				// cookie line is formatted inside it, so a value the formatter
+				// refuses rolls the session back, and rides the success, which is
+				// answered only once the commit has landed.
+				const minted = valid
+					? await route.db.transaction(async (tx) => {
+							const tx_deps = { db: tx };
+							if (
+								!(await query_account_lock_verified(tx_deps, account.id, account.password_hash))
+							) {
+								return null;
+							}
+							const session = await create_capped_session({
+								keyring,
+								deps: tx_deps,
+								account_id: account.id,
+								session_options,
+								max_sessions
+							});
+							return {
+								evicted: session.evicted,
+								set_cookie: session_cookie_header(session.cookie_value, session_options)
+							};
+						})
+					: null;
+
+				// A wrong password, and a right one whose account changed under
+				// it, are one refusal: the same answer, charge, and audit row, so
+				// the caller can't learn the password was right a moment ago.
+				if (!minted) {
 					ip_reserved.reservation.record();
 					account_reservation?.record();
 					await deps.audit.emit(route, {
@@ -390,6 +429,7 @@ export const create_account_route_specs = (
 					await delay;
 					return route_fail(REST_INVALID_CREDENTIALS);
 				}
+				const { evicted, set_cookie } = minted;
 
 				// Successful login — clear the account-grain failure history only.
 				// The IP aggregate is deliberately left standing: it is the
@@ -400,28 +440,6 @@ export const create_account_route_specs = (
 				ip_reserved.reservation.release();
 				account_reservation?.release();
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(account_rate_key);
-
-				// The session INSERT and the cap eviction are the route's only
-				// writes, and only atomic together: one transaction around just
-				// them (the route is `transaction: false`, so the reservation
-				// waits above and the Argon2 verify held no connection). Twin of
-				// the Rust login's transaction around `create_capped_session`. The
-				// cookie line is formatted inside it, so a value the formatter
-				// refuses rolls the session back, and rides the success, which is
-				// answered only once the commit has landed.
-				const { evicted, set_cookie } = await route.db.transaction(async (tx) => {
-					const session = await create_capped_session({
-						keyring,
-						deps: { db: tx },
-						account_id: account.id,
-						session_options,
-						max_sessions
-					});
-					return {
-						evicted: session.evicted,
-						set_cookie: session_cookie_header(session.cookie_value, session_options)
-					};
-				});
 				// The sessions the cap evicted are gone from the table, but not
 				// from the connections they opened — a WebSocket keeps the
 				// authority it resolved at upgrade, and an SSE stream never

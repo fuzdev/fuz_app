@@ -7,6 +7,7 @@
 import { describe, assert, test, vi, afterEach } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
+import { Hono } from 'hono';
 
 import { query_create_account_with_actor, query_purge_account } from '#lib/auth/account_queries.ts';
 import {
@@ -18,6 +19,8 @@ import {
 } from '#lib/auth/api_token_queries.ts';
 import { generate_api_token, hash_api_token, API_TOKEN_PREFIX } from '#lib/auth/api_token.ts';
 import type { Db } from '#lib/db/db.ts';
+import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { serialize_token_scope, token_scope_full } from '../../lib/auth/token_scope.ts';
@@ -125,19 +128,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const { token, id, token_hash } = generate_api_token();
 		await query_create_api_token(deps, id, account_id, 'Test', token_hash, token_scope_full());
 
-		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
+		const found = await query_validate_api_token({ db, log }, token);
 		assert.ok(found);
 		assert.strictEqual(found.id, id);
 	});
 
 	test('validate returns undefined for invalid token', async () => {
 		const db = get_db();
-		const found = await query_validate_api_token(
-			{ db, log },
-			'secret_fuz_token_invalid',
-			undefined,
-			undefined
-		);
+		const found = await query_validate_api_token({ db, log }, 'secret_fuz_token_invalid');
 		assert.strictEqual(found, undefined);
 	});
 
@@ -157,7 +155,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			past
 		);
 
-		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
+		const found = await query_validate_api_token({ db, log }, token);
 		assert.strictEqual(found, undefined);
 	});
 
@@ -169,7 +167,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		await query_create_api_token(deps, id, account_id, 'Revoke me', token_hash, token_scope_full());
 
 		assert.strictEqual(await query_revoke_api_token_for_account(deps, id, account_id), true);
-		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
+		const found = await query_validate_api_token({ db, log }, token);
 		assert.strictEqual(found, undefined);
 	});
 
@@ -221,7 +219,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const revoked = await query_revoke_api_token_for_account(deps, id, account_id);
 		assert.strictEqual(revoked, true);
 
-		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
+		const found = await query_validate_api_token({ db, log }, token);
 		assert.strictEqual(found, undefined);
 	});
 
@@ -238,7 +236,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		assert.strictEqual(revoked, false);
 
 		// Alice's token is still valid
-		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
+		const found = await query_validate_api_token({ db, log }, token);
 		assert.ok(found);
 	});
 
@@ -477,14 +475,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 		assert.strictEqual(bob_list.length, 1);
 	});
 
-	test('validate logs error when usage tracking update fails', async () => {
+	test('the bearer leg logs a failed usage update and still authenticates', async () => {
 		const { account_id } = await create_test_account(get_db(), 'ivan');
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
 		await query_create_api_token(deps, id, account_id, 'Test', token_hash, token_scope_full());
 
-		// make the fire-and-forget UPDATE fail while allowing the SELECT through
+		// make the fire-and-forget UPDATE fail while allowing the reads through
 		const original_query = db.query.bind(db);
 		vi.spyOn(db, 'query').mockImplementation(async (...args: Array<any>) => {
 			if (typeof args[0] === 'string' && args[0].includes('UPDATE api_token')) {
@@ -494,14 +492,20 @@ describe_db('ApiTokenQueries', (get_db) => {
 		});
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-		const error_log = new Logger('api_token', { level: 'error' });
-		const found = await query_validate_api_token(
-			{ db, log: error_log },
-			token,
-			undefined,
-			undefined
+		const app = new Hono();
+		app.use(
+			'/api/*',
+			create_bearer_auth_middleware(deps, new Logger('api_token', { level: 'error' }))
 		);
-		assert.ok(found, 'validation should still succeed despite update failure');
+		app.get('/api/whoami', (c) => c.json({ account_id: get_resolved_auth(c)?.account_id ?? null }));
+		const res = await app.request('/api/whoami', {
+			headers: { authorization: `Bearer ${token}` }
+		});
+		assert.deepStrictEqual(
+			await res.json(),
+			{ account_id },
+			'authentication should still succeed despite the update failure'
+		);
 
 		// wait for the fire-and-forget promise to settle
 		await wait();

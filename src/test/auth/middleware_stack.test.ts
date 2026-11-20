@@ -17,6 +17,7 @@ import {
 } from '#lib/testing/adversarial_headers.ts';
 import { REST_FORBIDDEN_ORIGIN } from '#lib/http/error_schemas.ts';
 import {
+	create_test_account,
 	create_test_raw_api_token,
 	create_test_validated_api_token
 } from '#lib/testing/entities.ts';
@@ -98,12 +99,13 @@ describe('Host header spoofing', () => {
 	});
 
 	test('spoofed Host with valid bearer token still authenticates', async () => {
-		const { app, mock_validate } = create_test_middleware_stack_app({
+		const { app, mock_validate, mock_find_by_id } = create_test_middleware_stack_app({
 			connection_ip: TRUSTED_PROXY
 		});
 		mock_validate.mockResolvedValueOnce(
 			create_test_validated_api_token({ id: 'tok-1', account_id: 'acct-1' })
 		);
+		mock_find_by_id.mockResolvedValueOnce(create_test_account({ id: 'acct-1' }));
 		const res = await app.request(TEST_MIDDLEWARE_PATH, {
 			headers: {
 				Host: 'evil.attacker.com:666',
