@@ -26,13 +26,6 @@ const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
 const session_options = create_session_config('test_session');
 
-const fs_stubs = {
-	read_secure_file: async (path: string): Promise<Uint8Array> => {
-		throw new Error(`ENOENT: no such file or directory: ${path}`);
-	},
-	delete_file: async (_path: string) => {}
-};
-
 /** Canonical default audit factory — every test uses this unless it cares about emitter wiring. */
 const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({ db, log });
 
@@ -66,7 +59,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				log,
 				audit_factory: ({ db, log }) => {
 					audit_db = db;
@@ -92,7 +84,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: test_audit_factory
 			});
 
@@ -114,7 +105,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: test_audit_factory
 			});
 
@@ -147,7 +137,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: test_audit_factory,
 				migration_namespaces: [ns]
 			});
@@ -200,7 +189,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: test_audit_factory,
 				migration_namespaces: [ns_a, ns_b]
 			});
@@ -223,7 +211,6 @@ describe('create_app_backend', () => {
 						database_url: 'memory://',
 						keyring,
 						password: stub_password_deps,
-						...fs_stubs,
 						audit_factory: test_audit_factory,
 						migration_namespaces: [{ namespace: AUTH_MIGRATION_NS.namespace, migrations: [] }]
 					}),
@@ -243,7 +230,6 @@ describe('create_app_backend', () => {
 							database_url: 'memory://',
 							keyring,
 							password: stub_password_deps,
-							...fs_stubs,
 							audit_factory: test_audit_factory,
 							migration_namespaces: [{ namespace: ns.namespace, migrations: [] }]
 						}),
@@ -256,7 +242,6 @@ describe('create_app_backend', () => {
 							database_url: 'memory://',
 							keyring,
 							password: stub_password_deps,
-							...fs_stubs,
 							audit_factory: test_audit_factory,
 							migration_namespaces: [{ ...ns }]
 						}),
@@ -274,7 +259,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: test_audit_factory,
 				migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS]
 			});
@@ -307,7 +291,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: ({ db, log }) => {
 					calls.push({ db, log });
 					return create_audit_emitter({ db, log });
@@ -338,7 +321,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: ({ db, log }) => {
 					returned = create_audit_emitter({ db, log });
 					return returned;
@@ -366,7 +348,6 @@ describe('create_app_backend', () => {
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
-				...fs_stubs,
 				audit_factory: ({ db, log }) => {
 					migration_check = db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM audit_log');
 					return create_audit_emitter({ db, log });
@@ -390,7 +371,6 @@ describe('create_app_backend', () => {
 						database_url: 'memory://',
 						keyring,
 						password: stub_password_deps,
-						...fs_stubs,
 						audit_factory: ({ db, log }) => {
 							called = true;
 							return create_audit_emitter({ db, log });
@@ -427,7 +407,6 @@ describe('create_app_backend', () => {
 						database_url: 'memory://',
 						keyring,
 						password: stub_password_deps,
-						...fs_stubs,
 						audit_factory: () => {
 							throw new Error('audit_factory threw on purpose');
 						}

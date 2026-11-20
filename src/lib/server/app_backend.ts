@@ -93,14 +93,6 @@ export const default_audit_factory: AuditFactory = ({ db, log }) =>
  * (e.g., tx uses `runtime.exit(1)` on invalid keys).
  */
 export interface CreateAppBackendOptions {
-	/**
-	 * Hardened secret-file read for the bootstrap token — pass the runtime's
-	 * `read_secure_file` (see `FsSecureReadDeps`). Rejects symlinks,
-	 * non-regular files, group/other-accessible modes, and oversized files.
-	 */
-	read_secure_file: (path: string) => Promise<Uint8Array>;
-	/** Delete a file. */
-	delete_file: (path: string) => Promise<void>;
 	/** Database connection URL (`postgres://`, `file://`, or `memory://`). */
 	database_url: string;
 	/** Validated cookie signing keyring. */
@@ -189,7 +181,7 @@ export interface CreateAppBackendOptions {
  * @throws MigrationError `namespace-reserved` if a `migration_namespaces` entry bears a `reserved_migration_namespaces` name and is not the spine's own namespace
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
-	const { database_url, keyring, password, read_secure_file, delete_file, audit_factory } = options;
+	const { database_url, keyring, password, audit_factory } = options;
 	const log = options.log ?? new Logger('server');
 	const { db, close, db_type, db_name } = await create_db(database_url, {
 		checkout_timeout_ms: options.db_checkout_timeout_ms
@@ -230,8 +222,6 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				keyring,
 				password,
 				db,
-				read_secure_file,
-				delete_file,
 				log,
 				audit,
 				connection_closer: options.connection_closer ?? create_realtime_closer()

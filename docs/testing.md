@@ -304,7 +304,7 @@ describe_standard_admin_integration_tests({
 - `session_options` (required) — Cookie config — same `SessionOptions<string>` fuz_app's production server takes.
 - `create_route_specs` (required) — Production route-spec factory.
 - `rpc_endpoints` (optional) — RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).
-- `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The cross-backend harness exercises the success response, bootstrapping every backend it spawns.
+- `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_store, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The cross-backend harness exercises the success response, bootstrapping every backend it spawns.
 - `app_options` (optional) — `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]` so the keeper hits admin-gated RPC methods.
 - `surface_source` (optional) — Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).
@@ -340,7 +340,7 @@ export const create_my_app_surface_spec = (): AppSurfaceSpec =>
 		create_route_specs: (ctx) => create_my_route_specs(ctx),
 		env_schema: my_env_schema,
 		// Mirror your production `create_app_server` call — omit `bootstrap`
-		// if you don't wire bootstrap in production; pass `{mode: 'live', token_path}`
+		// if you don't wire bootstrap in production; pass `{mode: 'live', token_store}`
 		// to match production live wiring. For attack-surface tests that only
 		// need the route shape (not actual token verification), pass
 		// `{mode: 'surface_only'}` — the suite asserts on the 403 wire shape.
@@ -503,7 +503,7 @@ spine (see ./security.md §Why bearer auth is not rate limited).
 Wire bootstrap via the top-level `bootstrap` slot on
 `default_in_process_suite_options`. Three modes:
 
-- **`{mode: 'live', token_path, on_bootstrap?}`** — production-shaped
+- **`{mode: 'live', token_store, on_bootstrap?}`** — production-shaped
   wiring. Tier 1 suites exercise the route surface (presence,
   adversarial denial paths via 403 ALREADY_BOOTSTRAPPED). The success
   path runs end-to-end in the cross-backend harness, which bootstraps

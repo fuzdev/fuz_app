@@ -25,10 +25,6 @@ describe.skipIf(!url)('create_app_backend over Postgres', () => {
 			database_url: url!,
 			keyring: create_test_keyring('test-key-that-is-at-least-32-chars-long!!'),
 			password: stub_password_deps,
-			read_secure_file: async (path) => {
-				throw new Error(`ENOENT: ${path}`);
-			},
-			delete_file: async () => {},
 			log: new Logger('test', { level: 'off' }),
 			db_checkout_timeout_ms: 1_000,
 			db_audit_checkout_timeout_ms: 5_000,

@@ -193,6 +193,21 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			assert_secure_size(path, bytes.length);
 			return bytes;
 		},
+		burn_secure_file: async (path) => {
+			// a directory is refused, never recursed into, as `unlink` refuses it
+			if (mock_dirs.has(path)) {
+				const error: NodeJS.ErrnoException = new Error(
+					`EISDIR: illegal operation on a directory: ${path}`
+				);
+				error.code = 'EISDIR';
+				throw error;
+			}
+			const present = mock_fs.has(path) || mock_fs_bytes.has(path);
+			mock_fs.delete(path);
+			mock_fs_bytes.delete(path);
+			mock_fs_modes.delete(path);
+			return present ? 'burned' : 'already_gone';
+		},
 		read_file_stream: async (path) => {
 			let bytes = mock_fs_bytes.get(path);
 			if (bytes === undefined) {

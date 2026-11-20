@@ -11,6 +11,8 @@ import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
+import type { Keyring } from './keyring.ts';
+import { create_session_cookie_value, type SessionOptions } from './session_cookie.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
 import type { AuthSession, SessionId } from './account_schema.ts';
 import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
@@ -319,4 +321,60 @@ export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<Ar
 		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`
 	);
 	return rows.map((row) => row.id);
+};
+
+/**
+ * Options for `create_capped_session`.
+ */
+export interface CreateCappedSessionOptions {
+	/** Keyring for cookie signing. */
+	keyring: Keyring;
+	/** Query deps (needs db for session creation). */
+	deps: QueryDeps;
+	/** The account to create a session for. */
+	account_id: string;
+	/** Session cookie configuration. */
+	session_options: SessionOptions<string>;
+	/** Per-account session cap (`null` to skip enforcement). */
+	max_sessions?: number | null;
+}
+
+/** What `create_capped_session` minted. */
+export interface CappedSession {
+	/** The signed session cookie value, for `set_session_cookie`. */
+	cookie_value: string;
+	/** The token hashes of the sessions the cap evicted, empty without a cap. */
+	evicted: Array<string>;
+}
+
+/**
+ * Mint an auth session: generate a token, persist its hashed row, enforce
+ * the per-account cap when given one, and sign the cookie value — without
+ * touching a response, so a caller minting inside a transaction sets the
+ * cookie only once that transaction has succeeded. Twin of the Rust
+ * `fuz_auth::create_capped_session`.
+ *
+ * The cap deletes the sessions it evicts, but not the connections they
+ * opened. A caller that passes `max_sessions` closes the returned sessions'
+ * connections once its transaction commits — `queue_connection_close` with a
+ * `session` target, as `POST /login` does. A caller that mints for an account
+ * created in the same transaction (signup, bootstrap) evicts nothing.
+ *
+ * @returns the signed cookie value and the evicted sessions' token hashes
+ * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)
+ */
+export const create_capped_session = async (
+	options: CreateCappedSessionOptions
+): Promise<CappedSession> => {
+	const { keyring, deps, account_id, session_options, max_sessions } = options;
+	const session_token = generate_session_token();
+	const token_hash = hash_session_token(session_token);
+	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
+	await query_create_session(deps, token_hash, account_id, expires_at);
+
+	const evicted =
+		max_sessions != null ? await query_session_enforce_limit(deps, account_id, max_sessions) : [];
+
+	const cookie_value = await create_session_cookie_value(keyring, session_token, session_options);
+	return { cookie_value, evicted };
 };

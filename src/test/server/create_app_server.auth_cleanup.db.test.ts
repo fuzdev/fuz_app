@@ -102,11 +102,7 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 			password: stub_password_deps,
 			db,
 			audit: create_audit_emitter({ db, log, on_audit_event: (e) => audit_events.push(e) }),
-			connection_closer,
-			read_secure_file: async (path: string): Promise<Uint8Array> => {
-				throw new Error(`ENOENT: no such file or directory: ${path}`);
-			},
-			delete_file: async () => {}
+			connection_closer
 		}
 	};
 	return {

@@ -268,6 +268,11 @@ const DEFINITIONS: Record<
 		code: 'internal_error',
 		sample: { error: 'internal_error', message: 'boom' }
 	},
+	REST_TOKEN_FILE_UNDELETABLE: {
+		status: 500,
+		code: 'token_file_undeletable',
+		sample: { error: 'token_file_undeletable' }
+	},
 	REST_SERVICE_UNAVAILABLE: {
 		status: 503,
 		code: 'service_unavailable',
@@ -392,7 +397,8 @@ const ROUTE_ENTRY_ROWS: Array<[name: string, schema: AnySchema | undefined, code
 	['POST /signup 409', own_errors_at(signup_shape, 409), 'signup_conflict'],
 	['POST /bootstrap 401', own_errors_at(bootstrap_route_shape, 401), 'invalid_token'],
 	['POST /bootstrap 403', own_errors_at(bootstrap_route_shape, 403), 'already_bootstrapped'],
-	['POST /bootstrap 404', own_errors_at(bootstrap_route_shape, 404), 'token_file_missing']
+	['POST /bootstrap 404', own_errors_at(bootstrap_route_shape, 404), 'token_file_missing'],
+	['POST /bootstrap 500', own_errors_at(bootstrap_route_shape, 500), 'token_file_undeletable']
 ];
 
 describe('the REST error definitions', () => {

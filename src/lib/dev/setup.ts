@@ -40,6 +40,7 @@ import {
 	query_create_account_with_actor
 } from '../auth/account_queries.ts';
 import { query_create_role_grant } from '../auth/role_grant_queries.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 /**
  * Optional logger for setup helpers.
@@ -646,9 +647,14 @@ export interface SeedDevAccountDeps extends QueryDeps {
  * requested role grants. Never updates an existing password (rerun would
  * silently rotate it).
  *
+ * Flips `bootstrap_lock` in the same transaction as its writes, as a real
+ * bootstrap and `bootstrap_test_keeper` do: a database holding an account
+ * never reads as open for bootstrap, so the lock stays the single signal
+ * production trusts. Seed after bootstrapping, or seed the keeper itself.
+ *
  * Intended for a dev setup task — do not call in production.
  *
- * @mutates database - inserts an account/actor pair when missing and grants any requested role role_grants
+ * @mutates database - inserts an account/actor pair when missing, grants any requested role role_grants, and flips `bootstrap_lock.bootstrapped`
  * @throws Error if an existing account is found without an associated actor row
  */
 export const seed_dev_account = async (
@@ -657,43 +663,48 @@ export const seed_dev_account = async (
 	options?: { log?: SetupLogger }
 ): Promise<SeedDevAccountResult> => {
 	const log = options?.log ?? default_setup_logger;
-	const query_deps: QueryDeps = { db: deps.db };
-
 	const username = input.username.toLowerCase();
-	const existing = await query_account_by_username(query_deps, username);
-	if (existing) {
-		const actors = await query_actors_by_account(query_deps, existing.id);
-		if (actors.length === 0) {
-			log.error(`dev account '${input.username}' exists but has no actor`);
-			throw new Error(`dev account '${input.username}' has no actor`);
-		}
-		// Dev seed is single-actor by construction; pick the first.
-		const actor = actors[0]!;
-		for (const role of input.roles ?? []) {
-			await query_create_role_grant(query_deps, {
-				actor_id: actor.id,
-				role,
-				granted_by: null,
-				expires_at: null
-			});
-		}
-		log.skip(`Dev account '${input.username}' already exists`);
-		return { account_id: existing.id, actor_id: actor.id, created: false };
-	}
 
-	const password_hash = await deps.hash_password(input.password);
-	const { account, actor } = await query_create_account_with_actor(query_deps, {
-		username,
-		password_hash
-	});
-	for (const role of input.roles ?? []) {
-		await query_create_role_grant(query_deps, {
-			actor_id: actor.id,
-			role,
-			granted_by: null,
-			expires_at: null
+	const result = await deps.db.transaction(async (tx) => {
+		const query_deps: QueryDeps = { db: tx };
+		await tx.query(
+			'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false'
+		);
+		const grant_roles = async (actor_id: Uuid): Promise<void> => {
+			for (const role of input.roles ?? []) {
+				await query_create_role_grant(query_deps, {
+					actor_id,
+					role,
+					granted_by: null,
+					expires_at: null
+				});
+			}
+		};
+
+		const existing = await query_account_by_username(query_deps, username);
+		if (existing) {
+			const actors = await query_actors_by_account(query_deps, existing.id);
+			if (actors.length === 0) {
+				log.error(`dev account '${input.username}' exists but has no actor`);
+				throw new Error(`dev account '${input.username}' has no actor`);
+			}
+			// Dev seed is single-actor by construction; pick the first.
+			const actor = actors[0]!;
+			await grant_roles(actor.id);
+			return { account_id: existing.id, actor_id: actor.id, created: false };
+		}
+
+		const { account, actor } = await query_create_account_with_actor(query_deps, {
+			username,
+			password_hash: await deps.hash_password(input.password)
 		});
+		await grant_roles(actor.id);
+		return { account_id: account.id, actor_id: actor.id, created: true };
+	});
+	if (result.created) {
+		log.ok(`Seeded dev account '${input.username}'`);
+	} else {
+		log.skip(`Dev account '${input.username}' already exists`);
 	}
-	log.ok(`Seeded dev account '${input.username}'`);
-	return { account_id: account.id, actor_id: actor.id, created: true };
+	return result;
 };

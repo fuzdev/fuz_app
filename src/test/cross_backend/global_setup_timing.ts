@@ -34,7 +34,8 @@ import './cross_test_types.ts';
 import {
 	prepare_rust_spine_backend,
 	resolve_rust_spine_stub_database_url,
-	RUST_SPINE_STUB_CRATE
+	RUST_SPINE_STUB_CRATE,
+	with_legible_setup_failure
 } from './global_setup_helpers.ts';
 
 /**
@@ -103,4 +104,4 @@ const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	return create_dual_spawn(stub_database_url)(project);
 };
 
-export default setup;
+export default with_legible_setup_failure('timing', setup);

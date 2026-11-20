@@ -50,6 +50,11 @@ import { BaseServerEnv } from '#lib/server/env.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import {
+	create_file_bootstrap_token_store,
+	type BootstrapTokenStore
+} from '#lib/auth/bootstrap_token_store.ts';
+import { create_mock_runtime } from '#lib/runtime/mock.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -58,12 +63,9 @@ const session_options = create_session_config('test_session');
 
 const log = new Logger('test', { level: 'off' });
 
-const fs_stubs = {
-	read_secure_file: async (path: string): Promise<Uint8Array> => {
-		throw new Error(`ENOENT: no such file or directory: ${path}`);
-	},
-	delete_file: async (_path: string) => {}
-};
+/** A token store over a path with no file — the window reads closed. */
+const missing_token_store = (): BootstrapTokenStore =>
+	create_file_bootstrap_token_store(create_mock_runtime(), '/nonexistent/token');
 
 // Shared database WASM instance — schema is reset on each factory.create() call,
 // but the expensive WASM cold start only happens once per worker thread.
@@ -96,8 +98,7 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 			password: stub_password_deps,
 			db,
 			audit: create_audit_emitter({ db, log }),
-			connection_closer: create_realtime_closer(),
-			...fs_stubs
+			connection_closer: create_realtime_closer()
 		}
 	};
 	return { backend, ...base_config, ...overrides };
@@ -133,8 +134,7 @@ describe('create_app_server', () => {
 	});
 
 	test('bootstrap_status defaults to unavailable when omitted', () => {
-		assert.strictEqual(shared.bootstrap_status.available, false);
-		assert.isNull(shared.bootstrap_status.token_path);
+		assert.deepEqual(shared.bootstrap_status, { available: false });
 	});
 
 	test('close callback is available', () => {
@@ -148,12 +148,11 @@ describe('create_app_server', () => {
 			await create_config({
 				bootstrap: {
 					mode: 'live',
-					token_path: '/nonexistent/token'
+					token_store: missing_token_store()
 				}
 			})
 		);
-		assert.strictEqual(result.bootstrap_status.available, false);
-		assert.strictEqual(result.bootstrap_status.token_path, '/nonexistent/token');
+		assert.deepEqual(result.bootstrap_status, { available: false });
 	});
 
 	test('create_route_specs receives context with deps', async () => {
@@ -246,7 +245,7 @@ describe('create_app_server', () => {
 			await create_config({
 				bootstrap: {
 					mode: 'live',
-					token_path: '/nonexistent/token'
+					token_store: missing_token_store()
 				}
 			})
 		);
@@ -289,7 +288,7 @@ describe('create_app_server', () => {
 			await create_config({
 				bootstrap: {
 					mode: 'live',
-					token_path: '/nonexistent/token',
+					token_store: missing_token_store(),
 					on_bootstrap: async () => {
 						callback_registered = true;
 					}

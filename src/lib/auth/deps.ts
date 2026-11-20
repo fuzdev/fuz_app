@@ -24,17 +24,6 @@ import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_clo
  * Does not contain config (static values) or runtime state (mutable refs).
  */
 export interface AppDeps {
-	/**
-	 * Hardened secret-file read — used for the bootstrap token (the file that
-	 * mints the keeper account). Production wiring passes the runtime's
-	 * `read_secure_file` (`FsSecureReadDeps`), which rejects symlinks,
-	 * non-regular files, group/other-accessible modes, and oversized files; both the boot-time
-	 * availability probe and the request-time read go through this one
-	 * capability so the probe can never be laxer than the read it gates.
-	 */
-	read_secure_file: (path: string) => Promise<Uint8Array>;
-	/** Delete a file. */
-	delete_file: (path: string) => Promise<void>;
 	/** HMAC-SHA256 cookie signing keyring. */
 	keyring: Keyring;
 	/** Password hashing operations. Use `argon2_password_deps` in production. */

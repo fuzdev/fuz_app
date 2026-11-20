@@ -275,7 +275,7 @@ probe that ran before bootstrap:
 | `role_grant_offer_notification_ws_gated.cross.test.ts` | the notification suite again over the role-gated endpoint with `ws_required_roles` declared, so the revoke case expects the close; gated on `ws_role_gated` |
 | `conformance_ts_spine.cross.test.ts` | the conformance runner over `conformance_verify_cases.ts`, under the TS projects only (`TS_SPINE_ONLY_CROSS_TESTS` in `cross_backend_projects.ts` — the Rust stub's project sets `ts_spine: false`); in-process the rows ride `conformance.db.test.ts`, and `differential_ts.cross.test.ts` compares them between Node and Bun |
 | `reset_isolation.cross.test.ts` | `_testing_reset` empties the cell and fact tables between two tests |
-| `bootstrap_token.cross.test.ts` | the result of `bootstrap_token_probe.ts`, which a global setup runs before bootstrap: every refused spelling of the token file |
+| `bootstrap_token.cross.test.ts` | the result of `bootstrap_token_probe.ts`, which a global setup runs before bootstrap: every refused spelling of the token file, each with its whole body and the file left byte-identical; the burn — with the token's directory unwritable the right token answers 500 `token_file_undeletable`, the file intact and `/status` still open, then the keeper bootstrap succeeds and the file is gone. The probe throws when run as root, which would delete the file anyway |
 | `builtin_roles.cross.test.ts` | Node only, as above |
 
 The conformance case files, each a `ConformanceCase` array:
@@ -351,8 +351,11 @@ with an empty ledger, plus the TS-only `GET /verify` rows (`conformance_verify_c
 and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
-Two more files, `login_security.cross.test.ts` and
-`ws_action_rate_limit.cross.test.ts`, run under their own dual-spawn
+Three more files, `login_security.cross.test.ts`,
+`ws_action_rate_limit.cross.test.ts` and `bootstrap_rate_limit.cross.test.ts`
+(the bootstrap limiter's 429, body and `Retry-After`, on both spines, from
+`bootstrap_rate_limit_probe.ts` — wrong tokens sent before bootstrap from a
+forwarded address no other test uses), run under their own dual-spawn
 `cross_backend_security` project (`global_setup_login_security.ts` brings up
 the TS spine + `testing_spine_stub` with the login limiters and the action
 limiters enabled + the loopback proxy trusted, providing
@@ -456,6 +459,10 @@ several projects also works, but runs them one after another: vitest gives a
 project with `fileParallelism` off one worker, a `groupOrder` group runs on
 its projects' worker count, and each project's `globalSetup` is awaited in
 turn. Every spawn logs one `spawn_backend(<name>): healthy in <ms>` line.
+Every fuz_app global setup is wrapped in `with_legible_setup_failure`
+(`global_setup_helpers.ts`), which prints a failed setup's error and its cause
+chain and rethrows a plain `Error` — vitest otherwise maps the setup's stack
+through vite's module runner and hides the error.
 
 ```bash
 # the whole matrix, concurrently, one summary:

@@ -307,24 +307,30 @@ the same shape on whichever spine they run.
 
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account
 creation. Uses an atomic `bootstrap_lock` table to prevent TOCTOU races. Flow: read
-token file → timing-safe compare → hash password → acquire lock in transaction →
-create account + actor + keeper/admin role_grants → delete
-token file (reported via `token_file_deleted` on the success result).
+token file → timing-safe compare → hash password → in one transaction: acquire
+the lock, create account + actor + keeper/admin role_grants, mint the session
+(the capped minter, `create_capped_session`), burn the token file → commit. The
+burn is last, so a failed insert spends nothing, and a burn that fails rolls
+everything back (500 `token_file_undeletable`); the success result carries the
+signed cookie value the route sets.
 
 The conditional `UPDATE` on `bootstrap_lock` **is** the existence check — winning
 that row is what authorizes the insert. An earlier belt-and-suspenders
 "no accounts exist" query was deliberately removed so the lock is the single
 signal; see the repo-root `CLAUDE.md` § Test/prod write-semantics parity.
 
-Filesystem access (`read_secure_file` — the hardened bootstrap-token read —
-and `delete_file`) flows through `AppDeps`, provided at `create_app_backend`
-time. Both the boot-time availability probe and the request-time token read go
-through the same `read_secure_file`, so the probe can never report a window
-the read would refuse (a `0644` or symlinked token file reads as
-bootstrap-unavailable, with the reason logged).
+The token file is reached through one seam, a `BootstrapTokenStore`
+(`auth/bootstrap_token_store.ts`: `path`, `read_token` — the hardened secure
+read — and `burn_token`; `create_file_bootstrap_token_store(runtime, path)` is
+the file one), passed on the live bootstrap options. Both the boot-time
+availability probe and the request-time token read go through its
+`read_token`, so the probe can never report a window the read would refuse (a
+`0644` or symlinked token file reads as bootstrap-unavailable, with the
+reason logged). The Rust spine's twin is its `BootstrapTokenStore` trait.
 
-The `on_bootstrap` callback on `BootstrapRouteOptions` runs after account + session
-creation — use for app-specific post-bootstrap work (e.g., generating an API
+The `on_bootstrap` callback on `BootstrapRouteOptions` runs after the commit, with
+what was created (`BootstrapAccountCreated` — no request context and no session
+credential), and a throw from it is logged, never failing the bootstrap — use for app-specific post-bootstrap work (e.g., generating an API
 token file for CLI access). `check_bootstrap_status()` caches availability at startup so the status
 endpoint avoids per-request filesystem/DB queries.
 

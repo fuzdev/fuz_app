@@ -183,6 +183,7 @@ import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
+import { create_file_bootstrap_token_store } from '@fuzdev/fuz_app/auth/bootstrap_token_store.ts';
 import { ConnectionRegistry } from '@fuzdev/fuz_app/actions/connection_registry.ts';
 import { loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -216,9 +217,6 @@ const backend = await create_app_backend({
 	keyring,
 	password: argon2_password_deps,
 	database_url: env.DATABASE_URL,
-	// hardened bootstrap-token read (`FsSecureReadDeps`)
-	read_secure_file: runtime.read_secure_file,
-	delete_file: runtime.remove,
 	// consumer migrations, spliced after the builtin auth namespace
 	migration_namespaces: [{ namespace: 'my_app', migrations: MY_APP_MIGRATIONS }],
 	// audit_factory runs after create_db + migrations; the consumer owns
@@ -246,8 +244,9 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	bootstrap: bootstrap_token_path
 		? {
 				mode: 'live',
-				token_path: bootstrap_token_path
-				// on_bootstrap: async (result, c) => { /* optional post-bootstrap work */ },
+				// the hardened read and the burn of the token file
+				token_store: create_file_bootstrap_token_store(runtime, bootstrap_token_path)
+				// on_bootstrap: async (created) => { /* optional post-bootstrap work */ },
 				// route_prefix: '/api/account',  // default
 			}
 		: { mode: 'disabled' },

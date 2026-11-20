@@ -123,7 +123,8 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 		global_setup: './src/test/cross_backend/global_setup_login_security.ts',
 		include: [
 			'src/test/cross_backend/login_security.cross.test.ts',
-			'src/test/cross_backend/ws_action_rate_limit.cross.test.ts'
+			'src/test/cross_backend/ws_action_rate_limit.cross.test.ts',
+			'src/test/cross_backend/bootstrap_rate_limit.cross.test.ts'
 		]
 	},
 	// The timing gates spawn both backends with the audit stream's keep-alive

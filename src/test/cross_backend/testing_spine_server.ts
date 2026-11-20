@@ -49,6 +49,7 @@ import {
 } from '#lib/server/serve_fact_route.ts';
 import { create_app_backend, type AuditFactory } from '#lib/server/app_backend.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
+import { create_file_bootstrap_token_store } from '#lib/auth/bootstrap_token_store.ts';
 import {
 	RateLimiter,
 	default_action_account_rate_limit,
@@ -275,8 +276,6 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		database_url: env.DATABASE_URL,
 		keyring,
 		password: stub_password_deps,
-		read_secure_file: runtime.read_secure_file,
-		delete_file: runtime.remove,
 		audit_factory: cell_audit_factory,
 		// Splice the `fuz_cell` + `fuz_facts` schemas after the builtin auth
 		// namespace so the cell verbs + the fact-serving routes below have their
@@ -294,8 +293,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// it's a required option on the serve route factories.
 	const facts_dir = join(dirname(dirname(daemon_token_path)), 'facts');
 
-	// Ensure the daemon-token dir exists — `spawn_backend` creates the backend
-	// root (for the bootstrap token) but not the `run/` subdir the rotation
+	// Ensure the daemon-token dir exists — `spawn_backend` creates the
+	// bootstrap token's own directory but not the `run/` subdir the rotation
 	// writer lands the token in.
 	await runtime.mkdir(dirname(daemon_token_path), { recursive: true });
 
@@ -344,6 +343,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		: null;
 	const login_account_rate_limiter = login_rate_limit_enabled
 		? new RateLimiter(default_login_account_rate_limit)
+		: null;
+	// The bootstrap limiter rides the same toggle, as the Rust stub's does: its
+	// `FUZ_LOGIN_RATE_LIMIT_ENABLED` selects the mode every spine limiter is
+	// built through, the per-IP bootstrap one included.
+	const bootstrap_ip_rate_limiter = login_rate_limit_enabled
+		? new RateLimiter(default_login_ip_rate_limit)
 		: null;
 
 	// Action rate limiting is OFF by default for the same reason. The security
@@ -415,11 +420,15 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		rate_limiters: 'disabled_for_testing',
 		login_ip_rate_limiter,
 		login_account_rate_limiter,
+		bootstrap_ip_rate_limiter,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
 		daemon_token_state: daemon_token_rotation.state,
 		bootstrap: bootstrap_token_path
-			? { mode: 'live', token_path: bootstrap_token_path }
+			? {
+					mode: 'live',
+					token_store: create_file_bootstrap_token_store(runtime, bootstrap_token_path)
+				}
 			: { mode: 'disabled' },
 		// Auto-wires the SSE registry + broadcaster (and the revocation guard) and sets
 		// `ctx.audit_sse`, which `create_spine_route_specs` reads to mount
@@ -509,6 +518,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// caller-injected limiters are the caller's to dispose
 		login_ip_rate_limiter?.dispose();
 		login_account_rate_limiter?.dispose();
+		bootstrap_ip_rate_limiter?.dispose();
 		action_ip_rate_limiter?.dispose();
 		action_account_rate_limiter?.dispose();
 	};

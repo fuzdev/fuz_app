@@ -165,9 +165,10 @@ export const NON_BROWSABLE_TABLES: ReadonlyArray<string> = Object.freeze([
  *   surface. It is also part of how revocation propagates: the revocation guard
  *   (`create_revocation_guard`) closes live connections by listening to audit
  *   events, so a raw row delete here is invisible to it.
- *   `bootstrap_lock` — deleting the singleton leaves `check_bootstrap_status`
- *   advertising an open bootstrap window on the next boot that
- *   `bootstrap_account.ts`'s atomic flip then always refuses.
+ * - `bootstrap_lock` — deleting the singleton closes bootstrap for good:
+ *   `check_bootstrap_status` reads a missing row as unavailable (logged as an
+ *   error), so a database that has not bootstrapped never can until the row
+ *   is restored.
  * - `app_settings` — deleting the singleton makes every settings read throw.
  * - `schema_version` — the migration tracker. Already refused by the
  *   single-column-primary-key rule (its key is `(namespace, name)`), but that

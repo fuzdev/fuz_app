@@ -364,25 +364,6 @@ export interface TestAppServerOptions {
 /** Silent logger for tests — suppresses all output. */
 const test_log = new Logger('test', { level: 'off' });
 
-/**
- * Filesystem stubs for `AppDeps.{read_secure_file, delete_file}` in
- * test backends. The secure read throws (no token file exists — the Rust
- * in-memory store's shape). Stub callbacks skip the real runtimes'
- * permission checks by design — those are pinned by
- * `src/test/runtime/secure_file.test.ts` against real files.
- */
-interface TestFsStubs {
-	read_secure_file: (path: string) => Promise<Uint8Array>;
-	delete_file: (path: string) => Promise<void>;
-}
-
-const test_fs_stubs: TestFsStubs = {
-	read_secure_file: async (path) => {
-		throw new Error(`ENOENT: no such file or directory: ${path}`);
-	},
-	delete_file: async () => {}
-};
-
 interface BuildTestBackendOptions {
 	db?: Db;
 	db_type?: DbType;
@@ -459,8 +440,7 @@ const _build_test_backend = async (
 			db,
 			log: test_log,
 			audit: audit_factory({ db, log: test_log }),
-			connection_closer: create_realtime_closer(),
-			...test_fs_stubs
+			connection_closer: create_realtime_closer()
 		}
 	};
 	return { backend, keyring: keyring_result.keyring };

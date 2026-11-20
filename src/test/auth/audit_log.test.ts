@@ -24,7 +24,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import { create_stub_db, create_noop_stub } from '#lib/testing/stubs.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
 import {
 	create_recording_audit_emitter,
 	type RecordingAuditEmitter
@@ -142,7 +142,6 @@ const keyring = create_test_keyring('audit-integration-test-key-at-least-32-char
 const session_options = create_session_config('test_session');
 
 const db = create_stub_db();
-const noop = create_noop_stub('deps');
 
 const fake_account = {
 	id: ACC_TEST,
@@ -216,8 +215,6 @@ describe('account route audit logging', () => {
 					verify_password,
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
-				read_secure_file: noop,
-				delete_file: noop,
 				audit: audit_log_capture.emitter,
 				connection_closer: create_realtime_closer()
 			},
@@ -399,8 +396,6 @@ describe('account route audit logging', () => {
 					verify_password: vi.fn(() => Promise.resolve(true)),
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				},
-				read_secure_file: noop,
-				delete_file: noop,
 				audit: audit_log_capture.emitter,
 				connection_closer: create_realtime_closer()
 			},

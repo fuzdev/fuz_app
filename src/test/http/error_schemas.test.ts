@@ -33,6 +33,7 @@ import {
 	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_UNDELETABLE,
 	ERROR_ROLE_NOT_WEB_GRANTABLE,
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_INVALID_EVENT_TYPE,
@@ -356,6 +357,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_KEEPER_ACCOUNT_NOT_FOUND, 'keeper_account_not_found');
 		assert.strictEqual(ERROR_ALREADY_BOOTSTRAPPED, 'already_bootstrapped');
 		assert.strictEqual(ERROR_TOKEN_FILE_MISSING, 'token_file_missing');
+		assert.strictEqual(ERROR_TOKEN_FILE_UNDELETABLE, 'token_file_undeletable');
 		assert.strictEqual(ERROR_ROLE_NOT_WEB_GRANTABLE, 'role_not_web_grantable');
 		assert.strictEqual(ERROR_ROLE_GRANT_NOT_FOUND, 'role_grant_not_found');
 		assert.strictEqual(ERROR_INVALID_EVENT_TYPE, 'invalid_event_type');

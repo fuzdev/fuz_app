@@ -56,6 +56,12 @@ export interface DualSpawnGlobalSetupOptions {
 	 * `ProvidedContext` for those keys yourself.
 	 */
 	readonly provide_keys?: { readonly a: string; readonly b: string };
+	/**
+	 * Run against each backend once it is healthy and before its keeper
+	 * bootstrap — `bootstrap_backend`'s `before_bootstrap`, for a probe of the
+	 * pre-bootstrap window. Omit for none.
+	 */
+	readonly before_bootstrap?: (config: BackendConfig) => Promise<void>;
 }
 
 /**
@@ -63,14 +69,15 @@ export interface DualSpawnGlobalSetupOptions {
  */
 export const create_dual_spawn_global_setup = ({
 	configs,
-	provide_keys = { a: 'parity_handle_a', b: 'parity_handle_b' }
+	provide_keys = { a: 'parity_handle_a', b: 'parity_handle_b' },
+	before_bootstrap
 }: DualSpawnGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	return async (project) => {
-		const a = await bootstrap_backend(configs.a());
+		const a = await bootstrap_backend(configs.a(), { before_bootstrap });
 		// Tear `a` down if `b` fails to spawn — no orphaned child process.
 		let b: Awaited<ReturnType<typeof bootstrap_backend>>;
 		try {
-			b = await bootstrap_backend(configs.b());
+			b = await bootstrap_backend(configs.b(), { before_bootstrap });
 		} catch (err) {
 			await a.teardown();
 			throw err;

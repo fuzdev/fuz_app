@@ -13,6 +13,8 @@
  * @module
  */
 
+import type { BurnOutcome } from './secure_file.ts';
+
 /**
  * Result of a stat operation.
  */
@@ -97,6 +99,21 @@ export interface FsSecureReadDeps {
 	 * must never degrade to an empty read.
 	 */
 	read_secure_file: (path: string) => Promise<Uint8Array>;
+}
+
+/**
+ * Durable removal of a one-shot secret file — the TS twin of the Rust
+ * spine's `fuz_sys::secure_file::burn_secure_file`.
+ */
+export interface FsSecureBurnDeps {
+	/**
+	 * Unlink the entry at `path` (a symlink itself, never its target; a
+	 * directory is refused, never recursed into), then fsync its parent
+	 * directory so the removal survives a host crash. A missing entry resolves
+	 * `'already_gone'`; any other failure, the fsync's included, throws — a
+	 * burn that can't be confirmed is a failed burn.
+	 */
+	burn_secure_file: (path: string) => Promise<BurnOutcome>;
 }
 
 /**
@@ -303,6 +320,7 @@ export interface RuntimeDeps
 		EnvDeps,
 		FsReadDeps,
 		FsSecureReadDeps,
+		FsSecureBurnDeps,
 		FsWriteDeps,
 		FsStreamDeps,
 		FsRemoveDeps,

@@ -348,8 +348,7 @@ export interface DefaultInProcessSuiteOptions {
 // `create_test_app` (so the route exists at dispatch time and returns 403
 // `ERROR_ALREADY_BOOTSTRAPPED` matching its declared 403 schema). Same
 // precedent as `rpc_endpoints`. Discriminated union shape (`mode: 'disabled'`
-// | `'surface_only'` | `'live'`) replaces the old `token_path: string | null`
-// overload that conflated three deployment intents on one channel.
+// | `'surface_only'` | `'live'`), one deployment intent per mode.
 
 /**
  * Build the full in-process suite bundle in a single helper invocation.

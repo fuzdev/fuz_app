@@ -7,61 +7,118 @@
 import { assert, test, beforeEach } from 'vitest';
 
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import { bootstrap_account, type BootstrapAccountDeps } from '#lib/auth/bootstrap_account.ts';
-import { stub_password_deps } from '#lib/testing/app_server.ts';
+import {
+	bootstrap_account,
+	type BootstrapAccountDeps,
+	type BootstrapAccountInput,
+	type BootstrapAccountResult
+} from '#lib/auth/bootstrap_account.ts';
+import type { BootstrapTokenStore } from '#lib/auth/bootstrap_token_store.ts';
+import type { BurnOutcome } from '#lib/runtime/secure_file.ts';
+import { stub_password_deps, TEST_COOKIE_SECRET } from '#lib/testing/app_server.ts';
 import { argon2_password_deps } from '#lib/auth/password_argon2.ts';
-import type { Db } from '#lib/db/db.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { Db } from '#lib/db/db.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_TOKEN_FILE_MISSING
+	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_UNDELETABLE
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { create_gated_db } from '../gated_db.ts';
 import { query_role_grant_has_role } from './auth_test_queries.ts';
 
 const log = new Logger('test', { level: 'off' });
 const TEST_TOKEN = 'bootstrap_secret_token_abc123_xyz789';
+const session_options = create_session_config('test_session');
+const keyring_result = create_keyring(TEST_COOKIE_SECRET);
+if (!keyring_result.ok) throw new Error('the test cookie secret builds a keyring');
+const keyring = keyring_result.keyring;
 
-const create_mock_fs = (
-	files: Record<string, string> = {}
-): {
-	read_secure_file: (path: string) => Promise<Uint8Array>;
-	delete_file: (path: string) => Promise<void>;
-	files: Record<string, string>;
-} => {
-	const store = { ...files };
-	return {
-		files: store,
-		read_secure_file: async (path: string): Promise<Uint8Array> => {
-			if (!(path in store)) throw new Error(`ENOENT: no such file: ${path}`);
-			return new TextEncoder().encode(store[path]);
+/** An in-memory token store that models the burn: a burned token reads as missing. */
+interface MockTokenStore extends BootstrapTokenStore {
+	/** The file's content, `undefined` once burned or when never written. */
+	content: string | undefined;
+	/** What each burn saw, in order. */
+	burns: Array<BurnOutcome>;
+}
+
+/** `content: null` is a store with no file. */
+const create_mock_store = (
+	content: string | null = TEST_TOKEN,
+	options: { burn?: () => Promise<void> } = {}
+): MockTokenStore => {
+	const store: MockTokenStore = {
+		path: '/token',
+		content: content ?? undefined,
+		burns: [],
+		read_token: async () => {
+			if (store.content === undefined) throw new Error('ENOENT: no such file: /token');
+			return new TextEncoder().encode(store.content);
 		},
-		delete_file: async (path: string): Promise<void> => {
-			if (!(path in store)) throw new Error(`ENOENT: no such file: ${path}`);
-			delete store[path];
+		burn_token: async () => {
+			await options.burn?.();
+			const outcome: BurnOutcome = store.content === undefined ? 'already_gone' : 'burned';
+			store.content = undefined;
+			store.burns.push(outcome);
+			return outcome;
 		}
 	};
+	return store;
 };
+
+/**
+ * `db` with every pool-level statement touching `auth_session` refused at
+ * once. The bootstrap mints its session inside its transaction, so none is
+ * legitimate; one written on the pool instead would wait on the
+ * transaction's connection (the in-memory drivers have one) until the test
+ * timed out, and stall every test after it.
+ */
+const refuse_pool_sessions = (db: Db): Db =>
+	new Db({
+		client: {
+			query: async <T>(text: string, values?: Array<unknown>) => {
+				if (text.includes('auth_session')) {
+					throw new Error('a pool-level statement touched auth_session');
+				}
+				return db.client.query<T>(text, values);
+			}
+		},
+		transaction: (fn) => db.transaction(fn)
+	});
 
 const create_deps = (
 	db: Db,
 	overrides: {
-		fs?: ReturnType<typeof create_mock_fs>;
+		store?: BootstrapTokenStore;
 		password?: BootstrapAccountDeps['password'];
-		token_path?: string;
+		log?: Logger;
 	} = {}
-): BootstrapAccountDeps => {
-	const fs = overrides.fs ?? create_mock_fs({ '/token': TEST_TOKEN });
-	return {
-		log,
-		db,
-		token_path: overrides.token_path ?? '/token',
-		read_secure_file: fs.read_secure_file,
-		delete_file: fs.delete_file,
-		password: overrides.password ?? stub_password_deps
-	};
+): BootstrapAccountDeps => ({
+	log: overrides.log ?? log,
+	db: refuse_pool_sessions(db),
+	token_store: overrides.store ?? create_mock_store(),
+	password: overrides.password ?? stub_password_deps,
+	keyring
+});
+
+const INPUT: BootstrapAccountInput = { username: 'keeper', password: 'password_12_chars' };
+
+/** `bootstrap_account` with the shared session options. */
+const run = (
+	deps: BootstrapAccountDeps,
+	token: string,
+	input: BootstrapAccountInput = INPUT
+): Promise<BootstrapAccountResult> => bootstrap_account(deps, token, input, { session_options });
+
+const count = async (db: Db, table: 'account' | 'auth_session'): Promise<number> => {
+	const row = await db.query_one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${table}`);
+	return row?.n ?? 0;
 };
 
 /** Check the bootstrap_lock state in the DB. */
@@ -80,7 +137,7 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('creates account, actor, and keeper + admin role_grants', async () => {
 		const db = get_db();
-		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
+		const result = await run(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'secure_password_12'
 		});
@@ -107,7 +164,7 @@ describe_db('bootstrap_account', (get_db) => {
 		const db = get_db();
 		assert.strictEqual(await get_lock_state(db), false);
 
-		await bootstrap_account(create_deps(db), TEST_TOKEN, {
+		await run(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'secure_password_12'
 		});
@@ -117,7 +174,7 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('password is hashed (not stored in plaintext)', async () => {
 		const db = get_db();
-		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
+		const result = await run(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'my_password_1234'
 		});
@@ -131,11 +188,10 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('password is hashed with argon2 when using argon2_password_deps', async () => {
 		const db = get_db();
-		const result = await bootstrap_account(
-			create_deps(db, { password: argon2_password_deps }),
-			TEST_TOKEN,
-			{ username: 'keeper', password: 'my_password_1234' }
-		);
+		const result = await run(create_deps(db, { password: argon2_password_deps }), TEST_TOKEN, {
+			username: 'keeper',
+			password: 'my_password_1234'
+		});
 
 		assert.strictEqual(result.ok, true);
 		if (!result.ok) return;
@@ -143,32 +199,34 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.ok(result.account.password_hash.startsWith('$argon2id$'));
 	});
 
-	test('deletes the token file on success', async () => {
+	test('burns the token file on success', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({ '/token': TEST_TOKEN });
-		await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+		const store = create_mock_store();
+		await run(create_deps(db, { store }), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
 
-		assert.strictEqual('/token' in fs.files, false);
+		assert.deepEqual(store.burns, ['burned']);
+		assert.isUndefined(store.content);
 	});
 
-	test('does not delete the token file on failure', async () => {
+	test('does not burn the token file on a wrong token', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({ '/token': TEST_TOKEN });
-		await bootstrap_account(create_deps(db, { fs }), 'wrong_token', {
+		const store = create_mock_store();
+		await run(create_deps(db, { store }), 'wrong_token', {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
 
-		assert.strictEqual('/token' in fs.files, true);
+		assert.deepEqual(store.burns, []);
+		assert.strictEqual(store.content, TEST_TOKEN);
 	});
 
 	test('fails when already bootstrapped (bootstrap_lock)', async () => {
 		const db = get_db();
 		// first bootstrap
-		const first = await bootstrap_account(create_deps(db), TEST_TOKEN, {
+		const first = await run(create_deps(db), TEST_TOKEN, {
 			username: 'first_keeper',
 			password: 'password_12_chars'
 		});
@@ -176,8 +234,8 @@ describe_db('bootstrap_account', (get_db) => {
 
 		// second attempt with new token file
 		const new_token = 'new_bootstrap_token_for_the_second_try';
-		const fs2 = create_mock_fs({ '/token': new_token });
-		const result = await bootstrap_account(create_deps(db, { fs: fs2 }), new_token, {
+		const store2 = create_mock_store(new_token);
+		const result = await run(create_deps(db, { store: store2 }), new_token, {
 			username: 'second_keeper',
 			password: 'password_12_chars'
 		});
@@ -191,7 +249,7 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('fails with invalid token', async () => {
 		const db = get_db();
-		const result = await bootstrap_account(create_deps(db), 'wrong_token', {
+		const result = await run(create_deps(db), 'wrong_token', {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -208,8 +266,8 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('accepts a token file with one trailing LF', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({ '/token': `${TEST_TOKEN}\n` });
-		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+		const store = create_mock_store(`${TEST_TOKEN}\n`);
+		const result = await run(create_deps(db, { store }), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -229,8 +287,8 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test.each(REFUSED_TOKEN_FILES)('refuses a token file with %s', async (_label, content) => {
 		const db = get_db();
-		const fs = create_mock_fs({ '/token': content });
-		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+		const store = create_mock_store(content);
+		const result = await run(create_deps(db, { store }), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -238,13 +296,13 @@ describe_db('bootstrap_account', (get_db) => {
 		if (!result.ok) assert.strictEqual(result.error, ERROR_INVALID_TOKEN);
 		assert.strictEqual(await get_lock_state(db), false);
 		// the token file stays for a corrected attempt
-		assert.ok('/token' in fs.files);
+		assert.deepEqual(store.burns, []);
 	});
 
 	test('refuses a provided token that carries the trailing LF the file lost', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({ '/token': `${TEST_TOKEN}\n` });
-		const result = await bootstrap_account(create_deps(db, { fs }), `${TEST_TOKEN}\n`, {
+		const store = create_mock_store(`${TEST_TOKEN}\n`);
+		const result = await run(create_deps(db, { store }), `${TEST_TOKEN}\n`, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -270,8 +328,8 @@ describe_db('bootstrap_account', (get_db) => {
 		'refuses %s as a missing token file',
 		async (_label, content, provided) => {
 			const db = get_db();
-			const fs = create_mock_fs({ '/token': content });
-			const result = await bootstrap_account(create_deps(db, { fs }), provided, {
+			const store = create_mock_store(content);
+			const result = await run(create_deps(db, { store }), provided, {
 				username: 'keeper',
 				password: 'password_12_chars'
 			});
@@ -287,8 +345,8 @@ describe_db('bootstrap_account', (get_db) => {
 	test('accepts a token at exactly the minimum length', async () => {
 		const db = get_db();
 		const token = TOKEN_32_BYTES;
-		const fs = create_mock_fs({ '/token': `${token}\n` });
-		const result = await bootstrap_account(create_deps(db, { fs }), token, {
+		const store = create_mock_store(`${token}\n`);
+		const result = await run(create_deps(db, { store }), token, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -297,8 +355,8 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('fails when token file is missing', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({});
-		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
+		const store = create_mock_store(null);
+		const result = await run(create_deps(db, { store }), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -316,7 +374,7 @@ describe_db('bootstrap_account', (get_db) => {
 	test('both role_grants are verifiable via query_role_grant_has_role', async () => {
 		const db = get_db();
 		const deps = { db };
-		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
+		const result = await run(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
 			password: 'password_12_chars'
 		});
@@ -328,42 +386,127 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(await query_role_grant_has_role(deps, result.actor.id, ROLE_ADMIN), true);
 	});
 
-	test('returns token_file_deleted: true on successful file deletion', async () => {
+	test('mints the session inside the transaction and returns its cookie value', async () => {
 		const db = get_db();
-		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
-			username: 'keeper',
-			password: 'password_12_chars'
-		});
-
-		assert.strictEqual(result.ok, true);
-		if (!result.ok) return;
-		assert.strictEqual(result.token_file_deleted, true);
+		// `create_deps` refuses a pool-level session write, so a session minted
+		// outside the transaction fails here at once
+		const result = await run(create_deps(db), TEST_TOKEN);
+		assert.ok(result.ok);
+		assert.isString(result.session_cookie_value);
+		assert.isNotEmpty(result.session_cookie_value);
+		const rows = await db.query<{ account_id: string }>('SELECT account_id FROM auth_session');
+		assert.deepEqual(
+			rows.map((r) => r.account_id),
+			[result.account.id]
+		);
 	});
 
-	test('returns token_file_deleted: false when file deletion fails', async () => {
-		const db = get_db();
-		const fs = create_mock_fs({ '/token': TEST_TOKEN });
-		const result = await bootstrap_account(
-			{
-				log,
-				db,
-				token_path: '/token',
-				read_secure_file: fs.read_secure_file,
-				delete_file: async () => {
-					throw new Error('EPERM: permission denied');
-				},
-				password: stub_password_deps
-			},
-			TEST_TOKEN,
-			{ username: 'keeper', password: 'password_12_chars' }
-		);
+	test('burns the token inside the transaction, after its writes', async () => {
+		const gated = create_gated_db(get_db());
+		let open_at_burn: number | null = null;
+		const store = create_mock_store(TEST_TOKEN, {
+			burn: async () => {
+				open_at_burn = gated.open_transactions();
+			}
+		});
+		const result = await run(create_deps(gated.db, { store }), TEST_TOKEN);
+		assert.ok(result.ok);
+		assert.strictEqual(open_at_burn, 1, 'the burn ran while the bootstrap transaction was open');
+		assert.strictEqual(gated.open_transactions(), 0);
+	});
 
-		assert.strictEqual(result.ok, true);
-		if (!result.ok) return;
-		assert.strictEqual(result.token_file_deleted, false);
-		// DB state is correct despite file deletion failure
+	test('a failed burn rolls the bootstrap back and leaves the token valid', async () => {
+		const db = get_db();
+		const store = create_mock_store(TEST_TOKEN, {
+			burn: async () => {
+				throw new Error('EACCES: permission denied, unlink /token');
+			}
+		});
+		const errors: Array<string> = [];
+		const loud_log = new Logger('test', { level: 'off' });
+		loud_log.error = (...args: Array<unknown>) => void errors.push(args.join(' '));
+
+		const result = await run(create_deps(db, { store, log: loud_log }), TEST_TOKEN);
+
+		assert.deepEqual(result, { ok: false, error: ERROR_TOKEN_FILE_UNDELETABLE, status: 500 });
+		assert.strictEqual(await get_lock_state(db), false, 'the lock rolled back');
+		assert.strictEqual(await count(db, 'account'), 0, 'the account rolled back');
+		assert.strictEqual(await count(db, 'auth_session'), 0, 'the session rolled back');
+		assert.strictEqual(store.content, TEST_TOKEN, 'the token is still there');
+		assert.strictEqual(errors.length, 1);
+		assert.include(errors[0], 'nothing was created');
+
+		// the operator fixes the directory and retries the same token
+		const retry_store = create_mock_store();
+		const retry = await run(create_deps(db, { store: retry_store }), TEST_TOKEN);
+		assert.ok(retry.ok, 'the retry bootstraps');
+		assert.deepEqual(retry_store.burns, ['burned']);
+	});
+
+	test('a token already gone at the burn counts as burned', async () => {
+		const db = get_db();
+		const store = create_mock_store();
+		// the file goes between the read and the burn
+		const original_read = store.read_token;
+		store.read_token = async () => {
+			const bytes = await original_read();
+			store.content = undefined;
+			return bytes;
+		};
+		const result = await run(create_deps(db, { store }), TEST_TOKEN);
+		assert.ok(result.ok);
+		assert.deepEqual(store.burns, ['already_gone']);
 		assert.strictEqual(await get_lock_state(db), true);
-		assert.strictEqual(result.account.username, 'keeper');
+	});
+
+	test('a failed insert burns nothing: the burn follows the inserts', async () => {
+		const db = get_db();
+		// the bootstrap username taken while the lock is still unflipped
+		await db.query("INSERT INTO account (username, password_hash) VALUES ('keeper', 'hash')");
+		const store = create_mock_store();
+		await assert_rejects(() => run(create_deps(db, { store }), TEST_TOKEN));
+		assert.deepEqual(store.burns, [], 'nothing was burned');
+		assert.strictEqual(store.content, TEST_TOKEN, 'the token is intact');
+		assert.strictEqual(await get_lock_state(db), false, 'the lock rolled back');
+	});
+
+	test('the lock-race loser burns nothing', async () => {
+		const db = get_db();
+		// the window open in memory, the lock already flipped in the database
+		await db.query('UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1');
+		const store = create_mock_store();
+		const result = await run(create_deps(db, { store }), TEST_TOKEN);
+		assert.deepEqual(result, { ok: false, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 });
+		assert.deepEqual(store.burns, [], 'only the lock winner burns');
+		assert.strictEqual(store.content, TEST_TOKEN);
+		assert.strictEqual(await count(db, 'account'), 0);
+	});
+
+	test('a commit that fails after the burn throws and logs that the token is gone', async () => {
+		const gated = create_gated_db(get_db());
+		const store = create_mock_store();
+		const errors: Array<string> = [];
+		const loud_log = new Logger('test', { level: 'off' });
+		loud_log.error = (...args: Array<unknown>) => void errors.push(args.join(' '));
+
+		const hold = gated.hold_commit();
+		const pending = run(create_deps(gated.db, { store, log: loud_log }), TEST_TOKEN);
+		// a bootstrap that fails before its commit settles first: fail then, not at the timeout
+		const reached = await Promise.race([
+			hold.reached.then(() => 'held'),
+			pending.then(
+				() => 'settled',
+				() => 'settled'
+			)
+		]);
+		assert.strictEqual(reached, 'held', 'the bootstrap reached its commit');
+		hold.fail(new Error('synthetic commit failure'));
+		await assert_rejects(() => pending, /synthetic commit failure/);
+
+		assert.deepEqual(store.burns, ['burned']);
+		assert.strictEqual(await get_lock_state(get_db()), false, 'nothing committed');
+		assert.strictEqual(errors.length, 1);
+		assert.include(errors[0], 'write a new token');
 	});
 
 	// The belt-and-suspenders `query_account_has_any` check that previously

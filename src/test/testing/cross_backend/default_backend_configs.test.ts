@@ -74,9 +74,12 @@ describe('default tmpdir', () => {
 	test('is namespaced by the running repo, so one backend name in two repos never collides', () => {
 		const [cord_rust, cord_ts] = tokens_from('/home/dev/cord', 'rust');
 		const [dotted_rust, dotted_ts] = tokens_from('/home/dev/example.org', 'rust');
-		assert.strictEqual(cord_rust, join(tmpdir(), 'cord_rust', 'bootstrap_token'));
+		assert.strictEqual(cord_rust, join(tmpdir(), 'cord_rust', 'bootstrap', 'bootstrap_token'));
 		assert.strictEqual(cord_ts, cord_rust);
-		assert.strictEqual(dotted_rust, join(tmpdir(), 'example.org_rust', 'bootstrap_token'));
+		assert.strictEqual(
+			dotted_rust,
+			join(tmpdir(), 'example.org_rust', 'bootstrap', 'bootstrap_token')
+		);
 		assert.strictEqual(dotted_ts, dotted_rust);
 	});
 

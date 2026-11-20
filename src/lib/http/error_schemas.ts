@@ -197,6 +197,16 @@ export const ERROR_ALREADY_BOOTSTRAPPED = 'already_bootstrapped' as const;
 /** Bootstrap token file not found on disk. */
 export const ERROR_TOKEN_FILE_MISSING = 'token_file_missing' as const;
 
+/**
+ * The bootstrap token matched, but its file couldn't be burned (deleted
+ * durably) inside the bootstrap transaction, so the bootstrap rolled back and
+ * nothing was created. A 500 with a code of its own because the operator can
+ * fix it — the server user needs write access to the token's directory — and
+ * then retry the same token: the window stays open. Twin of the Rust
+ * `BootstrapErrorKind::TokenFileUndeletable`.
+ */
+export const ERROR_TOKEN_FILE_UNDELETABLE = 'token_file_undeletable' as const;
+
 // --- Signup / Invites ---
 
 /** No unclaimed invite matches the signup credentials. */
@@ -585,6 +595,8 @@ export const REST_NO_ACTORS_ON_ACCOUNT = rest_error(500, ERROR_NO_ACTORS_ON_ACCO
 /** The account or actor row was deleted between credential validation and the actor read. */
 export const REST_ACCOUNT_VANISHED = rest_error(500, ERROR_ACCOUNT_VANISHED);
 export const REST_INTERNAL_ERROR = rest_error(500, ERROR_INTERNAL_ERROR);
+/** Bootstrap's token matched and its file couldn't be burned; the bootstrap rolled back. */
+export const REST_TOKEN_FILE_UNDELETABLE = rest_error(500, ERROR_TOKEN_FILE_UNDELETABLE);
 
 // 503: a failed pool checkout any route can answer with, and the health and readiness checks
 export const REST_SERVICE_UNAVAILABLE = rest_error(503, ERROR_SERVICE_UNAVAILABLE);

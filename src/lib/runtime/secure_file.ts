@@ -1,6 +1,6 @@
 /**
- * Hardened secret-file read — the TS twin of the Rust spine's
- * `fuz_sys::secure_file::load_secure_file`.
+ * Hardened secret-file read and burn — the TS twins of the Rust spine's
+ * `fuz_sys::secure_file::load_secure_file` and `burn_secure_file`.
  *
  * The file this guards is typically the highest-value credential on the host
  * (the bootstrap token mints the keeper account), so the read fails loud
@@ -10,8 +10,9 @@
  * ratifies the shape zap produces; a hand-placed `0644` file fails at boot
  * instead of being read.
  *
- * The real implementation lives here (`load_secure_file_node`, wired as
- * `create_node_runtime().read_secure_file`), and the mock honors the mode/size
+ * The real implementations live here (`load_secure_file_node` and
+ * `burn_secure_file_node`, wired as `create_node_runtime().read_secure_file`
+ * and `.burn_secure_file`), and the mock honors the mode/size
  * checks over its in-memory map (it has no file types). Both refuse through
  * the shared `assert_secure_mode` / `assert_secure_size` helpers, so the
  * checks — and their operator-facing messages — can't drift between them.
@@ -20,7 +21,8 @@
  */
 
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { open, unlink } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import process from 'node:process';
 
 /**
@@ -119,4 +121,75 @@ export const load_secure_file_node = async (path: string): Promise<Uint8Array> =
 	} finally {
 		await handle.close();
 	}
+};
+
+/**
+ * What a burn found at the path. Both mean the postcondition holds — no
+ * entry at the path, durably — so a caller that only needs the secret gone
+ * treats them alike and logs the second. Twin of the Rust
+ * `fuz_sys::secure_file::BurnOutcome`.
+ *
+ * - `'burned'` — the entry was there and is now unlinked
+ * - `'already_gone'` — nothing was at the path (`ENOENT`)
+ */
+export type BurnOutcome = 'burned' | 'already_gone';
+
+/**
+ * Whether a directory can be opened to fsync it. Windows can't open a
+ * directory, so the parent fsync is skipped there and a burn's durability
+ * across a host crash rests on the filesystem; refusing the burn instead
+ * would make bootstrap impossible on that platform. The Rust twin is
+ * Unix-only and never faces this.
+ */
+const directory_fsync_applies = process.platform !== 'win32';
+
+/**
+ * Remove a one-shot secret's directory entry, durably (Node implementation)
+ * — the burn a consumed credential file (the bootstrap token) gets before the
+ * transaction it authorized commits, so the secret can never be presented
+ * again.
+ *
+ * - `unlink` of the entry at `path`: a symlink there is removed itself, never
+ *   followed (following would delete a file the operator never named), and a
+ *   directory is refused, never recursed into — unlike `rm`, which takes
+ *   `recursive`
+ * - a missing entry (`ENOENT`) is `'already_gone'`, not an error: the
+ *   postcondition the caller needs — no entry at `path` — holds
+ * - then the parent directory is fsynced, on both outcomes, so the removal
+ *   survives a host crash; without it a crash after the caller's commit can
+ *   bring the entry back. A failed fsync is a failed burn. Skipped on Windows,
+ *   which can't open a directory
+ *
+ * Twin of the Rust `fuz_sys::secure_file::burn_secure_file`.
+ *
+ * @param path - path to the secret file
+ * @returns whether the entry was unlinked or already gone
+ * @throws Error naming the path when the unlink fails for any reason but `ENOENT` (`EACCES` from a directory the process can't write, `EISDIR`/`EPERM` for a directory at the path), or naming the parent when its fsync fails
+ */
+export const burn_secure_file_node = async (path: string): Promise<BurnOutcome> => {
+	let outcome: BurnOutcome = 'burned';
+	try {
+		await unlink(path);
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+			throw new Error(`could not delete ${path}: ${(err as Error).message}`, { cause: err });
+		}
+		outcome = 'already_gone';
+	}
+	if (directory_fsync_applies) {
+		const parent = dirname(path);
+		try {
+			// a read handle is enough: fsync flushes the directory's entries
+			// whatever the descriptor's mode
+			const handle = await open(parent, 'r');
+			try {
+				await handle.sync();
+			} finally {
+				await handle.close();
+			}
+		} catch (err) {
+			throw new Error(`could not fsync ${parent}: ${(err as Error).message}`, { cause: err });
+		}
+	}
+	return outcome;
 };

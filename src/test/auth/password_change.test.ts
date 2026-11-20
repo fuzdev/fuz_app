@@ -27,7 +27,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Db } from '#lib/db/db.ts';
-import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_stub_db, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -107,7 +107,6 @@ const db = new Db({
 		}
 	}
 });
-const noop = create_noop_stub('deps');
 
 const fake_account = {
 	id: 'acc_test' as Uuid,
@@ -185,8 +184,6 @@ const create_password_change_app = (
 				verify_password: mock_verify_password,
 				verify_dummy: vi.fn(() => Promise.resolve(false))
 			},
-			read_secure_file: noop,
-			delete_file: noop,
 			audit,
 			connection_closer: realtime_closer
 		},

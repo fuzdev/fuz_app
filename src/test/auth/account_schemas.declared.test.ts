@@ -74,6 +74,7 @@ import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_UNDELETABLE,
 	REST_AUTHENTICATION_REQUIRED_BOOTSTRAP,
 	to_error_schemas,
 	type RestErrorDef
@@ -211,7 +212,8 @@ describe('the account schemas', () => {
 			[declared(signup_shape, 409), ERROR_SIGNUP_CONFLICT],
 			[declared(bootstrap_route_shape, 401), ERROR_INVALID_TOKEN],
 			[declared(bootstrap_route_shape, 403), ERROR_ALREADY_BOOTSTRAPPED],
-			[declared(bootstrap_route_shape, 404), ERROR_TOKEN_FILE_MISSING]
+			[declared(bootstrap_route_shape, 404), ERROR_TOKEN_FILE_MISSING],
+			[declared(bootstrap_route_shape, 500), ERROR_TOKEN_FILE_UNDELETABLE]
 		];
 		for (const [schema, error] of cases) {
 			assert.ok(parse(schema, { error }).ok, error);

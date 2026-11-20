@@ -195,10 +195,35 @@ legitimate operator.
   any rate limiting, file reads, or crypto after bootstrap completes — and an
   unreadable token file flips it to `false`, closing the window rather than
   leaving the probe answering (and audit-writing) indefinitely
-- **Token file deletion enforcement**: If the token file cannot be deleted after
-  successful bootstrap, the handler throws after completing all success work
-  (session, `on_bootstrap` callback, audit log). The error response forces
-  operator attention — delete the file manually and log in
+- **The token is burned before the commit**: deleting the token file is the
+  last step inside the bootstrap transaction, on both spines, so a live token
+  never outlives a successful bootstrap. The burn unlinks the entry at the
+  token path (a symlink itself, never its target; a directory is refused),
+  counts a missing entry as burned, and fsyncs the parent directory so a
+  crash after the commit can't bring the file back. Deletion is what makes
+  the token single-use across databases: the lock protects this database,
+  and a leftover token would reopen bootstrap on a later empty one (a wipe, a
+  restore from a pre-bootstrap backup). A hard link to the file survives the
+  burn
+- **A token that can't be burned refuses the bootstrap**: 500
+  `token_file_undeletable`, with nothing created, the attempt charged to the
+  limiter and audited, and the window left open — only a caller holding the
+  right token reaches it. The server user needs write access to the token's
+  directory; fix it and submit the same token again, no restart. If the
+  burn succeeds and the commit then fails, nothing was created and the token
+  is gone: the log says so, and the operator writes a new token and restarts
+- **One atomic bootstrap**: the account, its grants and its session are
+  written in the one transaction, the session through the capped minter login
+  uses, and the cookie is signed inside it — a session or cookie exists only
+  for a bootstrap that committed. On the Rust spine the write runs on a task of its own, so a client that disconnects can't split the burn from the commit; only the process exiting between the two can, on either spine
+- **The boot report**: the lock is read first. A token file still present on
+  a bootstrapped database is a warning naming the path — it would reopen
+  bootstrap on an empty database, so delete it; a setup step that re-creates
+  the token on every start causes it. An unreadable token file on an open
+  window is a warning with the reason, a missing `bootstrap_lock` row reads
+  as unavailable with an error, and a lock read that fails stops the boot
+- **The lock race loser** answers 403 `already_bootstrapped` and closes its
+  window, with no audit row and no limiter charge, on both spines
 - **`on_bootstrap` error isolation**: Callback failures are caught and logged
   without preventing the bootstrap success response
 - **Input validation**: Bootstrap username uses the `Username` schema (same
@@ -1122,7 +1147,7 @@ signup — the password-bearing surfaces. **Bearer auth carries no rate limiter*
 
 - Login IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared by login + password change (the same instance, mirroring the Rust spine's `login_ip_rate_limiter`)
 - Signup IP rate limiter (5 attempts / 15 min) — Per resolved client IP, signup only
-- Bootstrap IP rate limiter (5 attempts / 15 min) — Per resolved client IP, bootstrap only. TS only: the Rust spine's bootstrap carries no limiter on purpose (a 32-byte token compared in constant time, and no retry path for first-admin creation)
+- Bootstrap IP rate limiter (5 attempts / 15 min) — Per resolved client IP, bootstrap only, on both spines (the Rust spine's `BootstrapOptions.bootstrap_ip_rate_limiter`). A refused attempt inside the open window is charged; a success and the lock race loser are not
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 

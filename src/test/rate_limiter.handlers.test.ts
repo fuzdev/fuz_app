@@ -33,7 +33,7 @@ import {
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { Db } from '#lib/db/db.ts';
-import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_stub_db, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import {
 	create_test_limiter,
@@ -145,7 +145,6 @@ const db = new Db({
 		}
 	}
 });
-const noop = create_noop_stub('deps');
 
 const fake_account = {
 	id: 'acc_test',
@@ -198,8 +197,6 @@ const create_login_app = (
 				verify_password: mock_verify_password,
 				verify_dummy: mock_verify_dummy
 			},
-			read_secure_file: noop,
-			delete_file: noop,
 			audit: create_test_audit_emitter(),
 			connection_closer: create_realtime_closer()
 		},
@@ -1238,8 +1235,6 @@ const create_signup_app = (
 				verify_password: vi.fn(),
 				verify_dummy: vi.fn()
 			},
-			read_secure_file: noop,
-			delete_file: noop,
 			audit: create_test_audit_emitter(),
 			connection_closer: create_realtime_closer()
 		},

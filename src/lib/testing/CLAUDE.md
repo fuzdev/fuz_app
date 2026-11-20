@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_handler()` — a fresh `Response('stub')` as a `route_raw` result, a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
 - `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
-- `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
+- `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin, optional daemon_token, session, request_context, bearer_auth) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
@@ -1858,7 +1858,11 @@ Conventions that hold across them:
   `daemon_token_dir_env` names the env var the binary reads its daemon-token
   directory from, set to the `{dir}` whose `{dir}/run/daemon_token` is the
   bootstrap's `daemon_token_path` (`to_daemon_token_dir`, which throws for a
-  path in another layout).
+  path in another layout). It is how a test binary learns the harness root:
+  the bootstrap token sits in a directory of its own
+  (`{dir}/bootstrap/bootstrap_token`, so the burn probe can make that
+  directory unwritable without touching the rest), and its parent is not the
+  root.
 - `testing/cross_backend/create_cross_backend_global_setup.ts` —
   `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
   ensure_databases?, before_spawn?})`, the single-backend `globalSetup` maker:
@@ -1871,6 +1875,7 @@ Conventions that hold across them:
   (`ensure_database_for_url`), then the spawn. A second argument
   (`CrossBackendGlobalSetupDeps`) swaps the database creator and the spawn,
   for testing the setup itself.
+- `testing/cross_backend/bootstrap_backend.ts` / `create_dual_spawn_global_setup.ts` — spawn and bootstrap one backend, or two (`provide_keys`); `before_bootstrap(config)` runs once the backend is healthy and before its keeper bootstrap, for a probe of the pre-bootstrap window, and a throw from it tears the backend down and fails the setup.
 - `testing/cross_backend/cargo_binary.ts` — `prepare_cargo_binary({workspace_dir,
   package, bin?, profile?})` builds a Cargo binary (`cargo build -p --bin
   --profile`, output inherited, a failed build throws) unless

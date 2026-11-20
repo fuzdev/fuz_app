@@ -12,13 +12,15 @@
 
 import type { SerializableBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 
-import type { BootstrapTokenProbeResult } from './bootstrap_token_probe.ts';
+import type { BootstrapTokenProbe } from './bootstrap_token_probe.ts';
+import type { BootstrapRateLimitProbe } from './bootstrap_rate_limit_probe.ts';
 
 declare module 'vitest' {
 	export interface ProvidedContext {
 		// what the single-backend setup's pre-bootstrap token-file probe got
-		// back (`bootstrap_token_probe.ts`), asserted by `bootstrap_token.cross.test.ts`
-		bootstrap_token_probe: Array<BootstrapTokenProbeResult>;
+		// back, and whether the keeper bootstrap burned the file
+		// (`bootstrap_token_probe.ts`), asserted by `bootstrap_token.cross.test.ts`
+		bootstrap_token_probe: BootstrapTokenProbe;
 		// The dual-spawn security project (`global_setup_login_security.ts`)
 		// provides both backends' handles — `a` = TS spine (node), `b` = Rust
 		// `testing_spine_stub`, both with the login and action limiters enabled +
@@ -29,6 +31,9 @@ declare module 'vitest' {
 		security_handle_a: SerializableBootstrappedBackendHandle;
 		security_handle_b: SerializableBootstrappedBackendHandle;
 		security_action_rate_limit_max_attempts: number;
+		// each backend's bootstrap 429, gathered before its keeper bootstrap
+		// (`bootstrap_rate_limit_probe.ts`)
+		security_bootstrap_rate_limit: { a: BootstrapRateLimitProbe; b: BootstrapRateLimitProbe };
 		// The dual-spawn TS-runtime differential project
 		// (`global_setup_ts_differential.ts`) provides the TS spine binary's
 		// handle on two runtimes — `a` = Node, `b` = Bun — for

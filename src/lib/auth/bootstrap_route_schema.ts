@@ -32,7 +32,8 @@ import { define_route_shape } from '../http/route_spec.ts';
 import {
 	REST_ALREADY_BOOTSTRAPPED,
 	REST_INVALID_TOKEN,
-	REST_TOKEN_FILE_MISSING
+	REST_TOKEN_FILE_MISSING,
+	REST_TOKEN_FILE_UNDELETABLE
 } from '../http/error_schemas.ts';
 
 /**
@@ -88,5 +89,10 @@ export const bootstrap_route_shape = define_route_shape({
 	input: BootstrapInput,
 	output: BootstrapOutput,
 	rate_limit: 'ip',
-	errors: [REST_INVALID_TOKEN, REST_ALREADY_BOOTSTRAPPED, REST_TOKEN_FILE_MISSING]
+	errors: [
+		REST_INVALID_TOKEN,
+		REST_ALREADY_BOOTSTRAPPED,
+		REST_TOKEN_FILE_MISSING,
+		REST_TOKEN_FILE_UNDELETABLE
+	]
 });

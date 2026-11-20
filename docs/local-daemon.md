@@ -39,6 +39,7 @@ import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
 import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
+import { create_file_bootstrap_token_store } from '@fuzdev/fuz_app/auth/bootstrap_token_store.ts';
 
 const runtime = create_node_runtime();
 
@@ -51,8 +52,6 @@ const backend = await create_app_backend({
 	keyring: keyring_result.keyring,
 	password: argon2_password_deps,
 	database_url: `file://${db_dir}`,
-	read_secure_file: runtime.read_secure_file, // hardened bootstrap-token read
-	delete_file: runtime.remove,
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log })
 });
 
@@ -69,7 +68,8 @@ const { app, close } = await create_app_server({
 	},
 	bootstrap: {
 		mode: 'live',
-		token_path: `${app_dir}/config/auth_token`
+		// the hardened read and the burn of the token file
+		token_store: create_file_bootstrap_token_store(runtime, `${app_dir}/config/auth_token`)
 	},
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),
@@ -96,10 +96,10 @@ Local daemons typically use a file-based bootstrap token:
 1. **Init**: Generate a random token file at a known path (e.g., `~/.myapp/config/auth_token`)
 2. **First run**: User opens the web UI, sees the bootstrap form
 3. **Bootstrap**: User pastes the token + credentials → account created with keeper and admin role_grants, session cookie set
-4. **Token consumed**: The file is deleted — bootstrap is one-shot
+4. **Token consumed**: The file is deleted inside the bootstrap transaction, before it commits — bootstrap is one-shot, and the server needs write access to the token's directory
 
-The `on_bootstrap` callback on the bootstrap options runs after account +
-session creation. Use it for app-specific setup like generating CLI API tokens.
+The `on_bootstrap` callback on the bootstrap options runs after the commit,
+with the account, actor and grants that were created. Use it for app-specific setup like generating CLI API tokens.
 
 ## Testing
 

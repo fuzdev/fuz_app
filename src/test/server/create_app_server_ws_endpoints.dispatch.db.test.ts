@@ -152,11 +152,7 @@ const create_test_server = async (
 			password: stub_password_deps,
 			db,
 			audit,
-			connection_closer: create_realtime_closer(),
-			read_secure_file: async (path: string): Promise<Uint8Array> => {
-				throw new Error(`ENOENT: ${path}`);
-			},
-			delete_file: async () => {}
+			connection_closer: create_realtime_closer()
 		}
 	};
 	const stub = create_stub_upgrade();

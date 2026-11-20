@@ -30,7 +30,10 @@ import { basename, join } from 'node:path';
  * - `root` — the per-backend subtree under `os.tmpdir()`. Compose
  *   consumer-specific paths under here.
  * - `bootstrap_token_path` — `FUZ_BOOTSTRAP_TOKEN_PATH`; harness writes
- *   the bootstrap token here before spawn.
+ *   the bootstrap token here before spawn. In a directory of its own
+ *   (`{root}/bootstrap/`), holding nothing else, so a probe can take the
+ *   directory's write permission away — what makes a backend's burn of the
+ *   token fail — without touching the backend's other state.
  * - `daemon_token_path` — where `init_daemon_token` (Rust) and the TS
  *   server's daemon-token writer land the token (under `{root}/run/`);
  *   `spawn_backend` deletes it before each spawn, so a token a previous run
@@ -52,7 +55,7 @@ export const build_test_backend_paths = (prefix: string): TestBackendPaths => {
 	const root = join(tmpdir(), prefix);
 	return {
 		root,
-		bootstrap_token_path: join(root, 'bootstrap_token'),
+		bootstrap_token_path: join(root, 'bootstrap', 'bootstrap_token'),
 		// `init_daemon_token` (Rust) and the TS server's daemon-token
 		// writer both land the token at `{root}/run/daemon_token`.
 		daemon_token_path: join(root, 'run', 'daemon_token')

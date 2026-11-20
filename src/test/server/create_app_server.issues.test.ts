@@ -129,9 +129,7 @@ const create_app = async (dev: boolean) => {
 				},
 				db,
 				audit: create_audit_emitter({ db, log }),
-				connection_closer: create_realtime_closer(),
-				read_secure_file: refuse,
-				delete_file: refuse
+				connection_closer: create_realtime_closer()
 			}
 		},
 		session_options: create_session_config('test_session'),

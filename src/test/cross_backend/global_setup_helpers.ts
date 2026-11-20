@@ -11,6 +11,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import process from 'node:process';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { TestProject } from 'vitest/node';
@@ -35,7 +36,8 @@ import {
 
 import {
 	probe_bootstrap_token_file,
-	type BootstrapTokenProbeResult
+	token_file_gone,
+	type BootstrapTokenProbe
 } from './bootstrap_token_probe.ts';
 import './cross_test_types.ts';
 
@@ -209,19 +211,20 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
  */
 export const make_rust_spine_global_setup =
 	(config_factory: () => BackendConfig, options: RustSpineGlobalSetupOptions) =>
-	(project: TestProject): Promise<() => Promise<void>> => {
-		prepare_rust_spine_backend(options);
-		// Delegate to the standard maker — `config_factory` reads the now-set
-		// binary-path env when it runs inside.
-		return make_spine_global_setup(config_factory)(project);
-	};
+	(project: TestProject): Promise<() => Promise<void>> =>
+		with_legible_setup_failure('rust spine', async () => {
+			prepare_rust_spine_backend(options);
+			// Delegate to the standard maker — `config_factory` reads the now-set
+			// binary-path env when it runs inside.
+			return make_spine_global_setup(config_factory)(project);
+		})();
 
 /**
  * Build a vitest `globalSetup` default export that spawns + bootstraps the
  * backend produced by `config_factory` and provides the serialized handle.
  * In the window before the keeper bootstrap it runs the bootstrap token-file
- * probe (`bootstrap_token_probe.ts`) and provides its results as
- * `bootstrap_token_probe`.
+ * probe (`bootstrap_token_probe.ts`), and after it checks the token file is
+ * gone, providing both as `bootstrap_token_probe`.
  *
  * `config_factory` is invoked lazily (inside setup) so a config that throws
  * when its prerequisites are missing (e.g. `rust_spine_stub_backend_config`
@@ -229,20 +232,68 @@ export const make_rust_spine_global_setup =
  */
 export const make_spine_global_setup =
 	(config_factory: () => BackendConfig) =>
-	async (project: TestProject): Promise<() => Promise<void>> => {
-		const config = config_factory();
-		let probe: Array<BootstrapTokenProbeResult> = [];
-		const bootstrapped = await bootstrap_backend(config, {
-			before_bootstrap: async (c) => {
-				probe = await probe_bootstrap_token_file(c);
-			}
-		});
-		project.provide('bootstrap_token_probe', probe);
-		// vitest 4's `provide` hard-rejects non-serializable values, so strip the
-		// live `child` / `teardown` / `keeper_transport`; test files rebuild a
-		// usable handle via `reconstruct_bootstrapped_handle`.
-		project.provide('backend_handle', serialize_bootstrapped_handle(bootstrapped));
-		return async () => {
-			await bootstrapped.teardown();
-		};
+	(project: TestProject): Promise<() => Promise<void>> =>
+		with_legible_setup_failure('spine', spine_global_setup)(config_factory, project);
+
+const spine_global_setup = async (
+	config_factory: () => BackendConfig,
+	project: TestProject
+): Promise<() => Promise<void>> => {
+	const config = config_factory();
+	const probed: { result?: Awaited<ReturnType<typeof probe_bootstrap_token_file>> } = {};
+	const bootstrapped = await bootstrap_backend(config, {
+		before_bootstrap: async (c) => {
+			probed.result = await probe_bootstrap_token_file(c);
+		}
+	});
+	if (!probed.result) throw new Error('the bootstrap token probe did not run');
+	const probe: BootstrapTokenProbe = {
+		...probed.result,
+		token_file_gone_after_bootstrap: await token_file_gone(config.bootstrap.token_path)
+	};
+	project.provide('bootstrap_token_probe', probe);
+	// vitest 4's `provide` hard-rejects non-serializable values, so strip the
+	// live `child` / `teardown` / `keeper_transport`; test files rebuild a
+	// usable handle via `reconstruct_bootstrapped_handle`.
+	project.provide('backend_handle', serialize_bootstrapped_handle(bootstrapped));
+	return async () => {
+		await bootstrapped.teardown();
+	};
+};
+
+/** An error's message and its `cause` chain, one per line. */
+const format_error_chain = (err: unknown): string => {
+	const lines: Array<string> = [];
+	let current: unknown = err;
+	while (current !== undefined && lines.length < 8) {
+		lines.push(current instanceof Error ? current.message : JSON.stringify(current));
+		current = current instanceof Error ? current.cause : undefined;
+	}
+	return lines.join('\n  caused by: ');
+};
+
+/**
+ * Wrap a global setup so a failure says what failed. Vitest prints a global
+ * setup's thrown error by mapping its stack through vite's module runner,
+ * which throws on the setup module's frames (`code.charCodeAt is not a
+ * function`, then "No test files found") and hides the error itself. The
+ * wrapper writes the error and its cause chain to stderr, then rethrows it as
+ * a plain `Error` carrying that text and no frames to map.
+ *
+ * @param label - names the setup in the message
+ * @param setup - the global setup to wrap
+ * @returns the setup, its failures legible
+ */
+export const with_legible_setup_failure =
+	<A extends Array<unknown>, R>(label: string, setup: (...args: A) => Promise<R>) =>
+	async (...args: A): Promise<R> => {
+		try {
+			return await setup(...args);
+		} catch (err) {
+			const message = `${label} global setup failed: ${format_error_chain(err)}`;
+			process.stderr.write(`${message}\n`);
+			const legible = new Error(message);
+			legible.stack = message;
+			throw legible;
+		}
 	};

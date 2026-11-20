@@ -20,17 +20,9 @@ import {
 	SESSION_AGE_MAX,
 	format_session_clear_cookie,
 	format_session_set_cookie,
-	process_session_cookie,
-	create_session_cookie_value
+	process_session_cookie
 } from './session_cookie.ts';
-import {
-	generate_session_token,
-	hash_session_token,
-	AUTH_SESSION_LIFETIME_MS,
-	query_create_session,
-	query_session_enforce_limit
-} from './session_queries.ts';
-import type { QueryDeps } from '../db/query_deps.ts';
+import { create_capped_session, type CreateCappedSessionOptions } from './session_queries.ts';
 import { SESSION_COOKIE_EXPIRES_AT_KEY, SESSION_TOKEN_KEY } from '../hono_context.ts';
 import { get_header_lines } from '../http/header_lines.ts';
 
@@ -178,33 +170,16 @@ export const create_session_middleware = (
 /**
  * Options for `create_session_and_set_cookie`.
  */
-export interface CreateSessionAndSetCookieOptions {
-	/** Keyring for cookie signing. */
-	keyring: Keyring;
-	/** Query deps (needs db for session creation). */
-	deps: QueryDeps;
+export interface CreateSessionAndSetCookieOptions extends CreateCappedSessionOptions {
 	/** Hono context for setting the cookie. */
 	c: Context;
-	/** The account to create a session for. */
-	account_id: string;
-	/** Session cookie configuration. */
-	session_options: SessionOptions<string>;
-	/** Per-account session cap (`null` to skip enforcement). */
-	max_sessions?: number | null;
 }
 
 /**
- * Create an auth session and set the session cookie on the response.
- *
- * Shared by login, signup, and bootstrap — generates a token, hashes it,
- * persists the session row, optionally enforces a per-account session limit,
- * and sets the signed cookie.
- *
- * The cap deletes the sessions it evicts, but not the connections they
- * opened. A caller that passes `max_sessions` closes the returned sessions'
- * connections once its transaction commits — `queue_connection_close` with a
- * `session` target, as `POST /login` does. A caller that mints for an account
- * created in the same transaction (signup, bootstrap) evicts nothing.
+ * Create an auth session and set the session cookie on the response —
+ * `create_capped_session`, then `set_session_cookie`. Shared by login and
+ * signup; bootstrap mints inside its own transaction and sets the cookie from
+ * its success result.
  *
  * @returns the token hashes of the sessions the cap evicted, empty without a cap
  * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)
@@ -212,16 +187,8 @@ export interface CreateSessionAndSetCookieOptions {
 export const create_session_and_set_cookie = async (
 	options: CreateSessionAndSetCookieOptions
 ): Promise<Array<string>> => {
-	const { keyring, deps, c, account_id, session_options, max_sessions } = options;
-	const session_token = generate_session_token();
-	const token_hash = hash_session_token(session_token);
-	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-	await query_create_session(deps, token_hash, account_id, expires_at);
-
-	const evicted =
-		max_sessions != null ? await query_session_enforce_limit(deps, account_id, max_sessions) : [];
-
-	const cookie_value = await create_session_cookie_value(keyring, session_token, session_options);
-	set_session_cookie(c, cookie_value, session_options);
+	const { c, ...mint } = options;
+	const { cookie_value, evicted } = await create_capped_session(mint);
+	set_session_cookie(c, cookie_value, options.session_options);
 	return evicted;
 };

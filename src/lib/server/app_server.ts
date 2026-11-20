@@ -22,7 +22,7 @@ import {
 	type SessionOptions
 } from '../auth/session_cookie.ts';
 import { generate_session_token } from '../auth/session_queries.ts';
-import type { BootstrapAccountSuccess } from '../auth/bootstrap_account.ts';
+import type { BootstrapTokenStore } from '../auth/bootstrap_token_store.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
@@ -69,7 +69,8 @@ import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec
 import {
 	check_bootstrap_status,
 	create_bootstrap_route_specs,
-	type BootstrapStatus
+	type BootstrapStatus,
+	type OnBootstrap
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
 import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
@@ -113,7 +114,7 @@ import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cle
  *   `check_bootstrap_status`. For tests asserting on the
  *   disabled-but-present wire shape.
  * - `live` — route mounted, real token verification. Success path
- *   reachable. `token_path` is required (non-nullable).
+ *   reachable. `token_store` is required.
  */
 export type BootstrapServerOptions =
 	BootstrapDisabledOptions | BootstrapSurfaceOnlyOptions | BootstrapLiveOptions;
@@ -130,14 +131,16 @@ export interface BootstrapSurfaceOnlyOptions {
 
 export interface BootstrapLiveOptions {
 	mode: 'live';
-	token_path: string;
+	/**
+	 * The one-shot token — production passes
+	 * `create_file_bootstrap_token_store(runtime, path)` over
+	 * `FUZ_BOOTSTRAP_TOKEN_PATH`.
+	 */
+	token_store: BootstrapTokenStore;
 	/** Route prefix for bootstrap routes. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
-	/**
-	 * Called after successful bootstrap (account + session created).
-	 * Use for app-specific post-bootstrap work like generating API tokens.
-	 */
-	on_bootstrap?: (result: BootstrapAccountSuccess, c: Context) => Promise<void>;
+	/** Called after a successful bootstrap commits (see `OnBootstrap`). */
+	on_bootstrap?: OnBootstrap;
 }
 
 /**
@@ -968,8 +971,8 @@ const assemble_app_server = async (
 	// - 'live': real disk + lock check via `check_bootstrap_status`.
 	const bootstrap_status: BootstrapStatus =
 		options.bootstrap?.mode === 'live'
-			? await check_bootstrap_status(deps, { token_path: options.bootstrap.token_path })
-			: { available: false, token_path: null };
+			? await check_bootstrap_status(deps, { token_store: options.bootstrap.token_store })
+			: { available: false };
 
 	// Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
@@ -1006,6 +1009,7 @@ const assemble_app_server = async (
 		const bootstrap_routes = create_bootstrap_route_specs(deps, {
 			session_options: options.session_options,
 			bootstrap_status,
+			token_store: options.bootstrap.mode === 'live' ? options.bootstrap.token_store : null,
 			on_bootstrap: options.bootstrap.mode === 'live' ? options.bootstrap.on_bootstrap : undefined,
 			bootstrap_ip_rate_limiter
 		});

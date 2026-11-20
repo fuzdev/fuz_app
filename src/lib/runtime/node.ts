@@ -17,7 +17,7 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 
 import type { RuntimeDeps, StatResult } from './deps.ts';
-import { load_secure_file_node } from './secure_file.ts';
+import { burn_secure_file_node, load_secure_file_node } from './secure_file.ts';
 import { assert_process_id } from './process_id.ts';
 
 /**
@@ -73,6 +73,7 @@ export const create_node_runtime = (
 	read_text_file: (path) => readFile(path, 'utf-8'),
 	read_file: (path) => readFile(path).then((buf) => new Uint8Array(buf)),
 	read_secure_file: load_secure_file_node,
+	burn_secure_file: burn_secure_file_node,
 	// `Readable.toWeb` / `fromWeb` bridge Node streams to the web stream shape
 	// the interface speaks. The casts cross Node's `stream/web` ReadableStream
 	// and the global DOM `ReadableStream` (structurally identical here).

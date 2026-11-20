@@ -155,6 +155,25 @@ describe('file system', () => {
 	});
 });
 
+describe('burn_secure_file', () => {
+	test('removes the file and its mode, then reads as already gone', async () => {
+		const rt = create_mock_runtime();
+		await rt.write_text_file('/token', 'secret', { mode: 0o600 });
+
+		assert.strictEqual(await rt.burn_secure_file('/token'), 'burned');
+		assert.strictEqual(rt.mock_fs.has('/token'), false);
+		assert.strictEqual(rt.mock_fs_modes.has('/token'), false);
+		assert.strictEqual(await rt.burn_secure_file('/token'), 'already_gone');
+	});
+
+	test('refuses a directory', async () => {
+		const rt = create_mock_runtime();
+		await rt.mkdir('/dir');
+		await assert_rejects(() => rt.burn_secure_file('/dir'), /EISDIR/);
+		assert.isTrue(rt.mock_dirs.has('/dir'));
+	});
+});
+
 describe('streaming file system', () => {
 	test('read_file_stream yields the stored bytes', async () => {
 		const rt = create_mock_runtime();

@@ -1,6 +1,6 @@
 /**
- * Tests for runtime/secure_file.ts — the hardened secret read (Node impl)
- * plus the real-file crash-leftover pin on `write_file_atomic`.
+ * Tests for runtime/secure_file.ts — the hardened secret read and burn (Node
+ * impls) plus the real-file crash-leftover pin on `write_file_atomic`.
  *
  * Twin of the Rust `fuz_sys::secure_file` test suite: owner-only reads
  * verbatim, group/world-readable refused, symlink refused, FIFO / device /
@@ -14,12 +14,27 @@
 import { describe, assert, test, beforeEach, afterEach } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, chmodSync, symlinkSync, rmSync, statSync } from 'node:fs';
+import {
+	mkdtempSync,
+	mkdirSync,
+	writeFileSync,
+	chmodSync,
+	symlinkSync,
+	rmSync,
+	statSync,
+	lstatSync,
+	readFileSync,
+	existsSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { load_secure_file_node, MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
+import {
+	burn_secure_file_node,
+	load_secure_file_node,
+	MAX_SECURE_FILE_SIZE
+} from '#lib/runtime/secure_file.ts';
 import { write_file_atomic } from '#lib/runtime/fs.ts';
 import { create_node_runtime } from '#lib/runtime/node.ts';
 
@@ -97,6 +112,80 @@ describe('load_secure_file_node', () => {
 
 		const over = write_token('over', 'x'.repeat(MAX_SECURE_FILE_SIZE + 1), 0o600);
 		await assert_rejects(() => load_secure_file_node(over), /too large/);
+	});
+});
+
+describe.runIf(posix)('burn_secure_file_node', () => {
+	/** Make `dir/sub` holding `token`, the directory at `mode` while `fn` runs. */
+	const in_dir_at_mode = async <T>(mode: number, fn: (path: string, sub: string) => Promise<T>) => {
+		const sub = join(dir, 'sub');
+		mkdirSync(sub);
+		const path = join(sub, 'token');
+		writeFileSync(path, 'secret');
+		chmodSync(sub, mode);
+		try {
+			return await fn(path, sub);
+		} finally {
+			chmodSync(sub, 0o700);
+		}
+	};
+
+	test('unlinks the entry', async () => {
+		const path = write_token('token', 'secret', 0o600);
+		assert.strictEqual(await burn_secure_file_node(path), 'burned');
+		assert.isFalse(existsSync(path));
+	});
+
+	test('a missing entry is already gone, not an error', async () => {
+		assert.strictEqual(await burn_secure_file_node(join(dir, 'absent')), 'already_gone');
+	});
+
+	test('a symlink at the path is removed itself, its target kept', async () => {
+		const target = write_token('target', 'unrelated', 0o600);
+		const link = join(dir, 'link');
+		symlinkSync(target, link);
+		assert.strictEqual(await burn_secure_file_node(link), 'burned');
+		assert.throws(() => lstatSync(link));
+		assert.strictEqual(readFileSync(target, 'utf-8'), 'unrelated');
+	});
+
+	test('a directory at the path is refused, never recursed into', async () => {
+		const sub = join(dir, 'sub');
+		mkdirSync(sub);
+		writeFileSync(join(sub, 'inner'), 'x');
+		await assert_rejects(() => burn_secure_file_node(sub), /could not delete/);
+		assert.isTrue(existsSync(join(sub, 'inner')));
+	});
+
+	test('a directory the process cannot write refuses the burn and keeps the file', async () => {
+		// as root the unlink succeeds and this fails: run the suite unprivileged
+		await in_dir_at_mode(0o500, async (path) => {
+			await assert_rejects(() => burn_secure_file_node(path), /could not delete/);
+			assert.strictEqual(readFileSync(path, 'utf-8'), 'secret');
+		});
+	});
+
+	test('the parent fsync runs on the already-gone path too', async () => {
+		await in_dir_at_mode(0o300, async (path, sub) => {
+			rmSync(path, { force: true });
+			await assert_rejects(() => burn_secure_file_node(path), new RegExp(`could not fsync ${sub}`));
+		});
+	});
+
+	test('a missing parent directory is a failed burn', async () => {
+		const parent = join(dir, 'gone');
+		await assert_rejects(
+			() => burn_secure_file_node(join(parent, 'token')),
+			new RegExp(`could not fsync ${parent}`)
+		);
+	});
+
+	test('the parent fsync is part of the burn: a directory it cannot open fails it', async () => {
+		// `wx` lets the unlink through and refuses the read-open the fsync needs
+		await in_dir_at_mode(0o300, async (path, sub) => {
+			await assert_rejects(() => burn_secure_file_node(path), new RegExp(`could not fsync ${sub}`));
+			assert.isFalse(existsSync(path), 'the unlink ran before the fsync');
+		});
 	});
 });
 

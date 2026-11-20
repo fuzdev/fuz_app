@@ -24,8 +24,10 @@
  * route with a body (the routes declared it as one enum of the two codes);
  * the derived 401 is `authentication_required` exactly (it was any string);
  * `/password` declares the `invalid_credentials` 401 its handler answers,
- * beside the derived one; and the rate limit's `retry_after` is a
- * non-negative integer (it was any number).
+ * beside the derived one; the rate limit's `retry_after` is a
+ * non-negative integer (it was any number); and `/bootstrap` declares the
+ * `token_file_undeletable` 500 its handler answers when the token's burn
+ * fails (it had no 500).
  *
  * @module
  */
@@ -56,7 +58,8 @@ import {
 	REST_INVALID_CREDENTIALS,
 	REST_INVALID_JSON_BODY,
 	REST_INVALID_REQUEST_BODY,
-	REST_RATE_LIMIT_EXCEEDED
+	REST_RATE_LIMIT_EXCEEDED,
+	REST_TOKEN_FILE_UNDELETABLE
 } from '#lib/http/error_schemas.ts';
 import { with_error_moves, type ErrorMove } from '../surface_test_helpers.ts';
 
@@ -173,7 +176,11 @@ const ERROR_MOVES: Record<string, Record<number, ErrorMove>> = {
 		429: RATE_429
 	},
 	'POST /signup': { 400: BODY_400, 429: RATE_429 },
-	'POST /bootstrap': { 400: BODY_400, 429: RATE_429 }
+	'POST /bootstrap': {
+		400: BODY_400,
+		429: RATE_429,
+		500: { from: [], to: [REST_TOKEN_FILE_UNDELETABLE] }
+	}
 };
 
 /** A captured route with every declared move applied: its own, then the error rules'. */

@@ -210,10 +210,6 @@ export const create_stub_audit_sse = (): AuditLogSse => {
  * Create no-op `AppDeps` for auth surface testing.
  */
 export const create_stub_app_deps = (): AppDeps => ({
-	read_secure_file: async (path: string) => {
-		throw new Error(`ENOENT: no such file or directory: ${path}`);
-	},
-	delete_file: async (_path: string) => {},
 	// `sign` answers a string, as a keyring does: `create_app_server` mints a
 	// sample session cookie at assembly and refuses a value that is none
 	keyring: create_noop_stub('keyring', {
@@ -314,7 +310,7 @@ export const create_stub_app_server_context = (
 	return {
 		deps: backend.deps,
 		backend,
-		bootstrap_status: { available: false, token_path: null },
+		bootstrap_status: { available: false },
 		session_options,
 		login_ip_rate_limiter: null,
 		signup_ip_rate_limiter: null,
@@ -387,8 +383,8 @@ export interface CreateTestAppSurfaceSpecOptions {
 	/**
 	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated
 	 * by `mode`: `'disabled'` skips the route (same as omission), `'surface_only'`
-	 * mounts the route shape, `'live'` accepts a `token_path` for production
-	 * symmetry (surface assembly only uses it for shape symmetry; the value is a
+	 * mounts the route shape, `'live'` accepts a `token_store` for production
+	 * symmetry (surface assembly reads only the shape; the store is a
 	 * live-execution concern handled by `create_test_app` → `create_app_server`).
 	 *
 	 * Surface assembly only reads `route_prefix` (default `'/api/account'`).
@@ -520,7 +516,7 @@ export const create_test_app_surface_spec = (
 	// and `live` modes; omitted for `disabled` / undefined. Surface generation
 	// uses an `available: false` placeholder regardless of mode — the handler
 	// short-circuits to 403 ALREADY_BOOTSTRAPPED, which is what surface tests
-	// assert on. Live token_path is passed through for shape symmetry only.
+	// assert on. A live token store is passed through for shape symmetry only.
 	const bootstrap_route_specs: Array<RouteSpec> =
 		options.bootstrap && options.bootstrap.mode !== 'disabled'
 			? prefix_route_specs(options.bootstrap.route_prefix ?? '/api/account', [

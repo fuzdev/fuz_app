@@ -14,7 +14,8 @@ import { Hono } from 'hono';
 import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
+import { create_bootstrap_route_specs, type OnBootstrap } from '#lib/auth/bootstrap_routes.ts';
+import type { BootstrapTokenStore } from '#lib/auth/bootstrap_token_store.ts';
 import { BOOTSTRAP_TOKEN_LENGTH_MAX, BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
 import { MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -26,13 +27,14 @@ import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
-import type { Db } from '#lib/db/db.ts';
+import { Db } from '#lib/db/db.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_TOKEN,
-	ERROR_TOKEN_FILE_MISSING
+	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_UNDELETABLE
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -56,8 +58,8 @@ const session_options = create_session_config('test_session');
 interface BootstrapTestApp {
 	app: Hono;
 	db: Db;
-	bootstrap_status: { available: boolean; token_path: string | null };
-	read_secure_file: ReturnType<typeof vi.fn>;
+	bootstrap_status: { available: boolean };
+	read_token: ReturnType<typeof vi.fn>;
 }
 
 // Cached default-driver factory for bootstrap tests — single WASM init, reset between calls.
@@ -72,24 +74,30 @@ const bootstrap_factory = create_default_db_factory(async (db) => {
  * repeated WASM cold-start overhead. The schema is reset between calls.
  *
  * @param rate_limiter - Rate limiter to wire in (null to disable)
- * @param read_secure_file - Override for the token file read. Defaults to returning 'wrong_token_wrong_token_wrong_token'
+ * @param read_token - Override for the token file read. Defaults to returning 'wrong_token_wrong_token_wrong_token'
  *   so bootstrap always fails with `invalid_token` (status 401) in most tests.
  */
 const create_bootstrap_app = async (
 	bootstrap_ip_rate_limiter: RateLimiter | null,
-	read_secure_file = vi.fn(() =>
+	read_token = vi.fn(() =>
 		Promise.resolve(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
 	),
 	extra?: {
-		on_bootstrap?: (result: any, c: any) => Promise<void>;
-		delete_file?: (path: string) => Promise<void>;
+		on_bootstrap?: OnBootstrap;
+		/** The store's burn. Default a burn that succeeds. */
+		burn_token?: BootstrapTokenStore['burn_token'];
 		/** Build the audit emitter over the test db. Default a no-op emitter. */
 		create_audit?: (db: Db) => AuditEmitter;
 	}
 ): Promise<BootstrapTestApp> => {
 	const db = await bootstrap_factory.create();
 
-	const bootstrap_status = { available: true, token_path: '/fake/bootstrap_token' };
+	const bootstrap_status = { available: true };
+	const token_store: BootstrapTokenStore = {
+		path: '/fake/bootstrap_token',
+		read_token,
+		burn_token: extra?.burn_token ?? (async () => 'burned')
+	};
 
 	const route_specs = create_bootstrap_route_specs(
 		{
@@ -100,14 +108,13 @@ const create_bootstrap_app = async (
 				verify_password: vi.fn().mockResolvedValue(false),
 				verify_dummy: vi.fn().mockResolvedValue(false)
 			},
-			read_secure_file,
-			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
 			audit: extra?.create_audit?.(db) ?? create_test_audit_emitter(),
 			connection_closer: create_realtime_closer()
 		},
 		{
 			session_options,
 			bootstrap_status,
+			token_store,
 			on_bootstrap: extra?.on_bootstrap,
 			bootstrap_ip_rate_limiter
 		}
@@ -120,9 +127,23 @@ const create_bootstrap_app = async (
 		await next();
 	});
 	app.use('*', test_proxy_middleware);
-	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+	// a pool-level session write is refused at once: the bootstrap mints its
+	// session in its own transaction, and one written on the pool would wait
+	// on the in-memory drivers' single connection until the test timed out
+	const route_db = new Db({
+		client: {
+			query: async <T>(text: string, values?: Array<unknown>) => {
+				if (text.includes('auth_session')) {
+					throw new Error('a pool-level statement touched auth_session');
+				}
+				return db.client.query<T>(text, values);
+			}
+		},
+		transaction: (fn) => db.transaction(fn)
+	});
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, route_db);
 
-	return { app, db, bootstrap_status, read_secure_file };
+	return { app, db, bootstrap_status, read_token };
 };
 
 const bootstrap_request = (
@@ -151,7 +172,7 @@ afterEach(() => {
 });
 
 describe('bootstrap handler rate limiting', () => {
-	// Bootstrap failure: read_secure_file returns 'wrong_token_wrong_token_wrong_token', request sends 'test_token_test_token_test_token_32' → token mismatch → 401
+	// Bootstrap failure: read_token returns 'wrong_token_wrong_token_wrong_token', request sends 'test_token_test_token_test_token_32' → token mismatch → 401
 	test('returns 429 when limit exhausted', async () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);
@@ -192,19 +213,19 @@ describe('bootstrap handler rate limiting', () => {
 
 	test('blocked request does not read token file', async () => {
 		const limiter = create_test_limiter();
-		const { app, read_secure_file } = await create_bootstrap_app(limiter);
+		const { app, read_token } = await create_bootstrap_app(limiter);
 
 		for (let i = 0; i < TEST_LIMITER_MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app);
 		}
 
-		const calls_before = read_secure_file.mock.calls.length;
+		const calls_before = read_token.mock.calls.length;
 
 		// Rate-limited — handler short-circuits before bootstrap logic
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 429);
 		assert.strictEqual(
-			read_secure_file.mock.calls.length,
+			read_token.mock.calls.length,
 			calls_before,
 			'should not read token file when rate-limited'
 		);
@@ -243,17 +264,31 @@ describe('bootstrap handler rate limiting', () => {
 		limiter.dispose();
 	});
 
+	test('an unreadable token file records an attempt', async () => {
+		const limiter = create_test_limiter();
+		const { app } = await create_bootstrap_app(
+			limiter,
+			vi.fn(() => Promise.reject(new Error('ENOENT')))
+		);
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 404);
+		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, TEST_LIMITER_MAX_ATTEMPTS - 1);
+
+		limiter.dispose();
+	});
+
 	test('successful bootstrap does NOT reset the rate limit counter', async () => {
 		const limiter = create_test_limiter();
 
-		// read_secure_file fails first 2 calls (wrong token), succeeds on 3rd (matching token)
-		const read_secure_file = vi
+		// read_token fails first 2 calls (wrong token), succeeds on 3rd (matching token)
+		const read_token = vi
 			.fn()
 			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
 			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
 			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 
-		const { app, bootstrap_status } = await create_bootstrap_app(limiter, read_secure_file);
+		const { app, bootstrap_status } = await create_bootstrap_app(limiter, read_token);
 
 		// Accumulate failures
 		await bootstrap_request(app);
@@ -430,7 +465,7 @@ describe('token max length validation', () => {
 		const audit_rows = await test_app.db.query<{ outcome: string }>(
 			"SELECT outcome FROM audit_log WHERE event_type = 'bootstrap'"
 		);
-		return { res, body, audit_rows, read_secure_file: test_app.read_secure_file };
+		return { res, body, audit_rows, read_token: test_app.read_token };
 	};
 
 	test('the cap is the token file cap', () => {
@@ -440,10 +475,10 @@ describe('token max length validation', () => {
 	test('a token at the cap in code units passes validation to the compare', async () => {
 		for (const token of at_max) {
 			assert.strictEqual(token.length, BOOTSTRAP_TOKEN_LENGTH_MAX);
-			const { res, body, audit_rows, read_secure_file } = await attempt(token);
+			const { res, body, audit_rows, read_token } = await attempt(token);
 			assert.strictEqual(res.status, 401, `${token.length} units`);
 			assert.strictEqual(body.error, ERROR_INVALID_TOKEN);
-			assert.strictEqual(read_secure_file.mock.calls.length, 1);
+			assert.strictEqual(read_token.mock.calls.length, 1);
 			assert.deepStrictEqual(
 				audit_rows.map((r) => r.outcome),
 				['failure'],
@@ -455,10 +490,10 @@ describe('token max length validation', () => {
 	test('a token past the cap is a malformed body: 400, no token read, no audit row', async () => {
 		for (const token of over_max) {
 			assert.ok(token.length > BOOTSTRAP_TOKEN_LENGTH_MAX);
-			const { res, body, audit_rows, read_secure_file } = await attempt(token);
+			const { res, body, audit_rows, read_token } = await attempt(token);
 			assert.strictEqual(res.status, 400, `${token.length} units`);
 			assert.strictEqual(body.error, ERROR_INVALID_REQUEST_BODY);
-			assert.strictEqual(read_secure_file.mock.calls.length, 0, 'the token file is never read');
+			assert.strictEqual(read_token.mock.calls.length, 0, 'the token file is never read');
 			assert.deepStrictEqual(audit_rows, [], 'a malformed body writes no audit row');
 		}
 	});
@@ -522,11 +557,11 @@ describe('username validation', () => {
 
 describe('bootstrap success audit', () => {
 	test('a successful bootstrap writes one success audit row for the new account', async () => {
-		const read_secure_file = vi
+		const read_token = vi
 			.fn()
 			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 		let audit: AuditEmitter | undefined;
-		const { app, db } = await create_bootstrap_app(null, read_secure_file, {
+		const { app, db } = await create_bootstrap_app(null, read_token, {
 			create_audit: (audit_db) =>
 				(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
 		});
@@ -562,14 +597,14 @@ describe('bootstrap success audit', () => {
 
 describe('on_bootstrap callback error handling', () => {
 	test('on_bootstrap failure does not prevent success response', async () => {
-		const read_secure_file = vi
+		const read_token = vi
 			.fn()
 			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 		const on_bootstrap = vi.fn(async () => {
 			throw new Error('callback failed');
 		});
 
-		const { app } = await create_bootstrap_app(null, read_secure_file, { on_bootstrap });
+		const { app } = await create_bootstrap_app(null, read_token, { on_bootstrap });
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
@@ -577,16 +612,117 @@ describe('on_bootstrap callback error handling', () => {
 	});
 });
 
-describe('token file deletion failure', () => {
-	test('returns 500 when token file deletion fails', async () => {
-		const read_secure_file = vi
-			.fn()
-			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
-		const delete_file = vi.fn().mockRejectedValue(new Error('EPERM'));
+const MATCHING_TOKEN = () =>
+	vi.fn(() => Promise.resolve(new TextEncoder().encode('test_token_test_token_test_token_32')));
 
-		const { app } = await create_bootstrap_app(null, read_secure_file, { delete_file });
+/** An app over `read_token` whose audit rows land in its db, with a drain. */
+const create_audited_bootstrap_app = async (
+	limiter: RateLimiter | null,
+	read_token: ReturnType<typeof MATCHING_TOKEN>,
+	extra?: { burn_token?: BootstrapTokenStore['burn_token']; on_bootstrap?: OnBootstrap }
+) => {
+	let audit: AuditEmitter | undefined;
+	const test_app = await create_bootstrap_app(limiter, read_token, {
+		...extra,
+		create_audit: (audit_db) =>
+			(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+	});
+	const read_audit = async () => {
+		assert.ok(audit);
+		await audit.drain_inflight();
+		return test_app.db.query<{ outcome: string; metadata: unknown }>(
+			"SELECT outcome, metadata FROM audit_log WHERE event_type = 'bootstrap' ORDER BY seq"
+		);
+	};
+	return { ...test_app, read_audit };
+};
+
+describe('the session bootstrap mints', () => {
+	test('a success sets the cookie of the session minted in the transaction', async () => {
+		let created: unknown;
+		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			on_bootstrap: async (c) => {
+				created = c;
+			}
+		});
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 200);
+		const body = parse_or_throw(BootstrapOutput, await res.json());
+		const cookies = res.headers.getSetCookie();
+		assert.strictEqual(cookies.length, 1);
+		assert.ok(cookies[0]!.startsWith('test_session='));
+		const sessions = await db.query<{ account_id: string }>('SELECT account_id FROM auth_session');
+		assert.deepEqual(
+			sessions.map((r) => r.account_id),
+			[body.account.id]
+		);
+		// the callback sees what was created, never the session credential
+		assert.ok(created && typeof created === 'object');
+		assert.deepEqual(Object.keys(created).sort(), ['account', 'actor', 'role_grants']);
+	});
+});
+
+describe('token file burn failure', () => {
+	test('answers 500 token_file_undeletable, rolls back, and leaves the window open', async () => {
+		const limiter = create_test_limiter();
+		const { app, db, bootstrap_status, read_audit } = await create_audited_bootstrap_app(
+			limiter,
+			MATCHING_TOKEN(),
+			{
+				burn_token: async () => {
+					throw new Error('EACCES: permission denied');
+				}
+			}
+		);
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 500);
+		assert.deepStrictEqual(await res.json(), { error: ERROR_TOKEN_FILE_UNDELETABLE });
+		assert.strictEqual(
+			res.headers.get('Set-Cookie'),
+			null,
+			'no session for a rolled-back bootstrap'
+		);
+		assert.isTrue(bootstrap_status.available, 'the operator retries without a restart');
+		const accounts = await db.query('SELECT id FROM account');
+		assert.strictEqual(accounts.length, 0, 'nothing was created');
+		const sessions = await db.query('SELECT id FROM auth_session');
+		assert.strictEqual(sessions.length, 0);
+		assert.deepStrictEqual(await read_audit(), [
+			{ outcome: 'failure', metadata: { error: ERROR_TOKEN_FILE_UNDELETABLE } }
+		]);
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			TEST_LIMITER_MAX_ATTEMPTS - 1,
+			'the refusal is charged'
+		);
+
+		limiter.dispose();
+	});
+});
+
+describe('the lock-race loser', () => {
+	test('closes the window, writes no audit row, and is not charged', async () => {
+		const limiter = create_test_limiter();
+		const { app, db, bootstrap_status, read_audit } = await create_audited_bootstrap_app(
+			limiter,
+			MATCHING_TOKEN()
+		);
+		// the window open in memory, the lock already flipped in the database
+		await db.query('UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1');
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 403);
+		assert.deepStrictEqual(await res.json(), { error: ERROR_ALREADY_BOOTSTRAPPED });
+		assert.isFalse(bootstrap_status.available, 'the window closes');
+		assert.deepStrictEqual(await read_audit(), [], 'no audit row');
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			TEST_LIMITER_MAX_ATTEMPTS,
+			'the loser is not charged'
+		);
+
+		limiter.dispose();
 	});
 });

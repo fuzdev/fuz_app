@@ -106,13 +106,6 @@ const keyring = create_test_keyring(TEST_KEY);
 const session_options = create_session_config('test_session');
 const log = new Logger('test', { level: 'off' });
 
-const fs_stubs = {
-	read_secure_file: async (path: string): Promise<Uint8Array> => {
-		throw new Error(`ENOENT: no such file or directory: ${path}`);
-	},
-	delete_file: async (_path: string) => {}
-};
-
 const factory = create_default_db_factory(async () => {});
 
 const base_config: Omit<AppServerOptions, 'backend'> = {
@@ -145,8 +138,7 @@ const create_test_setup = async (): Promise<{
 			password: stub_password_deps,
 			db,
 			audit,
-			connection_closer: create_realtime_closer(),
-			...fs_stubs
+			connection_closer: create_realtime_closer()
 		}
 	};
 	return { config: { backend, ...base_config }, audit };
