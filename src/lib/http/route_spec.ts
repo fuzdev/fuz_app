@@ -50,6 +50,7 @@ import {
 	ERROR_UNSUPPORTED_CONTENT_TYPE
 } from './error_schemas.ts';
 import type { RateLimitKey } from '../rate_limiter.ts';
+import { read_content_type } from './request_headers.ts';
 import { is_post_content_type_refused } from './simple_request.ts';
 import {
 	jsonrpc_error_code_to_http_status,
@@ -1125,7 +1126,9 @@ const create_content_type_check = (spec: RouteSpec): Array<MiddlewareHandler> =>
 	if (spec.method !== 'POST') return [];
 	const raw_body = spec.raw_body ?? false;
 	const check: MiddlewareHandler = async (c, next): Promise<Response | void> => {
-		if (is_post_content_type_refused(c.req.header('content-type'), raw_body)) {
+		if (
+			is_post_content_type_refused(read_content_type(get_header_lines(c, 'content-type')), raw_body)
+		) {
 			return c.json({ error: ERROR_UNSUPPORTED_CONTENT_TYPE }, 415);
 		}
 		await next();

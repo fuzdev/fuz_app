@@ -136,12 +136,10 @@ import {
 	type CredentialConformanceCrossTestOptions
 } from './credential_conformance.ts';
 import {
-	CREDENTIAL_BEARER_ACCOUNT_USERNAME,
-	CREDENTIAL_SESSION_ACCOUNT_PASSWORD,
-	CREDENTIAL_SESSION_ACCOUNT_USERNAME,
 	describe_credential_conformance_wire_cross_tests,
 	type CredentialConformanceWireCrossTestOptions
 } from './credential_conformance_wire.ts';
+import { create_credential_wire_seed } from './credential_wire.ts';
 import {
 	describe_credential_header_robustness_cross_tests,
 	type CredentialHeaderRobustnessCrossTestOptions
@@ -169,6 +167,10 @@ import {
 	type QueryShapeCrossTestOptions
 } from './query_shape.ts';
 import { describe_ready_cross_tests, type ReadyCrossTestOptions } from './ready.ts';
+import {
+	describe_request_header_conformance_wire_cross_tests,
+	type RequestHeaderConformanceWireCrossTestOptions
+} from './request_header_conformance_wire.ts';
 import {
 	describe_role_grant_offer_enumeration_cross_tests,
 	OFFER_GRANTOR_USERNAME,
@@ -302,6 +304,7 @@ export const SUITE_NAMES = [
 	'peer_ping_ws',
 	'query_shape',
 	'ready',
+	'request_header_conformance_wire',
 	'role_grant_offer_enumeration',
 	'role_grant_offer_lifecycle',
 	'role_grant_offer_notification_ws',
@@ -386,6 +389,7 @@ export interface SuiteOptionsMap {
 	peer_ping_ws: PeerPingWsTestOptions;
 	query_shape: QueryShapeCrossTestOptions;
 	ready: ReadyCrossTestOptions;
+	request_header_conformance_wire: RequestHeaderConformanceWireCrossTestOptions;
 	role_grant_offer_enumeration: RoleGrantOfferEnumerationCrossTestOptions;
 	role_grant_offer_lifecycle: RoleGrantOfferLifecycleCrossTestOptions;
 	role_grant_offer_notification_ws: RoleGrantOfferNotificationWsTestOptions;
@@ -717,24 +721,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		// lets each of them, and the keeper behind the daemon token, open a
 		// socket where the upgrade is role-gated
 		derive: (c) => ({
-			setup_test: c.setup({
-				// the daemon token is the keeper's, which holds the builtin roles already
-				extra_keeper_roles: (c.options.ws_required_roles ?? []).filter(
-					(role) => role !== ROLE_KEEPER && role !== ROLE_ADMIN
-				),
-				extra_accounts: [
-					{
-						username: CREDENTIAL_SESSION_ACCOUNT_USERNAME,
-						// the login case signs in as it
-						password_value: CREDENTIAL_SESSION_ACCOUNT_PASSWORD,
-						roles: [...(c.options.ws_required_roles ?? [])]
-					},
-					{
-						username: CREDENTIAL_BEARER_ACCOUNT_USERNAME,
-						roles: [...(c.options.ws_required_roles ?? [])]
-					}
-				]
-			}),
+			setup_test: c.setup(create_credential_wire_seed(c.options.ws_required_roles)),
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
 			cookie_name: c.config.cookie_name,
@@ -814,6 +801,27 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		derive: (c) => ({ setup_test: c.setup(), capabilities: c.config.capabilities }),
 		describe: describe_ready_cross_tests,
 		required: { setup_test: true, capabilities: true }
+	},
+	request_header_conformance_wire: {
+		// the credential accounts, so the account a request authenticates as
+		// says which credential did
+		derive: (c) => ({
+			setup_test: c.setup(create_credential_wire_seed(c.options.ws_required_roles)),
+			capabilities: c.config.capabilities,
+			base_url: c.config.base_url,
+			cookie_name: c.config.cookie_name,
+			daemon_token: c.handle.daemon_token,
+			rpc_path: c.config.rpc_path,
+			ws_path: c.config.ws_path
+		}),
+		describe: describe_request_header_conformance_wire_cross_tests,
+		required: {
+			setup_test: true,
+			capabilities: true,
+			base_url: true,
+			cookie_name: true,
+			daemon_token: true
+		}
 	},
 	role_grant_offer_enumeration: {
 		// a sibling actor for the wrong-persona arm, and a single-actor admin

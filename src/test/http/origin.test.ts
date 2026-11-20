@@ -4,7 +4,6 @@ import { Hono, type Handler } from 'hono';
 import {
 	ALLOWED_ORIGINS_ERROR_MESSAGES,
 	format_allowed_origins_error,
-	is_browser_context,
 	parse_allowed_origins,
 	should_allow_origin,
 	verify_request_source
@@ -22,10 +21,10 @@ const create_mock_context = (headers: Record<string, string> = {}) => {
 		normalized_headers[key.toLowerCase()] = value;
 	}
 
+	// the middleware reads the lines `get_header_lines` gives, here the Fetch
+	// value as one line
 	const c = {
-		req: {
-			header: (name: string) => normalized_headers[name.toLowerCase()]
-		},
+		req: { raw: { headers: new Headers(normalized_headers) } },
 		json
 	};
 
@@ -385,9 +384,9 @@ describe('verify_request_source middleware edge cases', () => {
 		expected: 'block' | 'allow';
 		expected_error: string;
 	}> = [
-		// defense-in-depth: empty-string headers treated as present via !== undefined
+		// an empty Origin is a malformed browser signal, refused rather than read as none
 		{
-			name: 'empty Origin header is rejected (defense-in-depth, !== undefined)',
+			name: 'empty Origin header is rejected',
 			headers: { Origin: '' },
 			patterns: 'https://example.com',
 			expected: 'block',
@@ -444,38 +443,6 @@ describe('verify_request_source middleware edge cases', () => {
 			}
 		});
 	}
-});
-
-describe('is_browser_context', () => {
-	test('no Origin/Referer → not browser context', () => {
-		const { c } = create_mock_context();
-		assert.strictEqual(is_browser_context(c as any), false);
-	});
-
-	test('Origin present → browser context', () => {
-		const { c } = create_mock_context({ Origin: 'https://app.example' });
-		assert.strictEqual(is_browser_context(c as any), true);
-	});
-
-	test('Referer present → browser context', () => {
-		const { c } = create_mock_context({ Referer: 'https://app.example/page' });
-		assert.strictEqual(is_browser_context(c as any), true);
-	});
-
-	test('both present → browser context', () => {
-		const { c } = create_mock_context({
-			Origin: 'https://app.example',
-			Referer: 'https://app.example/page'
-		});
-		assert.strictEqual(is_browser_context(c as any), true);
-	});
-
-	test('empty-string Origin still counts as browser context (!== undefined)', () => {
-		// Mirrors the bearer/daemon-token discard: an abnormal empty Origin is
-		// still browser context, never a legitimate loopback credential.
-		const { c } = create_mock_context({ Origin: '' });
-		assert.strictEqual(is_browser_context(c as any), true);
-	});
 });
 
 describe('verify_request_source carve-outs', () => {

@@ -16,9 +16,11 @@
  * admit the hosts they'd admit as origins.
  *
  * A request without a `Host` header passes: browsers always send one, so its
- * absence means a non-browser client, which the auth stack governs. A request
- * with more than one `Host` is refused (RFC 9112 §3.2) — the runtimes join a
- * repeated header into one value (`a, b`), which names no host.
+ * absence means a non-browser client, which the auth stack governs. An empty
+ * `Host` and more than one `Host` are refused (RFC 9112 §3.2), read from the
+ * lines the client sent (`get_header_lines`) — on `@hono/node-server` a
+ * WebSocket upgrade's own `Headers` keep only the first `Host` line, and on a
+ * runtime that joins repeated lines (`a, b`) the comma names no host.
  *
  * The gate is on by default (`AppServerOptions.host_gate`). A refusal is said
  * in the log as well as answered: the first in each
@@ -37,10 +39,12 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { MiddlewareHandler } from 'hono';
 
 import { ERROR_FORBIDDEN_HOST, REST_FORBIDDEN_HOST } from './error_schemas.ts';
+import { get_header_lines } from './header_lines.ts';
 import { parse_ipv4_bits, parse_ipv6_bits } from './ip_canonical.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import { quote_ascii, should_allow_origin } from './origin.ts';
 import { ALLOWED_ORIGINS_VAR } from './origin_wildcard.ts';
+import { read_host } from './request_headers.ts';
 
 /** Where the host gate mounts — every path, as the Rust stack mounts it in every group. */
 export const HOST_MIDDLEWARE_PATH = '*';
@@ -110,17 +114,14 @@ export const allows_host = (host: string, allowed_patterns: ReadonlyArray<RegExp
 	);
 };
 
-/** Visible ASCII, the space, and a tab — what a header value holds. */
-const HEADER_TEXT = /^[\t\x20-\x7e]*$/;
-
 /**
- * Host check for a request's `Host` header values — true when there are none
- * or one that passes `allows_host`. A value that isn't visible ASCII (a tab
- * and the space allowed, as in a header value) is refused, and so is more than
- * one `Host` (RFC 9112 §3.2). Twin of the Rust
+ * Host check for a request's `Host` lines — true when there are none, or one
+ * (`read_host` of `http/request_headers.ts`: printable ASCII, no space or
+ * comma) that passes `allows_host`. An empty line, more than one line (RFC
+ * 9112 §3.2), and a byte outside that set are refused. Twin of the Rust
  * `AllowedOrigins::allows_request_hosts`.
  *
- * @param hosts - the request's `Host` values, `[]` for none
+ * @param hosts - the request's `Host` lines, `[]` for none
  * @param allowed_patterns - the matchers `parse_allowed_origins` built
  * @returns whether the request passes the host gate
  */
@@ -128,16 +129,22 @@ export const allows_request_hosts = (
 	hosts: ReadonlyArray<string>,
 	allowed_patterns: ReadonlyArray<RegExp>
 ): boolean => {
-	if (hosts.length === 0) return true;
-	if (hosts.length > 1) return false;
-	const host = hosts[0]!;
-	return HEADER_TEXT.test(host) && allows_host(host, allowed_patterns);
+	const host = read_host(hosts);
+	switch (host.kind) {
+		case 'absent':
+			return true;
+		case 'refused':
+			return false;
+		case 'one':
+			return allows_host(host.value, allowed_patterns);
+	}
 };
 
 /**
  * The refusal warning's text. Twin of the Rust `format_host_refusal_warning`.
  *
- * @param host - the refused `Host` as the request carried it
+ * @param host - the refused `Host` as the request carried it — several lines
+ *   joined with `, `
  * @param allowed_origins_var - the env var the allowlist was read from
  * @param held_back - the refusals held back since the last warning
  * @returns one log line
@@ -210,12 +217,11 @@ export const create_host_gate_middleware = (options: HostGateOptions): Middlewar
 	const now = options.now ?? Date.now;
 	const warnings = create_host_refusal_warnings();
 	return async (c, next) => {
-		const host = c.req.header('host');
-		const hosts = host === undefined ? [] : [host];
+		const hosts = get_header_lines(c, 'host');
 		if (!allows_request_hosts(hosts, allowed_origins)) {
 			const held_back = warnings.note(now());
 			if (held_back !== null) {
-				log.warn(format_host_refusal_warning(host ?? '', allowed_origins_var, held_back));
+				log.warn(format_host_refusal_warning(hosts.join(', '), allowed_origins_var, held_back));
 			}
 			return c.json({ error: ERROR_FORBIDDEN_HOST }, 403);
 		}

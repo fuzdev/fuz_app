@@ -21,7 +21,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { get_resolved_auth } from './resolved_auth.ts';
 import { get_header_lines } from '../http/header_lines.ts';
-import { is_browser_context } from '../http/origin.ts';
+import { is_browser_context } from '../http/request_headers.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { ROLE_KEEPER } from './role_schema.ts';
@@ -120,13 +120,13 @@ export const create_daemon_token_middleware = (
 		}
 
 		// Silently discard daemon tokens in browser context (`is_browser_context`
-		// — Origin or Referer present) — mirrors the bearer guard (and the Rust
+		// — an Origin or Referer line present) — mirrors the bearer guard (and the Rust
 		// spine's `resolve.rs`, which returns `None`). Daemon tokens are
 		// loopback-only and never carry an `Origin` in production, so a
 		// header-bearing request is not a legitimate daemon caller. Discards
 		// (next()) rather than 401 so the dispatcher returns
 		// `credential_type_required` downstream rather than a hard fail.
-		if (is_browser_context(c)) {
+		if (is_browser_context(get_header_lines(c, 'origin'), get_header_lines(c, 'referer'))) {
 			log.debug('daemon token auth rejected: browser context (Origin/Referer present)');
 			if (DEV) c.header('X-Fuz-Auth-Debug', 'daemon_token_discarded_browser_context');
 			await next();

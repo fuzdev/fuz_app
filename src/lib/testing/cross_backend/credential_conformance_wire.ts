@@ -48,7 +48,8 @@ import '../assert_dev_env.ts';
  *   API token and the daemon token — the standard account actions. A backend
  *   answering `method_not_found` fails the suite naming it.
  * - The `POST` login route at `login_path`.
- * - A `setup_test` seeding the two `extra_accounts` named here, the session
+ * - A `setup_test` seeding the two `extra_accounts` `credential_wire.ts` names
+ *   (`create_credential_wire_seed`), the session
  *   one with `CREDENTIAL_SESSION_ACCOUNT_PASSWORD` (the login case signs in as
  *   it — the suite creates no account of its own, so it needs neither signup
  *   nor invites), and no `extra_actors`: the upgrade leg sends no `acting`
@@ -66,34 +67,19 @@ import '../assert_dev_env.ts';
  */
 
 import { describe, test, assert } from 'vitest';
-import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
-import { SessionAccountJson } from '../../auth/account_schema.ts';
-import {
-	CREDENTIAL_TYPE_API_TOKEN,
-	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	CREDENTIAL_TYPE_SESSION,
-	type BuiltinCredentialType
-} from '../../auth/credential_type_schema.ts';
+import { CREDENTIAL_TYPE_SESSION } from '../../auth/credential_type_schema.ts';
 import { HEALTH_PATH } from '../../http/health_schema.ts';
-import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
-import type { TestAccount } from '../app_server.ts';
 import {
 	raw_http_count_responses,
 	raw_http_exchange,
 	raw_http_header_values,
-	raw_http_parse_json,
 	raw_http_parse_response,
 	raw_http_request,
 	RAW_HTTP_READ_TIMEOUT_MS,
 	type RawHttpResponse
 } from '../transports/raw_http.ts';
-import {
-	connect_raw_ws,
-	is_raw_ws_close,
-	RAW_WS_OPCODE_TEXT,
-	type RawWsFrame
-} from '../transports/ws_raw_client.ts';
+import { connect_raw_ws } from '../transports/ws_raw_client.ts';
 import { test_if, type BackendCapabilities } from './capabilities.ts';
 import {
 	build_credential_conformance_placeholders,
@@ -102,31 +88,24 @@ import {
 	to_credential_conformance_checks,
 	type CredentialConformanceCheck
 } from './credential_conformance.ts';
-import type { SetupTest, TestFixture } from './setup.ts';
+import {
+	CREDENTIAL_SESSION_ACCOUNT_PASSWORD,
+	CREDENTIAL_SESSION_ACCOUNT_USERNAME,
+	credential_of_verify_response,
+	format_authenticated_credential,
+	read_credential_wire_accounts,
+	send_raw_upgrade,
+	send_raw_verify,
+	verify_socket_credential,
+	type AuthenticatedCredential,
+	type CredentialWireAccounts
+} from './credential_wire.ts';
+import type { SetupTest } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_RPC_PATH,
 	SPINE_WS_PATH
 } from './spine_surface_constants.ts';
-
-/**
- * The `extra_accounts` username whose session cookie the rows send. The
- * suite's `setup_test` must seed it, with
- * `CREDENTIAL_SESSION_ACCOUNT_PASSWORD`.
- */
-export const CREDENTIAL_SESSION_ACCOUNT_USERNAME = 'credential_session';
-
-/**
- * The password the `CREDENTIAL_SESSION_ACCOUNT_USERNAME` account is seeded
- * with (`ExtraAccountSpec.password_value`) — the login case signs in as it.
- */
-export const CREDENTIAL_SESSION_ACCOUNT_PASSWORD = 'credential-session-password';
-
-/**
- * The `extra_accounts` username whose API token the rows send. The suite's
- * `setup_test` must seed it.
- */
-export const CREDENTIAL_BEARER_ACCOUNT_USERNAME = 'credential_bearer';
 
 /** Options for `describe_credential_conformance_wire_cross_tests`. */
 export interface CredentialConformanceWireCrossTestOptions {
@@ -172,51 +151,8 @@ export interface CredentialConformanceWireCrossTestOptions {
  */
 const WIRE_SESSION_COOKIE_ATTRIBUTES = 'Path=/; HttpOnly; Secure; SameSite=Strict';
 
-/** An upgrade request's own header lines, with RFC 6455's sample key. */
-const WS_UPGRADE_HEADER_LINES: ReadonlyArray<string> = [
-	'Connection: Upgrade',
-	'Upgrade: websocket',
-	'Sec-WebSocket-Version: 13',
-	'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='
-];
-
-/** The id of the `account_verify` call every row sends. */
-const VERIFY_ID = 'credential';
-
-/** The `account_verify` call every row sends — an RPC body, and a socket frame. */
-const VERIFY_BODY = JSON.stringify({ jsonrpc: '2.0', id: VERIFY_ID, method: 'account_verify' });
-
-/** How long an accepted socket has to answer its `account_verify` frame. */
-const VERIFY_FRAME_TIMEOUT_MS = 5_000;
-
-/** What an `account_verify` answer says of the credential behind it. */
-type AuthenticatedCredential = BuiltinCredentialType | { readonly unexpected: string };
-
-const describe_credential = (credential: AuthenticatedCredential | null): string =>
-	typeof credential === 'object' && credential !== null
-		? credential.unexpected
-		: String(credential);
-
-/** The accounts behind the three credentials of one fixture. */
-interface CredentialAccounts {
-	readonly session: TestAccount;
-	readonly bearer: TestAccount;
-	/** The keeper's account id — who the daemon token authenticates as. */
-	readonly keeper_id: string;
-}
-
-const credential_accounts = (fixture: TestFixture): CredentialAccounts => {
-	const session = fixture.extra_accounts[CREDENTIAL_SESSION_ACCOUNT_USERNAME];
-	const bearer = fixture.extra_accounts[CREDENTIAL_BEARER_ACCOUNT_USERNAME];
-	assert.ok(
-		session && bearer,
-		`the suite's setup_test must seed the extra_accounts '${CREDENTIAL_SESSION_ACCOUNT_USERNAME}' ` +
-			`and '${CREDENTIAL_BEARER_ACCOUNT_USERNAME}'`
-	);
-	const ids = new Set([session.account.id, bearer.account.id, fixture.account.id]);
-	assert.strictEqual(ids.size, 3, 'the three credentials belong to three accounts');
-	return { session, bearer, keeper_id: fixture.account.id };
-};
+/** The suite's name, in a throw naming a missing requirement. */
+const SUITE = 'describe_credential_conformance_wire_cross_tests';
 
 /** The session cookie's `Set-Cookie` lines of a response, in the order sent. */
 const session_set_cookies = (received: string, cookie_name: string): Array<string> =>
@@ -240,7 +176,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 
 	/** The table's wire rows, filled with this fixture's live credentials. */
 	const wire_checks = async (
-		accounts: CredentialAccounts
+		accounts: CredentialWireAccounts
 	): Promise<Array<CredentialConformanceCheck>> => {
 		const placeholders = await build_credential_conformance_placeholders({
 			cookie_name,
@@ -252,70 +188,20 @@ export const describe_credential_conformance_wire_cross_tests = (
 		return to_credential_conformance_checks(table, placeholders);
 	};
 
-	/** POST `account_verify` carrying `lines`, read until the server closes. */
-	const send_verify = async (
-		lines: ReadonlyArray<string>
-	): Promise<{ received: string; response: RawHttpResponse | null }> => {
-		const { received } = await raw_http_exchange(
+	/** POST `account_verify` carrying `lines` after the JSON content type. */
+	const send_verify = (lines: ReadonlyArray<string>) =>
+		send_raw_verify({
 			base_url,
-			raw_http_request({
-				method: 'POST',
-				path: rpc_path,
-				host,
-				header_lines: ['Content-Type: application/json', ...lines, 'Connection: close'],
-				body: VERIFY_BODY
-			}),
-			{ read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS }
-		);
-		return { received, response: raw_http_parse_response(received) };
-	};
+			rpc_path,
+			host,
+			header_lines: ['Content-Type: application/json', ...lines]
+		});
 
-	/**
-	 * The credential an `account_verify` envelope names, by the account it
-	 * answers as.
-	 *
-	 * @throws Error when the backend has no `account_verify` there — a missing requirement, not a row's failure
-	 */
-	const credential_of_envelope = (
-		envelope: unknown,
-		accounts: CredentialAccounts,
-		where: string
-	): AuthenticatedCredential => {
-		const { result, error } = (envelope ?? {}) as {
-			result?: unknown;
-			error?: { code?: unknown };
-		};
-		if (error?.code === JSONRPC_ERROR_CODES.method_not_found) {
-			throw new Error(
-				`describe_credential_conformance_wire_cross_tests: the backend answers method_not_found ` +
-					`for account_verify on ${where} — the suite reads which credential authenticated from it`
-			);
-		}
-		const account = parse(SessionAccountJson, result);
-		if (!account.ok) return { unexpected: 'an answer whose result is no account' };
-		switch (account.value.id) {
-			case accounts.session.account.id:
-				return CREDENTIAL_TYPE_SESSION;
-			case accounts.bearer.account.id:
-				return CREDENTIAL_TYPE_API_TOKEN;
-			case accounts.keeper_id:
-				return CREDENTIAL_TYPE_DAEMON_TOKEN;
-			default:
-				return { unexpected: 'an account behind none of the three credentials' };
-		}
-	};
-
-	/** The credential an RPC `account_verify` response names; `null` for a 401. */
 	const authenticated_credential = (
 		response: RawHttpResponse,
-		accounts: CredentialAccounts
-	): AuthenticatedCredential | null => {
-		if (response.status === 401) return null;
-		const envelope = raw_http_parse_json(response.body);
-		const credential = credential_of_envelope(envelope, accounts, `the RPC endpoint (${rpc_path})`);
-		if (response.status !== 200) return { unexpected: `status ${response.status}` };
-		return credential;
-	};
+		accounts: CredentialWireAccounts
+	): AuthenticatedCredential | null =>
+		credential_of_verify_response(response, accounts, rpc_path, SUITE);
 
 	/**
 	 * Send one row as a WebSocket upgrade a credential should not authenticate.
@@ -325,17 +211,12 @@ export const describe_credential_conformance_wire_cross_tests = (
 	const check_refused_upgrade = async (
 		check: CredentialConformanceCheck
 	): Promise<Array<string>> => {
-		const { received } = await raw_http_exchange(
+		const { received, response } = await send_raw_upgrade({
 			base_url,
-			raw_http_request({
-				method: 'GET',
-				path: ws_path,
-				host,
-				header_lines: [...WS_UPGRADE_HEADER_LINES, ...check.lines]
-			}),
-			{ read_timeout_ms: RAW_HTTP_READ_TIMEOUT_MS, until: 'response' }
-		);
-		const response = raw_http_parse_response(received);
+			ws_path,
+			host,
+			header_lines: check.lines
+		});
 		if (!response) return [`no whole response (${received.slice(0, 80)})`];
 		if (response.status !== 401) return [`expected 401, got ${response.status}`];
 		const cleared = session_set_cookies(received, cookie_name);
@@ -357,7 +238,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 	 */
 	const check_accepted_upgrade = async (
 		check: CredentialConformanceCheck,
-		accounts: CredentialAccounts
+		accounts: CredentialWireAccounts
 	): Promise<Array<string>> => {
 		const url = new URL(base_url);
 		let client;
@@ -378,30 +259,12 @@ export const describe_credential_conformance_wire_cross_tests = (
 				failures.push(`expected no session Set-Cookie on the 101, got ${cleared.length}`);
 			}
 			if (!capabilities.ws_account_actions) return failures;
-			client.send_text(VERIFY_BODY);
-			const is_answer = (frame: RawWsFrame): boolean =>
-				is_raw_ws_close(frame) ||
-				(frame.opcode === RAW_WS_OPCODE_TEXT &&
-					(raw_http_parse_json(frame.payload.toString('utf-8')) as { id?: unknown } | undefined)
-						?.id === VERIFY_ID);
-			let frame;
-			try {
-				frame = await client.wait_for(is_answer, VERIFY_FRAME_TIMEOUT_MS);
-			} catch {
-				return [...failures, 'the accepted socket never answered account_verify'];
-			}
-			if (is_raw_ws_close(frame)) {
-				return [...failures, 'the accepted socket closed instead of answering account_verify'];
-			}
-			const credential = credential_of_envelope(
-				raw_http_parse_json(frame.payload.toString('utf-8')),
-				accounts,
-				`the WebSocket endpoint (${ws_path}), which capabilities.ws_account_actions says mounts it`
-			);
-			if (credential !== check.row.authenticates) {
+			const verified = await verify_socket_credential(client, accounts, ws_path, SUITE);
+			if ('failure' in verified) return [...failures, verified.failure];
+			if (verified.credential !== check.row.authenticates) {
 				failures.push(
 					`expected the socket to be ${String(check.row.authenticates)}'s, ` +
-						`got ${describe_credential(credential)}`
+						`got ${format_authenticated_credential(verified.credential)}`
 				);
 			}
 			return failures;
@@ -413,7 +276,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 	describe('credential conformance on the wire', () => {
 		test('every row authenticates as the credential it names, and clears the cookie when it says so', async () => {
 			const fixture = await setup_test();
-			const accounts = credential_accounts(fixture);
+			const accounts = read_credential_wire_accounts(fixture);
 			const checks = await wire_checks(accounts);
 			const failures: Array<string> = [];
 			for (const check of checks) {
@@ -429,7 +292,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 				if (authenticated !== check.row.authenticates) {
 					failures.push(
 						`${check.label}: expected ${String(check.row.authenticates)} to authenticate, ` +
-							`got ${describe_credential(authenticated)}`
+							`got ${format_authenticated_credential(authenticated)}`
 					);
 				}
 				const cleared = session_set_cookies(received, cookie_name);
@@ -458,7 +321,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 					0,
 					"the suite's setup_test must seed no extra_actors: the upgrades carry no acting selector"
 				);
-				const accounts = credential_accounts(fixture);
+				const accounts = read_credential_wire_accounts(fixture);
 				const checks = await wire_checks(accounts);
 				const failures: Array<string> = [];
 				for (const check of checks) {
@@ -513,7 +376,7 @@ export const describe_credential_conformance_wire_cross_tests = (
 
 		test('a login carrying a stale cookie answers the clear, then the new cookie — which authenticates as sent', async () => {
 			const fixture = await setup_test();
-			const accounts = credential_accounts(fixture);
+			const accounts = read_credential_wire_accounts(fixture);
 			const { received } = await raw_http_exchange(
 				base_url,
 				raw_http_request({

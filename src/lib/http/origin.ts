@@ -21,31 +21,14 @@
 
 import { escape_regexp } from '@fuzdev/fuz_util/regexp.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
-import type { Context, Handler } from 'hono';
+import type { Handler } from 'hono';
 import { one_of, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ERROR_FORBIDDEN_ORIGIN } from './error_schemas.ts';
+import { get_header_lines } from './header_lines.ts';
 import type { MiddlewareCarveOut } from './middleware_spec.ts';
+import { read_origin } from './request_headers.ts';
 import { middleware_applies } from './schema_helpers.ts';
-
-/**
- * True when the request looks like it originated from a browser context — it
- * carries an `Origin` or `Referer` header. Browsers attach these
- * automatically on the state-changing surface; loopback / CLI clients don't.
- * Uses `!== undefined` so an empty-string header still counts as browser
- * context. Checks `Referer` too (not just `Origin`) because some browser
- * requests send only `Referer`. Twin of the Rust spine's
- * `bearer_auth::is_browser_context`.
- *
- * The bearer (`auth/bearer_auth.ts`) and daemon-token
- * (`auth/daemon_token_middleware.ts`) middleware both silently discard their
- * credential when this is true: a stolen bearer token can't be replayed from a
- * browser, and the loopback daemon token never legitimately carries an
- * `Origin`. Distinct from `verify_request_source` — that gates browser
- * requests against an allowlist; this only detects browser context.
- */
-export const is_browser_context = (c: Context): boolean =>
-	c.req.header('Origin') !== undefined || c.req.header('Referer') !== undefined;
 
 /**
  * Why one allowlist entry was refused, a `@fuzdev/fuz_schema` `one_of` whose
@@ -274,11 +257,13 @@ export const should_allow_origin = (
  *
  * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies
  * plus `http/simple_request.ts`):
- * - Checks the `Origin` header (if present) against the allowlist
+ * - Checks the one `Origin` line (if present) against the allowlist
  * - Allows requests without an `Origin` header (direct access, curl, etc.)
- * - Refuses an `Origin` that isn't visible ASCII, and a duplicated one — the
- *   runtimes join a repeated header into one value (`a, b`), which carries a
- *   space and so matches nothing
+ * - Refuses a malformed `Origin` (`read_origin` of `http/request_headers.ts`):
+ *   an empty line, a second line, a byte that isn't visible ASCII — read from
+ *   the lines the client sent (`get_header_lines`), so a runtime's own view of
+ *   a repeated or empty line (`@hono/node-server` rebuilds a WebSocket
+ *   upgrade's from Node's deduplicated one) decides nothing
  *
  * Origin-only by design — Fetch spec mandates `Origin` on every unsafe
  * method (POST / PUT / DELETE / PATCH) regardless of `Referrer-Policy`,
@@ -306,10 +291,11 @@ export const verify_request_source =
 		if (carve_outs.some((carve_out) => middleware_applies(carve_out.path, c.req.path))) {
 			return next();
 		}
-		// `!== undefined` so an empty-string Origin is present (abnormal, checked
-		// against the allowlist — the empty string never matches)
-		const origin = c.req.header('origin');
-		if (origin !== undefined && !should_allow_origin(origin, allowed_patterns)) {
+		const origin = read_origin(get_header_lines(c, 'origin'));
+		if (
+			origin.kind === 'refused' ||
+			(origin.kind === 'one' && !should_allow_origin(origin.value, allowed_patterns))
+		) {
 			return c.json({ error: ERROR_FORBIDDEN_ORIGIN }, 403);
 		}
 		// no Origin — direct access (curl, CLI); token auth is the control

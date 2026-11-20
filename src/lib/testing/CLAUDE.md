@@ -1169,7 +1169,11 @@ have files of their own.
   `ws_handshake_pipelining` / `ws_account_actions` /
   `ws_role_gated` / `rooms` / `ws_refusal_body` — each has a `test_if`
   reader (`ws_refusal_body` picks how the front-door table and the WS suite's
-  disallowed-origin case read a WS refusal instead); `peer_request` (server-initiated requests — the ActionPeer
+  disallowed-origin case read a WS refusal instead) — and the list
+  `ws_upgrade_runtime_refusals`, the upgrades the backend's runtime answers
+  before the app runs (`['empty_host']` on `@hono/node-server`, `[]` on Bun
+  and the Rust spine), which the request-header wire suite holds to exactly
+  that answer; `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
   (`ConnectionRegistry.request_connection`); a backend states it
   `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
@@ -1189,7 +1193,7 @@ have files of their own.
   fails typecheck naming it, rather than silently skipping its suites. The
   family defaults carry the declared surface's mounts (`account_lifecycle`,
   `account_status`) and the runtime-behavior flags (`ws_handshake_pipelining`,
-  `ws_refusal_body`) of the family's reference runtime — Node for TS, hyper
+  `ws_refusal_body`, `ws_upgrade_runtime_refusals`) of the family's reference runtime — Node for TS, hyper
   for Rust; a backend on another runtime (Bun) overrides them. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
   parity suite — both `true` on every backend that live-mounts the full cell
@@ -1704,6 +1708,7 @@ without.
 | `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
 | `credential_conformance` | every row of `credential_conformance.json` through `_testing_credential_read`: how the backend reads the session cookie, the bearer and the daemon token out of a request's header lines, and the lines it refuses as no header lines | `_testing_credential_read` |
 | `credential_conformance_wire` | raw socket: each row's header lines sent as an RPC `POST` and as a WebSocket upgrade — which credential authenticated (the account `account_verify` answers) and the exact clearing `Set-Cookie`, or none; the clear's scope, its order ahead of a login's new cookie, and a minted cookie authenticating as sent | `ws` (the upgrade leg; with `ws_account_actions` an accepted upgrade also answers `account_verify` on the socket, naming the credential) |
+| `request_header_conformance_wire` | raw socket: each row of `request_header_conformance.json` sent as an RPC `POST` and as a WebSocket upgrade — an empty, repeated or off-grammar `Origin`, `Host` or `Content-Type` refused with its code, any `Origin` or `Referer` line discarding a bearer or daemon token, the gates' order; the accounts and raw sends shared with the credential wire suite (`credential_wire.ts`). Assumes the host gate on and the backend's own origin allowed | `ws` (the upgrade leg), `ws_refusal_body`, `ws_upgrade_runtime_refusals` (per row) |
 | `credential_header_robustness` | raw socket: an oversized or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server (a duplicated one is `credential_conformance_wire`'s) | — |
 | `fact_serving` | `GET /api/cells/:cell_id/facts/:hash` per reference, the hardening headers, bodyless masked 404s; the admin-only `GET /api/facts/:hash` | `fact_serving` (bare-hash cases also `fact_serving_admin_hash`) |
 | `identity_parity` | `Username` / `UsernameProvided` / `Email` end to end: login canonicalization, username-or-email login, login input validation, ASCII-only creation, the `USERNAME_LENGTH_MIN`..`USERNAME_LENGTH_MAX` edges, email format — each by error reason | — |
@@ -1966,7 +1971,7 @@ Conventions that hold across them:
   as the `Origin` — through `create_admitted_ws_transport` when `admitted`,
   `create_ws_transport` otherwise. The cookie is the account's static one, so
   a session rotated through `fixture.transport` upgrades stale.
-- `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, path, headers?, header_lines?, pipelined?})`
+- `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, host?, path, headers?, header_lines?, pipelined?})` (`host: null` writes no `Host` line, so the caller's `header_lines` carry their own)
   → `RawWsClient` (`{frames, send_text, wait_for, destroy}`), a WebSocket client
   over a raw `node:net` socket for the two things a client library can't do:
   **withhold the close frame** (it never answers one) and put frames in the

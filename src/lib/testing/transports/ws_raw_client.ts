@@ -71,6 +71,13 @@ export interface RawWsConnectOptions {
 	hostname?: string;
 	/** The WebSocket endpoint path (e.g. `/api/ws`). */
 	path: string;
+	/**
+	 * The `Host` line's value, or `null` to write none — for an upgrade whose
+	 * `header_lines` carry the `Host` lines it means to send.
+	 *
+	 * @default `${hostname}:${port}`
+	 */
+	host?: string | null;
 	/** Extra upgrade request headers — `Cookie`, `Origin`. */
 	headers?: Record<string, string>;
 	/**
@@ -147,6 +154,7 @@ export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClien
 			port,
 			hostname = '127.0.0.1',
 			path,
+			host = `${hostname}:${port}`,
 			headers = {},
 			header_lines = [],
 			pipelined = []
@@ -191,7 +199,7 @@ export const connect_raw_ws = (options: RawWsConnectOptions): Promise<RawWsClien
 		socket.on('connect', () => {
 			const request = [
 				`GET ${path} HTTP/1.1`,
-				`Host: ${hostname}:${port}`,
+				...(host === null ? [] : [`Host: ${host}`]),
 				'Upgrade: websocket',
 				'Connection: Upgrade',
 				`Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`,

@@ -3,12 +3,14 @@
  * line, in order — where the Fetch `Headers` a handler normally reads has
  * already folded them into one string.
  *
- * The credential readers (`auth/credential_headers.ts`) decide on the lines: a
- * credential header sent twice is discarded, and that takes knowing it was
- * sent twice. `Headers.get` joins repeated lines with `, `, and
- * `@hono/node-server` builds a WebSocket upgrade's `Headers` from Node's
- * deduplicated view, which keeps only the first `Authorization` line — so on
- * that path the join never shows.
+ * The credential readers (`auth/credential_headers.ts`) and the gate readers
+ * (`http/request_headers.ts`) decide on the lines: a credential header sent
+ * twice is discarded, an `Origin` or `Host` sent twice is refused, and that
+ * takes knowing it was sent twice. `Headers.get` joins repeated lines with
+ * `, `, and `@hono/node-server` builds a WebSocket upgrade's `Headers` from
+ * Node's deduplicated view, which keeps only the first `Authorization`,
+ * `Host`, `Referer` or `Content-Type` line and drops every empty one — so on
+ * that path neither the join nor an empty line shows.
  *
  * @module
  */

@@ -27,7 +27,7 @@ import { query_validate_api_token } from './api_token_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { get_header_lines } from '../http/header_lines.ts';
-import { is_browser_context } from '../http/origin.ts';
+import { is_browser_context } from '../http/request_headers.ts';
 
 /**
  * Create middleware that authenticates via bearer token.
@@ -89,10 +89,10 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 		}
 
 		// Silently discard bearer tokens in browser context (`is_browser_context`
-		// — Origin or Referer present). Discards rather than returning 403 so that
+		// — an Origin or Referer line present). Discards rather than returning 403 so that
 		// the RPC dispatcher can still handle public actions or fall through to
 		// cookie auth.
-		if (is_browser_context(c)) {
+		if (is_browser_context(get_header_lines(c, 'origin'), get_header_lines(c, 'referer'))) {
 			log.debug('bearer auth rejected: browser context (Origin/Referer present)');
 			// The discard is silent on the wire by design (a stolen-token probe
 			// gets an indistinguishable 401, not a "your token was dropped"

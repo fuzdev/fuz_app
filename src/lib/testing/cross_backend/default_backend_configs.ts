@@ -170,7 +170,10 @@ export const ts_default_capabilities: FamilyDefaultCapabilities = Object.freeze(
 	ws_handshake_pipelining: true,
 	// `@hono/node-server` drops a refused upgrade's body, so a Node-served backend
 	// sends none. A Bun-served one overrides to `true`.
-	ws_refusal_body: false
+	ws_refusal_body: false,
+	// `@hono/node-server` answers an upgrade whose first `Host` line is empty
+	// with a bodiless 400 before the app runs. A Bun-served one overrides to `[]`.
+	ws_upgrade_runtime_refusals: Object.freeze(['empty_host'] as const)
 });
 
 /**
@@ -190,7 +193,9 @@ export const rust_default_capabilities: FamilyDefaultCapabilities = Object.freez
 	// stream, where they wait for the read loop that starts at admission.
 	ws_handshake_pipelining: true,
 	// axum sends a refused upgrade's response as built, body included.
-	ws_refusal_body: true
+	ws_refusal_body: true,
+	// hyper hands an upgrade with an empty `Host` to the host gate.
+	ws_upgrade_runtime_refusals: Object.freeze([])
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

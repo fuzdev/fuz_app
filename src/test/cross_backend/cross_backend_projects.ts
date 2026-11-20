@@ -104,8 +104,8 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// action-manifest parity (live RPC method set + auth), and the differential
 	// (every conformance case sent to both, the answers compared), and the
 	// transcript differential (the imperative suites run on each, every
-	// request and answer diffed). The copy check of the credential conformance
-	// table rides here too: it reads the Rust checkout the stub was built from.
+	// request and answer diffed). The copy check of the twin conformance
+	// tables rides here too: it reads the Rust checkout the stub was built from.
 	{
 		name: 'cross_backend_parity',
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
@@ -113,7 +113,7 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 			'src/test/cross_backend/schema_parity.cross.test.ts',
 			'src/test/cross_backend/action_manifest_parity.cross.test.ts',
 			'src/test/cross_backend/differential.cross.test.ts',
-			'src/test/cross_backend/credential_conformance_copies.cross.test.ts',
+			'src/test/cross_backend/conformance_table_copies.cross.test.ts',
 			'src/test/cross_backend/transcript_differential.cross.test.ts'
 		]
 	},

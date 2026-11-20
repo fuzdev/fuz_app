@@ -20,8 +20,10 @@
  * So every `POST` route carries a content-type check, run first by
  * `apply_route_specs` (`is_post_content_type_refused`, 415
  * `unsupported_content_type`): a JSON route takes only `application/json`,
- * bodyless or not, and a `raw_body` route takes any type that isn't
- * safelisted. Only `POST` needs it: `PUT`, `PATCH`, and `DELETE` are never
+ * bodyless or not, and a `raw_body` route takes any well-formed type that
+ * isn't safelisted. Both read the `Content-Type` lines the client sent through
+ * `read_content_type` (`http/request_headers.ts`), so a second line, or an
+ * empty one, is refused on every runtime. Only `POST` needs it: `PUT`, `PATCH`, and `DELETE` are never
  * simple methods, so the browser always preflights them.
  *
  * The check rests on the server answering no preflight. A consumer that adds
@@ -35,6 +37,8 @@
  * @module
  */
 
+import type { HeaderRead } from './request_headers.ts';
+
 /** The content types a browser sends cross-origin without a preflight. */
 const CORS_SAFELISTED_CONTENT_TYPES: ReadonlySet<string> = new Set([
 	'text/plain',
@@ -42,52 +46,39 @@ const CORS_SAFELISTED_CONTENT_TYPES: ReadonlySet<string> = new Set([
 	'multipart/form-data'
 ]);
 
-/** Any character outside visible ASCII and tab — what Rust's `HeaderValue::to_str` refuses. */
-const NON_VISIBLE_ASCII = /[^\t\x20-\x7e]/;
-
-/**
- * The MIME essence (`type/subtype`, lowercased, parameters dropped) of a
- * `Content-Type` value, or `null` when it holds anything but visible ASCII.
- */
-const to_content_type_essence = (content_type: string): string | null => {
-	if (NON_VISIBLE_ASCII.test(content_type)) return null;
-	return (content_type.split(';')[0] ?? '').trim().toLowerCase();
-};
-
 /**
  * True when a browser could have sent a `POST` with this `Content-Type`
  * cross-origin without a preflight: none, or a CORS-safelisted one.
  *
- * Matches more than browsers do (a value they'd refuse to call safelisted —
- * one with odd bytes, say — counts as safelisted here), so it only ever
- * refuses too much, never too little.
+ * A malformed `Content-Type` (`read_content_type` refuses it — two lines, an
+ * empty one, an essence off the grammar, a byte outside header text) counts
+ * as simple too: a browser would refuse to call some of those safelisted, so
+ * this only ever refuses too much, never too little.
  *
- * @param content_type - the request's `Content-Type` header, if any
+ * @param content_type - the request's `Content-Type`, as `read_content_type` read it
  */
-export const is_cors_simple_content_type = (content_type: string | undefined): boolean => {
-	if (content_type === undefined) return true;
-	const essence = to_content_type_essence(content_type);
-	return essence === null || CORS_SAFELISTED_CONTENT_TYPES.has(essence);
-};
+export const is_cors_simple_content_type = (content_type: HeaderRead<string>): boolean =>
+	content_type.kind !== 'one' || CORS_SAFELISTED_CONTENT_TYPES.has(content_type.value);
 
 /**
- * True when `Content-Type` is `application/json` (any parameters, such as
- * `charset`, allowed).
+ * True when `Content-Type` is exactly one well-formed line whose essence is
+ * `application/json` (any parameters, such as `charset`, allowed).
  *
- * @param content_type - the request's `Content-Type` header, if any
+ * @param content_type - the request's `Content-Type`, as `read_content_type` read it
  */
-export const is_json_content_type = (content_type: string | undefined): boolean =>
-	content_type !== undefined && to_content_type_essence(content_type) === 'application/json';
+export const is_json_content_type = (content_type: HeaderRead<string>): boolean =>
+	content_type.kind === 'one' && content_type.value === 'application/json';
 
 /**
  * True when a `POST` route refuses this `Content-Type`: a JSON route anything
- * but `application/json`, a `raw_body` route a CORS-safelisted type or none.
+ * but `application/json`, a `raw_body` route a CORS-safelisted type, none, or
+ * a malformed one.
  *
- * @param content_type - the request's `Content-Type` header, if any
+ * @param content_type - the request's `Content-Type`, as `read_content_type` read it
  * @param raw_body - the route's `RouteSpec.raw_body`
  */
 export const is_post_content_type_refused = (
-	content_type: string | undefined,
+	content_type: HeaderRead<string>,
 	raw_body: boolean
 ): boolean =>
 	raw_body ? is_cors_simple_content_type(content_type) : !is_json_content_type(content_type);

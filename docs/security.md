@@ -349,7 +349,8 @@ accepted spelling, on both spines.
   framework-level ceiling (`max_token_ttl_days`) is deferred until `fuzf`
   grows an expiry story (an expiry-aware token read + a 401 hint)
 - **Browser context discard**: Bearer tokens are silently discarded (not
-  rejected) when `Origin` or `Referer` headers are present — the middleware
+  rejected) when the request carries any `Origin` or `Referer` line, an empty
+  one included — the middleware
   calls `next()` without setting a context, so public actions still work.
   Browsers send these headers automatically; CLI tools don't. Prevents XSS
   from exploiting a token extracted via browser-side code
@@ -2275,7 +2276,11 @@ server, that means every other local dev server, notebook, or
 isn't `raw_body` requires `Content-Type: application/json`, bodyless or not
 (logout), and a `raw_body` route refuses a `POST` with no `Content-Type`, or
 a `text/plain`, form-encoded, or multipart one — 415
-`unsupported_content_type`, before reading a credential or the body. Those
+`unsupported_content_type`, before reading a credential or the body. A
+`Content-Type` sent twice, empty, off the `type/subtype` grammar, or holding
+a comma is refused the same way on either kind of route: the header is read
+from the lines the client sent, and a runtime that joins a repeat joins it
+with a comma. Those
 are the requests a browser sends cross-origin without a preflight, cookie
 attached. Any other type makes the browser send an `OPTIONS`
 preflight first, and fuz_app answers none with CORS headers, so the request
@@ -2295,8 +2300,9 @@ also protects locally-running services from being called by untrusted
 websites as the user browses the web. It reads
 `Origin` only, never `Referer` — the Fetch spec mandates `Origin` on every
 unsafe method. The allowlist is parsed strictly, and the server fails at boot
-naming every bad entry; a request whose `Origin` is unreadable or duplicated
-is refused with `403`. Non-browser clients (curl, CLI,
+naming every bad entry; a request whose `Origin` is unreadable, empty, or
+sent twice is refused with `403` — read from the header lines the client
+sent, on a WebSocket upgrade as on any request. Non-browser clients (curl, CLI,
 server-to-server) without an `Origin` header pass through — token auth is
 the security control for those callers, which don't carry auto-attached
 cookies.
@@ -2329,7 +2335,8 @@ server: its `POST`s are refused for their content type or never sent, and its
 socket upgrade for its origin.
 
 **Browser/CLI split**: Bearer and daemon tokens are silently discarded when
-`Origin` or `Referer` headers are present — browsers must use cookie auth. The
+the request carries any `Origin` or `Referer` line, an empty one included —
+browsers must use cookie auth. The
 middleware calls `next()` without setting a context, so public actions still
 work even with stale credentials. This reduces the attack surface: a stolen API
 token cannot be replayed from a browser context. Daemon tokens carry the same
@@ -2347,7 +2354,7 @@ The host gate (`http/host.ts`, the Rust spine's `fuz_http::host`) refuses a
 request whose `Host` is neither a loopback name (`localhost`, `127.0.0.0/8`,
 `[::1]`, any port) nor a host an `FUZ_ALLOWED_ORIGINS` entry names, with 403
 `{"error": "forbidden_host"}`. A request with no `Host` passes (no browser
-sends one); one with two is refused. It runs on every path, after the body
+sends one); an empty `Host`, and more than one, is refused. It runs on every path, after the body
 cap and ahead of the origin check, and is **on by default** on both spines —
 `host_gate: false` (`AppServerOptions`, `StackOptions`, `BrowserGateSpec`)
 turns it off for a server reached by names its allowlist doesn't hold.

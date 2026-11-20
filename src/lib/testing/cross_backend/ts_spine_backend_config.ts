@@ -75,8 +75,9 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 
 /**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
- * `ws_handshake_pipelining: false` and `ws_refusal_body: true` (`Bun.serve`
- * sends a refused upgrade's response as built).
+ * `ws_handshake_pipelining: false`, `ws_refusal_body: true` (`Bun.serve`
+ * sends a refused upgrade's response as built) and no
+ * `ws_upgrade_runtime_refusals` (the host gate answers an empty `Host`).
  *
  * `Bun.serve` answers `400` to an upgrade request that carries WebSocket
  * frames in the same TCP write when the handler upgrades after an await that
@@ -89,7 +90,8 @@ const ts_spine_capabilities: BackendCapabilities = Object.freeze({
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,
 	ws_handshake_pipelining: false,
-	ws_refusal_body: true
+	ws_refusal_body: true,
+	ws_upgrade_runtime_refusals: Object.freeze([])
 });
 
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */

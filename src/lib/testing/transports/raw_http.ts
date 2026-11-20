@@ -121,8 +121,12 @@ export interface RawHttpRequest {
 	readonly method: string;
 	/** Request target, e.g. `/api/rpc`. */
 	readonly path: string;
-	/** The `Host` to send — a base URL's `host`. */
-	readonly host: string;
+	/**
+	 * The `Host` to send — a base URL's `host` — or `null` to write no `Host`
+	 * line of its own, for a request whose `header_lines` carry the `Host`
+	 * lines it means to send.
+	 */
+	readonly host: string | null;
 	/**
 	 * The header lines after `Host`, each `Name: value`, written in order and
 	 * as given — a name may repeat, which is what `fetch` cannot send. Nothing
@@ -137,8 +141,8 @@ export interface RawHttpRequest {
 }
 
 /**
- * Frame an HTTP/1.1 request from its header lines: the request line, `Host`,
- * each line of `header_lines`, `Content-Length` when there is a body, the
+ * Frame an HTTP/1.1 request from its header lines: the request line, `Host`
+ * (unless `host` is `null`), each line of `header_lines`, `Content-Length` when there is a body, the
  * blank line, the body.
  *
  * The lines go out as written. A CR or LF inside one ends it early, so a
@@ -151,7 +155,7 @@ export const raw_http_request = (request: RawHttpRequest): string => {
 	const { method, path, host, header_lines, body } = request;
 	return (
 		`${method} ${path} HTTP/1.1\r\n` +
-		`Host: ${host}\r\n` +
+		(host === null ? '' : `Host: ${host}\r\n`) +
 		header_lines.map((line) => `${line}\r\n`).join('') +
 		(body === undefined ? '' : `Content-Length: ${body.length}\r\n`) +
 		'\r\n' +

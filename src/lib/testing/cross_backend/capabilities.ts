@@ -51,6 +51,16 @@ import { test } from 'vitest';
 import type { TestingBackdoorMethod } from './spine_surface_constants.ts';
 
 /**
+ * The upgrade refusals a runtime makes before the app runs, which
+ * `BackendCapabilities.ws_upgrade_runtime_refusals` declares: `empty_host`, an
+ * upgrade whose first `Host` line is empty.
+ */
+export const WS_UPGRADE_RUNTIME_REFUSALS = ['empty_host'] as const;
+
+/** One of `WS_UPGRADE_RUNTIME_REFUSALS`. */
+export type WsUpgradeRuntimeRefusal = (typeof WS_UPGRADE_RUNTIME_REFUSALS)[number];
+
+/**
  * Optional behaviors a backend may support. Each flag's TSDoc names the
  * tests that gate on it; add a new flag here before referencing it from
  * a suite body, and document the gating tests inline. A wiring fact no
@@ -269,6 +279,20 @@ export interface BackendCapabilities {
 	 */
 	readonly ws_refusal_body: boolean;
 	/**
+	 * The upgrade requests the runtime refuses itself, before the app runs —
+	 * each a `WsUpgradeRuntimeRefusal`. Not a gate: the request header wire
+	 * leg (`describe_request_header_conformance_wire_cross_tests`) expects that
+	 * runtime answer, a `400` and no `101`, for a row naming a refusal the
+	 * backend declares, and the table's own answer on every other backend — so
+	 * the declaration fails the day the runtime stops refusing.
+	 *
+	 * `['empty_host']` on Node: `@hono/node-server` builds an upgrade's URL from
+	 * the first `Host` line, and an empty one makes that throw, which it
+	 * answers with a bodiless `400`. `[]` on Bun and the Rust spine, whose host
+	 * gate answers the request.
+	 */
+	readonly ws_upgrade_runtime_refusals: ReadonlyArray<WsUpgradeRuntimeRefusal>;
+	/**
 	 * The `_testing_*` backdoors the backend mounts on its RPC endpoint, from
 	 * `TESTING_BACKDOOR_METHODS` (a consumer's own seams stay off it). Not a
 	 * flag, but declared like a `MountFlag`: no family default, so every config
@@ -376,6 +400,8 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	// disallowed-origin case, neither of which runs in-process (no socket to
 	// upgrade); Hono's own refusals carry their bodies.
 	ws_refusal_body: true,
+	// Read only by the request header wire leg, which has no socket in-process.
+	ws_upgrade_runtime_refusals: Object.freeze([]),
 	// The in-process app mounts no `_testing_*` action; the suites reading this
 	// are cross-process only.
 	testing_backdoors: Object.freeze([])

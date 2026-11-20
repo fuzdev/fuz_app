@@ -2012,8 +2012,8 @@ The Rust spine's `AllowedOrigins::parse` accepts and refuses the same entries;
 `testing/cross_backend/origin_conformance.json` is the shared table.
 
 Requests without an `Origin` header pass the origin check — direct
-curl/CLI access still works. An `Origin` that isn't visible ASCII, or a
-repeated one, is refused. `verify_request_source` is Origin-only; the
+curl/CLI access still works. An `Origin` that isn't visible ASCII, an empty
+one, or a repeated one, is refused. `verify_request_source` is Origin-only; the
 `Referer` header is not consulted. Bearer middleware separately treats
 `Referer` presence as a browser-context indicator and silently discards the
 bearer token — that's a different axis from origin allowlisting.
