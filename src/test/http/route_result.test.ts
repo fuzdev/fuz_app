@@ -1,27 +1,36 @@
 /**
  * The responses `apply_route_specs` builds from a handler's result: a
- * `route_ok` as JSON at 200, a `route_fail` as its definition's body at its
- * status with the headers it derives (`Retry-After`), a `route_raw` as it is,
- * and the headers and cookies a handler set on the context carried onto each.
+ * `route_ok` as JSON at 200 with its `set_cookie` lines after any on the
+ * context, a `route_fail` as its definition's body at its status with the
+ * headers it derives (`Retry-After`) and never a cookie, a `route_raw` as
+ * the data describes it, and every raw answer the prepare refuses, refused at
+ * the prepare. The SSE result is `route_result.sse.test.ts`'s; that a refusal
+ * commits nothing is `route_result.refusal.db.test.ts`'s.
  *
  * @module
  */
 
 import { describe, assert, test } from 'vitest';
-import { Hono, type Context } from 'hono';
-import { setCookie } from 'hono/cookie';
+import { Hono } from 'hono';
 import { literal, loose_object, number, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_route_specs,
 	define_route,
-	to_route_response,
+	prepare_route_response,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
-import { route_fail, route_ok, route_raw } from '#lib/http/route_result.ts';
+import {
+	ROUTE_RAW_REFUSED_HEADERS,
+	route_fail,
+	route_ok,
+	route_raw
+} from '#lib/http/route_result.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
+
+import { route_raw_admitted, route_raw_refusals } from './route_raw_refusals.ts';
 import {
 	ERROR_INTERNAL_ERROR,
 	ERROR_RATE_LIMIT_EXCEEDED,
@@ -97,19 +106,78 @@ const app = create_app([
 	}),
 	define_route({
 		...shape,
+		path: '/cookies/ok',
+		handler: () => route_ok({ n: 5 }, { set_cookie: ['a=1; Path=/', 'b=2; Path=/'] })
+	}),
+	define_route({
+		...shape,
+		path: '/cookies/after_context',
+		handler: (c) => {
+			// a line the middleware put on the context, as the session middleware's clear
+			c.header('Set-Cookie', 'first=; Max-Age=0', { append: true });
+			return route_ok({ n: 6 }, { set_cookie: ['second=1'] });
+		}
+	}),
+	define_route({
+		...shape,
+		path: '/cookies/fail',
+		rate_limit: 'ip',
+		// no factory makes this: a failure carrying a cookie
+		handler: () =>
+			({
+				...route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: 1 }),
+				set_cookie: ['x=1']
+			}) as never
+	}),
+	define_route({
+		...shape,
 		path: '/raw/empty',
-		handler: (c) => route_raw(c.body(null, 404))
+		handler: () => route_raw({ status: 404 })
 	}),
 	define_route({
 		...shape,
 		path: '/raw/text',
-		handler: (c) => route_raw(c.text('teapot', 418, { 'X-Raw': 'yes' }))
+		handler: () =>
+			route_raw({
+				status: 418,
+				headers: { 'Content-Type': 'text/plain; charset=UTF-8', 'X-Raw': 'yes' },
+				body: 'teapot'
+			})
+	}),
+	define_route({
+		...shape,
+		path: '/raw/bytes',
+		handler: () =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': '3' },
+				body: new Uint8Array([1, 2, 3])
+			})
+	}),
+	define_route({
+		...shape,
+		path: '/raw/stream',
+		handler: () =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'text/plain' },
+				body: new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('streamed'));
+						controller.close();
+					}
+				})
+			})
+	}),
+	define_route({
+		...shape,
+		path: '/raw/repeated',
+		handler: () => route_raw({ status: 200, headers: { 'X-Many': ['a', 'b'] } })
 	}),
 	define_route({
 		...shape,
 		path: '/headers/ok',
 		handler: (c) => {
-			setCookie(c, 'fuz_test', 'abc', { httpOnly: true, path: '/' });
 			c.header('Cache-Control', 'no-store');
 			return route_ok({ n: 3 });
 		}
@@ -119,8 +187,7 @@ const app = create_app([
 		path: '/headers/fail',
 		rate_limit: 'ip',
 		handler: (c) => {
-			setCookie(c, 'fuz_test', '', { path: '/', maxAge: 0 });
-			c.header('Connection', 'close');
+			c.header('Cache-Control', 'no-store');
 			return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: 4 });
 		}
 	}),
@@ -129,7 +196,7 @@ const app = create_app([
 		path: '/headers/raw',
 		handler: (c) => {
 			c.header('Cache-Control', 'no-store');
-			return route_raw(c.body(null, 204));
+			return route_raw({ status: 204 });
 		}
 	}),
 	define_route({
@@ -139,15 +206,17 @@ const app = create_app([
 		handler: (c) => c.json({ n: 4 }) as never
 	}),
 	// results no factory makes: a success without a value, a failure without
-	// its definition, an `ok` of neither kind, a raw result without a response
+	// its definition, an `ok` of neither kind, a raw result without its fields
 	...(
 		[
-			['ok_no_value', { ok: true }],
-			['ok_undefined_value', { ok: true, value: undefined }],
+			['ok_no_value', { ok: true, set_cookie: [] }],
+			['ok_undefined_value', { ok: true, value: undefined, set_cookie: [] }],
+			['ok_no_set_cookie', { ok: true, value: 1 }],
 			['fail_no_def', { ok: false, status: 404, body: { error: 'x' } }],
 			['fail_no_status', { ok: false, body: { error: 'x' }, def: REST_ROW_NOT_FOUND }],
 			['ok_other', { ok: 'yes', value: 1 }],
-			['raw_no_response', { ok: 'raw' }]
+			['raw_no_fields', { ok: 'raw' }],
+			['sse_no_stream', { ok: 'sse' }]
 		] as const
 	).map(([name, result]) =>
 		define_route({
@@ -163,15 +232,36 @@ describe('route_ok', () => {
 		const res = await app.request('/ok');
 		assert.strictEqual(res.status, 200);
 		assert.strictEqual(res.headers.get('Content-Type'), 'application/json');
+		assert.deepStrictEqual(res.headers.getSetCookie(), []);
 		assert.strictEqual(await res.text(), '{"n":1}');
 	});
 
-	test('carries a cookie and a header set on the context', async () => {
+	test('carries a header set on the context', async () => {
 		const res = await app.request('/headers/ok');
 		assert.strictEqual(res.status, 200);
-		assert.strictEqual(res.headers.get('Set-Cookie'), 'fuz_test=abc; Path=/; HttpOnly');
 		assert.strictEqual(res.headers.get('Cache-Control'), 'no-store');
 		assert.strictEqual(await res.text(), '{"n":3}');
+	});
+
+	test('carries its `set_cookie` lines, in order', async () => {
+		const res = await app.request('/cookies/ok');
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(res.headers.getSetCookie(), ['a=1; Path=/', 'b=2; Path=/']);
+		assert.strictEqual(await res.text(), '{"n":5}');
+	});
+
+	test('writes its lines after a `Set-Cookie` already on the context', async () => {
+		const res = await app.request('/cookies/after_context');
+		assert.deepStrictEqual(res.headers.getSetCookie(), ['first=; Max-Age=0', 'second=1']);
+	});
+
+	test('the result is plain data', () => {
+		assert.deepStrictEqual(route_ok({ n: 1 }), { ok: true, value: { n: 1 }, set_cookie: [] });
+		assert.deepStrictEqual(route_ok({ n: 1 }, { set_cookie: ['a=1'] }), {
+			ok: true,
+			value: { n: 1 },
+			set_cookie: ['a=1']
+		});
 	});
 });
 
@@ -230,12 +320,19 @@ describe('route_fail', () => {
 		assert.strictEqual(await found.text(), '{"n":2}');
 	});
 
-	test('carries a cookie and a header set on the context beside its own', async () => {
+	test('carries a header set on the context beside its own', async () => {
 		const res = await app.request('/headers/fail');
 		assert.strictEqual(res.status, 429);
 		assert.strictEqual(res.headers.get('Retry-After'), '4');
-		assert.strictEqual(res.headers.get('Connection'), 'close');
-		assert.strictEqual(res.headers.get('Set-Cookie'), 'fuz_test=; Max-Age=0; Path=/');
+		assert.strictEqual(res.headers.get('Cache-Control'), 'no-store');
+	});
+
+	test('a failure carrying a cookie is refused, and the cookie never sent', async () => {
+		const res = await app.request('/cookies/fail');
+		assert.strictEqual(res.status, 500);
+		assert.deepStrictEqual(res.headers.getSetCookie(), []);
+		const body = (await res.json()) as { error: string };
+		assert.strictEqual(body.error, ERROR_INTERNAL_ERROR);
 	});
 
 	test('the result is plain data', () => {
@@ -245,29 +342,71 @@ describe('route_fail', () => {
 		assert.strictEqual(failure.code, ERROR_RATE_LIMIT_EXCEEDED);
 		assert.deepStrictEqual(failure.body, { error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 1 });
 		assert.strictEqual(failure.def, REST_RATE_LIMIT_EXCEEDED);
-		assert.deepStrictEqual(route_ok({ n: 1 }), { ok: true, value: { n: 1 } });
+		assert.notProperty(failure, 'set_cookie');
 	});
 });
 
 describe('route_raw', () => {
-	test('answers an empty body as it is', async () => {
+	test('answers an empty body at its status', async () => {
 		const res = await app.request('/raw/empty');
 		assert.strictEqual(res.status, 404);
 		assert.strictEqual(res.headers.get('Content-Type'), null);
 		assert.strictEqual(await res.text(), '');
 	});
 
-	test('answers any status, with its own headers', async () => {
+	test('answers any status, with its own headers and its declared Content-Type', async () => {
 		const res = await app.request('/raw/text');
 		assert.strictEqual(res.status, 418);
 		assert.strictEqual(res.headers.get('X-Raw'), 'yes');
+		assert.strictEqual(res.headers.get('Content-Type'), 'text/plain; charset=UTF-8');
 		assert.strictEqual(await res.text(), 'teapot');
 	});
 
-	test('a response built from the context carries its headers', async () => {
+	test('answers bytes with the Content-Length it declares', async () => {
+		const res = await app.request('/raw/bytes');
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(res.headers.get('Content-Type'), 'application/octet-stream');
+		assert.strictEqual(res.headers.get('Content-Length'), '3');
+		assert.deepStrictEqual([...new Uint8Array(await res.arrayBuffer())], [1, 2, 3]);
+	});
+
+	test('answers a stream', async () => {
+		const res = await app.request('/raw/stream');
+		assert.strictEqual(res.headers.get('Content-Type'), 'text/plain');
+		assert.strictEqual(await res.text(), 'streamed');
+	});
+
+	test('writes a repeated header once per value', async () => {
+		const res = await app.request('/raw/repeated');
+		assert.strictEqual(res.headers.get('X-Many'), 'a, b');
+	});
+
+	test('carries a header set on the context', async () => {
 		const res = await app.request('/headers/raw');
 		assert.strictEqual(res.status, 204);
 		assert.strictEqual(res.headers.get('Cache-Control'), 'no-store');
+	});
+
+	test('the result is plain data', () => {
+		assert.deepStrictEqual(route_raw({ status: 404 }), {
+			ok: 'raw',
+			status: 404,
+			headers: {},
+			body: null
+		});
+	});
+
+	test('every hop-by-hop name and Set-Cookie is refused', () => {
+		assert.deepStrictEqual([...ROUTE_RAW_REFUSED_HEADERS].sort(), [
+			'connection',
+			'keep-alive',
+			'proxy-connection',
+			'set-cookie',
+			'te',
+			'trailer',
+			'transfer-encoding',
+			'upgrade'
+		]);
 	});
 });
 
@@ -284,10 +423,12 @@ describe('a malformed result', () => {
 	for (const name of [
 		'ok_no_value',
 		'ok_undefined_value',
+		'ok_no_set_cookie',
 		'fail_no_def',
 		'fail_no_status',
 		'ok_other',
-		'raw_no_response'
+		'raw_no_fields',
+		'sse_no_stream'
 	]) {
 		test(`${name} answers 500 internal_error`, async () => {
 			const res = await app.request(`/malformed/${name}`);
@@ -298,26 +439,17 @@ describe('a malformed result', () => {
 	}
 });
 
-describe('to_route_response', () => {
-	// what `to_route_response` throws for a result, caught in the handler
-	const thrown_by = async (make_result: (c: Context) => unknown): Promise<unknown> => {
-		let thrown: unknown;
-		const app = new Hono();
-		app.get('/', (c) => {
-			try {
-				return to_route_response(c, make_result(c) as never);
-			} catch (error) {
-				thrown = error;
-				return c.body(null, 500);
-			}
-		});
-		await app.request('/');
-		return thrown;
-	};
+describe('prepare_route_response', () => {
+	const prepare = (result: unknown) =>
+		prepare_route_response(result as never, { label: 'GET /', opened_sse: new Map() });
 
-	const cases: Array<[name: string, make_result: (c: Context) => unknown, kind: string]> = [
-		['ok_no_value', () => ({ ok: true }), 'a malformed result'],
-		['ok_undefined_value', () => ({ ok: true, value: undefined }), 'a malformed result'],
+	const cases: Array<[name: string, result: () => unknown, kind: string]> = [
+		['ok_no_value', () => ({ ok: true, set_cookie: [] }), 'a success without a JSON value'],
+		[
+			'ok_undefined_value',
+			() => ({ ok: true, value: undefined, set_cookie: [] }),
+			'a success without a JSON value'
+		],
 		['fail_no_def', () => ({ ok: false, status: 404, body: { error: 'x' } }), 'a malformed result'],
 		[
 			'fail_no_status',
@@ -326,24 +458,108 @@ describe('to_route_response', () => {
 		],
 		['ok_other', () => ({ ok: 'yes', value: 1 }), 'a malformed result'],
 		// no JSON value: `JSON.stringify` writes nothing for these
-		['ok_function_value', () => ({ ok: true, value: () => 1 }), 'a malformed result'],
+		[
+			'ok_function_value',
+			() => ({ ok: true, value: () => 1, set_cookie: [] }),
+			'a success without a JSON value'
+		],
 		[
 			'ok_function_with_fields',
-			() => ({ ok: true, value: Object.assign(() => 1, { a: 1 }) }),
-			'a malformed result'
+			() => ({ ok: true, value: Object.assign(() => 1, { a: 1 }), set_cookie: [] }),
+			'a success without a JSON value'
 		],
-		['ok_symbol_value', () => ({ ok: true, value: Symbol('x') }), 'a malformed result'],
-		['raw_no_response', () => ({ ok: 'raw' }), 'a malformed result'],
-		['a 200 Response', (c) => c.json({ n: 1 }), 'a Response'],
-		['a 4xx Response', (c) => c.json({ error: 'x' }, 404), 'a Response'],
+		[
+			'ok_symbol_value',
+			() => ({ ok: true, value: Symbol('x'), set_cookie: [] }),
+			'a success without a JSON value'
+		],
+		['raw_no_fields', () => ({ ok: 'raw' }), 'a raw answer at status undefined'],
+		['a Response', () => new Response('x'), 'a Response'],
+		['a 4xx Response', () => new Response('x', { status: 404 }), 'a Response'],
+		[
+			'a failure carrying a cookie',
+			() => ({ ...route_fail(REST_ROW_NOT_FOUND), set_cookie: ['x=1'] }),
+			'a failure carrying a cookie'
+		],
+		[
+			'a raw Set-Cookie',
+			() => route_raw({ status: 200, headers: { 'set-COOKIE': 'x=1' } }),
+			'a raw answer carrying `set-cookie`'
+		],
+		[
+			'a raw body without Content-Type',
+			() => route_raw({ status: 200, body: new Uint8Array([1]) }),
+			'a raw answer with a body and no `Content-Type`'
+		],
+		[
+			'a foreign stream',
+			() => ({ ok: 'sse', stream: { send() {}, close() {}, on_close() {} } }),
+			'an SSE stream this request did not open'
+		],
 		['undefined', () => undefined, 'a malformed result'],
 		['null', () => null, 'a malformed result']
 	];
-	for (const [name, make_result, kind] of cases) {
-		test(`${name} throws the named TypeError`, async () => {
-			const error = await thrown_by(make_result);
-			assert(error instanceof TypeError, `${name} threw ${String(error)}`);
-			assert.include(error.message, `GET /: a route handler returned ${kind} — return`);
+	for (const [name, result, kind] of cases) {
+		test(`${name} throws the named TypeError`, () => {
+			assert.throws(() => prepare(result()), TypeError, `GET /: a route handler returned ${kind}`);
 		});
 	}
+
+	test('a success is prepared with the JSON `c.json` writes and its lines', () => {
+		assert.deepStrictEqual(prepare(route_ok({ n: 1 }, { set_cookie: ['a=1'] })), {
+			kind: 'body',
+			status: undefined,
+			body: '{"n":1}',
+			headers: { 'Content-Type': 'application/json' },
+			set_cookie: ['a=1']
+		});
+	});
+
+	// each refusal at the prepare — inside the transaction, before anything is
+	// built — not a throw of the emit after the commit, which would answer the
+	// same 500 (`route_result.refusal.db.test.ts` holds the commit side)
+	for (const [name] of route_raw_refusals()) {
+		const init = () => route_raw_refusals().find(([n]) => n === name)![1];
+		test(`a raw ${name} is refused at the prepare`, () => {
+			assert.throws(
+				() => prepare(route_raw(init() as never)),
+				TypeError,
+				'GET /: a route handler returned'
+			);
+		});
+	}
+
+	for (const [name] of route_raw_admitted()) {
+		const init = () => route_raw_admitted().find(([n]) => n === name)![1];
+		test(`a raw ${name} is admitted`, () => {
+			const prepared = prepare(route_raw(init()));
+			assert.strictEqual(prepared.kind, 'body');
+		});
+	}
+
+	test('a success with a set_cookie line a Headers refuses is refused at the prepare', () => {
+		assert.throws(() => prepare(route_ok({}, { set_cookie: ['a=1\nb'] })), TypeError, 'GET /:');
+		assert.throws(() => prepare(route_ok({}, { set_cookie: [1 as never] })), TypeError, 'GET /:');
+	});
+
+	test('a raw answer with no headers passes none', () => {
+		assert.deepStrictEqual(prepare(route_raw({ status: 404 })), {
+			kind: 'body',
+			status: 404,
+			body: null,
+			headers: undefined,
+			set_cookie: []
+		});
+	});
+
+	test('a raw answer may declare a Content-Length with no body', () => {
+		const prepared = prepare(route_raw({ status: 200, headers: { 'Content-Length': '9' } }));
+		assert.deepStrictEqual(prepared, {
+			kind: 'body',
+			status: 200,
+			body: null,
+			headers: { 'Content-Length': '9' },
+			set_cookie: []
+		});
+	});
 });

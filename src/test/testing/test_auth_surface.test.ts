@@ -69,10 +69,13 @@ describe('stubs', () => {
 		assert.throws(() => stub.foo, /Throwing stub 'stub'/);
 	});
 
-	test('stub_handler returns a raw result holding a Response', () => {
-		const res = stub_handler();
-		assert.strictEqual(res.ok, 'raw');
-		assert.ok(res.response instanceof Response);
+	test('stub_handler returns a raw 200 text answer', () => {
+		assert.deepStrictEqual(stub_handler(), {
+			ok: 'raw',
+			status: 200,
+			headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+			body: 'stub'
+		});
 	});
 
 	test('stub_mw calls next', async () => {

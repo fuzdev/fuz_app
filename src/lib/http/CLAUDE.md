@@ -14,8 +14,8 @@ effects, see ../../../docs/architecture.md.
 
 ## Module Map
 
-- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `to_route_response`.
-- `http/route_result.ts` — what a handler returns: `route_ok`, `route_fail`, `route_raw` (`RouteResult`). Hono-free (types only).
+- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `prepare_route_response` + `emit_route_response` (the one place a route result becomes a `Response`), `RouteContext.open_sse`.
+- `http/route_result.ts` — what a handler returns, all of it data: `route_ok`, `route_fail`, `route_raw`, `route_sse` (`RouteResult`), and `ROUTE_RAW_REFUSED_HEADERS`. Imports nothing from Hono.
 - `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
 - `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), `derive_route_errors`, `to_error_schemas`.
 - `http/route_errors.ts` — the route error map: `RouteErrorMap`, `resolve_route_error_map`, `resolve_app_route_error_maps`, `get_route_error_map`.
@@ -81,26 +81,52 @@ kept by `loose_object`.
 
 ### Handlers and results
 
-A handler returns a result, not a `Response`; `apply_route_specs` builds the
-response from it (`to_route_response`) inside any wrapping transaction, so a
-result that can't become one (a bare `Response`, a result no factory made
-such as `{ok: true}` without `value`, `undefined`, a body `JSON.stringify`
-refuses) throws before the commit, rolls back, and discards the post-commit
-effects:
+A handler returns a result — data, never a `Response` — and the spine builds
+the response in two steps around the commit. `prepare_route_response` runs
+inside any wrapping transaction and checks everything that could fail: a
+result that can't become a response (a bare `Response`, a result no factory
+made such as `{ok: true}` without `value`, `undefined`, a body
+`JSON.stringify` refuses, a raw result breaking a rule below) throws there,
+rolls back, and discards the post-commit effects. `emit_route_response` runs
+after the commit and is the one place a route result becomes a `Response`, through
+the context, so the context's prepared headers — the clearing `Set-Cookie`
+for an invalid session cookie — are on every one. Nothing a handler returned
+reaches the wire for work that didn't commit: a login whose commit fails
+answers its 500 with no cookie.
 
-- `route_ok(value)` — `value` as JSON at 200.
+- `route_ok(value, {set_cookie?})` — `value` as JSON at 200. `set_cookie` is
+  the success's own `Set-Cookie` lines (`session_cookie_header`,
+  `clear_session_cookie_header` of `auth/session_cookie.ts`), written after
+  the context's, in order; a failure can't carry one.
 - `route_fail(def, fields?)` — `{error: def.code, ...fields}` at `def.status`,
   with the headers `def` derives (`REST_RATE_LIMIT_EXCEEDED`'s `Retry-After`).
   `fields` is absent for a bare code, optional when every field is, required
   when any is.
-- `route_raw(response)` — the response as it is, at any status: an empty body,
-  bytes, a stream, an SSE response, a JSON-RPC envelope (`c.body(json, status,
-  {'Content-Type': 'application/json'})`). A `Response` typed as `c.json`'s
-  return is refused: a JSON answer of the route's own is `route_ok` or
-  `route_fail`.
+- `route_raw({status, headers?, body?})` — an answer the route spells itself:
+  an empty body, text, bytes, a stream, a JSON-RPC envelope. The prepare
+  refuses what would not send as written: a status outside 200–599; a header
+  in `ROUTE_RAW_REFUSED_HEADERS` (`Set-Cookie` and the hop-by-hop names), a
+  name twice in any case, an empty value; a body without a `Content-Type`,
+  or on a 204, 205 or 304; a `Content-Length` that is not one run of digits
+  or, for a text or bytes body, not its byte length (it is free with no body
+  or a stream — a size answered without the bytes); a locked stream,
+  detached bytes, a `Response`. A stream that was read and released can't be
+  told from a fresh one. A stream body the route ends up not answering with —
+  refused, or rolled back by a failed commit — is cancelled.
+- `route_sse(stream)` — an event stream the handler opened with
+  `route.open_sse(options)`, so it exists before the handler admits it to a
+  registry. Opening writes nothing on the context: the response is built at
+  the emit with `SSE_RESPONSE_HEADERS`, and a stream the route opened and
+  did not answer with (another result, a throw) is closed. A stream another
+  request opened is refused.
 
-Headers and cookies a handler sets on `c` (`c.header`, `setCookie`) before it
-returns carry onto the response the framework builds. A failure is plain data
+A response that can't be built after the commit — the runtime refusing what
+the prepare let through — is logged naming the route and answered by the
+error catch's 500; the work stays committed. A handler still reads the
+request from `c`; a header it writes there (`c.header`) rides the context's
+prepared headers onto whatever is answered — a 500 for rolled-back work
+included — and a `Set-Cookie` written without `append` replaces the session
+middleware's clear. A failure is plain data
 (`ok: false`), so domain code and shared helpers fail without the context and
 a handler forwards one (`if (!result.ok) return result`). A thrown error is
 still the error catch's.
@@ -132,12 +158,14 @@ interface RouteContext {
 	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
 	pending_effects: Array<Promise<void>>; // eager pool writes already in flight
 	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
+	open_sse: <T = unknown>(options?: RouteOpenSseOptions) => SseStream<T>; // the stream a `route_sse` answers with
 }
 ```
 
 - **`route.db`** — handler's main DB work. Wrapped in a transaction when `transaction: true` (default for non-GET); routes that opt out (`transaction: false`, e.g. signup / bootstrap) get the pool here directly and may call `route.db.transaction(...)` for their own scope.
 - **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, api-token usage tracking).
 - **`route.post_commit_effects`** — do not push directly; reach for `emit_after_commit` from `http/pending_effects.ts`. The helper pushes a thunk that the flush middleware invokes after the handler returns, closing the microtask-ordering window that an eager `Promise.resolve().then(fn)` leaves open inside the wrapping `db.transaction`.
+- **`route.open_sse(options)`** — opens the event stream the route answers with (`route_sse(stream)`) through the opener `apply_route_specs` was given (`create_sse_stream`, wired by `create_app_server`). It writes nothing on the context; a stream not answered with is closed. Without an opener it throws.
 
 Audit rows run through the bound `AppDeps.audit` capability — see
 `auth/CLAUDE.md` §Audit emitter. `await deps.audit.emit(route, input)` writes
@@ -158,6 +186,8 @@ wrapper). See `auth/signup_routes.ts`.
 
 ### Validation pipeline (per-route middleware order)
 
+`apply_route_specs(app, specs, resolve_auth_guards, log, db, {authorize?, open_sse?})` — `open_sse` is the `RouteSseOpener`, `create_sse_stream` in the assembled server.
+
 `apply_route_specs` assembles the following middleware chain per spec:
 
 1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with `issues`
@@ -166,7 +196,7 @@ wrapper). See `auth/signup_routes.ts`.
 4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
 6. **Input validation** — JSON body parsed (`read_json_body`) + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON, or JSON the Rust spine refuses — `parse_json_text`) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `literal(null)`). The validated input lands on `c.var.validated_input`.
-7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result becomes the response (`to_route_response`)
+7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result is prepared inside the transaction and emitted after the commit (`prepare_route_response`, `emit_route_response`)
 8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
 9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
 

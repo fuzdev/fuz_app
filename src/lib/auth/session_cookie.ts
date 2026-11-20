@@ -188,7 +188,7 @@ export interface SessionOptions<TIdentity> {
 	/**
 	 * Cookie lifetime in seconds. Single source of truth for both the embedded
 	 * `expires_at` (via `create_session_cookie_value`) and the cookie's HTTP
-	 * `Max-Age` attribute (via `set_session_cookie`). Defaults to
+	 * `Max-Age` attribute (via `session_cookie_header`). Defaults to
 	 * `SESSION_AGE_MAX` (30 days). Every other attribute is fixed
 	 * (`SESSION_COOKIE_ATTRIBUTES`).
 	 */
@@ -196,13 +196,41 @@ export interface SessionOptions<TIdentity> {
 	/**
 	 * Encode identity into the cookie payload (before the `:expires_at` suffix).
 	 * The payload goes into the cookie as written, so it must hold only RFC
-	 * 6265 `cookie-octet`s (`is_cookie_value`) — `set_session_cookie` throws
+	 * 6265 `cookie-octet`s (`is_cookie_value`) — `session_cookie_header` throws
 	 * on anything else.
 	 */
 	encode_identity: (identity: TIdentity) => string;
 	/** Decode identity from cookie payload. Return null if invalid. */
 	decode_identity: (payload: string) => TIdentity | null;
 }
+
+/**
+ * The `Set-Cookie` value that sets the session cookie to `value`, a signed
+ * cookie value (`create_session_cookie_value`, or the `cookie_value` of
+ * `create_capped_session`) — what a success carries
+ * (`route_ok(value, {set_cookie: [...]})`). `options.max_age` sets `Max-Age`,
+ * as it set the value's embedded expiry; `SESSION_AGE_MAX` when unset. Twin of
+ * the Rust `session_cookie_header`, which signs the token itself.
+ *
+ * @param value - the signed cookie value
+ * @param options - the cookie name and lifetime
+ * @returns the `Set-Cookie` header value (`format_session_set_cookie`)
+ * @throws Error when the cookie name or the value is outside the RFC 6265 grammar
+ */
+export const session_cookie_header = <T>(value: string, options: SessionOptions<T>): string =>
+	format_session_set_cookie(options.cookie_name, value, options.max_age ?? SESSION_AGE_MAX);
+
+/**
+ * The `Set-Cookie` value that clears the session cookie — what a logout or a
+ * password change carries on its success. Twin of the Rust
+ * `clear_session_cookie_header`.
+ *
+ * @param options - the cookie name
+ * @returns the `Set-Cookie` header value (`format_session_clear_cookie`)
+ * @throws Error when the cookie name is outside the RFC 6265 grammar
+ */
+export const clear_session_cookie_header = <T>(options: SessionOptions<T>): string =>
+	format_session_clear_cookie(options.cookie_name);
 
 /**
  * Result of parsing a signed session cookie.

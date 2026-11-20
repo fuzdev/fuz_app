@@ -10,8 +10,7 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { SessionOptions } from './session_cookie.ts';
-import { set_session_cookie } from './session_middleware.ts';
+import { session_cookie_header, type SessionOptions } from './session_cookie.ts';
 import {
 	bootstrap_account,
 	read_bootstrap_token,
@@ -278,8 +277,9 @@ export const create_bootstrap_route_specs = (
 				// on this route's own limiter, not login's.
 				bootstrap_status.available = false;
 
-				// the session was minted in the transaction; its cookie is set here
-				set_session_cookie(c, result.session_cookie_value, session_options);
+				// the session was minted in the transaction; its cookie rides the
+				// success
+				const set_cookie = session_cookie_header(result.session_cookie_value, session_options);
 
 				const { account, actor, role_grants } = result;
 				if (on_bootstrap) {
@@ -297,11 +297,14 @@ export const create_bootstrap_route_specs = (
 					ip: get_client_ip(c)
 				});
 
-				return route_ok({
-					ok: true,
-					account: { id: account.id, username: account.username },
-					actor: { id: actor.id }
-				});
+				return route_ok(
+					{
+						ok: true,
+						account: { id: account.id, username: account.username },
+						actor: { id: actor.id }
+					},
+					{ set_cookie: [set_cookie] }
+				);
 			} finally {
 				ip_reserved.reservation.release();
 			}

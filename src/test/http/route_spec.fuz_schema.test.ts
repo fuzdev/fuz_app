@@ -55,12 +55,11 @@ const REST_THING_NOT_FOUND = rest_error(404, 'thing_not_found');
 
 // a JSON answer the route did not declare, with the bytes and type `c.json` writes
 const json_raw = (body: unknown, status: number): RouteRaw =>
-	route_raw(
-		new Response(JSON.stringify(body), {
-			status,
-			headers: { 'Content-Type': 'application/json' }
-		})
-	);
+	route_raw({
+		status,
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
 
 const thing_route = define_route({
 	method: 'POST',

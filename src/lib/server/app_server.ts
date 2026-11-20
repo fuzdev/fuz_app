@@ -23,7 +23,7 @@ import {
 } from '../auth/session_cookie.ts';
 import { generate_session_token } from '../auth/session_queries.ts';
 import type { BootstrapTokenStore } from '../auth/bootstrap_token_store.ts';
-import type { EventSpec } from '../realtime/sse.ts';
+import { create_sse_stream, type EventSpec } from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
 	create_sse_connection_closer,
@@ -1244,7 +1244,10 @@ const assemble_app_server = async (
 
 	apply_middleware_specs(app, middleware_specs);
 	const authorize = create_fuz_authorization_handler({ db: deps.db });
-	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, {
+		authorize,
+		open_sse: create_sse_stream
+	});
 
 	// WS endpoint auto-mount — must run after `app` exists and
 	// `apply_route_specs` has registered the request routes. Each spec

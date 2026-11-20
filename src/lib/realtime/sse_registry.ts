@@ -173,9 +173,9 @@ export interface PendingSubscription {
  * const pending = registry.subscribe_pending({scope: session_hash, groups: [account_id]});
  * if (!(await credential_is_still_live())) {
  *   pending.unsubscribe();
- *   return unauthorized();
+ *   return route_fail(REST_AUTHENTICATION_REQUIRED);
  * }
- * const {response, stream} = create_sse_response(c, log);
+ * const stream = route.open_sse();
  * // first: a client that already left closes the stream, its listener runs at
  * // once, and `admit` then refuses the removed registration
  * stream.on_close(pending.unsubscribe);
@@ -189,7 +189,7 @@ export interface PendingSubscription {
  *     )
  *   );
  * }
- * return response;
+ * return route_sse(stream);
  * ```
  */
 export class SseRegistry<T> {

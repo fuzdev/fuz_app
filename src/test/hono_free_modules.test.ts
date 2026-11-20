@@ -35,7 +35,6 @@ const LIB_DIR = join(dirname(fileURLToPath(import.meta.url)), '../lib');
 
 /** `src/lib` modules that reach hono by design, relative to `src/lib`. */
 const HONO_SIDE: ReadonlySet<string> = new Set([
-	'auth/audit_log_routes.ts',
 	'http/body_limit.ts',
 	'http/dev_route_error_check.ts',
 	'http/proxy.ts',
@@ -47,7 +46,6 @@ const HONO_SIDE: ReadonlySet<string> = new Set([
 	'testing/app_server.ts',
 	'testing/attack_surface.ts',
 	'testing/auth_apps.ts',
-	'testing/cross_backend/default_spine_surface.ts',
 	'testing/cross_backend/full_spine_mount.ts',
 	'testing/cross_backend/in_process_setup.ts',
 	'testing/cross_backend/testing_reset_actions.ts',

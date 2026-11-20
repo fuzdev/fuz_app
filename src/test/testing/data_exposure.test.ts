@@ -55,7 +55,7 @@ const route = (output: AnySchema, auth: RouteAuth = AUTHED): RouteSpec =>
 		method: 'GET',
 		path: '/api/thing',
 		auth,
-		handler: () => route_raw(new Response(null)),
+		handler: () => route_raw({ status: 200 }),
 		description: 'A thing.',
 		input: literal(null),
 		output

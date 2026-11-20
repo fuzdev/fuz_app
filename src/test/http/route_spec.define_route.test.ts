@@ -28,7 +28,8 @@ import {
 	define_route_shape,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
-import { route_fail, route_ok, route_raw } from '#lib/http/route_result.ts';
+import { route_fail, route_ok, route_raw, route_sse } from '#lib/http/route_result.ts';
+import type { SseStream } from '#lib/realtime/sse.ts';
 import {
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TOKEN_SCOPE_REQUIRED,
@@ -76,7 +77,10 @@ export const type_cases = (c: Context): Array<unknown> => [
 			if (c.req.query('a')) return route_fail(REST_TABLE_NOT_FOUND);
 			if (c.req.query('b')) return route_fail(REST_INTERNAL_ERROR);
 			if (c.req.query('c')) return route_fail(REST_SERVICE_UNAVAILABLE);
-			if (c.req.query('d')) return route_raw(new Response('bytes'));
+			if (c.req.query('d')) {
+				return route_raw({ status: 200, headers: { 'Content-Type': 'text/plain' }, body: 'bytes' });
+			}
+			if (c.req.query('e')) return route_sse(null as unknown as SseStream<{ n: number }>);
 			return route_ok({ n: 1 });
 		}
 	}),
@@ -232,13 +236,20 @@ export const type_cases = (c: Context): Array<unknown> => [
 	attach_route_handler(split_shape, () => route_fail(REST_TABLE_NOT_FOUND)),
 	// @ts-expect-error the split form, undeclared
 	attach_route_handler(split_shape, () => route_fail(REST_ROW_NOT_FOUND)),
-	// @ts-expect-error a `c.json` response goes through `route_ok` or `route_fail`
+	// @ts-expect-error a raw answer is data, never a `Response`
 	route_raw(c.json({ error: 'x' }, 404)),
-	// @ts-expect-error a success too
-	route_raw(c.json({ n: 1 })),
+	// @ts-expect-error nor a body-built one
 	route_raw(c.body(null, 404)),
-	route_raw(c.text('Bad Request\n', 400)),
-	route_raw(c.body('{"jsonrpc":"2.0"}', 400, { 'Content-Type': 'application/json' })),
+	route_raw({ status: 404 }),
+	route_raw({ status: 400, headers: { 'Content-Type': 'text/plain' }, body: 'Bad Request\n' }),
+	route_raw({
+		status: 400,
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"jsonrpc":"2.0"}'
+	}),
+	// @ts-expect-error a body is no `Response`
+	route_raw({ status: 200, headers: { 'Content-Type': 'text/plain' }, body: new Response('x') }),
+	route_ok({ n: 1 }, { set_cookie: ['x=1'] }),
 	// a handler that throws fits any route
 	define_route({ ...shape, handler: unreachable }),
 	// `undefined` is no body, though the output's input side takes it

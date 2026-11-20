@@ -18,7 +18,6 @@
  */
 
 import type { Context, Handler, Hono, MiddlewareHandler } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { DEV } from 'esm-env';
 import {
 	is_schema,
@@ -63,7 +62,18 @@ import { is_null_schema, scan_json_value } from './schema_helpers.ts';
 import { is_json_response } from './route_error_check.ts';
 import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
 import type { MiddlewareSpec } from './middleware_spec.ts';
-import type { ReadonlyJson, RouteFailOf, RouteOk, RouteRaw, RouteResult } from './route_result.ts';
+import {
+	ROUTE_RAW_REFUSED_HEADERS,
+	type ReadonlyJson,
+	type RouteFailOf,
+	type RouteOk,
+	type RouteRaw,
+	type RouteRawBody,
+	type RouteResult,
+	type RouteSse
+} from './route_result.ts';
+import type { OpenedSseStream, SseResponseOptions, SseStream } from '../realtime/sse.ts';
+import { SSE_RESPONSE_HEADERS } from '../realtime/sse_constants.ts';
 import {
 	assert_route_auth_acting_biconditional,
 	assert_route_auth_invariants,
@@ -135,6 +145,20 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
  */
 export interface RouteContext {
 	/**
+	 * Open the SSE stream this request answers with (`route_sse(stream)`).
+	 * The stream exists — `send`, `close`, and `on_close` work — from the
+	 * moment this returns, so the handler can register it before it answers.
+	 * Nothing is written on the context: the response is built only when the
+	 * route answers with the stream, after any commit, through the context
+	 * (so it carries what the middleware put there) and with
+	 * `SSE_RESPONSE_HEADERS`. A stream the handler opens and does not answer
+	 * with — it answers something else, or throws — is closed and its body
+	 * cancelled, and the answer carries none of the stream's headers.
+	 *
+	 * @throws Error when `apply_route_specs` was given no `open_sse`
+	 */
+	open_sse: <T = unknown>(options?: RouteOpenSseOptions) => SseStream<T>;
+	/**
 	 * Transaction-scoped when `RouteSpec.transaction` is true (the default
 	 * for non-GET); pool-level otherwise.
 	 */
@@ -157,11 +181,32 @@ export interface RouteContext {
 	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
+/** Options for `RouteContext.open_sse`. */
+export interface RouteOpenSseOptions extends SseResponseOptions {
+	/**
+	 * Logger for the stream's serialization and `on_close` listener errors and
+	 * its outbound-overflow warning. Default: the `log` given `apply_route_specs`.
+	 */
+	log?: Logger;
+}
+
+/**
+ * What opens an SSE stream on a request without building its response: the
+ * stream and its body, the shape of `create_sse_stream` (`realtime/sse.ts`),
+ * which `create_app_server` passes. Injected, so this module stays free of
+ * `hono/streaming`.
+ */
+export type RouteSseOpener = <T>(
+	c: Context,
+	log: Logger,
+	options?: SseResponseOptions
+) => OpenedSseStream<T>;
+
 /**
  * Route handler function — receives the Hono context and a `RouteContext`
  * with per-request deps (db, pending_effects), and returns a result
- * (`route_ok`, `route_fail`, `route_raw` in `http/route_result.ts`) that
- * `apply_route_specs` turns into the response.
+ * (`route_ok`, `route_fail`, `route_raw`, `route_sse` in
+ * `http/route_result.ts`) that `apply_route_specs` turns into the response.
  *
  * The type a `RouteSpec` stores, any result: `define_route` and
  * `attach_route_handler` check a handler against its route
@@ -328,8 +373,8 @@ export type RouteHandlerDerivedErrors<TAuth extends RouteAuth, TRateLimit> =
 
 /**
  * What a handler of a route may return: a success typed by the input side of
- * its `output`, a raw response, or a failure of a definition the route
- * allows — its `errors`, the derived ones a handler may give
+ * its `output`, a raw answer, an SSE stream, or a failure of a definition the
+ * route allows — its `errors`, the derived ones a handler may give
  * (`RouteHandlerDerivedErrors`), and the catch layers' (`RouteAlwaysErrors`).
  */
 export type RouteHandlerResult<
@@ -340,6 +385,7 @@ export type RouteHandlerResult<
 > =
 	| RouteOk<ReadonlyJson<InferInput<TOutput>>>
 	| RouteRaw
+	| RouteSse
 	| RouteFailOf<TErrors[number] | RouteAlwaysErrors | RouteHandlerDerivedErrors<TAuth, TRateLimit>>;
 
 /** A route handler checked against its route; see `RouteHandlerResult`. */
@@ -393,7 +439,7 @@ export type KnownRouteErrors<TErrors extends ReadonlyArray<RestErrorDef>> =
  * A literal `errors` list is read as given; a list typed
  * `Array<RestErrorDef>` is refused (`KnownRouteErrors`).
  *
- * @param spec - the route, its handler returning `route_ok`, `route_fail`, or `route_raw`
+ * @param spec - the route, its handler returning `route_ok`, `route_fail`, `route_raw`, or `route_sse`
  * @returns `spec`
  */
 // @__NO_SIDE_EFFECTS__
@@ -431,7 +477,7 @@ export const define_route_shape = <
  * `define_route` checks one.
  *
  * @param shape - the route without `handler`
- * @param handler - the handler, returning `route_ok`, `route_fail`, or `route_raw`
+ * @param handler - the handler, returning `route_ok`, `route_fail`, `route_raw`, or `route_sse`
  * @returns a new spec, `shape` with `handler`
  */
 // @__NO_SIDE_EFFECTS__
@@ -446,34 +492,261 @@ export const attach_route_handler = <
 ): RouteSpec => ({ ...shape, handler }) as unknown as RouteSpec;
 
 /**
- * Build the response for a handler's result: a success as JSON at 200, a
- * failure as its body at its definition's status with the headers the
- * definition derives (`Retry-After`), a raw result as it is. Headers and
- * cookies set on `c` before carry over, as Hono builds the response from `c`.
+ * A handler's result made ready to answer, by `prepare_route_response`: what
+ * `emit_route_response` builds the response from.
+ */
+export type PreparedRouteResponse =
+	| {
+			readonly kind: 'body';
+			/** `undefined` for a success, which answers the context's status (200), as `c.json` does. */
+			readonly status: number | undefined;
+			readonly body: RouteRawBody;
+			/** Absent for a raw answer with no headers. */
+			readonly headers: Record<string, string | Array<string>> | undefined;
+			/** A success's `Set-Cookie` lines, `[]` for any other result. */
+			readonly set_cookie: ReadonlyArray<string>;
+	  }
+	| {
+			readonly kind: 'sse';
+			readonly stream: SseStream<never>;
+			readonly body: ReadableStream<Uint8Array>;
+	  };
+
+/** A `Content-Length` value: one run of ASCII digits. */
+const CONTENT_LENGTH_PATTERN = /^\d+$/;
+
+/** The statuses a response may not carry a body on. */
+const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
+
+const ROUTE_RAW_REFUSED: ReadonlySet<string> = new Set(ROUTE_RAW_REFUSED_HEADERS);
+
+/** A status a `Response` can be built with, 200 to 599. */
+const is_route_status = (status: unknown): status is number =>
+	typeof status === 'number' && Number.isInteger(status) && status >= 200 && status <= 599;
+
+const is_route_raw_body = (body: unknown): body is RouteRawBody =>
+	body === null ||
+	typeof body === 'string' ||
+	body instanceof Uint8Array ||
+	body instanceof ReadableStream;
+
+/**
+ * Prepare the response for a handler's result, checking everything it can see
+ * that would keep it from being built or framed as declared, so
+ * `emit_route_response` fails only on a stream disturbed past what a check
+ * can see (`route_raw`). Runs inside
+ * the route's transaction: a result it refuses throws, the transaction rolls
+ * back, and the post-commit effects are discarded. Serializes a success's or
+ * a failure's JSON body here for the same reason. Writes nothing.
+ *
+ * - a success — `value` as JSON, its `set_cookie` lines kept for the emit
+ * - a failure — its body as JSON at its status, with the headers its
+ *   definition derives (`Retry-After`); a failure carrying `set_cookie` is
+ *   refused, since a refusal never sets a cookie
+ * - a raw answer — checked by the rules `route_raw` lists
+ * - an SSE answer — its stream must be one `RouteContext.open_sse` opened for
+ *   this request (`opened_sse`)
+ *
+ * @param result - the handler's result
+ * @param options - the request's label for refusals and the streams it opened
+ * @returns the prepared response
+ * @throws TypeError when `result` is not a result the factories made — a `Response`, a success without a JSON value, a failure without its status or definition, a raw answer its rules refuse, a stream this request did not open, `undefined` or `null`
+ */
+export const prepare_route_response = (
+	result: RouteResult,
+	options: {
+		/** Names the request in a refusal, `METHOD path`. */
+		label: string;
+		/** The streams `open_sse` opened for this request, each with its response. */
+		opened_sse: ReadonlyMap<SseStream<never>, ReadableStream<Uint8Array>>;
+	}
+): PreparedRouteResponse => {
+	const { label, opened_sse } = options;
+	const refuse = (reason: string): never => {
+		throw new TypeError(
+			`${label}: a route handler returned ${reason} — return \`route_ok\`, \`route_fail\`, \`route_raw\`, or \`route_sse\``
+		);
+	};
+	// each branch checks the fields it reads, so a malformed or nullish result
+	// falls through to the refusal — a `Response` has its own `ok` and
+	// `status`, but no `value`, `def`, `headers` record, or `stream`
+	if (result instanceof Response) return refuse('a Response');
+	if (result?.ok === true) {
+		// a function, symbol, or `undefined` is no JSON value: `JSON.stringify`
+		// writes nothing for it, which would answer an empty 200
+		const text: unknown = JSON.stringify(result.value);
+		if (typeof text !== 'string') return refuse('a success without a JSON value');
+		const set_cookie = check_header_lines(result.set_cookie, label);
+		return { kind: 'body', status: undefined, body: text, headers: JSON_HEADERS, set_cookie };
+	}
+	if (result?.ok === 'raw') return prepare_raw(result, refuse);
+	if (result?.ok === 'sse') {
+		const body = opened_sse.get(result.stream);
+		if (!body) return refuse('an SSE stream this request did not open');
+		return { kind: 'sse', stream: result.stream, body };
+	}
+	if (result && !result.ok && result.def !== undefined && is_route_status(result.status)) {
+		if ('set_cookie' in result) return refuse('a failure carrying a cookie');
+		const derived = result.def.headers?.(result.body as never);
+		const headers = check_header_record({ ...JSON_HEADERS, ...derived }, refuse);
+		return {
+			kind: 'body',
+			status: result.status,
+			body: JSON.stringify(result.body),
+			headers,
+			set_cookie: []
+		};
+	}
+	return refuse('a malformed result');
+};
+
+/** The headers `c.json` writes, a success's and a failure's. */
+const JSON_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+	'Content-Type': 'application/json'
+});
+
+const prepare_raw = (raw: RouteRaw, refuse: (reason: string) => never): PreparedRouteResponse => {
+	const { status, body } = raw;
+	if (!is_route_status(status)) return refuse(`a raw answer at status ${String(status)}`);
+	if (!is_route_raw_body(body)) return refuse('a raw answer whose body is no `RouteRawBody`');
+	// what a `Response` can't be built from, or a runtime can't write
+	if (body instanceof ReadableStream && body.locked) {
+		return refuse('a raw answer whose stream body is locked');
+	}
+	if (body instanceof Uint8Array && body.buffer instanceof ArrayBuffer && body.buffer.detached) {
+		return refuse('a raw answer whose bytes are detached');
+	}
+	if (body !== null && NULL_BODY_STATUSES.has(status)) {
+		return refuse(`a raw answer with a body at null-body status ${status}`);
+	}
+	if (typeof raw.headers !== 'object' || raw.headers === null) {
+		return refuse('a raw answer without a headers record');
+	}
+	const headers = check_header_record(raw.headers, refuse);
+	const names = Object.keys(headers).map((name) => name.toLowerCase());
+	for (const name of names) {
+		if (ROUTE_RAW_REFUSED.has(name)) return refuse(`a raw answer carrying \`${name}\``);
+	}
+	if (body !== null && !names.includes('content-type')) {
+		return refuse('a raw answer with a body and no `Content-Type`');
+	}
+	const length_name = Object.keys(headers).find((name) => name.toLowerCase() === 'content-length');
+	if (length_name !== undefined) {
+		const length = headers[length_name];
+		if (typeof length !== 'string' || !CONTENT_LENGTH_PATTERN.test(length)) {
+			return refuse('a raw answer whose `Content-Length` is not one run of digits');
+		}
+		// a null or stream body declares a size it does not carry (`HEAD`,
+		// `X-Accel-Redirect`); a body in hand must be exactly that size
+		const byte_length =
+			typeof body === 'string'
+				? new TextEncoder().encode(body).byteLength
+				: body instanceof Uint8Array
+					? body.byteLength
+					: null;
+		if (byte_length !== null && Number(length) !== byte_length) {
+			return refuse(
+				`a raw answer whose \`Content-Length\` ${length} is not its body's ${byte_length} bytes`
+			);
+		}
+	}
+	return {
+		kind: 'body',
+		status,
+		body,
+		headers: names.length === 0 ? undefined : headers,
+		set_cookie: []
+	};
+};
+
+/**
+ * A header record copied, each name once in any case, each value one a
+ * `Headers` accepts — so building the response from it cannot throw.
+ */
+const check_header_record = (
+	record: Readonly<Record<string, unknown>>,
+	refuse: (reason: string) => never
+): Record<string, string | Array<string>> => {
+	const copy: Record<string, string | Array<string>> = {};
+	const seen: Set<string> = new Set();
+	const trial = new Headers();
+	for (const [name, value] of Object.entries(record)) {
+		const lower = name.toLowerCase();
+		if (seen.has(lower)) return refuse(`headers naming \`${lower}\` twice`);
+		seen.add(lower);
+		const values = typeof value === 'string' ? [value] : value;
+		if (!Array.isArray(values) || !values.every((v) => typeof v === 'string')) {
+			return refuse(`a header \`${name}\` that is no string or list of strings`);
+		}
+		// an empty value a runtime writes its own way (Bun adds a line of its own)
+		if (values.length === 0 || values.includes('')) {
+			return refuse(`a header \`${name}\` with an empty value`);
+		}
+		try {
+			for (const v of values) trial.append(name, v);
+		} catch {
+			return refuse(`a header \`${name}\` a \`Headers\` refuses`);
+		}
+		copy[name] = typeof value === 'string' ? value : [...values];
+	}
+	return copy;
+};
+
+// a success's `Set-Cookie` lines, each a string a `Headers` accepts
+const check_header_lines = (lines: unknown, label: string): ReadonlyArray<string> => {
+	if (!Array.isArray(lines)) {
+		throw new TypeError(`${label}: a route success whose \`set_cookie\` is no list`);
+	}
+	const trial = new Headers();
+	for (const line of lines) {
+		if (typeof line !== 'string') {
+			throw new TypeError(`${label}: a route success whose \`set_cookie\` holds a non-string`);
+		}
+		try {
+			trial.append('set-cookie', line);
+		} catch {
+			throw new TypeError(
+				`${label}: a route success whose \`set_cookie\` holds a line a \`Headers\` refuses`
+			);
+		}
+	}
+	return lines as ReadonlyArray<string>;
+};
+
+/**
+ * Build the response `prepare_route_response` prepared — the one place a route
+ * result becomes a `Response`, and only once the route's transaction has
+ * committed, so nothing a handler returned reaches the wire for writes that
+ * rolled back. Built through the Hono context (`c.body`), so the headers the
+ * middleware put on the context — the session middleware's clear of a stale
+ * cookie — lead, and a success's `Set-Cookie` lines follow them in order.
+ * A success is written as `c.json` writes it, a failure as
+ * `c.json(body, status, headers)` does, and an SSE stream with
+ * `SSE_RESPONSE_HEADERS`.
+ *
+ * The prepare checked everything it can see. What it can't — a stream body
+ * read and released, unlocked yet disturbed — makes the `Response` constructor
+ * throw here, after the commit; `apply_route_specs` rethrows that as an error
+ * naming the route and the commit, which the error catch logs and answers 500.
  *
  * @param c - the Hono context
- * @param result - the handler's result
- * @throws TypeError when `result` is not a result `route_ok`, `route_fail`, or `route_raw` made: a `Response`, a success without a value or with a function or symbol for one, a failure without its status or definition, a raw result without a response, `undefined` or `null`
+ * @param prepared - what `prepare_route_response` returned
+ * @returns the response
+ * @throws TypeError when the runtime refuses to build a response from a prepared body
  */
-export const to_route_response = (c: Context, result: RouteResult): Response => {
-	// each branch checks the field it reads, so a malformed or nullish result
-	// falls through to the throw — a `Response` has its own `ok` and `status`,
-	// but no `value` or `def`. A function or symbol value is no JSON value:
-	// `JSON.stringify` writes nothing for it, which would answer an empty 200
-	if (result?.ok === true) {
-		const type = typeof result.value;
-		if (type !== 'undefined' && type !== 'function' && type !== 'symbol') {
-			return c.json(result.value as never);
-		}
-	} else if (result?.ok === 'raw') {
-		if (result.response instanceof Response) return result.response;
-	} else if (!result?.ok && result?.def !== undefined && typeof result.status === 'number') {
-		const body = result.body as never;
-		return c.json(body, result.status as ContentfulStatusCode, result.def.headers?.(body));
-	}
-	throw new TypeError(
-		`${c.req.method} ${c.req.path}: a route handler returned ${result instanceof Response ? 'a Response' : 'a malformed result'} — return \`route_ok\`, \`route_fail\`, or \`route_raw\``
-	);
+export const emit_route_response = (c: Context, prepared: PreparedRouteResponse): Response => {
+	if (prepared.kind === 'sse')
+		return c.body(prepared.body as never, undefined, SSE_RESPONSE_HEADERS);
+	const { status, body, headers, set_cookie } = prepared;
+	const data = body as never;
+	if (set_cookie.length === 0) return c.body(data, status as never, headers);
+	// the `ResponseInit` form appends its `set-cookie` lines to the context's
+	// headers, after the middleware's, where a header record would replace them
+	const init: ResponseInit = {
+		status,
+		headers: set_cookie.map((line): [string, string] => ['set-cookie', line])
+	};
+	return c.body(data, init as never, headers);
 };
 
 /**
@@ -815,7 +1088,8 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * runs the optional authorization phase to resolve the acting actor + build
  * the request context, wraps handler with DEV-only output
  * validation, builds each response from its handler's result
- * (`to_route_response`), wraps with error catch layer (a thrown JSON-RPC error,
+ * (`prepare_route_response` inside the transaction, `emit_route_response`
+ * after it), wraps with error catch layer (a thrown JSON-RPC error,
  * recognized via `to_thrown_jsonrpc_error`, maps to its status; any other
  * throw to a 500), and registers the route.
  *
@@ -836,6 +1110,8 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * - `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise
  * - `pending_effects`: eager fire-and-forget pool-write queue
  * - `post_commit_effects`: deferred-thunk queue (push via `emit_after_commit`)
+ * - `open_sse`: opens the SSE stream a `route_sse` answers with, through
+ *   `options.open_sse`
  *
  * Also enforces the auth shape's registry-time invariants: the cross-axis
  * invariants 1, 3, and 4 (`assert_route_auth_invariants`), and invariant 2:
@@ -857,8 +1133,8 @@ const build_rest_error_body = (err: JsonrpcErrorObject): Record<string, unknown>
  * (`create_dev_route_error_check`), which `create_app_server` mounts outermost.
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
- * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
+ * @param options - the authorization phase and the SSE opener
  * @mutates `app`
  * @throws Error if two specs share the same `method` + `path` (each combination must be unique), if a schema slot holds a value that is no schema or an `errors` entry is not a definition, if any spec violates a cross-axis auth invariant or the actor-acting biconditional, or if a `params` or `query` is not an object schema
  */
@@ -868,8 +1144,9 @@ export const apply_route_specs = (
 	resolve_auth_guards: AuthGuardResolver,
 	log: Logger,
 	db: Db,
-	authorize?: AuthorizationHandler
+	options?: ApplyRouteSpecsOptions
 ): void => {
+	const { authorize, open_sse } = options ?? {};
 	const registered = new Set<string>();
 	for (const spec of specs) {
 		const route_key = format_route_key(spec);
@@ -914,22 +1191,72 @@ export const apply_route_specs = (
 		// those effects would announce state that never committed. The eager
 		// `pending_effects` queue (attempt audits, run outside the transaction) is
 		// untouched. Shared with the action dispatcher (actions/perform_action.ts)
-		// via `dispatch_with_post_commit_rollback`. The response is built inside
-		// the dispatch, so a result that can't become one (a bare `Response`, a
-		// malformed result, a body `JSON.stringify` refuses) throws before the
-		// commit and rolls back.
+		// via `dispatch_with_post_commit_rollback`. The response is prepared
+		// inside the dispatch, so a result that can't become one throws before
+		// the commit and rolls back; it is built after the dispatch returns, so a
+		// commit that fails answers the error catch's 500 and nothing the handler
+		// returned — no cookie for a session that rolled back.
 		let handler: Handler = async (c) => {
+			const label = `${c.req.method} ${c.req.path}`;
+			const opened_sse: Map<SseStream<never>, ReadableStream<Uint8Array>> = new Map();
+			// what the handler returned, and the stream body the response took
+			let returned: RouteResult | undefined;
+			let answered_body: ReadableStream<Uint8Array> | null = null;
 			const route_context = {
 				pending_effects: c.var.pending_effects,
-				post_commit_effects: c.var.post_commit_effects
+				post_commit_effects: c.var.post_commit_effects,
+				open_sse: <T>(sse_options?: RouteOpenSseOptions): SseStream<T> => {
+					if (!open_sse) {
+						throw new Error(
+							`${label}: the route opened an SSE stream, and \`apply_route_specs\` was given no \`open_sse\``
+						);
+					}
+					const { log: stream_log = log, ...rest } = sse_options ?? {};
+					const { stream, body } = open_sse<T>(c, stream_log, rest);
+					opened_sse.set(stream, body);
+					return stream;
+				}
 			};
-			return dispatch_with_post_commit_rollback(c.var.post_commit_effects, async () =>
-				use_transaction
-					? db.transaction(async (tx) =>
-							to_route_response(c, await inner(c, { db: tx, ...route_context }))
-						)
-					: to_route_response(c, await inner(c, { db, ...route_context }))
-			);
+			// the handler, then the prepare, on the route's `db` — the transaction's
+			// when it runs in one
+			const run = async (route_db: Db): Promise<PreparedRouteResponse> => {
+				returned = await inner(c, { db: route_db, ...route_context });
+				return prepare_route_response(returned, { label, opened_sse });
+			};
+			try {
+				const prepared = await dispatch_with_post_commit_rollback(
+					c.var.post_commit_effects,
+					async () => (use_transaction ? db.transaction(run) : run(db))
+				);
+				// after the commit: a failure here answers the error catch's 500 for
+				// work that committed, so the error names that
+				let response: Response;
+				try {
+					response = emit_route_response(c, prepared);
+				} catch (error) {
+					throw new Error(
+						`${label}: the response could not be built after the route committed: ${error instanceof Error ? error.message : String(error)}`,
+						{ cause: error }
+					);
+				}
+				if (prepared.kind === 'sse' || prepared.body instanceof ReadableStream) {
+					answered_body = prepared.body as ReadableStream<Uint8Array>;
+				}
+				return response;
+			} finally {
+				// a body no response took has no reader: an SSE stream opened and not
+				// answered with is closed, and a raw stream body refused or rolled
+				// back is cancelled, so its source (a file handle, a child process)
+				// is released
+				for (const [stream, body] of opened_sse) {
+					if (body !== answered_body) {
+						stream.close();
+						cancel_unread(body);
+					}
+				}
+				const raw_body = raw_stream_body(returned);
+				if (raw_body && raw_body !== answered_body) cancel_unread(raw_body);
+			}
 		};
 		// Step 2: error catch layer — a thrown error becomes its REST body here
 		handler = wrap_error_catch(handler, log);
@@ -949,6 +1276,30 @@ export const apply_route_specs = (
 		);
 	}
 };
+
+// a handler result's raw stream body, if it is one
+const raw_stream_body = (result: unknown): ReadableStream | null => {
+	if (typeof result !== 'object' || result === null) return null;
+	const { ok, body } = result as { ok?: unknown; body?: unknown };
+	return ok === 'raw' && body instanceof ReadableStream ? body : null;
+};
+
+// cancel a body nothing reads; a locked one is its reader's to end
+const cancel_unread = (body: ReadableStream): void => {
+	if (body.locked) return;
+	body.cancel().catch(() => {});
+};
+
+/** Options for `apply_route_specs`. */
+export interface ApplyRouteSpecsOptions {
+	/** The authorization phase; runs after the pre-authorization guards and before the post-authorization guards. */
+	authorize?: AuthorizationHandler;
+	/**
+	 * What `RouteContext.open_sse` opens a stream with — `create_sse_stream`
+	 * (`realtime/sse.ts`). Without it a route opening a stream throws.
+	 */
+	open_sse?: RouteSseOpener;
+}
 
 // throws unless every schema slot holds a fuz_schema schema and every
 // `errors` entry is a definition; `params` and `query` may be absent

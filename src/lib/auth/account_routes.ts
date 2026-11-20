@@ -22,8 +22,11 @@
  * @module
  */
 
-import type { SessionOptions } from './session_cookie.ts';
-import { clear_session_cookie, create_session_and_set_cookie } from './session_middleware.ts';
+import {
+	clear_session_cookie_header,
+	session_cookie_header,
+	type SessionOptions
+} from './session_cookie.ts';
 import { RoleGrantSummaryJson, to_session_account } from './account_schema.ts';
 import {
 	account_status_route_shape,
@@ -33,6 +36,7 @@ import {
 	type PasswordChangeInput
 } from './account_route_schema.ts';
 import {
+	create_capped_session,
 	query_session_revoke_all_for_account,
 	query_session_revoke_by_hash_unscoped
 } from './session_queries.ts';
@@ -307,7 +311,7 @@ export const create_account_route_specs = (
 		attach_route_handler(verify_shape, (c) => {
 			require_request_context(c);
 			// the probe's answer is its status alone, an empty body
-			return route_raw(c.body(null, 200));
+			return route_raw({ status: 200 });
 		}),
 		attach_route_handler(login_shape, async (c, route) => {
 			// Per-IP rate limit (before any DB/password work). Reserved, not
@@ -407,17 +411,23 @@ export const create_account_route_specs = (
 				// writes, and only atomic together: one transaction around just
 				// them (the route is `transaction: false`, so the reservation
 				// waits above and the Argon2 verify held no connection). Twin of
-				// the Rust login's transaction around `create_capped_session`.
-				const evicted = await route.db.transaction((tx) =>
-					create_session_and_set_cookie({
+				// the Rust login's transaction around `create_capped_session`. The
+				// cookie line is formatted inside it, so a value the formatter
+				// refuses rolls the session back, and rides the success, which is
+				// answered only once the commit has landed.
+				const { evicted, set_cookie } = await route.db.transaction(async (tx) => {
+					const session = await create_capped_session({
 						keyring,
 						deps: { db: tx },
-						c,
 						account_id: account.id,
 						session_options,
 						max_sessions
-					})
-				);
+					});
+					return {
+						evicted: session.evicted,
+						set_cookie: session_cookie_header(session.cookie_value, session_options)
+					};
+				});
 				// The sessions the cap evicted are gone from the table, but not
 				// from the connections they opened — a WebSocket keeps the
 				// authority it resolved at upgrade, and an SSE stream never
@@ -438,7 +448,7 @@ export const create_account_route_specs = (
 					account_id: account.id,
 					ip: get_client_ip(c)
 				});
-				return route_ok({ ok: true });
+				return route_ok({ ok: true }, { set_cookie: [set_cookie] });
 			} finally {
 				ip_reserved.reservation.release();
 				account_reservation?.release();
@@ -464,7 +474,6 @@ export const create_account_route_specs = (
 					account_id: ctx.account.id
 				});
 			}
-			clear_session_cookie(c, session_options);
 			// Account-grain operation — no `actor_id` (which actor was
 			// resolved per-request is incidental to "this account ended
 			// its session"). Mirrors `login`.
@@ -473,7 +482,12 @@ export const create_account_route_specs = (
 				account_id: ctx.account.id,
 				ip: get_client_ip(c)
 			});
-			return route_ok({ ok: true, username: ctx.account.username });
+			// the clear rides the success, answered once the revoke and this
+			// row have committed — a rollback clears nothing
+			return route_ok(
+				{ ok: true, username: ctx.account.username },
+				{ set_cookie: [clear_session_cookie_header(session_options)] }
+			);
 		}),
 		attach_route_handler(password_shape, async (c, route) => {
 			// Per-IP rate limit (before argon2 work). Reserved, not checked:
@@ -609,7 +623,6 @@ export const create_account_route_specs = (
 					{ kind: 'account', account_id: ctx.account.id },
 					deps.log
 				);
-				clear_session_cookie(c, session_options);
 				// Account-grain operation — no `actor_id`. The password is
 				// account-level state; which per-request actor was resolved
 				// has no semantic bearing on "this account changed its
@@ -620,7 +633,10 @@ export const create_account_route_specs = (
 					ip: get_client_ip(c),
 					metadata: { sessions_revoked, tokens_revoked, credential_type }
 				});
-				return route_ok({ ok: true, sessions_revoked, tokens_revoked });
+				return route_ok(
+					{ ok: true, sessions_revoked, tokens_revoked },
+					{ set_cookie: [clear_session_cookie_header(session_options)] }
+				);
 			} finally {
 				ip_reserved.reservation.release();
 				account_reservation?.release();

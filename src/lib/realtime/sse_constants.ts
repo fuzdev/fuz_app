@@ -1,7 +1,7 @@
 /**
  * Hono-free SSE wire constants, and the keep-alive interval's check.
  *
- * Split from `sse.ts` (which pulls `hono/streaming` via `streamSSE`) so the
+ * Split from `sse.ts` (which pulls `hono/streaming` for `SSEStreamingApi`) so the
  * stream-framing constants are importable by cross-process test suites
  * asserting on the wire without dragging in the in-process Hono SSE
  * implementation.
@@ -15,6 +15,18 @@
  * SSE tests assert the stream emits this on connect.
  */
 export const SSE_CONNECTED_COMMENT = `: connected\n\n`;
+
+/**
+ * The headers an SSE response answers with, in the order Hono's `streamSSE`
+ * writes them: chunked framing, the event-stream type, no caching, and a
+ * kept-alive connection.
+ */
+export const SSE_RESPONSE_HEADERS: Readonly<Record<string, string>> = Object.freeze({
+	'Transfer-Encoding': 'chunked',
+	'Content-Type': 'text/event-stream',
+	'Cache-Control': 'no-cache',
+	Connection: 'keep-alive'
+});
 
 /**
  * The comment line an idle SSE stream writes every

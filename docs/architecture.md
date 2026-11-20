@@ -452,8 +452,8 @@ definition outside its `errors`, the 401 and auth 403s its `auth` derives,
 the 429 of its `rate_limit`, and the catch layers' 500 and 503 — read by what
 reaches the wire, so a definition whose body an allowed one accepts at the
 same status and code passes. The input 400s, the actor codes, and the 415 are
-the pipeline's, and no handler answers them. A response a handler builds by
-hand (`route_raw`) is not typed by the route, and the checks below are its
+the pipeline's, and no handler answers them. An answer a handler spells itself
+(`route_raw`) is not typed by the route, and the checks below are its
 net.
 
 `create_app_surface_spec` builds every route's map once
@@ -520,7 +520,7 @@ as `internal_error`:
   `err.code` and `err.data` for `ThrownJsonrpcError`, and folds them
   into a `PerformActionResult` of `{kind: 'error', error, status}`.
   The HTTP shim (`actions/action_rpc.ts`) answers it as the JSON-RPC
-  envelope, a `route_raw` result with `c.json`'s bytes and content type;
+  envelope, a `route_raw` data result with `c.json`'s bytes and content type;
   the WebSocket shim
   (`actions/ws_socket_session.ts`) sends the same envelope over the
   socket. Both wire shapes share a single normalization site.

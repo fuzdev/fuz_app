@@ -16,7 +16,7 @@
  * @module
  */
 
-import { Db } from '#lib/db/db.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
 
 /** One armed stall — see `GatedDb.stall`. */
 export interface StalledQuery {
@@ -68,6 +68,13 @@ export interface GatedDb {
 	 */
 	hold_commit: () => HeldCommit;
 	/**
+	 * Refuse the next statement run inside a transaction whose SQL text
+	 * satisfies `match`: it throws `error` without reaching the database, as a
+	 * statement the database refused does, so the transaction rolls back. One
+	 * refusal is armed at a time; it disarms once it refuses a statement.
+	 */
+	refuse_in_transaction: (match: (sql: string) => boolean, error: Error) => void;
+	/**
 	 * How many transactions are open right now — begun through `db` and
 	 * neither committed nor rolled back. Zero means whatever is running, runs
 	 * outside every transaction of this `Db`.
@@ -91,6 +98,7 @@ export const create_gated_db = (inner: Db): GatedDb => {
 	} | null = null;
 
 	let armed_commit: { reached: () => void; held: Promise<void> } | null = null;
+	let armed_refusal: { match: (sql: string) => boolean; error: Error } | null = null;
 	let open_transactions = 0;
 
 	const db = new Db({
@@ -112,7 +120,22 @@ export const create_gated_db = (inner: Db): GatedDb => {
 		transaction: async (fn) => {
 			open_transactions++;
 			try {
-				return await inner.transaction(async (tx) => {
+				return await inner.transaction(async (inner_tx) => {
+					// the callback's statements reach `inner_tx` through a refusal
+					// check; `no_nested_transaction` keeps it reading as in-transaction
+					const tx = new Db({
+						client: {
+							query: async <T>(text: string, values?: Array<unknown>) => {
+								const refusal = armed_refusal;
+								if (refusal?.match(text)) {
+									armed_refusal = null;
+									throw refusal.error;
+								}
+								return inner_tx.client.query<T>(text, values);
+							}
+						},
+						transaction: no_nested_transaction
+					});
 					const result = await fn(tx);
 					const hold = armed_commit;
 					if (hold) {
@@ -154,6 +177,9 @@ export const create_gated_db = (inner: Db): GatedDb => {
 			held.promise.catch(() => {});
 			armed_commit = { reached: reached.resolve, held: held.promise };
 			return { reached: reached.promise, release: held.resolve, fail: held.reject };
+		},
+		refuse_in_transaction: (match, error) => {
+			armed_refusal = { match, error };
 		},
 		open_transactions: () => open_transactions
 	};

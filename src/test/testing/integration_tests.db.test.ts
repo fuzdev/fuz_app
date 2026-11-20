@@ -312,7 +312,7 @@ describe('find_route_spec', () => {
 				method: 'GET',
 				path: '/verify',
 				auth: { account: 'required', actor: 'none' },
-				handler: () => route_raw(new Response()),
+				handler: () => route_raw({ status: 200 }),
 				description: 'test',
 				input: { safeParse: () => ({ success: true }) } as never,
 				output: { safeParse: () => ({ success: true }) } as never
@@ -321,7 +321,7 @@ describe('find_route_spec', () => {
 				method: 'POST',
 				path: '/tokens/:id/revoke',
 				auth: { account: 'required', actor: 'none' },
-				handler: () => route_raw(new Response()),
+				handler: () => route_raw({ status: 200 }),
 				description: 'test',
 				input: { safeParse: () => ({ success: true }) } as never,
 				output: { safeParse: () => ({ success: true }) } as never
@@ -353,7 +353,7 @@ describe('find_auth_route', () => {
 			method: 'POST',
 			path: '/login',
 			auth: { account: 'none', actor: 'none' },
-			handler: () => route_raw(new Response()),
+			handler: () => route_raw({ status: 200 }),
 			description: 'test',
 			input: { safeParse: () => ({ success: true }) } as never,
 			output: { safeParse: () => ({ success: true }) } as never

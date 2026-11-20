@@ -132,7 +132,8 @@ export const create_stub_db = (): Db =>
 	});
 
 /** Stub handler that answers a 200 `stub` text response, as a raw result. */
-export const stub_handler = (): RouteRaw => route_raw(new Response('stub'));
+export const stub_handler = (): RouteRaw =>
+	route_raw({ status: 200, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: 'stub' });
 
 /**
  * A route spec for a surface that is described and never served — a

@@ -49,12 +49,11 @@ describe('a handler answering an error its route does not declare', () => {
 						// a JSON error no definition declares: answered raw, as the types
 						// let no failure through undeclared
 						handler: () =>
-							route_raw(
-								new Response(JSON.stringify({ error: 'teapot' }), {
-									status: 418,
-									headers: { 'Content-Type': 'application/json' }
-								})
-							),
+							route_raw({
+								status: 418,
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ error: 'teapot' })
+							}),
 						description: 'Answers a status no definition declares.',
 						input: literal(null),
 						output: loose_object({})

@@ -9,20 +9,24 @@
 
 import { describe, test, assert } from 'vitest';
 import { Hono } from 'hono';
+import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { Keyring } from '#lib/auth/keyring.ts';
 import {
+	clear_session_cookie_header,
 	create_session_config,
 	create_session_cookie_value,
 	SESSION_AGE_MAX,
+	session_cookie_header,
 	type SessionOptions
 } from '#lib/auth/session_cookie.ts';
-import {
-	clear_session_cookie,
-	create_session_middleware,
-	set_session_cookie
-} from '#lib/auth/session_middleware.ts';
+import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 import { SESSION_TOKEN_KEY } from '#lib/hono_context.ts';
+import { apply_route_specs, define_route, type RouteHandler } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
 
 import { OLD_KEY, TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 
@@ -37,6 +41,27 @@ const create_test_app = (keyring: Keyring, options: SessionOptions<string>): Hon
 		return c.json({ identity });
 	});
 	return app;
+};
+
+/** Mount a public `GET` route spec at `path` behind `app`'s middleware. */
+const mount_route = (app: Hono, path: string, handler: RouteHandler): void => {
+	apply_route_specs(
+		app,
+		[
+			define_route({
+				method: 'GET',
+				path,
+				auth: { account: 'none', actor: 'none' },
+				description: 'A route.',
+				input: literal(null),
+				output: loose_object({}),
+				handler: handler as never
+			})
+		],
+		fuz_auth_guard_resolver,
+		new Logger('test', { level: 'off' }),
+		create_stub_db()
+	);
 };
 
 describe('create_session_middleware', () => {
@@ -212,19 +237,17 @@ describe('create_session_middleware', () => {
 		assert.deepStrictEqual(reversed.headers.getSetCookie(), []);
 	});
 
-	test('the clear precedes a Set-Cookie the handler adds, and the new cookie is written raw', async () => {
+	test("the clear precedes a success's own Set-Cookie, and the new cookie is written raw", async () => {
 		const keyring = create_test_keyring();
 		const options = create_config();
 		const app = new Hono();
 		app.use('/*', create_session_middleware(keyring, options));
 		let minted = '';
-		app.post('/login', async (c) => {
+		mount_route(app, '/login', async () => {
 			minted = await create_session_cookie_value(keyring, 'user-42', options);
-			set_session_cookie(c, minted, options);
-			return c.json({ ok: true });
+			return route_ok({ ok: true }, { set_cookie: [session_cookie_header(minted, options)] });
 		});
 		const res = await app.request('/login', {
-			method: 'POST',
 			headers: { Cookie: `${options.cookie_name}=stale.invalidsignature` }
 		});
 		assert.deepStrictEqual(res.headers.getSetCookie(), [
@@ -238,28 +261,25 @@ describe('create_session_middleware', () => {
 		assert.strictEqual((await verify.json()).identity, 'user-42');
 	});
 
-	test('max_age drives the Max-Age attribute', async () => {
-		const keyring = create_test_keyring();
+	test('max_age drives the Max-Age attribute', () => {
 		const options = { ...create_config(), max_age: 90 };
-		const app = new Hono();
-		app.get('/set', (c) => {
-			set_session_cookie(c, 'v', options);
-			return c.json({ ok: true });
-		});
-		const res = await app.request('/set');
-		assert.deepStrictEqual(res.headers.getSetCookie(), [
+		assert.strictEqual(
+			session_cookie_header('v', options),
 			'test_session=v; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=90'
-		]);
-		assert.ok(keyring);
+		);
+		assert.strictEqual(
+			session_cookie_header('v', create_config()),
+			`test_session=v; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_AGE_MAX}`
+		);
 	});
 
 	test('a value the cookie grammar cannot carry is refused at mint, never written', async () => {
 		const options = { ...create_config(), encode_identity: (id: string) => `${id} with spaces` };
 		const keyring = create_test_keyring();
 		const app = new Hono();
-		app.get('/set', async (c) => {
-			set_session_cookie(c, await create_session_cookie_value(keyring, 'u', options), options);
-			return c.json({ ok: true });
+		mount_route(app, '/set', async () => {
+			const value = await create_session_cookie_value(keyring, 'u', options);
+			return route_ok({ ok: true }, { set_cookie: [session_cookie_header(value, options)] });
 		});
 		const res = await app.request('/set');
 		assert.strictEqual(res.status, 500, 'the handler throws');
@@ -430,8 +450,8 @@ describe('the clear of an invalid session cookie', () => {
 	test('is replaced by a Set-Cookie the handler sets rather than appends', async () => {
 		// Hono's `c.header` sets unless told to append, and applies a header
 		// record by setting each name: the context's line is replaced. The
-		// spine's own `set_session_cookie` / `clear_session_cookie` append — the
-		// login and logout tests of this file hold them to it
+		// spine's own cookie lines ride a success (`route_ok`'s `set_cookie`),
+		// which appends — the login and logout tests of this file hold it to that
 		const app = new Hono();
 		app.use('/*', create_session_middleware(create_test_keyring(), options));
 		app.get('/set', (c) => {
@@ -519,18 +539,16 @@ describe('the clear of an invalid session cookie', () => {
 		const keyring = create_test_keyring();
 		const app = new Hono();
 		app.use('/*', create_session_middleware(keyring, options));
-		app.post('/logout', (c) => {
-			clear_session_cookie(c, options);
-			return c.json({ ok: true });
-		});
+		mount_route(app, '/logout', () =>
+			route_ok({ ok: true }, { set_cookie: [clear_session_cookie_header(options)] })
+		);
 		const valid = await create_session_cookie_value(keyring, 'user-42', options);
 		const logout = await app.request('/logout', {
-			method: 'POST',
 			headers: { Cookie: `test_session=${valid}` }
 		});
 		assert.deepStrictEqual(logout.headers.getSetCookie(), [CLEAR]);
 		// the middleware's clear and the handler's are independent, as on the Rust spine
-		const stale = await app.request('/logout', { method: 'POST', headers: STALE });
+		const stale = await app.request('/logout', { headers: STALE });
 		assert.deepStrictEqual(stale.headers.getSetCookie(), [CLEAR, CLEAR]);
 	});
 

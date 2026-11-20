@@ -1,9 +1,10 @@
 /**
  * The assembled app's session-cookie clear, in-process: an invalid session
  * cookie is cleared whichever credential goes on to authenticate the request,
- * on a response the context builds — and a response a route builds itself
- * comes back as the route made it, through every layer of the assembled
- * server.
+ * once, on every response a route spec answers — a success (ahead of its own
+ * cookie lines), a failure, a raw answer of every body kind, an SSE stream —
+ * through every layer of the assembled server, and nothing else about the
+ * response changes.
  *
  * The cross-process twin is the rows of
  * `#lib/testing/cross_backend/credential_conformance_wire.ts`.
@@ -18,7 +19,14 @@ import { literal, loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
-import { route_ok, route_raw } from '#lib/http/route_result.ts';
+import {
+	route_fail,
+	route_ok,
+	route_raw,
+	route_sse,
+	type RouteResult
+} from '#lib/http/route_result.ts';
+import { REST_TABLE_NOT_FOUND } from '#lib/http/error_schemas.ts';
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
 
 const session_options = create_session_config('test_session');
@@ -37,23 +45,69 @@ const create_credential_route_spec = (): RouteSpec =>
 		handler: (c) => route_ok({ credential_type: get_resolved_auth(c)?.credential_type ?? 'none' })
 	});
 
-/** Answers a response the handler built itself, with a `Set-Cookie` of its own. */
-const create_handler_built_route_spec = (): RouteSpec =>
-	define_route({
-		method: 'GET',
-		path: '/api/handler_built',
-		auth: { account: 'required', actor: 'none' },
-		description: 'Return a response the handler built itself',
-		input: literal(null),
-		output: loose_object({}),
-		handler: () =>
-			route_raw(
-				new Response('handler built', {
-					status: 203,
-					headers: { 'Set-Cookie': 'other=1', 'X-Kept': '1', 'Content-Type': 'text/plain' }
+/** Every kind of result a route answers with, each at `/api/kind/<name>`. */
+const KINDS: ReadonlyArray<
+	readonly [name: string, own_cookies: Array<string>, handler: RouteSpec['handler']]
+> = [
+	['ok', [], () => route_ok({ n: 1 })],
+	[
+		'ok_cookie',
+		['other=1', 'more=2'],
+		() => route_ok({ n: 1 }, { set_cookie: ['other=1', 'more=2'] })
+	],
+	['fail', [], () => route_fail(REST_TABLE_NOT_FOUND)],
+	['raw_null', [], () => route_raw({ status: 203, headers: { 'X-Kept': '1' } })],
+	[
+		'raw_text',
+		[],
+		() =>
+			route_raw({
+				status: 418,
+				headers: { 'Content-Type': 'text/plain', 'X-Kept': '1' },
+				body: 'raw text'
+			})
+	],
+	[
+		'raw_bytes',
+		[],
+		() =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': '3' },
+				body: new Uint8Array([1, 2, 3])
+			})
+	],
+	[
+		'raw_stream',
+		[],
+		() =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'text/plain' },
+				body: new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('streamed'));
+						controller.close();
+					}
 				})
-			)
-	});
+			})
+	],
+	['sse', [], (_c, route): RouteResult => route_sse(route.open_sse({ keep_alive_ms: null }))]
+];
+
+const create_kind_route_specs = (): Array<RouteSpec> =>
+	KINDS.map(([name, , handler]) =>
+		define_route({
+			method: 'GET',
+			path: `/api/kind/${name}`,
+			auth: { account: 'required', actor: 'none' },
+			description: `Answer a ${name} result`,
+			input: literal(null),
+			output: loose_object({}),
+			errors: [REST_TABLE_NOT_FOUND],
+			handler: handler as never
+		})
+	);
 
 describe('session cookie clear beside another credential', () => {
 	let test_app: TestApp;
@@ -61,7 +115,7 @@ describe('session cookie clear beside another credential', () => {
 	beforeAll(async () => {
 		test_app = await create_test_app({
 			session_options,
-			create_route_specs: () => [create_credential_route_spec(), create_handler_built_route_spec()],
+			create_route_specs: () => [create_credential_route_spec(), ...create_kind_route_specs()],
 			app_options: {
 				// a layer behind the auth stack that throws, as a credential leg does:
 				// what the assembled server's error handler answers
@@ -140,20 +194,41 @@ describe('session cookie clear beside another credential', () => {
 		assert.deepStrictEqual(got.set_cookie, [CLEAR]);
 	});
 
-	test('a response the route built itself comes back as it was made, with no clear', async () => {
-		const read = async (headers: Record<string, string>): Promise<unknown> => {
-			const res = await test_app.app.request('/api/handler_built', { headers });
-			return {
+	// what a client reads of a response, its `Set-Cookie` lines apart; an SSE
+	// body is read to its first frame, the connect comment
+	const read_kind = async (
+		name: string,
+		headers: Record<string, string>
+	): Promise<{ set_cookie: Array<string>; rest: unknown }> => {
+		const res = await test_app.app.request(`/api/kind/${name}`, { headers });
+		const set_cookie = res.headers.getSetCookie();
+		let body: string;
+		if (name === 'sse') {
+			const reader = res.body!.getReader();
+			body = new TextDecoder().decode((await reader.read()).value);
+			await reader.cancel();
+		} else {
+			body = await res.text();
+		}
+		return {
+			set_cookie,
+			rest: {
 				status: res.status,
-				headers: [...res.headers],
-				set_cookie: res.headers.getSetCookie(),
-				body: await res.text()
-			};
+				headers: [...res.headers].filter(([key]) => key !== 'set-cookie'),
+				body
+			}
 		};
-		const stale = await read(test_app.create_bearer_headers({ cookie: STALE }));
-		assert.deepStrictEqual(stale, await read(test_app.create_bearer_headers()));
-		assert.deepInclude(stale, { status: 203, set_cookie: ['other=1'], body: 'handler built' });
-	});
+	};
+
+	for (const [name, own_cookies] of KINDS) {
+		test(`a ${name} result carries the clear once, ahead of its own lines, and is otherwise the same`, async () => {
+			const stale = await read_kind(name, test_app.create_bearer_headers({ cookie: STALE }));
+			const plain = await read_kind(name, test_app.create_bearer_headers());
+			assert.deepStrictEqual(stale.set_cookie, [CLEAR, ...own_cookies]);
+			assert.deepStrictEqual(plain.set_cookie, own_cookies);
+			assert.deepStrictEqual(stale.rest, plain.rest);
+		});
+	}
 
 	test('a thrown HTTPException is answered through the context: the clear, then its own cookie', async () => {
 		const read = async (path: string, headers: Record<string, string>): Promise<unknown> => {

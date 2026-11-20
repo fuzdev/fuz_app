@@ -273,11 +273,16 @@ legitimate operator.
   router's reading of the path, and the two differ on spellings a browser
   never sends (`/%61pi/x` clears on the TS spine only, `/api/../health` on the
   Rust spine only). On the TS spine the clear rides the response the
-  framework builds: a handler that returns a `Response` it built by hand
-  answers without one — the middleware does not rewrite a handler's response
-  — and so does a handler that sets `Set-Cookie` without appending, which
-  replaces the clear; the next ordinary `/api` response carries it. The Rust spine clears
-  every such response
+  spine builds, which is every route's: a handler returns data and the spine
+  makes the response after the commit. What the route system doesn't build
+  answers without one — a consumer's own middleware or raw Hono route
+  returning a `Response` it made, and a handler that writes `Set-Cookie` on
+  the context without appending, which replaces the clear; the next ordinary
+  `/api` response carries it. The Rust spine clears every such response
+- **A cookie is sent only for work that committed**: a route's session cookie
+  (a login's, a logout's clear) is part of its success result, and the
+  response is built after the commit. A login whose commit fails, or a logout
+  whose audit write fails, answers its error with no cookie of the handler's
 - **Server-side sessions**: Cookie contains a signed opaque ID (HMAC-SHA256);
   session data is DB-resident, stored as a blake3 hash
 - **Absolute lifetime**: 30-day hard cap, set once at mint on both layers —
@@ -662,7 +667,7 @@ enforcement:
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the revocation
   itself. No periodic role_grant refresh is needed.
-- **Client disconnect**: `create_sse_response` closes its stream when the
+- **Client disconnect**: `create_sse_stream` (and `create_sse_response` over it) closes its stream when the
   client disconnects, including one that leaves before the handler returns —
   a runtime cancels only a body it has started sending, so that case would
   otherwise leave a registered stream nothing delivers to. On
@@ -821,7 +826,7 @@ What the WebSocket bound leaves:
   whatever its size, so "one frame" above is as large as the largest message
   the server sends.
 
-**SSE.** `create_sse_response` holds what a stream has written and its client
+**SSE.** `create_sse_stream` holds what a stream has written and its client
 has not read to `SSE_OUTBOUND_QUEUE_BYTES` (1 MiB, fixed), with the same charge
 and the same rule. A frame that does not fit ends the stream: what was unread
 is dropped, the body ends with no final frame, and its registration is removed.

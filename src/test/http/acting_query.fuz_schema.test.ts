@@ -103,7 +103,7 @@ const create_acting_query_route_specs = (): Array<RouteSpec> => {
 		create_surface_route_spec({
 			surface: { diagnostics: [], middleware: [], routes: [] } as unknown as AppSurface
 		}),
-		attach_route_handler(create_audit_log_route_shape(), () => route_raw(new Response(null)))
+		attach_route_handler(create_audit_log_route_shape(), () => route_raw({ status: 200 }))
 	];
 };
 

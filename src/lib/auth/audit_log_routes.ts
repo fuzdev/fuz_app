@@ -16,7 +16,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
-import { route_fail, route_raw } from '../http/route_result.ts';
+import { route_fail, route_sse } from '../http/route_result.ts';
 import {
 	REST_AUTHENTICATION_REQUIRED,
 	REST_INSUFFICIENT_PERMISSIONS
@@ -26,7 +26,7 @@ import {
 	create_audit_log_route_shape,
 	DEFAULT_AUDIT_STREAM_ROLE
 } from './audit_log_route_schema.ts';
-import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
+import type { SseNotification } from '../realtime/sse.ts';
 import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
 import type { SseRegistry } from '../realtime/sse_registry.ts';
 import { require_request_context } from './request_context.ts';
@@ -209,9 +209,10 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// left during the re-reads gets a stream that is already closed,
 				// whose listener runs at once and removes the registration, so
 				// `admit` refuses it rather than evicting a live stream for it.
-				const { response, stream } = create_sse_response<SseNotification>(c, log, {
+				const stream = route.open_sse<SseNotification>({
 					account_id: ctx.account.id,
-					keep_alive_ms
+					keep_alive_ms,
+					log
 				});
 				stream.on_close(pending.unsubscribe);
 				admitted = registry.admit(pending, stream);
@@ -229,7 +230,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 						})
 					);
 				}
-				return route_raw(response);
+				return route_sse(stream);
 			} finally {
 				if (!admitted) pending.unsubscribe();
 			}

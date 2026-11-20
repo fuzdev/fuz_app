@@ -14,7 +14,6 @@
  */
 
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { DEV } from 'esm-env';
 import { literal, unknown } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -77,17 +76,16 @@ export interface CreateRpcEndpointOptions {
 	action_account_rate_limiter: RateLimiter | null;
 }
 
+/** The `Content-Type` `c.json` writes, which every envelope answers with. */
+const JSON_CONTENT_TYPE = { 'Content-Type': 'application/json' } as const;
+
 /**
  * A JSON-RPC envelope answered at `status`, with the bytes and `Content-Type`
  * `c.json` writes, as a raw result: the endpoint answers envelopes, its
  * refusals included, which no REST definition describes.
  */
-const envelope_response = (c: Context, envelope: unknown, status: number): RouteRaw =>
-	route_raw(
-		c.body(JSON.stringify(envelope), status as ContentfulStatusCode, {
-			'Content-Type': 'application/json'
-		})
-	);
+const envelope_response = (envelope: unknown, status: number): RouteRaw =>
+	route_raw({ status, headers: JSON_CONTENT_TYPE, body: JSON.stringify(envelope) });
 
 /**
  * Single JSON-RPC 2.0 endpoint — the canonical RPC transport binding.
@@ -171,7 +169,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const action = action_map.get(method_name);
 		if (!action) {
 			return envelope_response(
-				c,
 				create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method_name)),
 				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found)
 			);
@@ -179,7 +176,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 		if (restrict_to_reads && action.spec.side_effects) {
 			return envelope_response(
-				c,
 				create_jsonrpc_error_response(
 					id,
 					jsonrpc_error_messages.invalid_request({
@@ -233,13 +229,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const { body, status } = serialize_action_result(id, result, method_name, log);
 		// `status` is 200 or one of the JSON-RPC → HTTP status codes the
 		// dispatcher emits (the value space is verified by
-		// `jsonrpc_error_code_to_http_status`), which the cast to Hono's
-		// `ContentfulStatusCode` bridges. The content type is `c.json`'s.
-		return route_raw(
-			c.body(body, status as ContentfulStatusCode, {
-				'Content-Type': 'application/json'
-			})
-		);
+		// `jsonrpc_error_code_to_http_status`). The content type is `c.json`'s.
+		return route_raw({ status, headers: JSON_CONTENT_TYPE, body });
 	};
 
 	// POST handler — parse JSON-RPC envelope from body
@@ -248,7 +239,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const read = await read_json_body(c.req);
 		if (!read.ok) {
 			const error = create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
-			return envelope_response(c, error, 400);
+			return envelope_response(error, 400);
 		}
 		const body = read.value;
 
@@ -263,14 +254,12 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			}
 			case 'invalid':
 				return envelope_response(
-					c,
 					create_jsonrpc_error_response(classified.id, classified.error),
 					400
 				);
 			case 'notification':
 			case 'response':
 				return envelope_response(
-					c,
 					create_jsonrpc_error_response(null, jsonrpc_error_messages.invalid_request()),
 					400
 				);
@@ -292,7 +281,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing method query parameter' })
 			);
-			return envelope_response(c, error, 400);
+			return envelope_response(error, 400);
 		}
 
 		const id_raw = c.req.query('id');
@@ -301,7 +290,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				null,
 				jsonrpc_error_messages.invalid_request({ reason: 'missing id query parameter' })
 			);
-			return envelope_response(c, error, 400);
+			return envelope_response(error, 400);
 		}
 
 		// parse integer ids so GET ?id=42 matches POST {id: 42} behavior
@@ -321,7 +310,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 					id,
 					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON')
 				);
-				return envelope_response(c, error, 400);
+				return envelope_response(error, 400);
 			}
 		}
 

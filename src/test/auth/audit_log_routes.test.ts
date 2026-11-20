@@ -34,7 +34,7 @@ describe('audit log stream handler', () => {
 		const [spec] = create_audit_log_route_specs({ stream: audit_sse });
 		assert.ok(spec);
 		// A pre-baked context (so the re-reads are skipped) with nothing but
-		// `get` — `create_sse_response` reaches for the request and throws.
+		// `get` — `create_sse_stream` (through `route.open_sse`) reaches for the request and throws.
 		const request_context = create_test_request_context(ROLE_ADMIN);
 		const vars: Record<string, unknown> = {
 			[REQUEST_CONTEXT_KEY]: request_context,

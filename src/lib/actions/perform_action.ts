@@ -188,7 +188,7 @@ export interface PerformActionDeps {
 /**
  * Discriminated result of `perform_action`. Each transport binds this to
  * its wire shape: HTTP RPC folds the error into a JSON-RPC envelope and
- * returns it as a `route_raw` result over `c.body`; WS sends the response
+ * returns it as a `route_raw` result; WS sends the response
  * over the socket.
  */
 export type PerformActionResult =

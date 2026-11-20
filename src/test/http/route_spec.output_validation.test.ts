@@ -28,12 +28,11 @@ const REST_SLUG_TAKEN = rest_error(409, 'slug_taken');
 
 /** A JSON body at any status, as the bytes `c.json` writes, answered raw. */
 const json_raw = (body: unknown, status: number): RouteRaw =>
-	route_raw(
-		new Response(JSON.stringify(body), {
-			status,
-			headers: { 'Content-Type': 'application/json' }
-		})
-	);
+	route_raw({
+		status,
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
 
 /**
  * Mount one GET route and return its response plus the
@@ -90,12 +89,11 @@ describe('DEV output validation', () => {
 
 	test('an error response is left to the DEV error check', async () => {
 		const got = await request(() =>
-			route_raw(
-				new Response(JSON.stringify({ error: 'other_reason' }), {
-					status: 409,
-					headers: { 'Content-Type': 'application/json' }
-				})
-			)
+			route_raw({
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ error: 'other_reason' })
+			})
 		);
 		assert.strictEqual(got.status, 409);
 		assert.deepStrictEqual(got.errors, []);
@@ -108,13 +106,25 @@ describe('DEV output validation', () => {
 	});
 
 	test('a JSON-looking 2xx body that is not JSON by its Content-Type is not checked', async () => {
-		const got = await request((c) => route_raw(c.text('{"ok":"yes"}')));
+		const got = await request(() =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
+				body: '{"ok":"yes"}'
+			})
+		);
 		assert.strictEqual(got.status, 200);
 		assert.deepStrictEqual(got.errors, []);
 	});
 
 	test('a non-JSON response is skipped', async () => {
-		const got = await request((c) => route_raw(c.text('not json')));
+		const got = await request(() =>
+			route_raw({
+				status: 200,
+				headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
+				body: 'not json'
+			})
+		);
 		assert.strictEqual(got.status, 200);
 		assert.deepStrictEqual(got.errors, []);
 	});

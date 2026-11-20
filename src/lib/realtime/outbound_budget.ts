@@ -6,8 +6,7 @@
  * from anywhere, so a client that stopped reading makes the server hold what it
  * has not taken. `OutboundBudget` is the bound on that, and it is accounting
  * only — its owner holds the frames and decides what "waiting" means for its
- * connection (`WsOutboundWriter` for a WebSocket, `create_sse_response` for an
- * SSE stream).
+ * connection (`WsOutboundWriter` for a WebSocket, `create_sse_stream` for an SSE stream).
  *
  * - **The charge.** Each waiting frame is charged its payload bytes — the
  *   UTF-8 length of its text — plus `OUTBOUND_FRAME_OVERHEAD_BYTES`.

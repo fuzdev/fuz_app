@@ -32,7 +32,7 @@
  */
 
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
+import { SSEStreamingApi } from 'hono/streaming';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { parse, type AnySchema } from '@fuzdev/fuz_schema/schema.ts';
@@ -44,6 +44,7 @@ import {
 	SSE_KEEP_ALIVE_COMMENT,
 	SSE_KEEP_ALIVE_INTERVAL_MS,
 	SSE_OUTBOUND_QUEUE_BYTES,
+	SSE_RESPONSE_HEADERS,
 	validate_sse_keep_alive_ms
 } from './sse_constants.ts';
 
@@ -82,7 +83,7 @@ export interface SseNotification {
 	params: unknown;
 }
 
-/** Options for `create_sse_response`. */
+/** Options for `create_sse_stream` and `create_sse_response`. */
 export interface SseResponseOptions {
 	/**
 	 * The account the stream belongs to, named in the warning logged when the
@@ -158,40 +159,54 @@ const watch_client_disconnect = (c: Context, on_gone: () => void): void => {
 	else signal.addEventListener('abort', on_gone, { once: true });
 };
 
+/** An open SSE stream and the body its response streams, unanswered. */
+export interface OpenedSseStream<T> {
+	/** The controller — `send`, `close`, `on_close`. */
+	stream: SseStream<T>;
+	/**
+	 * The response body: what the stream writes, read as the client reads it.
+	 * Answered with `SSE_RESPONSE_HEADERS`; cancelled when the stream is not
+	 * answered with.
+	 */
+	body: ReadableStream<Uint8Array>;
+}
+
 /**
- * Create an SSE response for a Hono context.
+ * Open an SSE stream on a request without building its response: the
+ * controller and the body, and nothing written on the context. What a route
+ * spec's `RouteContext.open_sse` opens with (`create_app_server` hands it to
+ * `apply_route_specs`), so the response is built only when the route answers
+ * with the stream (`route_sse`), through the context and with
+ * `SSE_RESPONSE_HEADERS` — and a route that opens a stream and answers
+ * something else answers it with none of the stream's headers.
  *
- * Wraps Hono's `streamSSE` to provide a `{response, stream}` API
- * compatible with `SseRegistry` push-based broadcasting.
- * The callback suspends via a promise that resolves on client disconnect
- * or explicit `close()`, keeping the stream alive for external sends.
+ * The stream exists — `send`, `close`, `on_close` work — from the moment this
+ * returns. It stays open until `close()` or its client disconnects, whenever
+ * that happens — also before the response is built, which no runtime reports
+ * by cancelling a body it has not started to send. A client already gone when
+ * this is called yields a stream that is already closed, so register cleanup
+ * with `on_close` (which runs a late listener at once) before handing the
+ * stream anywhere that would count it — `SseRegistry.admit` after
+ * `on_close(pending.unsubscribe)` refuses it.
  *
- * The stream closes when its client disconnects, whenever that happens — also
- * before the handler returns the response, which no runtime reports by
- * cancelling the body. A client already gone when this is called yields a
- * stream that is already closed, so register cleanup with `on_close` (which
- * runs a late listener at once) before handing the stream anywhere that would
- * count it — `SseRegistry.admit` after `on_close(pending.unsubscribe)`
- * refuses it.
- *
- * Uses `hono_stream.write()` directly (not `writeSSE`) to avoid
- * Hono's HTML callback resolution — keeps the same `data: JSON\n\n` format.
- *
+ * Frames are written with `hono_stream.write()` (not `writeSSE`), avoiding
+ * Hono's HTML callback resolution — the `data: JSON\n\n` format as written.
  * What the stream holds unread is bounded by `SSE_OUTBOUND_QUEUE_BYTES`; a
  * frame past it ends the stream (module doc, "Outbound bound").
  *
+ * @param c - the request's context, read for its client's disconnect only
  * @param log - logger for serialization and `on_close` listener errors, and
  *   for the warning when the stream ends on its outbound budget
  * @param options - what the overflow warning names, and the keep-alive interval
- * @returns object with the streaming `Response` and an `SseStream` controller
+ * @returns the `SseStream` controller and the response body
  * @throws Error when `options.keep_alive_ms` is out of range
  *   (`validate_sse_keep_alive_ms`)
  */
-export const create_sse_response = <T = unknown>(
+export const create_sse_stream = <T = unknown>(
 	c: Context,
 	log: Logger,
 	options?: SseResponseOptions
-): { response: Response; stream: SseStream<T> } => {
+): OpenedSseStream<T> => {
 	validate_sse_keep_alive_ms(options?.keep_alive_ms);
 	const { promise, resolve } = Promise.withResolvers<void>();
 	const close_listeners: Array<() => void> = [];
@@ -215,84 +230,108 @@ export const create_sse_response = <T = unknown>(
 		}
 	};
 
-	let sse_stream!: SseStream<T>;
+	// the pipe `streamSSE` builds, without its writes on the context
+	const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+	const hono_stream = new SSEStreamingApi(writable, readable);
 
 	// charges the frames written to the stream and not yet read from it
 	const budget = new OutboundBudget(SSE_OUTBOUND_QUEUE_BYTES);
 
-	const response = streamSSE(c, async (hono_stream) => {
-		// Write one frame within the budget, or end the stream. The write
-		// settles once the response body has taken the frame, which frees its
-		// charge.
-		const write = (frame: string): void => {
-			const bytes = utf8_length(frame);
-			if (!budget.admit(bytes)) {
-				// same line as the Rust spine's registry, so one grep finds either
-				log.warn('sse: outbound queue overflow, ending the stream', {
-					account_id: options?.account_id ?? null,
-					...budget.to_overflow(bytes)
-				});
-				budget.clear();
-				// drops what the stream still holds and ends the body; `do_close`
-				// runs as its abort listener
-				hono_stream.abort();
-				do_close();
+	// Write one frame within the budget, or end the stream. The write settles
+	// once the response body has taken the frame, which frees its charge.
+	const write = (frame: string): void => {
+		const bytes = utf8_length(frame);
+		if (!budget.admit(bytes)) {
+			// same line as the Rust spine's registry, so one grep finds either
+			log.warn('sse: outbound queue overflow, ending the stream', {
+				account_id: options?.account_id ?? null,
+				...budget.to_overflow(bytes)
+			});
+			budget.clear();
+			// drops what the stream still holds and ends the body; `do_close`
+			// runs as its abort listener
+			hono_stream.abort();
+			do_close();
+			return;
+		}
+		void hono_stream.write(frame).then(() => {
+			// a stream that ended has had its charges cleared
+			if (!resolved && !hono_stream.aborted) budget.release(bytes);
+		});
+	};
+	const stream: SseStream<T> = {
+		send(data: T) {
+			if (resolved || hono_stream.aborted) return;
+			let frame: string;
+			try {
+				// JSON.stringify (no space arg) never produces literal newlines,
+				// so single-line `data:` framing is safe per the SSE spec.
+				frame = `data: ${JSON.stringify(data)}\n\n`;
+			} catch (e) {
+				log.error('send failed to serialize data:', e);
 				return;
 			}
-			void hono_stream.write(frame).then(() => {
-				// a stream that ended has had its charges cleared
-				if (!resolved && !hono_stream.aborted) budget.release(bytes);
-			});
-		};
-		sse_stream = {
-			send(data: T) {
-				if (resolved || hono_stream.aborted) return;
-				let frame: string;
-				try {
-					// JSON.stringify (no space arg) never produces literal newlines,
-					// so single-line `data:` framing is safe per the SSE spec.
-					frame = `data: ${JSON.stringify(data)}\n\n`;
-				} catch (e) {
-					log.error('send failed to serialize data:', e);
-					return;
-				}
-				write(frame);
-			},
-			close: do_close,
-			on_close(fn: () => void) {
-				if (!resolved) {
-					close_listeners.push(fn);
-					return;
-				}
-				try {
-					fn();
-				} catch (e) {
-					log.error('on_close listener threw:', e);
-				}
+			write(frame);
+		},
+		close: do_close,
+		on_close(fn: () => void) {
+			if (!resolved) {
+				close_listeners.push(fn);
+				return;
 			}
-		};
-		hono_stream.onAbort(do_close);
-		// flush an SSE comment to push headers through proxies (Vite, nginx),
-		// ensuring EventSource fires onopen without waiting for the first data event
-		write(SSE_CONNECTED_COMMENT);
-		const keep_alive_ms =
-			options?.keep_alive_ms === undefined ? SSE_KEEP_ALIVE_INTERVAL_MS : options.keep_alive_ms;
-		// a client that left before this ran has closed the stream already
-		if (keep_alive_ms !== null && !resolved) {
-			keep_alive_timer = setInterval(() => {
-				if (resolved || hono_stream.aborted) return;
-				write(SSE_KEEP_ALIVE_COMMENT);
-			}, keep_alive_ms);
-			// a stream left open never holds the process alive on its own
-			if (typeof keep_alive_timer === 'object') keep_alive_timer.unref?.();
+			try {
+				fn();
+			} catch (e) {
+				log.error('on_close listener threw:', e);
+			}
 		}
-		await promise;
-	});
-	// after the callback above has built `sse_stream`, which runs synchronously
-	// up to its first `await`
+	};
+	hono_stream.onAbort(do_close);
+	// flush an SSE comment to push headers through proxies (Vite, nginx),
+	// ensuring EventSource fires onopen without waiting for the first data event
+	write(SSE_CONNECTED_COMMENT);
+	const keep_alive_ms =
+		options?.keep_alive_ms === undefined ? SSE_KEEP_ALIVE_INTERVAL_MS : options.keep_alive_ms;
+	// a frame past the budget has closed the stream already
+	if (keep_alive_ms !== null && !resolved) {
+		keep_alive_timer = setInterval(() => {
+			if (resolved || hono_stream.aborted) return;
+			write(SSE_KEEP_ALIVE_COMMENT);
+		}, keep_alive_ms);
+		// a stream left open never holds the process alive on its own
+		if (typeof keep_alive_timer === 'object') keep_alive_timer.unref?.();
+	}
+	// the body ends once the stream closes, as `streamSSE`'s callback ends it
+	void promise.then(() => hono_stream.close());
 	watch_client_disconnect(c, do_close);
 
-	return { response, stream: sse_stream };
+	return { stream, body: hono_stream.responseReadable as ReadableStream<Uint8Array> };
+};
+
+/**
+ * Create an SSE response for a Hono context: `create_sse_stream`, answered at
+ * once through the context with `SSE_RESPONSE_HEADERS` — the response
+ * Hono's `streamSSE` builds, so it carries the headers the middleware put on
+ * the context. For a handler outside the route-spec system; a route spec opens
+ * its stream through `RouteContext.open_sse` instead, which builds the
+ * response only when the route answers with it.
+ *
+ * @param log - logger for serialization and `on_close` listener errors, and
+ *   for the warning when the stream ends on its outbound budget
+ * @param options - what the overflow warning names, and the keep-alive interval
+ * @returns object with the streaming `Response` and an `SseStream` controller
+ * @throws Error when `options.keep_alive_ms` is out of range
+ *   (`validate_sse_keep_alive_ms`)
+ * @mutates `c` - writes `SSE_RESPONSE_HEADERS` on the context's headers
+ */
+export const create_sse_response = <T = unknown>(
+	c: Context,
+	log: Logger,
+	options?: SseResponseOptions
+): { response: Response; stream: SseStream<T> } => {
+	const { stream, body } = create_sse_stream<T>(c, log, options);
+	for (const [name, value] of Object.entries(SSE_RESPONSE_HEADERS)) c.header(name, value);
+	return { response: c.newResponse(body), stream };
 };
 
 /** Spec for a push event — declares params schema, description, and channel. */

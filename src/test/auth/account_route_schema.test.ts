@@ -51,9 +51,7 @@ const ctx: RequestContext = {
 /** The `/verify` shape with a stand-in for the live handler's answer, under a credential of `scope`. */
 const create_verify_app = (scope: TokenScope): Hono => {
 	const [verify_shape] = create_account_route_shapes({ login_account_rate_limited: false });
-	const spec = attach_route_handler(verify_shape, () =>
-		route_raw(new Response(null, { status: 200 }))
-	);
+	const spec = attach_route_handler(verify_shape, () => route_raw({ status: 200 }));
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
 		(c as any).set(

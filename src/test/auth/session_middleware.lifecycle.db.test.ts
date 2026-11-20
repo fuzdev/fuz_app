@@ -1,7 +1,8 @@
 /**
- * Tests for `session_middleware.create_session_and_set_cookie` — verifies
- * cookie ↔ DB coherence and per-account session-cap enforcement against a
- * real DB via a real Hono app.
+ * Tests for `create_capped_session` and the `Set-Cookie` line a success
+ * carries for it (`session_cookie_header`) — verifies cookie ↔ DB coherence
+ * and per-account session-cap enforcement against a real DB, the cookie read
+ * back through the session middleware's reader on a real Hono app.
  *
  * @module
  */
@@ -9,10 +10,15 @@
 import { assert, test } from 'vitest';
 import { Hono } from 'hono';
 
-import { create_session_and_set_cookie, get_session_cookie } from '#lib/auth/session_middleware.ts';
+import { get_session_cookie } from '#lib/auth/session_middleware.ts';
 import type { Keyring } from '#lib/auth/keyring.ts';
-import { create_session_config, parse_session } from '#lib/auth/session_cookie.ts';
 import {
+	create_session_config,
+	parse_session,
+	session_cookie_header
+} from '#lib/auth/session_cookie.ts';
+import {
+	create_capped_session,
 	hash_session_token,
 	query_session_get_valid,
 	query_session_list_for_account
@@ -26,8 +32,8 @@ import { TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 const SESSION_OPTIONS = create_session_config('test_session');
 
 /**
- * Fire `create_session_and_set_cookie` through a real Hono app and return
- * the raw `Set-Cookie` header.
+ * Mint a session with `create_capped_session` and return the `Set-Cookie`
+ * line a success carries for it.
  */
 const fire_create_session = async (params: {
 	keyring: Keyring;
@@ -36,22 +42,14 @@ const fire_create_session = async (params: {
 	max_sessions?: number | null;
 }): Promise<string> => {
 	const { keyring, db, account_id, max_sessions } = params;
-	const app = new Hono();
-	app.post('/create', async (c) => {
-		await create_session_and_set_cookie({
-			keyring,
-			deps: { db },
-			c,
-			account_id,
-			session_options: SESSION_OPTIONS,
-			max_sessions
-		});
-		return c.json({ ok: true });
+	const { cookie_value } = await create_capped_session({
+		keyring,
+		deps: { db },
+		account_id,
+		session_options: SESSION_OPTIONS,
+		max_sessions
 	});
-	const response = await app.request('/create', { method: 'POST' });
-	const set_cookie = response.headers.get('set-cookie');
-	assert.ok(set_cookie, 'create should set a cookie');
-	return set_cookie;
+	return session_cookie_header(cookie_value, SESSION_OPTIONS);
 };
 
 /**
@@ -71,7 +69,7 @@ const read_session_token = async (set_cookie: string, keyring: Keyring): Promise
 	return token;
 };
 
-describe_db('create_session_and_set_cookie', (get_db) => {
+describe_db('create_capped_session', (get_db) => {
 	test('cookie verifies and decoded token hashes to a real DB session row', async () => {
 		const db = get_db();
 		const keyring = create_test_keyring(TEST_KEY);

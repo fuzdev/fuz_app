@@ -11,7 +11,11 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_serve_fact_route_spec } from '#lib/server/serve_fact_route.ts';
-import { to_route_response, type RouteContext } from '#lib/http/route_spec.ts';
+import {
+	emit_route_response,
+	prepare_route_response,
+	type RouteContext
+} from '#lib/http/route_spec.ts';
 
 describe('create_serve_fact_route_spec handler re-check', () => {
 	test('no admin context → 404, logged at error', async () => {
@@ -25,7 +29,11 @@ describe('create_serve_fact_route_spec handler re-check', () => {
 		const app = new Hono();
 		app.get(spec.path, async (c) => {
 			c.set('validated_params', { hash: `blake3:${'0'.repeat(64)}` });
-			return to_route_response(c, await spec.handler(c, {} as RouteContext));
+			const result = await spec.handler(c, {} as RouteContext);
+			return emit_route_response(
+				c,
+				prepare_route_response(result, { label: 'GET', opened_sse: new Map() })
+			);
 		});
 
 		const res = await app.request('/api/facts/x');

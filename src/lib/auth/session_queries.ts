@@ -208,12 +208,11 @@ export const query_session_list_for_account = async (
  *
  * Race safety: this function must run inside a transaction alongside the
  * INSERT that created the new session. All callers satisfy this requirement:
- * - `POST /login` uses the default `transaction: true` (framework-managed
- *   transaction wrapping in `apply_route_specs`)
  * - The `account_token_create` RPC handler runs under the dispatcher's
  *   transaction path because its spec declares `side_effects: true`
- * - `POST /bootstrap` and `POST /signup` manage their own transactions
- *   and pass the transaction-scoped `deps` to `create_session_and_set_cookie`
+ * - `POST /login`, `POST /bootstrap` and `POST /signup` manage their own
+ *   transactions and pass the transaction-scoped `deps` to
+ *   `create_capped_session`
  *
  * The transaction makes one creator's INSERT + enforce_limit pair atomic, but it
  * does **not** serialize concurrent creators. Under Read Committed, two
@@ -341,7 +340,7 @@ export interface CreateCappedSessionOptions {
 
 /** What `create_capped_session` minted. */
 export interface CappedSession {
-	/** The signed session cookie value, for `set_session_cookie`. */
+	/** The signed session cookie value, for `session_cookie_header`. */
 	cookie_value: string;
 	/** The token hashes of the sessions the cap evicted, empty without a cap. */
 	evicted: Array<string>;

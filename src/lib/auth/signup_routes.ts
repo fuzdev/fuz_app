@@ -10,8 +10,9 @@
 
 import type { Account, Actor } from './account_schema.ts';
 
-import { create_session_and_set_cookie } from './session_middleware.ts';
 import { query_create_account_with_actor } from './account_queries.ts';
+import { create_capped_session } from './session_queries.ts';
+import { session_cookie_header } from './session_cookie.ts';
 import { query_app_settings_load } from './app_settings_queries.ts';
 import {
 	query_invite_find_unclaimed_match_for_update,
@@ -198,7 +199,7 @@ export const create_signup_route_specs = (
 						});
 					};
 
-					let result: { account: Account; actor: Actor };
+					let result: { account: Account; actor: Actor; set_cookie: string };
 					try {
 						result = await route.db.transaction(async (tx) => {
 							const tx_deps = { db: tx };
@@ -242,15 +243,18 @@ export const create_signup_route_specs = (
 								}
 							}
 
-							await create_session_and_set_cookie({
+							// the cookie line is formatted here, so a refused value rolls
+							// the account back, and rides the success, answered only
+							// once the commit has landed
+							const session = await create_capped_session({
 								keyring,
 								deps: tx_deps,
-								c,
 								account_id: account.id,
 								session_options
 							});
+							const set_cookie = session_cookie_header(session.cookie_value, session_options);
 
-							return { account, actor };
+							return { account, actor, set_cookie };
 						});
 					} catch (e: unknown) {
 						if (e instanceof NoMatchingInviteError) {
@@ -302,11 +306,14 @@ export const create_signup_route_specs = (
 						ip: get_client_ip(c),
 						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
 					});
-					return route_ok({
-						ok: true,
-						account: { id: result.account.id, username: result.account.username },
-						actor: { id: result.actor.id }
-					});
+					return route_ok(
+						{
+							ok: true,
+							account: { id: result.account.id, username: result.account.username },
+							actor: { id: result.actor.id }
+						},
+						{ set_cookie: [result.set_cookie] }
+					);
 				} finally {
 					ip_reserved.reservation.release();
 					account_reservation?.release();

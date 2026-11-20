@@ -229,7 +229,7 @@ const serve_fact_bytes = async (
 
 	const meta = await query_get_fact_meta({ db: route.db }, hash);
 	if (!meta) {
-		return route_raw(c.body(null, 404));
+		return route_raw({ status: 404 });
 	}
 
 	const content_type = meta.content_type ?? 'application/octet-stream';
@@ -245,17 +245,19 @@ const serve_fact_bytes = async (
 					row ? 'present' : 'null'
 				})`
 			);
-			return route_raw(c.body(null, 404));
+			return route_raw({ status: 404 });
 		}
 		const bytes = to_uint8(row.bytes);
-		return route_raw(
-			c.body(bytes as unknown as ArrayBuffer, 200, {
+		return route_raw({
+			status: 200,
+			headers: {
 				'Content-Type': content_type,
 				'Content-Length': size,
 				'Cache-Control': FACT_CACHE_CONTROL,
 				...FACT_SECURITY_HEADERS
-			})
-		);
+			},
+			body: bytes
+		});
 	}
 
 	// External — defense-in-depth re-validate the URL before trusting it
@@ -265,11 +267,11 @@ const serve_fact_bytes = async (
 		log.error(
 			`serve_fact: external_url for ${hash} is not a file:<shard>/<rest> URL; answering 404`
 		);
-		return route_raw(c.body(null, 404));
+		return route_raw({ status: 404 });
 	}
 	if (!file_fact_url_addresses(parsed, hash)) {
 		log.error(`serve_fact: external_url for ${hash} addresses another fact's file; answering 404`);
-		return route_raw(c.body(null, 404));
+		return route_raw({ status: 404 });
 	}
 	const { shard, rest } = parsed;
 
@@ -277,15 +279,16 @@ const serve_fact_bytes = async (
 		// Production: hand off to nginx via the validated `internal;` facts location.
 		// nginx answers with that location's own `add_header` set, not these
 		// headers, which is why the validator requires the fact pair there.
-		return route_raw(
-			c.body(null, 200, {
+		return route_raw({
+			status: 200,
+			headers: {
 				'Content-Type': content_type,
 				'Content-Length': size,
 				'Cache-Control': FACT_CACHE_CONTROL,
 				'X-Accel-Redirect': `${x_accel.redirect_prefix}${shard}/${rest}`,
 				...FACT_SECURITY_HEADERS
-			})
-		);
+			}
+		});
 	}
 
 	// Dev / tests: stream from disk. Open before committing the 200 so a
@@ -298,7 +301,7 @@ const serve_fact_bytes = async (
 	} catch (err) {
 		if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
 			log.warn(`serve_fact: disk file for ${hash} is missing; answering 404`);
-			return route_raw(c.body(null, 404));
+			return route_raw({ status: 404 });
 		}
 		log.error(`serve_fact: disk open for ${hash} failed`, err);
 		return route_fail(REST_INTERNAL_ERROR);
@@ -313,10 +316,10 @@ const serve_fact_bytes = async (
 	// unread, so a stream built here would hold the handle open until GC
 	if (c.req.method === 'HEAD') {
 		await handle.close();
-		return route_raw(c.body(null, 200, headers));
+		return route_raw({ status: 200, headers });
 	}
 	const web_stream = Readable.toWeb(handle.createReadStream()) as ReadableStream<Uint8Array>;
-	return route_raw(c.body(web_stream, 200, headers));
+	return route_raw({ status: 200, headers, body: web_stream });
 };
 
 /**
@@ -383,7 +386,7 @@ export const create_serve_cell_fact_route_spec = (
 			// Resolve the named cell. Missing / soft-deleted → 404 (masked).
 			const cell = await query_cell_get({ db: route.db }, cell_id);
 			if (!cell) {
-				return route_raw(c.body(null, 404));
+				return route_raw({ status: 404 });
 			}
 
 			// Per-reference view check — scoped to *this* cell only. It runs
@@ -406,7 +409,7 @@ export const create_serve_cell_fact_route_spec = (
 				!(await cell_steward_admits({ db: route.db }, req_ctx, cell))
 			) {
 				// 404 (not 403) so an unviewable cell→fact edge doesn't leak.
-				return route_raw(c.body(null, 404));
+				return route_raw({ status: 404 });
 			}
 
 			// The cell→fact edge: the cell must actually reference the hash.
@@ -414,7 +417,7 @@ export const create_serve_cell_fact_route_spec = (
 			// the authoritative "does this cell reference these bytes" check.
 			// Missing edge → 404 (masked), never "exists elsewhere".
 			if (!cell.refs?.includes(hash)) {
-				return route_raw(c.body(null, 404));
+				return route_raw({ status: 404 });
 			}
 
 			return serve_fact_bytes(c, route, hash, config);
@@ -482,7 +485,7 @@ export const create_serve_fact_route_spec = (
 				log.error(
 					'bare-hash fact read reached the handler without a global admin grant — the auth gate did not run'
 				);
-				return route_raw(c.body(null, 404));
+				return route_raw({ status: 404 });
 			}
 
 			return serve_fact_bytes(c, route, hash, config);

@@ -30,7 +30,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_noop_stub<T>(label, overrides?)` — Proxy whose every method returns `async () => undefined`; `overrides` pins specific props.
 - `stub` — pre-built throwing stub labelled `'stub'`.
 - `create_stub_db()` — real `Db` whose `client.query` yields `{rows: []}` and `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.
-- `stub_handler()` — a fresh `Response('stub')` as a `route_raw` result, a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
+- `stub_handler()` — a `route_raw` text answer (`stub`), a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
 - `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.

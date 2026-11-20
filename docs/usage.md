@@ -17,11 +17,14 @@ which infers the typed shape from the schema directly.
 A handler returns a result and the framework builds the response:
 `route_ok(value)` answers `value` as JSON at 200, `route_fail(def, fields?)`
 the definition's body at its status with its headers (`Retry-After`), and
-`route_raw(response)` a response built by hand (an empty body, bytes, a
-stream) as it is. `define_route` checks them against the route: the value
+`route_raw({status, headers?, body?})` an answer the route spells itself (an
+empty body, text, bytes, a stream) and `route_sse(stream)` an event stream
+opened with `route.open_sse`. Each is data: the framework builds the response
+after the route's transaction commits, so a handler never returns a
+`Response`. `define_route` checks them against the route: the value
 against `output`, each failure against `errors` and the codes `auth` and
-`rate_limit` derive (the 401, the auth 403s, the 429). Headers and cookies set
-on `c` before returning carry over.
+`rate_limit` derive (the 401, the auth 403s, the 429). A session cookie rides the
+success: `route_ok(value, {set_cookie: [session_cookie_header(…)]})`.
 
 ```typescript
 import { define_route, get_route_input } from '@fuzdev/fuz_app/http/route_spec.ts';
@@ -553,7 +556,7 @@ await temp_sweep.stop();
 ## SSE Endpoints
 
 ```typescript
-import { create_sse_response, type SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
+import type { SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
 import { SseRegistry } from '@fuzdev/fuz_app/realtime/sse_registry.ts';
 import {
 	get_resolved_auth,
@@ -562,7 +565,7 @@ import {
 } from '@fuzdev/fuz_app/auth/resolved_auth.ts';
 import { require_request_context } from '@fuzdev/fuz_app/auth/request_context.ts';
 import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
-import { route_fail, route_raw } from '@fuzdev/fuz_app/http/route_result.ts';
+import { route_fail, route_sse } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_AUTHENTICATION_REQUIRED } from '@fuzdev/fuz_app/http/error_schemas.ts';
 import { literal } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -596,13 +599,16 @@ const subscribe_spec = define_route({
 			pending.unsubscribe();
 			return route_fail(REST_AUTHENTICATION_REQUIRED); // `auth` derives the 401
 		}
-		const { response, stream } = create_sse_response<SseNotification>(c, log);
-		if (registry.admit(pending, stream)) {
-			stream.on_close(pending.unsubscribe);
-		} else {
+		// opened through the route, so it exists before it is admitted; the
+		// response is built when the route answers with it
+		const stream = route.open_sse<SseNotification>({ log });
+		// first: a client already gone closes the stream, its listener runs at
+		// once, and `admit` refuses the removed registration
+		stream.on_close(pending.unsubscribe);
+		if (!registry.admit(pending, stream)) {
 			stream.close(); // a revocation closed it while it was pending
 		}
-		return route_raw(response); // the stream, as it is
+		return route_sse(stream);
 	}
 });
 

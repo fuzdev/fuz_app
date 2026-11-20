@@ -35,6 +35,7 @@ import {
 } from '../hono_context.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
 import { create_stub_db } from './stubs.ts';
+import { create_sse_stream } from '../realtime/sse.ts';
 import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
 
 /**
@@ -82,7 +83,7 @@ export const create_test_app_from_specs = (
 		fuz_auth_guard_resolver,
 		new Logger('test', { level: 'off' }),
 		db,
-		create_fuz_authorization_handler({ db })
+		{ authorize: create_fuz_authorization_handler({ db }), open_sse: create_sse_stream }
 	);
 	return app;
 };

@@ -36,12 +36,11 @@ afterEach(async () => {
 
 /** A JSON answer at any status, as the bytes `c.json` writes, raw so no definition is needed. */
 const json_raw = (body: unknown, status: number): RouteRaw =>
-	route_raw(
-		new Response(JSON.stringify(body), {
-			status,
-			headers: { 'Content-Type': 'application/json' }
-		})
-	);
+	route_raw({
+		status,
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
 
 /** A public route whose handler answers whatever error the test names. */
 const echo_route = (errors?: RouteSpec['errors']): RouteSpec => {
