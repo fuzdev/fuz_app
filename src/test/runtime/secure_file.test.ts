@@ -20,7 +20,9 @@ import {
 	writeFileSync,
 	chmodSync,
 	symlinkSync,
+	linkSync,
 	rmSync,
+	unlinkSync,
 	statSync,
 	lstatSync,
 	readFileSync,
@@ -31,6 +33,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import {
+	assert_secure_link_count,
 	burn_secure_file_node,
 	load_secure_file_node,
 	MAX_SECURE_FILE_SIZE
@@ -105,6 +108,26 @@ describe('load_secure_file_node', () => {
 		await assert_rejects(() => load_secure_file_node(join(dir, 'absent')));
 	});
 
+	test.runIf(posix)(
+		'a second hard link reads by default and is refused under require_single_link',
+		async () => {
+			const path = write_token('token', 'secret', 0o600);
+			const other = join(dir, 'token-other-name');
+			linkSync(path, other);
+			// the default read is unchanged: a snapshot tool linking a key file
+			// can't stop its reader
+			assert.strictEqual(new TextDecoder().decode(await load_secure_file_node(path)), 'secret');
+			await assert_rejects(
+				() => load_secure_file_node(path, { require_single_link: true }),
+				/has 2 hard links/
+			);
+			// the other name removed, the same file reads
+			unlinkSync(other);
+			const bytes = await load_secure_file_node(path, { require_single_link: true });
+			assert.strictEqual(new TextDecoder().decode(bytes), 'secret');
+		}
+	);
+
 	test('refuses a file over the size cap; accepts one exactly at it', async () => {
 		const at_limit = write_token('at-limit', 'x'.repeat(MAX_SECURE_FILE_SIZE), 0o600);
 		const loaded = await load_secure_file_node(at_limit);
@@ -112,6 +135,21 @@ describe('load_secure_file_node', () => {
 
 		const over = write_token('over', 'x'.repeat(MAX_SECURE_FILE_SIZE + 1), 0o600);
 		await assert_rejects(() => load_secure_file_node(over), /too large/);
+	});
+});
+
+describe('assert_secure_link_count', () => {
+	// the count comes from the descriptor's `fstat`, which reads 0 when the
+	// entry was unlinked between the open and the stat — already burned, so
+	// refused like a second link
+	test('admits exactly one link', () => {
+		assert_secure_link_count('/token', 1);
+		for (const links of [0, 2]) {
+			assert.throws(
+				() => assert_secure_link_count('/token', links),
+				new RegExp(`has ${links} hard links: /token \\(expected 1\\)`)
+			);
+		}
 	});
 });
 

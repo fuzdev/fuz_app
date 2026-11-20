@@ -16,7 +16,7 @@ import type {
 	RuntimeDeps,
 	StatResult
 } from './deps.ts';
-import { assert_secure_mode, assert_secure_size } from './secure_file.ts';
+import { assert_secure_link_count, assert_secure_mode, assert_secure_size } from './secure_file.ts';
 import { assert_process_id } from './process_id.ts';
 
 /* eslint-disable @typescript-eslint/require-await */
@@ -38,6 +38,12 @@ export interface MockRuntime extends RuntimeDeps {
 	 * writer asked for `0o600` explicitly, mirroring the real runtimes.
 	 */
 	mock_fs_modes: Map<string, number>;
+	/**
+	 * Recorded link counts (path -> count) for a file with other hard links;
+	 * a file with no entry has one, as a file the mock writes does. What
+	 * `read_secure_file`'s `require_single_link` reads.
+	 */
+	mock_fs_links: Map<string, number>;
 	/** Mock directories that exist. */
 	mock_dirs: Set<string>;
 	/** Exit calls recorded (exit codes). */
@@ -82,6 +88,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_fs: Map<string, string> = new Map();
 	const mock_fs_bytes: Map<string, Uint8Array> = new Map();
 	const mock_fs_modes: Map<string, number> = new Map();
+	const mock_fs_links: Map<string, number> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
 	const mock_processes: Map<number, Exclude<ProcessProbe, 'not_found'>> = new Map();
@@ -96,6 +103,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		mock_fs,
 		mock_fs_bytes,
 		mock_fs_modes,
+		mock_fs_links,
 		mock_dirs,
 		exit_calls,
 		mock_processes,
@@ -172,7 +180,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			error.code = 'ENOENT';
 			throw error;
 		},
-		read_secure_file: async (path) => {
+		read_secure_file: async (path, options) => {
 			let bytes = mock_fs_bytes.get(path);
 			if (bytes === undefined) {
 				const content = mock_fs.get(path);
@@ -190,6 +198,9 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			// writer asked for 0600, mirroring the real runtimes (simulated
 			// modes, so no platform gate).
 			assert_secure_mode(path, mock_fs_modes.get(path) ?? 0o644);
+			if (options?.require_single_link) {
+				assert_secure_link_count(path, mock_fs_links.get(path) ?? 1);
+			}
 			assert_secure_size(path, bytes.length);
 			return bytes;
 		},
@@ -206,6 +217,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			mock_fs.delete(path);
 			mock_fs_bytes.delete(path);
 			mock_fs_modes.delete(path);
+			mock_fs_links.delete(path);
 			return present ? 'burned' : 'already_gone';
 		},
 		read_file_stream: async (path) => {
@@ -334,11 +346,20 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			} else {
 				mock_fs_modes.delete(new_path);
 			}
+			// so does its link count
+			const links = mock_fs_links.get(old_path);
+			if (links !== undefined) {
+				mock_fs_links.set(new_path, links);
+				mock_fs_links.delete(old_path);
+			} else {
+				mock_fs_links.delete(new_path);
+			}
 		},
 		remove: async (path, options) => {
 			mock_fs.delete(path);
 			mock_fs_bytes.delete(path);
 			mock_fs_modes.delete(path);
+			mock_fs_links.delete(path);
 			mock_dirs.delete(path);
 			if (options?.recursive) {
 				const prefix = path.endsWith('/') ? path : path + '/';
@@ -387,7 +408,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 /**
  * Reset a mock runtime to initial state.
  *
- * @mutates runtime - clears all mock state (env, fs, modes, dirs, processes, exit/stdout/fetch call records, fetch responses, stdin buffer)
+ * @mutates runtime - clears all mock state (env, fs, modes, link counts, dirs, processes, exit/stdout/fetch call records, fetch responses, stdin buffer)
  */
 export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_env.clear();
@@ -396,6 +417,7 @@ export const reset_mock_runtime = (runtime: MockRuntime): void => {
 	runtime.mock_dirs.clear();
 	runtime.exit_calls.length = 0;
 	runtime.mock_fs_modes.clear();
+	runtime.mock_fs_links.clear();
 	runtime.mock_processes.clear();
 	runtime.stdout_writes.length = 0;
 	runtime.fetch_calls.length = 0;

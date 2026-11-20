@@ -6,16 +6,18 @@
  * (the bootstrap token mints the keeper account), so the read fails loud
  * rather than degrading: a symlink, a non-regular file (FIFO, device node,
  * directory), a group/other-accessible mode, or an oversized file is refused,
- * never returned. The deploy recipe places the token at `0600`, so the check
+ * never returned — and, for a reader that asks (`SecureReadOptions`), a file
+ * with a link count other than 1. The deploy recipe places the token at `0600`, so the check
  * ratifies the shape zap produces; a hand-placed `0644` file fails at boot
  * instead of being read.
  *
  * The real implementations live here (`load_secure_file_node` and
  * `burn_secure_file_node`, wired as `create_node_runtime().read_secure_file`
  * and `.burn_secure_file`), and the mock honors the mode/size
- * checks over its in-memory map (it has no file types). Both refuse through
- * the shared `assert_secure_mode` / `assert_secure_size` helpers, so the
- * checks — and their operator-facing messages — can't drift between them.
+ * and link-count checks over its in-memory map (it has no file types). Both
+ * refuse through the shared `assert_secure_mode` / `assert_secure_size` /
+ * `assert_secure_link_count` helpers, so the checks — and their
+ * operator-facing messages — can't drift between them.
  *
  * @module
  */
@@ -69,6 +71,33 @@ export const assert_secure_size = (path: string, size: number): void => {
 };
 
 /**
+ * The strictness a secure read adds to its default checks. Default: none.
+ * Twin of the Rust `fuz_sys::secure_file::SecureReadOptions`.
+ */
+export interface SecureReadOptions {
+	/**
+	 * Refuse a file whose link count is not 1, read from the same descriptor
+	 * `fstat` as the other checks. For a one-shot secret its reader burns by
+	 * unlinking it (the bootstrap token): with a second hard link the unlink
+	 * leaves the inode, and the secret, readable under the other name. Off by
+	 * default because a long-lived secret has no such burn, and a snapshot
+	 * tool that hard-links a key file must not stop the reader.
+	 */
+	readonly require_single_link?: boolean;
+}
+
+/**
+ * Refuse a link count other than 1 — the `require_single_link` check.
+ *
+ * @throws Error naming the path and the link count
+ */
+export const assert_secure_link_count = (path: string, links: number): void => {
+	if (links !== 1) {
+		throw new Error(`secure file has ${links} hard links: ${path} (expected 1)`);
+	}
+};
+
+/**
  * Read a secret file with fail-loud checks (Node implementation).
  *
  * - `O_NOFOLLOW` atomically rejects symlinks during open (no TOCTOU window)
@@ -80,14 +109,20 @@ export const assert_secure_size = (path: string, size: number): void => {
  * - the permission check runs on the open descriptor, not the path, so the
  *   file can't be swapped between check and read — any group/other access
  *   (not `0600`/`0400`) is refused
+ * - with `require_single_link`, a link count other than 1 is refused, read
+ *   from the same descriptor `stat`
  * - a size cap bounds the read; the read itself is limited to cap + 1 so a
  *   file growing between stat and read is still caught
  *
  * @param path - path to the secret file
+ * @param options - added strictness, none by default
  * @returns the file's bytes
- * @throws Error on a missing file, symlink, non-regular file, permissive mode, oversized file, or I/O failure
+ * @throws Error on a missing file, symlink, non-regular file, permissive mode, a link count other than 1 when `require_single_link` asks, oversized file, or I/O failure
  */
-export const load_secure_file_node = async (path: string): Promise<Uint8Array> => {
+export const load_secure_file_node = async (
+	path: string,
+	options?: SecureReadOptions
+): Promise<Uint8Array> => {
 	let handle;
 	try {
 		handle = await open(
@@ -105,6 +140,7 @@ export const load_secure_file_node = async (path: string): Promise<Uint8Array> =
 		const s = await handle.stat();
 		if (!s.isFile()) throw new Error(`not a regular file: ${path}`);
 		if (modes_apply) assert_secure_mode(path, s.mode);
+		if (options?.require_single_link) assert_secure_link_count(path, s.nlink);
 		assert_secure_size(path, s.size);
 		// read up to cap + 1 bytes so a file growing between stat and read is
 		// still caught (the stat-time size check alone races); `position: null`

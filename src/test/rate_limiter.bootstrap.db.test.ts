@@ -10,12 +10,20 @@
  */
 
 import { describe, test, assert, vi, afterEach, beforeAll } from 'vitest';
+import { chmodSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import process from 'node:process';
 import { Hono } from 'hono';
 import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_bootstrap_route_specs, type OnBootstrap } from '#lib/auth/bootstrap_routes.ts';
-import type { BootstrapTokenStore } from '#lib/auth/bootstrap_token_store.ts';
+import {
+	create_file_bootstrap_token_store,
+	type BootstrapTokenStore
+} from '#lib/auth/bootstrap_token_store.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
 import { BOOTSTRAP_TOKEN_LENGTH_MAX, BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
 import { MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -724,5 +732,36 @@ describe('the lock-race loser', () => {
 		);
 
 		limiter.dispose();
+	});
+});
+
+describe.runIf(process.platform !== 'win32')('a token file with a second hard link', () => {
+	test('answers as an unreadable token: 404, the window closed, nothing created, the file kept', async () => {
+		// The burn is an unlink, which leaves an inode with another name readable
+		// under it — so the store's read refuses the file, the right token
+		// included, and the request takes the unreadable-token leg.
+		const dir = mkdtempSync(join(tmpdir(), 'fuz-bootstrap-links-'));
+		try {
+			const path = join(dir, 'bootstrap_token');
+			const content = 'test_token_test_token_test_token_32\n';
+			writeFileSync(path, content);
+			chmodSync(path, 0o600);
+			linkSync(path, join(dir, 'other_name'));
+			const store = create_file_bootstrap_token_store(create_node_runtime(), path);
+			const { app, db, bootstrap_status } = await create_bootstrap_app(
+				null,
+				vi.fn(async () => new Uint8Array(await store.read_token()))
+			);
+
+			const res = await bootstrap_request(app);
+			assert.strictEqual(res.status, 404);
+			assert.strictEqual((await res.json()).error, ERROR_TOKEN_FILE_MISSING);
+			assert.isFalse(bootstrap_status.available, 'the refusal closes the window');
+			const row = await db.query_one<{ n: number }>('SELECT COUNT(*)::int AS n FROM account');
+			assert.strictEqual(row?.n, 0);
+			assert.strictEqual(readFileSync(path, 'utf8'), content, 'the refused token stays');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

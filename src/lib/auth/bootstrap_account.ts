@@ -73,8 +73,8 @@ export interface BootstrapAccountDeps {
 	db: Db;
 	/**
 	 * The one-shot token: read through the hardened secret read (a symlinked,
-	 * non-regular, group/other-readable, or oversized file is refused — every
-	 * refusal reads as `TOKEN_FILE_MISSING`), burned last inside the
+	 * non-regular, group/other-readable, multiply-linked, or oversized file is
+	 * refused — every refusal reads as `TOKEN_FILE_MISSING`), burned last inside the
 	 * transaction.
 	 */
 	token_store: BootstrapTokenStore;
@@ -191,7 +191,7 @@ export const bootstrap_account = async (
 
 	// 1. Read and verify token (non-destructive, before transaction). The
 	// secure read fails loud on a symlink / non-regular file / permissive mode /
-	// oversized file, and the read refuses a token under the minimum length —
+	// second hard link / oversized file, and the read refuses a token under the minimum length —
 	// every refusal masks as the same TOKEN_FILE_MISSING the wire always
 	// carried, with the specific reason logged for the operator.
 	let expected_token: Uint8Array;

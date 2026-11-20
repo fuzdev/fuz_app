@@ -203,8 +203,11 @@ legitimate operator.
   crash after the commit can't bring the file back. Deletion is what makes
   the token single-use across databases: the lock protects this database,
   and a leftover token would reopen bootstrap on a later empty one (a wipe, a
-  restore from a pre-bootstrap backup). A hard link to the file survives the
-  burn
+  restore from a pre-bootstrap backup). An unlink removes one name, so a
+  token file with a second hard link would survive its burn: bootstrap's read
+  refuses a token file whose link count is not one, at boot and on a request,
+  as it refuses a symlink or a permissive mode. Only this read asks for it —
+  a signing key hard-linked by a snapshot tool still loads
 - **A token that can't be burned refuses the bootstrap**: 500
   `token_file_undeletable`, with nothing created, the attempt charged to the
   limiter and audited, and the window left open — only a caller holding the

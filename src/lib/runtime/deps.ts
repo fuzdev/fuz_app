@@ -13,7 +13,7 @@
  * @module
  */
 
-import type { BurnOutcome } from './secure_file.ts';
+import type { BurnOutcome, SecureReadOptions } from './secure_file.ts';
 
 /**
  * Result of a stat operation.
@@ -95,10 +95,11 @@ export interface FsSecureReadDeps {
 	 * has no file types), any group/other-accessible mode (must be `0600`/`0400`; skipped where POSIX
 	 * modes don't apply), and files over a 4 KiB cap. Permission checks run on
 	 * the open descriptor where the platform allows, so the file can't be
-	 * swapped between check and read. Throws on any refusal — a refused secret
-	 * must never degrade to an empty read.
+	 * swapped between check and read. `options` adds strictness one reader
+	 * asks for (`require_single_link`, the bootstrap token's). Throws on any
+	 * refusal — a refused secret must never degrade to an empty read.
 	 */
-	read_secure_file: (path: string) => Promise<Uint8Array>;
+	read_secure_file: (path: string, options?: SecureReadOptions) => Promise<Uint8Array>;
 }
 
 /**

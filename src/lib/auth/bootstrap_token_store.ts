@@ -11,7 +11,7 @@
  */
 
 import type { FsSecureBurnDeps, FsSecureReadDeps } from '../runtime/deps.ts';
-import type { BurnOutcome } from '../runtime/secure_file.ts';
+import type { BurnOutcome, SecureReadOptions } from '../runtime/secure_file.ts';
 
 /**
  * Two-operation seam for the one-shot bootstrap token file.
@@ -46,11 +46,24 @@ export interface BootstrapTokenStore {
 }
 
 /**
+ * The secure read's strictness for the bootstrap token: a link count of 1,
+ * beside the default checks, so the burn's unlink leaves no other name the
+ * token can still be read under. Twin of the Rust
+ * `BOOTSTRAP_TOKEN_READ_OPTIONS`.
+ */
+const BOOTSTRAP_TOKEN_READ_OPTIONS: SecureReadOptions = Object.freeze({
+	require_single_link: true
+});
+
+/**
  * The production `BootstrapTokenStore`: the hardened secret read
- * (`read_secure_file` — a symlinked, non-regular, group/other-readable, or
- * oversized file is refused, never read) and the durable burn
- * (`burn_secure_file` — unlink, then fsync the directory). Twin of the Rust
- * `FileBootstrapTokenStore`.
+ * (`read_secure_file` — a symlinked, non-regular, group/other-readable,
+ * multiply-linked, or oversized file is refused, never read) and the durable
+ * burn (`burn_secure_file` — unlink, then fsync the directory). The read
+ * alone of the runtime's secure reads asks for a single link
+ * (`BOOTSTRAP_TOKEN_READ_OPTIONS`): both of bootstrap's reads, the boot check
+ * (`check_bootstrap_status`) and the request's, go through it. Twin of the
+ * Rust `FileBootstrapTokenStore`.
  *
  * @param deps - the runtime's secure read and burn (`create_node_runtime()` satisfies both)
  * @param path - the bootstrap token file, `FUZ_BOOTSTRAP_TOKEN_PATH`
@@ -61,6 +74,6 @@ export const create_file_bootstrap_token_store = (
 	path: string
 ): BootstrapTokenStore => ({
 	path,
-	read_token: () => deps.read_secure_file(path),
+	read_token: () => deps.read_secure_file(path, BOOTSTRAP_TOKEN_READ_OPTIONS),
 	burn_token: () => deps.burn_secure_file(path)
 });
