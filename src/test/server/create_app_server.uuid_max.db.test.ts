@@ -19,7 +19,7 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS
 } from '#lib/http/error_schemas.ts';
 import { JSONRPC_INVALID_PARAMS } from '#lib/http/jsonrpc.ts';
-import { define_route, get_route_params, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
@@ -53,7 +53,7 @@ const create_route_specs = (): Array<RouteSpec> => [
 		params: ThingParams,
 		input: literal(null),
 		output: object({ id: string }),
-		handler: (c) => route_ok({ id: get_route_params(c, ThingParams).id })
+		handler: (route) => route_ok({ id: route.params.id })
 	}),
 	define_route({
 		method: 'GET',

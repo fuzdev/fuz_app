@@ -85,7 +85,7 @@ describe_db('a route result and its transaction', (get_db) => {
 			define_route({
 				...shape,
 				path: `/raw/${name}`,
-				handler: async (_c, route) => {
+				handler: async (route) => {
 					await mark(route.db, name);
 					return route_raw(fresh(name) as never);
 				}
@@ -101,7 +101,7 @@ describe_db('a route result and its transaction', (get_db) => {
 		}
 		for (const [name] of route_raw_admitted()) {
 			const res = await post(app, `/raw/${name}`);
-			assert.strictEqual(res.status, 200, name);
+			assert.strictEqual(res.status, (fresh(name) as { status: number }).status, name);
 			await res.arrayBuffer();
 			assert.ok(await marked(db, name), `${name}: committed`);
 		}
@@ -121,7 +121,7 @@ describe_db('a route result and its transaction', (get_db) => {
 				define_route({
 					...shape,
 					path: '/disturbed',
-					handler: async (_c, route) => {
+					handler: async (route) => {
 						await mark(route.db, 'disturbed');
 						// read and released: unlocked, so the prepare can't see it, and
 						// no `Response` is built from it
@@ -179,7 +179,7 @@ describe_db('a route result and its transaction', (get_db) => {
 			define_route({
 				...shape,
 				path: '/rolled_back_stream',
-				handler: async (_c, route) => {
+				handler: async (route) => {
 					await mark(route.db, 'rolled_back_stream');
 					return route_raw({
 						status: 200,

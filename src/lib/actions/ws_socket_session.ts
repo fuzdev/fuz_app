@@ -909,7 +909,7 @@ export const create_ws_socket_events = (
 					action,
 					raw_params: params,
 					request_id: id,
-					auth: resolved,
+					credential: resolved,
 					client_ip,
 					signal,
 					notify,

@@ -134,7 +134,6 @@
 import { open, type FileHandle } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { join } from 'node:path';
-import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { ActingActor, FactHashSchema, Uuid } from '../primitive_schemas.ts';
@@ -143,18 +142,12 @@ import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 import {
 	build_request_context,
 	get_public_account_id,
-	get_request_context,
 	has_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
-import {
-	define_route,
-	get_route_params,
-	type RouteContext,
-	type RouteSpec
-} from '../http/route_spec.ts';
+import { define_route, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_raw, type RouteFailOf, type RouteRaw } from '../http/route_result.ts';
 import { REST_INTERNAL_ERROR } from '../http/error_schemas.ts';
 import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
@@ -215,12 +208,12 @@ interface ServeFactConfig {
  * Returns 404 when the fact's metadata is missing, its embedded bytes have
  * vanished (a race), or its disk file is missing, so the response shape is
  * identical whether the fact is genuinely absent or merely unviewable; any
- * other failure to open the disk file answers a logged 500. HEAD on a disk
- * fact opens the file (so it answers the same statuses) and closes it again,
- * sending headers only.
+ * other failure to open the disk file answers a logged 500. A disk fact's body
+ * is a stream over the open file, whose cancel closes it: a `HEAD`, which
+ * opens the file and so answers the same statuses, is answered with the
+ * headers alone and the stream cancelled by the spine (`emit_route_response`).
  */
 const serve_fact_bytes = async (
-	c: Context,
 	route: RouteContext,
 	hash: FactHash,
 	config: ServeFactConfig
@@ -312,12 +305,8 @@ const serve_fact_bytes = async (
 		'Cache-Control': FACT_CACHE_CONTROL,
 		...FACT_SECURITY_HEADERS
 	};
-	// Hono answers HEAD by running this GET handler and discarding the body
-	// unread, so a stream built here would hold the handle open until GC
-	if (c.req.method === 'HEAD') {
-		await handle.close();
-		return route_raw({ status: 200, headers });
-	}
+	// the stream's cancel closes the handle — what releases it on a `HEAD`, a
+	// refused answer, or a rolled-back one
 	const web_stream = Readable.toWeb(handle.createReadStream()) as ReadableStream<Uint8Array>;
 	return route_raw({ status: 200, headers, body: web_stream });
 };
@@ -337,11 +326,10 @@ const serve_fact_bytes = async (
  * resolution path — a tombstoned actor is never resolvable here.
  */
 const build_public_request_context = async (
-	c: Context,
 	route: RouteContext
 ): Promise<RequestContext | null> => {
 	// a narrowed token is the anonymous caller here, never a refusal
-	const account_id = get_public_account_id(c);
+	const account_id = get_public_account_id(route);
 	if (!account_id) return null;
 	const actors = await query_active_actors_by_account({ db: route.db }, account_id);
 	if (actors.length !== 1) return null;
@@ -380,8 +368,8 @@ export const create_serve_cell_fact_route_spec = (
 		input: literal(null),
 		// The body is a binary stream; no JSON output schema applies.
 		output: literal(null),
-		handler: async (c, route) => {
-			const { cell_id, hash } = get_route_params<{ cell_id: Uuid; hash: FactHash }>(c);
+		handler: async (route) => {
+			const { cell_id, hash } = route.params;
 
 			// Resolve the named cell. Missing / soft-deleted → 404 (masked).
 			const cell = await query_cell_get({ db: route.db }, cell_id);
@@ -393,7 +381,7 @@ export const create_serve_cell_fact_route_spec = (
 			// before the edge check, so a cell the caller can't view does the
 			// same work, and answers the same 404, whether or not it references
 			// the hash — the edge stays unobservable to a non-viewer.
-			const req_ctx = await build_public_request_context(c, route);
+			const req_ctx = await build_public_request_context(route);
 			// Unauthenticated callers skip the grant fetch entirely — no grant
 			// can admit a null req_ctx (the only admit path is the
 			// public-visibility branch in `can_view_cell`, which doesn't read
@@ -420,7 +408,7 @@ export const create_serve_cell_fact_route_spec = (
 				return route_raw({ status: 404 });
 			}
 
-			return serve_fact_bytes(c, route, hash, config);
+			return serve_fact_bytes(route, hash, config);
 		}
 	});
 };
@@ -473,22 +461,22 @@ export const create_serve_fact_route_spec = (
 		input: literal(null),
 		// The body is a binary stream; no JSON output schema applies.
 		output: literal(null),
-		handler: async (c, route) => {
-			const { hash } = get_route_params<{ hash: FactHash }>(c);
+		handler: async (route) => {
+			const { hash } = route.params;
 
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape
 			// regression fails closed instead of serving by bare hash. Global
 			// grant only — a scoped `admin` row must not read every fact. It
 			// fires only on such a regression, so it fails loud as well.
-			if (!has_scoped_role(get_request_context(c), ROLE_ADMIN, null)) {
+			if (!has_scoped_role(route.auth, ROLE_ADMIN, null)) {
 				log.error(
 					'bare-hash fact read reached the handler without a global admin grant — the auth gate did not run'
 				);
 				return route_raw({ status: 404 });
 			}
 
-			return serve_fact_bytes(c, route, hash, config);
+			return serve_fact_bytes(route, hash, config);
 		}
 	});
 };

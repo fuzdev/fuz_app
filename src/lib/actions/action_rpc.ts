@@ -13,7 +13,6 @@
  * @module
  */
 
-import type { Context } from 'hono';
 import { DEV } from 'esm-env';
 import { literal, unknown } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -22,10 +21,6 @@ import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import type { RpcAction } from './action_types.ts';
 import { define_route, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { route_raw, type RouteRaw } from '../http/route_result.ts';
-import { get_client_ip } from '../http/client_ip.ts';
-import { get_request_context } from '../auth/request_context.ts';
-import { get_resolved_auth } from '../auth/resolved_auth.ts';
-import { has_test_context_preset } from '../hono_context.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import {
@@ -39,11 +34,12 @@ import {
 } from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
-import { parse_json_text, read_json_body } from '../http/json_text.ts';
+import { parse_json_text } from '../http/json_text.ts';
 
 /**
- * The `Cache-Control` every response of the RPC endpoint's `GET` route carries
- * — a read is per caller and per moment, so nothing may store it.
+ * The `Cache-Control` every answer of the RPC endpoint's `GET` route carries
+ * — a read is per caller and per moment, so nothing may store it. Declared as
+ * the route's `response_headers`, so the error catch's answer carries it too.
  */
 export const RPC_GET_CACHE_CONTROL = 'no-store';
 
@@ -112,9 +108,10 @@ const envelope_response = (envelope: unknown, status: number): RouteRaw =>
  * 8. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),
  *    construct `ActionContext`, call handler, return JSON-RPC response.
  *
- * GET is restricted to `side_effects: false` actions, and every response the
- * GET handler writes, its refusals included, carries `Cache-Control: no-store`
- * (`RPC_GET_CACHE_CONTROL`) — a refusal by middleware ahead of it does not.
+ * GET is restricted to `side_effects: false` actions, and every answer of the
+ * GET route, its refusals and the error catch's included, carries
+ * `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`, its `response_headers`)
+ * — a refusal by middleware ahead of the route does not.
  * All errors use JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`.
  *
  * The RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action
@@ -159,7 +156,6 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	 * @param restrict_to_reads - `true` for GET (rejects `side_effects: true` actions)
 	 */
 	const dispatch = async (
-		c: Context,
 		route: RouteContext,
 		method_name: string,
 		raw_params: unknown,
@@ -201,18 +197,16 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// set `TEST_CONTEXT_PRESET_KEY` to `TEST_CONTEXT_PRESET`. Production middleware never
 		// sets the flag; the shim honors it and `perform_action` trusts the
 		// pre-baked context instead of running the live authorization phase.
-		const preset = has_test_context_preset(c)
-			? { request_context: get_request_context(c) }
-			: undefined;
+		const preset = route.has_test_context_preset ? { request_context: route.auth } : undefined;
 
 		const result = await perform_action(
 			{
 				action,
 				raw_params,
 				request_id: id,
-				auth: get_resolved_auth(c),
-				client_ip: get_client_ip(c),
-				signal: c.req.raw.signal,
+				credential: route.credential,
+				client_ip: route.client_ip,
+				signal: route.signal,
 				notify,
 				preset
 			},
@@ -234,9 +228,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	};
 
 	// POST handler — parse JSON-RPC envelope from body
-	const post_handler = async (c: Context, route: RouteContext): Promise<RouteRaw> => {
+	const post_handler = async (route: RouteContext): Promise<RouteRaw> => {
 		// step 1: parse envelope
-		const read = await read_json_body(c.req);
+		const read = await route.read_json_body();
 		if (!read.ok) {
 			const error = create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error());
 			return envelope_response(error, 400);
@@ -250,7 +244,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		switch (classified.kind) {
 			case 'request': {
 				const { method, params, id } = classified.request;
-				return dispatch(c, route, method, params, id, false);
+				return dispatch(route, method, params, id, false);
 			}
 			case 'invalid':
 				return envelope_response(
@@ -269,13 +263,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	};
 
 	// GET handler — extract method and params from query string
-	const get_handler = async (c: Context, route: RouteContext): Promise<RouteRaw> => {
-		// A read answers for one caller at one moment: no cache — the browser's,
-		// a proxy's — may keep it and answer a later call, or another caller,
-		// with it. Every response of the route, errors included.
-		c.header('Cache-Control', RPC_GET_CACHE_CONTROL);
+	const get_handler = async (route: RouteContext): Promise<RouteRaw> => {
 		// step 1: parse from query string
-		const method_name = c.req.query('method');
+		const method_name = route.query_first('method');
 		if (!method_name) {
 			const error = create_jsonrpc_error_response(
 				null,
@@ -284,7 +274,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			return envelope_response(error, 400);
 		}
 
-		const id_raw = c.req.query('id');
+		const id_raw = route.query_first('id');
 		if (!id_raw) {
 			const error = create_jsonrpc_error_response(
 				null,
@@ -300,7 +290,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			Number.isInteger(id_num) && String(id_num) === id_raw ? id_num : id_raw;
 
 		// parse params from query string (optional — null input schemas need no params)
-		const params_raw = c.req.query('params');
+		const params_raw = route.query_first('params');
 		let params: unknown;
 		if (params_raw !== undefined) {
 			try {
@@ -314,7 +304,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			}
 		}
 
-		return dispatch(c, route, method_name, params, id, true);
+		return dispatch(route, method_name, params, id, true);
 	};
 
 	return [
@@ -342,6 +332,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			reads_credential: true,
 			// answers JSON-RPC envelopes, not REST bodies
 			jsonrpc: true,
+			// a read answers for one caller at one moment: no cache — the
+			// browser's, a proxy's — may keep it and answer a later call, or
+			// another caller, with it
+			response_headers: { 'Cache-Control': RPC_GET_CACHE_CONTROL },
 			handler: get_handler,
 			description: `JSON-RPC 2.0 endpoint (side-effect-free reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'

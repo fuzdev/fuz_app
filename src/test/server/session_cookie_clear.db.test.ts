@@ -17,7 +17,6 @@ import { HTTPException } from 'hono/http-exception';
 import { literal, loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import {
 	route_fail,
@@ -42,7 +41,7 @@ const create_credential_route_spec = (): RouteSpec =>
 		description: 'Return the credential type the request authenticated with',
 		input: literal(null),
 		output: loose_object({ credential_type: string }),
-		handler: (c) => route_ok({ credential_type: get_resolved_auth(c)?.credential_type ?? 'none' })
+		handler: (route) => route_ok({ credential_type: route.credential?.credential_type ?? 'none' })
 	});
 
 /** Every kind of result a route answers with, each at `/api/kind/<name>`. */
@@ -92,7 +91,7 @@ const KINDS: ReadonlyArray<
 				})
 			})
 	],
-	['sse', [], (_c, route): RouteResult => route_sse(route.open_sse({ keep_alive_ms: null }))]
+	['sse', [], (route): RouteResult => route_sse(route.open_sse({ keep_alive_ms: null }))]
 ];
 
 const create_kind_route_specs = (): Array<RouteSpec> =>

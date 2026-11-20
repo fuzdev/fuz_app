@@ -40,7 +40,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 		description: 'Write a row and answer a cookie',
 		input: literal(null),
 		output: loose_object({}),
-		handler: async (_c, route) => {
+		handler: async (route) => {
 			await route.db.query('SELECT 1');
 			return route_ok({}, { set_cookie: ['minted=1; Path=/'] });
 		}

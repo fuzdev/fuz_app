@@ -593,7 +593,8 @@ describe_adversarial_auth({
 					method: 'GET',
 					path: '/:slug{.+\\.git}/info/refs',
 					auth: { account: 'required', actor: 'none' },
-					handler: (c) => route_ok({ slug: c.req.param('slug') }),
+					handler: (route) => route_ok({ slug: route.params.slug }),
+					params: object({ slug: string }),
 					description: 'A route behind a `{re}` param',
 					input: literal(null),
 					output: object({ slug: optional(string) })

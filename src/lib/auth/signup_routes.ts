@@ -19,10 +19,9 @@ import {
 	query_invite_claim_unscoped
 } from './invite_queries.ts';
 import type { Invite } from './invite_schema.ts';
-import { create_signup_route_shape, type SignupInput } from './signup_route_schema.ts';
-import { attach_route_handler, get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { create_signup_route_shape } from './signup_route_schema.ts';
+import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_ok } from '../http/route_result.ts';
-import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
@@ -118,23 +117,23 @@ export const create_signup_route_specs = (
 			create_signup_route_shape({
 				signup_account_rate_limited: signup_account_rate_limiter !== null
 			}),
-			async (c, route) => {
+			async (route) => {
 				// Per-IP rate limit (before any work). 429 stays fast. Reserved,
 				// not checked: the attempt counts against the cap until it settles
 				// below, so a concurrent burst can't all pass before any of it
 				// records — and the Argon2 hash every attempt pays is bounded with
 				// it. The `finally` releases whatever no branch recorded.
 				// keyed by the address's rate-limit key (an IPv6 client's /64)
-				const ip_key = signup_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+				const ip_key = signup_ip_rate_limiter ? rate_limit_ip_key(route.client_ip) : null;
 				const ip_reserved = await reserve_optional(signup_ip_rate_limiter, ip_key, {
-					signal: c.req.raw.signal
+					signal: route.signal
 				});
 				if (!ip_reserved.ok) {
 					return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: ip_reserved.retry_after });
 				}
 				let account_reservation: RateLimitReservation | null = null;
 				try {
-					const { username, password: pw, email } = get_route_input<SignupInput>(c);
+					const { username, password: pw, email } = route.input;
 
 					// Per-account rate limit (after input parsing, before DB work).
 					// 429 stays fast — same precedent as login.
@@ -142,7 +141,7 @@ export const create_signup_route_specs = (
 					const account_reserved = await reserve_optional(
 						signup_account_rate_limiter,
 						account_key,
-						{ signal: c.req.raw.signal }
+						{ signal: route.signal }
 					);
 					if (!account_reserved.ok) {
 						return route_fail(REST_RATE_LIMIT_EXCEEDED, {
@@ -188,7 +187,7 @@ export const create_signup_route_specs = (
 						await deps.audit.emit(route, {
 							event_type: 'signup',
 							outcome: 'failure',
-							ip: get_client_ip(c),
+							ip: route.client_ip,
 							metadata: {
 								username,
 								reason,
@@ -303,7 +302,7 @@ export const create_signup_route_specs = (
 					await deps.audit.emit(route, {
 						event_type: 'signup',
 						account_id: result.account.id,
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
 					});
 					return route_ok(

@@ -490,7 +490,7 @@ exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 schema, an object schema. When
 present, `apply_route_specs` adds query validation middleware that parses
 `c.req.query()` against the schema and returns 400 (`ERROR_INVALID_QUERY_PARAMS`)
-on failure. Validated query data is accessed via `get_route_query(c, schema)`. The query
+on failure. A handler reads the validated query as `route.query`. The query
 schema appears in the surface as `query_schema` on each route.
 
 All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —
@@ -595,7 +595,12 @@ per transport family:
   a JSON-RPC error envelope on the RPC endpoint is not a REST body, and an
   unmatched path is skipped. Streaming and other non-JSON responses
   are skipped via a `Content-Type` check. Both clone the `Response` body so
-  validation does not consume the stream.
+  validation does not consume the stream. Beside the error check sits
+  `create_dev_set_cookie_check` (`http/dev_set_cookie_check.ts`): when a
+  middleware recorded the `Set-Cookie` line it put first on the response —
+  the session middleware's clear of an invalid cookie — an answer that
+  doesn't lead with it is logged, which reaches what the route system
+  doesn't build (a consumer's own middleware or raw Hono route).
 - **JSON-RPC + WebSocket actions** — the shared `perform_action` core in
   `actions/perform_action.ts`. Validates the handler return value against
   `spec.output` before the result envelope is written. Runs inside the

@@ -4,7 +4,8 @@
  * none of the stream's headers, exactly one framing header, and the
  * connection closes when the request asks; the stream's own answer is framed
  * chunked alone and delivers its connect comment. `GET` and `HEAD` both
- * (a `HEAD` answer carries no body and so no length).
+ * (a `HEAD` answer carries no body and so no length; the stream's `HEAD`
+ * answer leaves out its `Connection: keep-alive`, so the connection ends).
  *
  * In-process (`app.request`) no socket frames a response, so a response
  * carrying both `Transfer-Encoding` and `Content-Length` — the adapter writes
@@ -103,7 +104,7 @@ describe('an opened SSE stream over a real Node socket', () => {
 				define_route({
 					...shape,
 					path: '/open_then_fail',
-					handler: (_c, route) => {
+					handler: (route) => {
 						route.open_sse({ keep_alive_ms: null });
 						return route_fail(REST_ROW_NOT_FOUND);
 					}
@@ -111,7 +112,7 @@ describe('an opened SSE stream over a real Node socket', () => {
 				define_route({
 					...shape,
 					path: '/open_then_throw',
-					handler: (_c, route) => {
+					handler: (route) => {
 						route.open_sse({ keep_alive_ms: null });
 						throw new Error('after the open');
 					}
@@ -119,7 +120,7 @@ describe('an opened SSE stream over a real Node socket', () => {
 				define_route({
 					...shape,
 					path: '/open_then_ok',
-					handler: (_c, route) => {
+					handler: (route) => {
 						route.open_sse({ keep_alive_ms: null });
 						return route_ok({});
 					}
@@ -127,7 +128,7 @@ describe('an opened SSE stream over a real Node socket', () => {
 				define_route({
 					...shape,
 					path: '/open_twice',
-					handler: (_c, route) => {
+					handler: (route) => {
 						route.open_sse({ keep_alive_ms: null });
 						return route_sse(route.open_sse({ keep_alive_ms: null }));
 					}
@@ -185,7 +186,15 @@ describe('an opened SSE stream over a real Node socket', () => {
 			assert.include(names, 'transfer-encoding', res.head);
 			assert.notInclude(names, 'content-length', res.head);
 			assert.include(res.head.toLowerCase(), 'content-type: text/event-stream', res.head);
-			if (method === 'GET') assert.include(res.body, SSE_CONNECTED_COMMENT);
+			if (method === 'GET') {
+				assert.include(res.body, SSE_CONNECTED_COMMENT);
+			} else {
+				// the stream was closed at the emit: no body, no keep-alive holding
+				// the connection, so the request's `Connection: close` ends it
+				assert.strictEqual(res.body, '');
+				assert.notInclude(res.head.toLowerCase(), 'keep-alive', res.head);
+				assert.ok(res.ended, `the server ended the connection: ${res.head}`);
+			}
 		});
 	}
 });

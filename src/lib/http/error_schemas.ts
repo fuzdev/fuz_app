@@ -639,7 +639,10 @@ export interface DeriveRouteErrorsOptions {
  *
  * Derivation rules:
  * - **A body**, an `input` other than `null` on a method other than `GET`:
- *   400 `invalid_request_body` and `invalid_json_body`. A `GET` reads no body.
+ *   400 `invalid_request_body` and `invalid_json_body`. A `GET` reads no body:
+ *   `apply_route_specs` refuses one with an input, but a surface is built from
+ *   the specs alone (`generate_app_surface`), so such a spec derives none of
+ *   the body's errors there either.
  * - **`params`**: 400 `invalid_route_params`. **`query`**: 400
  *   `invalid_query_params`.
  * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
@@ -672,7 +675,8 @@ export const derive_route_errors = ({
 }: DeriveRouteErrorsOptions): Array<RestErrorDef> => {
 	const defs: Array<RestErrorDef> = [];
 
-	// the input middleware runs on a body only off `GET` (`create_input_validation`)
+	// a GET reads no body — registration refuses one with an input, and a
+	// surface built without registering derives what the runtime would answer
 	if (has_input && method !== 'GET') {
 		defs.push(REST_INVALID_REQUEST_BODY, REST_INVALID_JSON_BODY);
 	}

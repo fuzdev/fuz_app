@@ -274,11 +274,12 @@ legitimate operator.
   never sends (`/%61pi/x` clears on the TS spine only, `/api/../health` on the
   Rust spine only). On the TS spine the clear rides the response the
   spine builds, which is every route's: a handler returns data and the spine
-  makes the response after the commit. What the route system doesn't build
-  answers without one — a consumer's own middleware or raw Hono route
-  returning a `Response` it made, and a handler that writes `Set-Cookie` on
-  the context without appending, which replaces the clear; the next ordinary
-  `/api` response carries it. The Rust spine clears every such response
+  makes the response after the commit, and a handler holds no Hono context
+  to write a cookie on. What the route system doesn't build answers without
+  one — a consumer's own middleware or raw Hono route returning a `Response`
+  it made, or replacing the context's `Set-Cookie`; the next ordinary `/api`
+  response carries it, and in DEV such an answer is logged
+  (`http/dev_set_cookie_check.ts`). The Rust spine clears every such response
 - **A cookie is sent only for work that committed**: a route's session cookie
   (a login's, a logout's clear) is part of its success result, and the
   response is built after the commit. A login whose commit fails, or a logout

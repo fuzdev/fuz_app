@@ -31,6 +31,24 @@ const detached_bytes = (): Uint8Array => {
 	return body;
 };
 
+// a view its resizable buffer shrank below: it reads as empty
+const out_of_bounds_bytes = (): Uint8Array => {
+	const buffer = new ArrayBuffer(8, { maxByteLength: 16 });
+	const body = new Uint8Array(buffer, 0, 8);
+	buffer.resize(4);
+	return body;
+};
+
+// a view of a buffer shrunk to nothing that tracks its length: empty, and in bounds
+const length_tracking_empty_bytes = (): Uint8Array => {
+	const buffer = new ArrayBuffer(8, { maxByteLength: 16 });
+	const body = new Uint8Array(buffer);
+	buffer.resize(0);
+	return body;
+};
+
+const OCTETS = { 'Content-Type': 'application/octet-stream' } as const;
+
 /** The raw answers the prepare refuses, by name, built fresh on each call. */
 export const route_raw_refusals = (): Array<[name: string, init: unknown]> => [
 	['refused_set_cookie', { status: 200, headers: { 'Set-Cookie': 'x=1' } }],
@@ -87,11 +105,38 @@ export const route_raw_refusals = (): Array<[name: string, init: unknown]> => [
 			body: new Uint8Array([1, 2, 3])
 		}
 	],
+	// a leading zero: Node sends it as written, Bun rewrites it to the body's
+	// size, so the two would send different heads
+	[
+		'content_length_leading_zero',
+		{ status: 200, headers: { ...TEXT, 'Content-Length': '05' }, body: 'hello' }
+	],
+	['content_length_leading_zero_null_body', { status: 200, headers: { 'Content-Length': '0005' } }],
+	[
+		'content_length_leading_zero_stream',
+		{ status: 200, headers: { ...TEXT, 'Content-Length': '01' }, body: one_chunk() }
+	],
+	[
+		'content_length_past_safe_integer',
+		{ status: 200, headers: { 'Content-Length': '9007199254740992' } }
+	],
+	[
+		'content_length_huge_stream',
+		{
+			status: 200,
+			headers: { ...OCTETS, 'Content-Length': '99999999999999999999' },
+			body: one_chunk()
+		}
+	],
+	// a 204 and a 205 have no content to measure (RFC 9110 §8.6, §15.3.6)
+	['content_length_on_204', { status: 204, headers: { 'Content-Length': '0' } }],
+	['content_length_on_205', { status: 205, headers: { 'Content-Length': '5' } }],
 	['locked_stream', { status: 200, headers: TEXT, body: locked_stream() }],
 	[
 		'detached_bytes',
 		{ status: 200, headers: { 'Content-Type': 'application/octet-stream' }, body: detached_bytes() }
-	]
+	],
+	['out_of_bounds_bytes', { status: 200, headers: OCTETS, body: out_of_bounds_bytes() }]
 ];
 
 /**
@@ -113,5 +158,17 @@ export const route_raw_admitted = (): Array<[name: string, init: RouteRawInit]> 
 			headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': '3' },
 			body: new Uint8Array([1, 2, 3])
 		}
+	],
+	['content_length_zero', { status: 200, headers: { 'Content-Length': '0' } }],
+	[
+		'content_length_safe_integer_max',
+		{ status: 200, headers: { 'Content-Length': '9007199254740991' } }
+	],
+	// a 304 may name the size of the representation it stands for (RFC 9110 §8.6, §15.4.5)
+	['content_length_on_304', { status: 304, headers: { 'Content-Length': '5' } }],
+	['empty_bytes', { status: 200, headers: OCTETS, body: new Uint8Array(0) }],
+	[
+		'length_tracking_empty_bytes',
+		{ status: 200, headers: OCTETS, body: length_tracking_empty_bytes() }
 	]
 ];

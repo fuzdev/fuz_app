@@ -59,6 +59,7 @@ import {
 	type RpcEndpointSpec
 } from '../http/surface.ts';
 import { create_dev_route_error_check } from '../http/dev_route_error_check.ts';
+import { create_dev_set_cookie_check } from '../http/dev_set_cookie_check.ts';
 import {
 	apply_middleware_specs,
 	apply_route_specs,
@@ -1194,6 +1195,11 @@ const assemble_app_server = async (
 		log
 	});
 	if (dev_route_error_check) app.use('*', dev_route_error_check);
+	// DEV only, beside it: logs a response that does not lead with the
+	// `Set-Cookie` line the session middleware put on the context — one built
+	// past the context, by a layer the route system doesn't own
+	const dev_set_cookie_check = create_dev_set_cookie_check({ log });
+	if (dev_set_cookie_check) app.use('*', dev_set_cookie_check);
 
 	// Two-queue side-effect flush. `pending_effects` collects eager
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via

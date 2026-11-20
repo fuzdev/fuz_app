@@ -17,11 +17,10 @@ import {
 	type BootstrapAccountCreated
 } from './bootstrap_account.ts';
 import type { BootstrapTokenStore } from './bootstrap_token_store.ts';
-import { bootstrap_route_shape, type BootstrapInput } from './bootstrap_route_schema.ts';
+import { bootstrap_route_shape } from './bootstrap_route_schema.ts';
 import type { Db } from '../db/db.ts';
-import { attach_route_handler, get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_ok } from '../http/route_result.ts';
-import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { reserve_optional, type RateLimiter } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
@@ -189,7 +188,7 @@ export const create_bootstrap_route_specs = (
 	} = options;
 
 	return [
-		attach_route_handler(bootstrap_route_shape, async (c, route) => {
+		attach_route_handler(bootstrap_route_shape, async (route) => {
 			// Short-circuit if bootstrap already completed or surface-only mounted.
 			// In 'surface_only' mode `token_store === null`; in 'live' mode after
 			// the window closes `available` is `false`. Either way the wire shape
@@ -209,15 +208,15 @@ export const create_bootstrap_route_specs = (
 			// no resolved client IP that is one shared `'unknown'` bucket, where
 			// the Rust twin skips the limiter — the difference signup has too, and
 			// one only an app mounted without the proxy middleware can show.
-			const ip_key = bootstrap_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+			const ip_key = bootstrap_ip_rate_limiter ? rate_limit_ip_key(route.client_ip) : null;
 			const ip_reserved = await reserve_optional(bootstrap_ip_rate_limiter, ip_key, {
-				signal: c.req.raw.signal
+				signal: route.signal
 			});
 			if (!ip_reserved.ok) {
 				return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: ip_reserved.retry_after });
 			}
 			try {
-				const input = get_route_input<BootstrapInput>(c);
+				const input = route.input;
 
 				// `transaction: false` makes `route.db` the pool. `bootstrap_account`
 				// manages its own transaction internally.
@@ -257,7 +256,7 @@ export const create_bootstrap_route_specs = (
 					await deps.audit.emit(route, {
 						event_type: 'bootstrap',
 						outcome: 'failure',
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: { error: result.error }
 					});
 					return route_fail(
@@ -294,7 +293,7 @@ export const create_bootstrap_route_specs = (
 					event_type: 'bootstrap',
 					actor_id: actor.id,
 					account_id: account.id,
-					ip: get_client_ip(c)
+					ip: route.client_ip
 				});
 
 				return route_ok(

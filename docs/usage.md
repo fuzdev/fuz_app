@@ -11,8 +11,13 @@ Every route requires `input` and `output` schemas, each a
 `@fuzdev/fuz_schema` schema (`params` and `query` too, each an object
 schema), and lists in `errors` the error definitions
 (`rest_error`, `REST_*`) its handler answers beyond the derived ones. Input is auto-validated by middleware
-(`parse`); handlers access validated data via `get_route_input(c, schema)`,
-which infers the typed shape from the schema directly.
+(`parse`). A handler takes one argument, the route context, and reads the
+validated data as `route.input` (and `route.params`, `route.query`), typed
+from the spec's schemas. It never receives the Hono context: `route` also
+carries `auth` (the request context, non-null by type on a route that
+requires an account), `credential`, `client_ip`, `signal`, `db`, and the
+readers for what the pipeline doesn't validate (`request`, `query_first`,
+`read_json_body`, `header_lines`).
 
 A handler returns a result and the framework builds the response:
 `route_ok(value)` answers `value` as JSON at 200, `route_fail(def, fields?)`
@@ -27,7 +32,7 @@ against `output`, each failure against `errors` and the codes `auth` and
 success: `route_ok(value, {set_cookie: [session_cookie_header(…)]})`.
 
 ```typescript
-import { define_route, get_route_input } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { route_fail, route_ok } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_FOREIGN_KEY_VIOLATION } from '@fuzdev/fuz_app/http/error_schemas.ts';
 import { literal, min_length, object, pipe, string } from '@fuzdev/fuz_schema/schema.ts';
@@ -43,8 +48,8 @@ const my_route_spec = define_route({
 	input: My_Input,
 	output: My_Output,
 	errors: [REST_FOREIGN_KEY_VIOLATION], // the handler's own codes, beside the derived ones
-	handler: async (c) => {
-		const { name } = get_route_input(c, My_Input); // typed as {name: string}
+	handler: async (route) => {
+		const { name } = route.input; // typed as {name: string}
 		const id = await create_thing(name);
 		if (id === null) return route_fail(REST_FOREIGN_KEY_VIOLATION); // `{error}` at 409
 		return route_ok({ ok: true, id }); // checked against `My_Output`
@@ -57,9 +62,12 @@ suite builds its surface from — is a `define_route_shape(shape)`, and
 `attach_route_handler(shape, handler)` checks the handler as `define_route`
 does.
 
-`get_route_input<T>(c)` (no schema arg) is also available for callers who
-don't have the schema in scope. Same overloads on `get_route_params` and
-`get_route_query`.
+A header every answer of a route carries — its refusals and the error
+catch's 500 included — is declared on the spec as `response_headers` (the RPC
+`GET` declares `Cache-Control: no-store` this way); a success's own headers
+ride a `route_raw` result. A `GET` carries no body: its `input` is
+`literal(null)` — `apply_route_specs` refuses any other — and its fields go on
+`query`.
 
 - `literal(null)` for routes with no request body (GET, or POST with no input)
 - `object` for inputs — rejects unknown keys
@@ -559,11 +567,9 @@ await temp_sweep.stop();
 import type { SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
 import { SseRegistry } from '@fuzdev/fuz_app/realtime/sse_registry.ts';
 import {
-	get_resolved_auth,
 	resolved_auth_session_hash,
 	revalidate_resolved_auth
 } from '@fuzdev/fuz_app/auth/resolved_auth.ts';
-import { require_request_context } from '@fuzdev/fuz_app/auth/request_context.ts';
 import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { route_fail, route_sse } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_AUTHENTICATION_REQUIRED } from '@fuzdev/fuz_app/http/error_schemas.ts';
@@ -579,13 +585,13 @@ const subscribe_spec = define_route({
 	description: 'Subscribe to events',
 	input: literal(null),
 	output: literal(null),
-	handler: async (c, route) => {
-		const resolved = get_resolved_auth(c);
+	handler: async (route) => {
+		const resolved = route.credential;
 		// register first, so a revocation from here on finds the stream…
 		const pending = registry.subscribe_pending({
 			channels: ['things'],
 			scope: resolved_auth_session_hash(resolved) ?? undefined,
-			groups: [require_request_context(c).account.id]
+			groups: [route.auth.account.id]
 		});
 		// …then re-read the credential: one revoked while the request ran is refused
 		let live: boolean;
@@ -1068,8 +1074,7 @@ two sources via `AbortSignal.any`:
 - **Socket end** — fires when the socket ends: the client disconnects, or the
   server closes it (a revocation, a connection-cap eviction, a heartbeat
   timeout), at the moment of the close rather than when the close handshake
-  lands (HTTP RPC handlers receive `c.req.raw.signal`, i.e. the HTTP
-  request's abort signal).
+  lands (HTTP RPC handlers receive the HTTP request's abort signal).
 - **Per-request cancel** — fires when the client sends a `cancel`
   notification with the matching `request_id`. `FrontendWebsocketClient.request`
   automatically wires this when the caller supplies `{signal}` or when the

@@ -31,9 +31,7 @@ import { RoleGrantSummaryJson, to_session_account } from './account_schema.ts';
 import {
 	account_status_route_shape,
 	create_account_route_shapes,
-	DEFAULT_MAX_SESSIONS,
-	type LoginInput,
-	type PasswordChangeInput
+	DEFAULT_MAX_SESSIONS
 } from './account_route_schema.ts';
 import {
 	create_capped_session,
@@ -49,14 +47,11 @@ import {
 	build_account_context,
 	build_request_context,
 	get_public_account_id,
-	get_request_context,
-	require_request_context,
 	resolve_acting_actor
 } from './request_context.ts';
-import { get_resolved_auth, resolved_auth_session_hash } from './resolved_auth.ts';
-import { attach_route_handler, get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { resolved_auth_session_hash } from './resolved_auth.ts';
+import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_ok, route_raw } from '../http/route_result.ts';
-import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { parse_acting } from '../http/auth_shape.ts';
 import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
@@ -104,15 +99,15 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			...account_status_route_shape,
 			path: options?.path ?? account_status_route_shape.path
 		},
-		async (c, route) => {
+		async (route) => {
 			// a narrowed token is the anonymous caller here, never a refusal
-			const account_id = get_public_account_id(c);
+			const account_id = get_public_account_id(route);
 			if (!account_id) return fail_anonymous();
 			// Honor a pre-populated request context. The dispatcher's authorization
 			// phase doesn't run for `auth: 'none'` routes, but a caller (test
 			// harness, or future middleware) may still populate the context — use
 			// it directly to avoid redundant lookups.
-			const existing = get_request_context(c);
+			const existing = route.auth;
 			if (existing && existing.account.id === account_id) {
 				const role_grants: Array<RoleGrantSummaryJson> = existing.role_grants.map((p) => ({
 					id: p.id,
@@ -135,7 +130,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			// surface a persona picker. The selector goes through the `ActingActor`
 			// schema, lowercased; a malformed value is a missing persona —
 			// account-only, never a default-actor resolve (as on the Rust spine).
-			const acting_raw = c.req.query('acting');
+			const acting_raw = route.query_first('acting');
 			const acting = parse_acting(acting_raw);
 			const acting_result =
 				acting_raw !== undefined && acting === undefined
@@ -308,12 +303,13 @@ export const create_account_route_specs = (
 		// it — matching the Rust `account_router`. The standalone
 		// `create_account_status_route_spec` stays the building block.
 		create_account_status_route_spec({ bootstrap_status }),
-		attach_route_handler(verify_shape, (c) => {
-			require_request_context(c);
-			// the probe's answer is its status alone, an empty body
+		// `auth.account: 'required'`: the handler runs only with a request
+		// context (`define_route`'s guard), so the probe's answer is its status
+		// alone, an empty body
+		attach_route_handler(verify_shape, () => {
 			return route_raw({ status: 200 });
 		}),
-		attach_route_handler(login_shape, async (c, route) => {
+		attach_route_handler(login_shape, async (route) => {
 			// Per-IP rate limit (before any DB/password work). Reserved, not
 			// checked: the attempt counts against the cap from here until it
 			// settles, so a concurrent burst can't all pass before any of it
@@ -326,9 +322,9 @@ export const create_account_route_specs = (
 			// address exceed its cap meanwhile. The `finally` releases whatever
 			// no branch recorded.
 			// keyed by the address's rate-limit key (an IPv6 client's /64)
-			const ip_key = login_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+			const ip_key = login_ip_rate_limiter ? rate_limit_ip_key(route.client_ip) : null;
 			const ip_reserved = await reserve_optional(login_ip_rate_limiter, ip_key, {
-				signal: c.req.raw.signal
+				signal: route.signal
 			});
 			if (!ip_reserved.ok) {
 				return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: ip_reserved.retry_after });
@@ -337,10 +333,10 @@ export const create_account_route_specs = (
 			try {
 				// `UsernameProvided` canonicalizes via `.trim().toLowerCase()` at
 				// parse time — the validated value lands canonical in
-				// `c.var.validated_input`, so the per-account rate-limit key,
+				// `route.input`, so the per-account rate-limit key,
 				// DB lookup, and audit metadata see one form. See
 				// `primitive_schemas.ts` for the schema-layer canonicalization.
-				const { username, password: pw } = get_route_input<LoginInput>(c);
+				const { username, password: pw } = route.input;
 
 				// DB lookup first so we can key the per-account rate limit by a canonical value
 				// (account.id) rather than the submitted identifier. Otherwise an attacker could
@@ -352,7 +348,7 @@ export const create_account_route_specs = (
 				const account_reserved = await reserve_optional(
 					login_account_rate_limiter,
 					account_rate_key,
-					{ signal: c.req.raw.signal }
+					{ signal: route.signal }
 				);
 				if (!account_reserved.ok) {
 					return route_fail(REST_RATE_LIMIT_EXCEEDED, {
@@ -375,7 +371,7 @@ export const create_account_route_specs = (
 					await deps.audit.emit(route, {
 						event_type: 'login',
 						outcome: 'failure',
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: { username }
 					});
 					await delay;
@@ -390,7 +386,7 @@ export const create_account_route_specs = (
 						event_type: 'login',
 						outcome: 'failure',
 						account_id: account.id,
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: { username }
 					});
 					await delay;
@@ -446,7 +442,7 @@ export const create_account_route_specs = (
 				await deps.audit.emit(route, {
 					event_type: 'login',
 					account_id: account.id,
-					ip: get_client_ip(c)
+					ip: route.client_ip
 				});
 				return route_ok({ ok: true }, { set_cookie: [set_cookie] });
 			} finally {
@@ -454,11 +450,11 @@ export const create_account_route_specs = (
 				account_reservation?.release();
 			}
 		}),
-		attach_route_handler(logout_shape, async (c, route) => {
-			const ctx = require_request_context(c);
+		attach_route_handler(logout_shape, async (route) => {
+			const ctx = route.auth;
 			// the shape admits only a session credential, so this is its hash
 			// (the Rust `account_logout` reads the same value)
-			const session_hash = resolved_auth_session_hash(get_resolved_auth(c));
+			const session_hash = resolved_auth_session_hash(route.credential);
 			if (session_hash !== null) {
 				await query_session_revoke_by_hash_unscoped(route, session_hash);
 				// Close this account's live connections once the revoke has
@@ -480,7 +476,7 @@ export const create_account_route_specs = (
 			await deps.audit.emit(route, {
 				event_type: 'logout',
 				account_id: ctx.account.id,
-				ip: get_client_ip(c)
+				ip: route.client_ip
 			});
 			// the clear rides the success, answered once the revoke and this
 			// row have committed — a rollback clears nothing
@@ -489,32 +485,32 @@ export const create_account_route_specs = (
 				{ set_cookie: [clear_session_cookie_header(session_options)] }
 			);
 		}),
-		attach_route_handler(password_shape, async (c, route) => {
+		attach_route_handler(password_shape, async (route) => {
 			// Per-IP rate limit (before argon2 work). Reserved, not checked:
 			// the attempt counts against the shared login limiters from here
 			// until it settles, so a concurrent burst of guesses at
 			// `current_password` can't all pass before any of it records. The
 			// `finally` releases whatever no branch recorded.
 			// keyed by the address's rate-limit key (an IPv6 client's /64)
-			const ip_key = login_ip_rate_limiter ? rate_limit_ip_key(get_client_ip(c)) : null;
+			const ip_key = login_ip_rate_limiter ? rate_limit_ip_key(route.client_ip) : null;
 			const ip_reserved = await reserve_optional(login_ip_rate_limiter, ip_key, {
-				signal: c.req.raw.signal
+				signal: route.signal
 			});
 			if (!ip_reserved.ok) {
 				return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: ip_reserved.retry_after });
 			}
 			let account_reservation: RateLimitReservation | null = null;
 			try {
-				const ctx = require_request_context(c);
-				const { current_password, new_password } = get_route_input<PasswordChangeInput>(c);
+				const ctx = route.auth;
+				const { current_password, new_password } = route.input;
 				// Defense in depth — see `docs/security.md` §Credential-channel gating.
-				const credential_type = get_resolved_auth(c)?.credential_type;
+				const credential_type = route.credential?.credential_type;
 
 				// per-account rate limit (after context resolution, before argon2 work)
 				const account_reserved = await reserve_optional(
 					login_account_rate_limiter,
 					ctx.account.id,
-					{ signal: c.req.raw.signal }
+					{ signal: route.signal }
 				);
 				if (!account_reserved.ok) {
 					return route_fail(REST_RATE_LIMIT_EXCEEDED, {
@@ -531,7 +527,7 @@ export const create_account_route_specs = (
 						event_type: 'password_change',
 						outcome: 'failure',
 						account_id: ctx.account.id,
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: { credential_type }
 					});
 					return route_fail(REST_INVALID_CREDENTIALS);
@@ -604,7 +600,7 @@ export const create_account_route_specs = (
 						event_type: 'password_change',
 						outcome: 'failure',
 						account_id: ctx.account.id,
-						ip: get_client_ip(c),
+						ip: route.client_ip,
 						metadata: { reason: 'concurrent_change', credential_type }
 					});
 					return route_fail(REST_INVALID_CREDENTIALS);
@@ -630,7 +626,7 @@ export const create_account_route_specs = (
 				await deps.audit.emit(route, {
 					event_type: 'password_change',
 					account_id: ctx.account.id,
-					ip: get_client_ip(c),
+					ip: route.client_ip,
 					metadata: { sessions_revoked, tokens_revoked, credential_type }
 				});
 				return route_ok(

@@ -23,7 +23,11 @@ import {
 	format_session_clear_cookie,
 	process_session_cookie
 } from './session_cookie.ts';
-import { SESSION_COOKIE_EXPIRES_AT_KEY, SESSION_TOKEN_KEY } from '../hono_context.ts';
+import {
+	EXPECTED_FIRST_SET_COOKIE_KEY,
+	SESSION_COOKIE_EXPIRES_AT_KEY,
+	SESSION_TOKEN_KEY
+} from '../hono_context.ts';
 import { get_header_lines } from '../http/header_lines.ts';
 
 /**
@@ -53,8 +57,9 @@ export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): s
  *
  * - **Every response a route spec answers** — a success, a failure, a raw
  *   answer of any body, an SSE stream — since `apply_route_specs` builds each
- *   through the context (`emit_route_response`) and no handler can return a
- *   `Response` of its own. A success's own lines follow the clear: a login
+ *   through the context (`emit_route_response`) and a handler, which receives
+ *   a `RouteContext` and never the Hono context, can neither return a
+ *   `Response` of its own nor write a header on the one built. A success's own lines follow the clear: a login
  *   carrying a stale cookie answers the clear, then the new cookie, and the
  *   browser keeps the new one. A logout or password change clears a cookie
  *   that verified, which this middleware leaves alone, so its response
@@ -71,10 +76,13 @@ export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): s
  * through — and the placeholder a runtime adapter answers an accepted
  * WebSocket upgrade with — unless a layer read `c.res` before it answered,
  * when Hono rebuilds such a response over the context's own, the context's
- * `Set-Cookie` lines in place of its. A handler that writes `c.header('Set-Cookie', v)`
- * without `{append: true}` replaces the clear on the context. Where a
- * response carries none, the stale cookie stays until the next response
- * under the same scope that does.
+ * `Set-Cookie` lines in place of its. Where a response carries none, the
+ * stale cookie stays until the next response under the same scope that does.
+ * The clear is recorded on the context (`EXPECTED_FIRST_SET_COOKIE_KEY`), and
+ * in DEV a response that does not lead with it is logged
+ * (`create_dev_set_cookie_check`) — all but an accepted upgrade's
+ * placeholder, which the check knows by its shape, a bodiless `200` to an
+ * `Upgrade: websocket` request, since no adapter hands Hono a `101`.
  *
  * The middleware never reads, changes, or rebuilds a response it did not
  * build, because none of that is neutral. A handler may return one object to
@@ -108,7 +116,7 @@ export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): s
  *
  * @param keyring - key ring for cookie verification
  * @param options - session configuration
- * @mutates Hono context - sets `SESSION_TOKEN_KEY` and `SESSION_COOKIE_EXPIRES_AT_KEY`, and may put the clearing `Set-Cookie` on the context's headers
+ * @mutates Hono context - sets `SESSION_TOKEN_KEY` and `SESSION_COOKIE_EXPIRES_AT_KEY`, and may put the clearing `Set-Cookie` on the context's headers, recording it under `EXPECTED_FIRST_SET_COOKIE_KEY`
  */
 export const create_session_middleware = (
 	keyring: Keyring,
@@ -123,9 +131,12 @@ export const create_session_middleware = (
 		// the signed expiry rides beside it, for the credential deadline
 		c.set(SESSION_COOKIE_EXPIRES_AT_KEY, result.expires_at ?? null);
 
-		// ahead of the handler, so it precedes any `Set-Cookie` a success carries
+		// ahead of the handler, so it precedes any `Set-Cookie` a success carries;
+		// recorded, so the DEV `Set-Cookie` check can see a response that lost it
 		if (result.action === 'clear') {
-			c.header('Set-Cookie', format_session_clear_cookie(options.cookie_name), { append: true });
+			const clear = format_session_clear_cookie(options.cookie_name);
+			c.header('Set-Cookie', clear, { append: true });
+			c.set(EXPECTED_FIRST_SET_COOKIE_KEY, clear);
 		}
 
 		await next();

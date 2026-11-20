@@ -47,6 +47,25 @@ export const SESSION_TOKEN_KEY = 'auth_session_id';
 export const SESSION_COOKIE_EXPIRES_AT_KEY = 'auth_session_cookie_expires_at';
 
 /**
+ * Hono context variable name for the connection's peer address — what the
+ * trusted-proxy middleware's `get_connection_ip` returned, before any
+ * `X-Forwarded-For` resolution; `null` when the runtime gave none. What
+ * `RouteContext.connection_ip` reads.
+ */
+export const CONNECTION_IP_KEY = 'connection_ip';
+
+/**
+ * Hono context variable name for the `Set-Cookie` line a response must lead
+ * with — set by a middleware that put that line on the context's prepared
+ * headers (the session middleware's clear of a stale cookie), so every
+ * response built through the context carries it first. The DEV `Set-Cookie`
+ * check (`http/dev_set_cookie_check.ts`) reads it after the request and logs
+ * a response that doesn't — one built past the context, by a layer the route
+ * system doesn't own.
+ */
+export const EXPECTED_FIRST_SET_COOKIE_KEY = 'expected_first_set_cookie';
+
+/**
  * Hono context variable name for the test-harness pre-baked context flag.
  *
  * Test harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,
@@ -85,6 +104,10 @@ declare module 'hono' {
 	interface ContextVariableMap {
 		/** Resolved client IP, set by the trusted proxy middleware. */
 		client_ip: string;
+		/** The connection's peer address (`CONNECTION_IP_KEY`), set by the trusted proxy middleware. */
+		connection_ip: string | null;
+		/** The `Set-Cookie` line every response must lead with (`EXPECTED_FIRST_SET_COOKIE_KEY`). */
+		expected_first_set_cookie: string;
 		/** The session token (`SESSION_TOKEN_KEY`), set by the session middleware. */
 		auth_session_id: string | null;
 		request_context: RequestContext | null;

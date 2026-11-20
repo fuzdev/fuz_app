@@ -135,7 +135,7 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 		input: literal(null),
 		output: object({ ready: literal(true) }),
 		errors: [REST_SCHEMA_DRIFT, REST_DB_UNREACHABLE],
-		handler: async (_c, route) => {
+		handler: async (route) => {
 			try {
 				const drift = await check_schema_drift(route.db, options.expected);
 				if (drift.ok) return route_ok({ ready: true });

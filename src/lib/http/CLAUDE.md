@@ -4,9 +4,11 @@ Generic HTTP framework infrastructure — route specs, error schemas, attack
 surface introspection, JSON-RPC envelope + error taxonomy, proxy/origin
 middleware primitives, post-commit effect helper, generic admin route specs.
 
-**Nothing in this directory is auth-specific.** Auth middleware, routes, and
-guards live in `auth/` and consume these primitives. Routes and actions in
-other domains should do the same — extend, don't special-case.
+**No auth logic lives in this directory.** Auth middleware, routes, and
+guards live in `auth/` and consume these primitives; the route context names
+the auth domain's types (`RequestContext`, `ResolvedAuth`) as types only, as
+`hono_context.ts` does. Routes and actions in other domains should do the
+same — extend, don't special-case.
 
 For the design rationale behind declarative routes, DEV-only output
 validation, the route error map, and fire-and-forget
@@ -14,20 +16,21 @@ effects, see ../../../docs/architecture.md.
 
 ## Module Map
 
-- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `prepare_route_response` + `emit_route_response` (the one place a route result becomes a `Response`), `RouteContext.open_sse`.
+- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `prepare_route_response` + `emit_route_response` (the one place a route result becomes a `Response`), and `RouteContext` — everything a handler reads of its request, built from the Hono context the handler never sees.
 - `http/route_result.ts` — what a handler returns, all of it data: `route_ok`, `route_fail`, `route_raw`, `route_sse` (`RouteResult`), and `ROUTE_RAW_REFUSED_HEADERS`. Imports nothing from Hono.
 - `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
 - `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), `derive_route_errors`, `to_error_schemas`.
 - `http/route_errors.ts` — the route error map: `RouteErrorMap`, `resolve_route_error_map`, `resolve_app_route_error_maps`, `get_route_error_map`.
 - `http/route_error_check.ts` — `check_route_error` (whether an error response is one its route's map declares, the rule the DEV error check and `assert_response_matches_spec` share; `ALWAYS_ACCEPTED_ERRORS`, `is_error_status`, `format_route_error_check`) `is_json_response`, and the test helpers' hono-free route lookup (`split_route_template` and `parse_route_param`, a template read segment by segment as Hono's `getPattern` reads it; `compile_route_path`; `compile_route_param_pattern`, a `{re}` grouped and anchored as `compile_route_path` reads it — Hono's RegExpRouter reading, stricter than TrieRouter's ungrouped `^re$`; `decode_route_path`, a path as Hono's router decodes it; `to_mounted_routes`; `find_mounted_route`), whose reading `resolve_valid_path` also fills params by. Hono-free and `esm-env`-free.
 - `http/dev_route_error_check.ts` — `create_dev_route_error_check({route_specs, route_error_maps, log})`: the DEV-only outer error check, `null` outside DEV; `create_route_lookup`, its lookup by Hono's own router.
+- `http/dev_set_cookie_check.ts` — `create_dev_set_cookie_check({log})`: the DEV-only outer check that a response leads with the `Set-Cookie` line a middleware recorded for it (`EXPECTED_FIRST_SET_COOKIE_KEY` — the session middleware's clear), `null` outside DEV. Knows nothing of sessions.
 - `http/schema_helpers.ts` — shared schema introspection (null/void/strict/surface/middleware-applies), and `to_void_params` / `to_input_params` / `scan_json_value` / `safe_parse_dropping_unknown_keys`.
 - `http/json_text.ts` — `parse_json_text`: JSON text read as the Rust spine's `serde_json` reads it, refusing what `JSON.parse` accepts and serde refuses (an escaped lone surrogate in a string or key, a number out of `f64` range, nesting `JSON_DEPTH_LIMIT` (128) deep); one linear scan of the text after `JSON.parse` accepts it (`is_serde_json_text`), so a refused value under a duplicated key is seen and the cost stays a few milliseconds a MiB. `read_json_body(c.req)` reads a request body through it once per request (the authorization phase's `acting` read and input validation share it), as text, never `c.req.json()`. Every body and frame parse runs it: route input, the RPC POST body and `GET` `params`, WS frames. Hono-free, imports nothing.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts, as `create_body_limit_middleware_spec(max_size)`, a `MiddlewareSpec` at `'*'` ahead of the other middleware, absent with `max_body_size: null`. Its hono-free shape, `body_limit_middleware_shape` (`http/body_limit_schema.ts`), declares its `413` `payload_too_large` and `400` `invalid_content_length`, so every route's error map carries both; `create_test_app_surface_spec` lists the same shape with a stub handler. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) (../../../docs/security.md §Body Size Limiting).
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
-- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
+- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution; also records the socket's peer address as it read it (`CONNECTION_IP_KEY`, what `RouteContext.connection_ip` answers). Pulls `hono/utils/ipaddr` for CIDR matching.
 - `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
 - `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and its own `parse_ipv4_bits` / `parse_ipv6_bits` (the grammar of Rust's `IpAddr::from_str`); `IP_LITERAL_CHARS` regex. Imports nothing — the dispatcher keys its IP limiter through it, so it must stay hono-free (`src/test/hono_free_modules.test.ts` walks every `src/lib` module's graph).
 - `http/header_lines.ts` — `get_header_lines(c, name)`: a request header as the lines the client sent — Node's raw header list where `@hono/node-server` provides it (`c.env.incoming.rawHeaders`, plain requests and WebSocket upgrades alike), else the Fetch value as one line (Bun, in-process `app.request`: repeated lines arrive joined) — and `trim_optional_whitespace` (SP and HTAB only). What the credential readers (`auth/credential_headers.ts`) read, so a credential header sent twice is seen as such.
@@ -53,17 +56,18 @@ consumers.
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
 - `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
-- `handler: RouteHandler` — `(c: Context, route: RouteContext) => RouteResult | Promise<RouteResult>`, a result the framework answers with (§Handlers and results)
+- `handler: RouteHandler` — `(route: RouteContext) => RouteResult | Promise<RouteResult>`: the route context in, a result the framework answers with out (§Handlers and results); a handler never receives the Hono context
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: AnySchema` — strict-object schema for URL path params
 - `query?: AnySchema` — strict-object schema for URL query string
-- `input: AnySchema` — request body schema; `literal(null)` for no-body (GET/DELETE)
+- `input: AnySchema` — request body schema; `literal(null)` for no body, and on every `GET` (`apply_route_specs` refuses any other)
 - `output: AnySchema` — success response schema
 - `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
 - `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account_id` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
 - `errors?: ReadonlyArray<RestErrorDef>` — the handler's own error definitions (`rest_error`); joins the route error map beside the derived and middleware ones
 - `jsonrpc?: boolean` — the route answers JSON-RPC envelopes, not REST bodies; set by `create_rpc_endpoint`, read by the DEV error check and `assert_response_matches_spec`
+- `response_headers?: Record<string, string>` — static headers every answer of the route carries once a request reaches it: its own validation and guard refusals, the handler's result of any kind, and the error catch's 500 and 503. Checked at registration by the raw result's header rules, and refusing the names a body or the framing owns (`ROUTE_RAW_REFUSED_HEADERS`, `Content-Type`, `Content-Length`). A result that names one of them itself is refused at the prepare. Listed on `AppSurfaceRoute`. For a header true of every answer — the RPC `GET`'s `Cache-Control: no-store` — not for a success's own (the fact routes' hardening headers stay on the bytes answer)
 - `transaction?: boolean` — declarative transaction wrapping (see below)
 
 Every schema field takes a `@fuzdev/fuz_schema` schema (`AnySchema`),
@@ -107,12 +111,15 @@ answers its 500 with no cookie.
   refuses what would not send as written: a status outside 200–599; a header
   in `ROUTE_RAW_REFUSED_HEADERS` (`Set-Cookie` and the hop-by-hop names), a
   name twice in any case, an empty value; a body without a `Content-Type`,
-  or on a 204, 205 or 304; a `Content-Length` that is not one run of digits
-  or, for a text or bytes body, not its byte length (it is free with no body
-  or a stream — a size answered without the bytes); a locked stream,
-  detached bytes, a `Response`. A stream that was read and released can't be
-  told from a fresh one. A stream body the route ends up not answering with —
-  refused, or rolled back by a failed commit — is cancelled.
+  or on a 204, 205 or 304; a `Content-Length` that is not a canonical
+  decimal within the safe integer range (no leading zero), that rides a 204
+  or 205, or that, for a text or bytes body, is not its byte length (it is
+  free with no body or a stream — a size answered without the bytes); a
+  locked stream, detached bytes, a view left out of bounds by a shrunk
+  resizable buffer, a `Response`. A stream that was read and released can't
+  be told from a fresh one. A stream body's `cancel` must release its
+  source: the spine cancels one the route ends up not answering with —
+  refused, rolled back by a failed commit, or asked for by `HEAD`.
 - `route_sse(stream)` — an event stream the handler opened with
   `route.open_sse(options)`, so it exists before the handler admits it to a
   registry. Opening writes nothing on the context: the response is built at
@@ -120,13 +127,20 @@ answers its 500 with no cookie.
   did not answer with (another result, a throw) is closed. A stream another
   request opened is refused.
 
+**`HEAD`.** Hono serves `HEAD` by running the `GET` handler and dropping the
+body unread, so the spine releases what a stream holds: the emit cancels a
+raw stream body and closes an SSE stream (its `on_close` listeners run, its
+registry drops it), then answers the prepared status and headers with no
+body — an SSE answer without its `Connection: keep-alive`, so the
+connection can end. A handler has no `HEAD` branch to write.
+
 A response that can't be built after the commit — the runtime refusing what
 the prepare let through — is logged naming the route and answered by the
-error catch's 500; the work stays committed. A handler still reads the
-request from `c`; a header it writes there (`c.header`) rides the context's
-prepared headers onto whatever is answered — a 500 for rolled-back work
-included — and a `Set-Cookie` written without `append` replaces the session
-middleware's clear. A failure is plain data
+error catch's 500; the work stays committed. A handler holds no Hono
+context, so it writes nothing on one: what a response carries is the
+result, the spec's `response_headers`, and what middleware prepared
+(`src/test/route_modules_hono_free.test.ts` holds every module that defines
+a route to importing nothing from Hono and building no `Response`). A failure is plain data
 (`ok: false`), so domain code and shared helpers fail without the context and
 a handler forwards one (`if (!result.ok) return result`). A thrown error is
 still the error catch's.
@@ -149,23 +163,76 @@ mint, so a spec literal doesn't typecheck; a spread of a spec keeps the brand
 and is not checked again (the DEV error check covers a rewritten `auth` or
 `errors`). At runtime they return the spec, or the shape with its handler.
 
-### `RouteContext` — per-request deps
+### `RouteContext` — what a handler gets
 
-The second handler argument is always a `RouteContext`:
+The handler's one argument, built by `apply_route_specs` from the Hono
+context:
 
 ```typescript
-interface RouteContext {
+interface RouteContext<TAuth, TInput, TParams, TQuery> {
+	// shared with `ActionContext`, same names and types
+	auth: TAuth; // RequestContext | null, narrowed by the spec's `auth`
+	client_ip: string; // resolved by the trusted proxy; 'unknown' without one
+	signal: AbortSignal; // aborts on client disconnect
 	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
 	pending_effects: Array<Promise<void>>; // eager pool writes already in flight
 	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
+	// REST's own
+	credential: ResolvedAuth | null; // what the auth middleware resolved
+	connection_ip: string | null; // the socket's peer, as the runtime spells it
+	input: TInput; // validated body; null for a route with none
+	params: TParams; // validated path params; undefined without a `params` schema
+	query: TQuery; // validated query; undefined without a `query` schema
+	has_test_context_preset: boolean; // a harness pre-built `auth`; never in production
+	request: Request; // the raw request: a `raw_body` stream, the undecoded URL
+	query_first: (name: string) => string | undefined; // an undeclared query key, as Hono decodes it
+	read_json_body: () => Promise<JsonBodyResult>; // the once-per-request JSON read
+	header_lines: (name: string) => Array<string>; // a header as the lines sent
+	close_connection: () => void; // answer with `Connection: close`
 	open_sse: <T = unknown>(options?: RouteOpenSseOptions) => SseStream<T>; // the stream a `route_sse` answers with
 }
 ```
 
+- **Typed from the spec.** `define_route` and `attach_route_handler` type
+  `input`, `params` and `query` from the route's schemas (`TypedRouteContext`),
+  so `route.params.x` on a route with no `params` is a type error, and
+  `auth` from the route's `auth` through `RequestContextForAuth`
+  (`auth/request_context.ts`) — the one conditional `rpc_action`'s
+  `HandlerForSpec` also narrows by: an actor-required route gets a
+  `RequestActorContext`, an account-required one a `RequestContext`,
+  anything else `RequestContext | null`. A handler of a required tier is
+  wrapped where it is defined and throws rather than run without the
+  context its type promises (a spread spec whose `auth` was loosened
+  answers 500, not a handler running on `null`).
+- **`route.credential`** is the whole resolved credential. A
+  `reads_credential` route never reads the account off it: it calls
+  `get_public_account_id(route)` (`auth/request_context.ts`), which answers
+  a scope-narrowed API token as the anonymous caller
+  (`src/test/auth/token_scope_surface_census.test.ts` holds every route
+  module to that).
+- **`route.connection_ip`** is the TCP peer, never a forwarded address, and
+  not normalized (`::ffff:127.0.0.1` stays that) — for a route that admits
+  loopback callers only. `null` when the trusted-proxy middleware isn't
+  mounted.
+- **Reading the request.** `query_first(name)` is Hono's `c.req.query(name)`
+  — first occurrence, Hono's decoding, `''` for a key with no value — the
+  cross-implementation contract the `query_shape` suite pins;
+  `read_json_body()` shares the one body read with the authorization phase
+  and input validation; `request` is the raw `Request`, whose body is
+  already used on a route the pipeline read a JSON input for.
+- **`route.close_connection()`** makes the spine answer with
+  `Connection: close` whatever the result, the error catch's answer
+  included, so the runtime drops a connection whose request body nothing
+  will read. A raw result can't carry the header itself, and an SSE answer
+  after it is refused.
 - **`route.db`** — handler's main DB work. Wrapped in a transaction when `transaction: true` (default for non-GET); routes that opt out (`transaction: false`, e.g. signup / bootstrap) get the pool here directly and may call `route.db.transaction(...)` for their own scope.
 - **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, api-token usage tracking).
 - **`route.post_commit_effects`** — do not push directly; reach for `emit_after_commit` from `http/pending_effects.ts`. The helper pushes a thunk that the flush middleware invokes after the handler returns, closing the microtask-ordering window that an eager `Promise.resolve().then(fn)` leaves open inside the wrapping `db.transaction`.
 - **`route.open_sse(options)`** — opens the event stream the route answers with (`route_sse(stream)`) through the opener `apply_route_specs` was given (`create_sse_stream`, wired by `create_app_server`). It writes nothing on the context; a stream not answered with is closed. Without an opener it throws.
+
+Middleware, the authorization phase and the WebSocket upgrade still run on
+the Hono context and read it through their own helpers (`get_client_ip(c)`,
+`get_resolved_auth(c)`, `get_header_lines(c, name)`).
 
 Audit rows run through the bound `AppDeps.audit` capability — see
 `auth/CLAUDE.md` §Audit emitter. `await deps.audit.emit(route, input)` writes
@@ -188,14 +255,16 @@ wrapper). See `auth/signup_routes.ts`.
 
 `apply_route_specs(app, specs, resolve_auth_guards, log, db, {authorize?, open_sse?})` — `open_sse` is the `RouteSseOpener`, `create_sse_stream` in the assembled server.
 
-`apply_route_specs` assembles the following middleware chain per spec:
+`apply_route_specs` assembles the following middleware chain per spec, behind
+one stage that writes the spec's `response_headers` on the context (when it
+declares any), so every stage after it answers with them:
 
 1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with `issues`
 2. **Query validation** — `spec.query` → `validated_query`; mismatch returns 400 `ERROR_INVALID_QUERY_PARAMS`
 3. **Pre-authorization auth guards** — every gate that reads only what the auth middleware set, in coarse-to-fine order: `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`; `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) when `auth.credential_types?.length`; `require_token_scope(capability)` (403 `ERROR_TOKEN_SCOPE_REQUIRED` with `required_scope`, the token-scope refusal) when `auth.required_scope` names a capability. All fire before any body parsing — so a caller they refuse never sees route-shape information from input parse failures — and before actor resolution, so a wrong channel costs no DB work and never learns account state (e.g. that the account is multi-actor). The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_authorization: Array<MiddlewareHandler>`.
 4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
 5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
-6. **Input validation** — JSON body parsed (`read_json_body`) + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON, or JSON the Rust spine refuses — `parse_json_text`) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on GET and on a null input (`is_null_schema`: `literal(null)`). The validated input lands on `c.var.validated_input`.
+6. **Input validation** — JSON body parsed (`read_json_body`) + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON, or JSON the Rust spine refuses — `parse_json_text`) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on a null input (`is_null_schema`: `literal(null)`), which every `GET` has — `apply_route_specs` refuses a `GET` with any other input. The validated input lands on `c.var.validated_input`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result is prepared inside the transaction and emitted after the commit (`prepare_route_response`, `emit_route_response`)
 8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
 9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
@@ -213,11 +282,8 @@ GETs.
 
 Duplicate `method path` pairs throw at registration.
 
-Validated values are accessed via `get_route_input(c, schema)`,
-`get_route_params(c, schema)`, `get_route_query(c, schema)` — pass the
-matching schema, and the return type infers as `Infer<typeof schema>`.
-Each helper has a `<T>(c)` overload (no schema arg) for callers without the
-schema in scope.
+A handler reads the validated values as `route.input`, `route.params` and
+`route.query`, typed from the spec's schemas.
 
 ### DEV-only output + error validation
 
@@ -229,6 +295,7 @@ are the contract with external callers.
 
 - **Output** — `wrap_output_validation`, per route: a 2xx JSON body against `spec.output`. Skips non-`application/json` responses so SSE doesn't hang on `.json()`.
 - **Errors** — `create_dev_route_error_check` (`http/dev_route_error_check.ts`), one outer middleware `create_app_server` mounts outermost (`app.use('*')`, first after `onError`), so it sees what every layer answers — a middleware's refusal (body limit, origin, auth guards) as much as a handler's or the error catch's. After the request it finds the route with Hono's own router (`create_route_lookup`: the `SmartRouter` over a `RegExpRouter` and a `TrieRouter` that `new Hono()` builds, the route specs added in mount order, the first match the route, `HEAD` read as `GET`) and checks a JSON body at 400 and up against the route's error map (`check_route_error`, `http/route_error_check.ts`): a status the map lacks logs `Undeclared error status (S): METHOD path`, a body off the status's schema `Error schema mismatch (S): METHOD path`. Always accepted: a 500 `internal_error` and a 503 `service_unavailable` (`ALWAYS_ACCEPTED_ERRORS`, which the catch layers answer on any route). On a `jsonrpc` route (the pair `create_rpc_endpoint` builds) a JSON-RPC error envelope is skipped (`is_jsonrpc_error_response`): the endpoint answers its refusals as envelopes, which no REST error definition describes, and the dispatch core checks its own outputs. On any other route an envelope-shaped body is checked. Skipped: non-JSON responses (`is_json_response`, the gate both checks run), and a request no route spec matches — an unmatched path's 404 is Hono's plain text, with no JSON convention to hold it to. `assert_response_matches_spec` runs the same `check_route_error`.
+- **The first `Set-Cookie`** — `create_dev_set_cookie_check` (`http/dev_set_cookie_check.ts`), mounted beside the error check: when a middleware recorded the line it put first on the response (`EXPECTED_FIRST_SET_COOKIE_KEY` — the session middleware's clear of an invalid cookie), the answer's first `Set-Cookie` must be that line, else it logs naming the method and path. It reaches what the route system doesn't build — a consumer's `post_route_middleware`, a raw Hono route, a `transform_middleware` layer answering with its own `Response` or replacing the context's cookie. An accepted WebSocket upgrade's placeholder is skipped.
 - **Logs on mismatch, returns the response unchanged** — never throws (a throw inside the error check, its logger's included, is swallowed), never mutates the body
 
 Production short-circuits: `wrap_output_validation` returns the handler
@@ -277,7 +344,7 @@ are both kept, a union of their bodies. The result, `RouteErrorMap`, holds the
 definitions (`defs`) and the status map they group into (`schemas`):
 
 1. **Derived** — `derive_route_errors({method, auth, has_input?, has_params?, has_query?, rate_limit?})`, narrowed to the slots the route has:
-   - a body — `input` not null, `method` not `GET` (the input middleware skips a `GET`) → 400 `invalid_request_body`, `invalid_json_body`
+   - a body — `input` not null, `method` not `GET` (registration refuses a `GET` with an input; a surface built from specs alone derives none for one) → 400 `invalid_request_body`, `invalid_json_body`
    - `params` → 400 `invalid_route_params`; `query` → 400 `invalid_query_params`
    - `auth.actor !== 'none'` → 400 `actor_required`, `actor_not_on_account`, 500 `no_actors_on_account`, `account_vanished` — what the dispatcher's authorization phase emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2)
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `authentication_required` (`REST_AUTHENTICATION_REQUIRED`), the only body the pre-authorization gate answers

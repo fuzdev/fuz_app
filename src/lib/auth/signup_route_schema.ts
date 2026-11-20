@@ -65,7 +65,8 @@ export const create_signup_route_shape = (
 	readonly [typeof REST_NO_MATCHING_INVITE, typeof REST_SIGNUP_CONFLICT],
 	typeof SignupOutput,
 	{ account: 'none'; actor: 'none' },
-	'both' | 'ip'
+	'both' | 'ip',
+	typeof SignupInput
 > =>
 	define_route_shape({
 		method: 'POST',

@@ -313,9 +313,8 @@ describe('create_app_server', () => {
 						description: 'Route with failing effect',
 						input: literal(null),
 						output: object({ ok: boolean }),
-						handler: async (c) => {
-							const effects = c.var.pending_effects;
-							effects.push(Promise.reject(new Error('effect failed')));
+						handler: async (route) => {
+							route.pending_effects.push(Promise.reject(new Error('effect failed')));
 							return route_ok({ ok: true });
 						}
 					})
@@ -356,8 +355,8 @@ describe('create_app_server', () => {
 						description: 'Route with failing effect',
 						input: literal(null),
 						output: object({ ok: boolean }),
-						handler: async (c) => {
-							c.var.pending_effects.push(Promise.reject(new Error('effect failed')));
+						handler: async (route) => {
+							route.pending_effects.push(Promise.reject(new Error('effect failed')));
 							return route_ok({ ok: true });
 						}
 					})

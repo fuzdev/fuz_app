@@ -21,7 +21,6 @@ import {
 	REST_AUTHENTICATION_REQUIRED,
 	REST_INSUFFICIENT_PERMISSIONS
 } from '../http/error_schemas.ts';
-import { has_test_context_preset } from '../hono_context.ts';
 import {
 	create_audit_log_route_shape,
 	DEFAULT_AUDIT_STREAM_ROLE
@@ -29,9 +28,7 @@ import {
 import type { SseNotification } from '../realtime/sse.ts';
 import { validate_sse_keep_alive_ms } from '../realtime/sse_constants.ts';
 import type { SseRegistry } from '../realtime/sse_registry.ts';
-import { require_request_context } from './request_context.ts';
 import {
-	get_resolved_auth,
 	recheck_admission,
 	resolved_auth_api_token_id,
 	resolved_auth_session_hash
@@ -118,11 +115,11 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 	validate_sse_keep_alive_ms(keep_alive_ms);
 	const required_role = options.required_role ?? DEFAULT_AUDIT_STREAM_ROLE;
 	return [
-		attach_route_handler(create_audit_log_route_shape(required_role), async (c, route) => {
+		attach_route_handler(create_audit_log_route_shape(required_role), async (route) => {
 			// Rule 3 is declared on the route shape's `auth.required_scope`,
 			// so a narrowed token is refused ahead of the role gate rather
 			// than here.
-			const ctx = require_request_context(c);
+			const ctx = route.auth;
 			// scope = session hash (capped → tabs-per-session limit and
 			// session-specific `session_revoke` close). groups = [account_id]
 			// (uncapped → coarse close on role_grant_revoke / session_revoke_all
@@ -132,7 +129,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 			// still has a revoked token's stream closed by `token_revoke`.
 			// Both come off the resolved credential, which carries each only
 			// for its own credential type.
-			const resolved = get_resolved_auth(c);
+			const resolved = route.credential;
 			const session_hash = resolved_auth_session_hash(resolved);
 			const api_token_id = resolved_auth_api_token_id(resolved);
 
@@ -155,7 +152,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// pre-baked context has no rows behind it to re-read, and for a
 				// registration born closed by the shutdown, which admission
 				// refuses whatever they answer.
-				if (!has_test_context_preset(c) && !registry.closing) {
+				if (!route.has_test_context_preset && !registry.closing) {
 					const reread = async () => {
 						// Global grants only, like the `require_role` gate that ran in
 						// the pipeline — a scoped grant must not open the instance-wide

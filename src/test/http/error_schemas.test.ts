@@ -245,7 +245,7 @@ describe('derive_route_errors', () => {
 		]);
 	});
 
-	test('a GET with an input derives no body code: the input middleware skips GET', () => {
+	test('a GET with an input derives no body code: a GET reads no body', () => {
 		assert.deepStrictEqual(derived({ method: 'GET', auth: NONE, has_input: true }), []);
 	});
 

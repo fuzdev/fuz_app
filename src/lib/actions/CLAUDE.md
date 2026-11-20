@@ -205,10 +205,10 @@ spines, and an authorized one is `invalid_params`.
 
 Shim responsibilities (per-request):
 
-1. Parse envelope (POST body / GET query string, each through `parse_json_text`, `http/json_text.ts`, so JSON the Rust spine refuses is refused here too); parse errors → `parse_error` 400, a `GET` `params` that is no JSON `invalid_params`. GET reads `method` / `id` / `params` via Hono's `c.req.query()` — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
+1. Parse envelope (POST body / GET query string, each through `parse_json_text`, `http/json_text.ts`, so JSON the Rust spine refuses is refused here too); parse errors → `parse_error` 400, a `GET` `params` that is no JSON `invalid_params`. GET reads `method` / `id` / `params` through `route.query_first` (Hono's `c.req.query(name)`) — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
-3. GET read restriction — GET rejected for `side_effects: true` actions. Every response the GET handler writes, its refusals included, carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`; a pre-handler middleware refusal, like the origin 403, does not): a read answers one caller at one moment.
-4. Build `PerformActionInput` from `get_resolved_auth(c)` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `has_test_context_preset(c)` + `REQUEST_CONTEXT_KEY`.
+3. GET read restriction — GET rejected for `side_effects: true` actions. Every answer of the GET route carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`), declared as the spec's `response_headers`, so the handler's refusals and the error catch's 500 carry it too; a refusal by middleware ahead of the route, like the origin 403, does not: a read answers one caller at one moment.
+4. Build `PerformActionInput` from the route context: `route.credential`, `route.client_ip`, `route.signal`. The test-preset escape hatch reads `route.has_test_context_preset` and `route.auth`.
 5. Call `perform_action` (shared core).
 6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, spelled with `c.json`'s bytes and content type as a `route_raw` data result, as is every envelope the shim answers: no REST definition describes one.
 
@@ -261,7 +261,9 @@ interface RpcAction {
 `rpc_action<TSpec extends RequestResponseActionSpec>(spec, handler)` pins
 the handler's input / output types to `Infer<TSpec['input']>` /
 `Infer<TSpec['output']>` and tightens `ctx.auth` per the conditional
-`HandlerForSpec<TSpec>`:
+`HandlerForSpec<TSpec>`, built on `RequestContextForAuth`
+(`auth/request_context.ts`) — the same narrowing a REST handler's
+`route.auth` takes:
 
 - `auth.actor === 'required'` → `ctx.auth: RequestActorContext`.
 - `auth.account === 'required' && auth.actor === 'none'` → `ctx.auth: RequestContext`.
@@ -273,11 +275,9 @@ at the factory call instead of at runtime. The bracketed form
 `AuthAxisState` union (when the spec was typed without preserving its
 literal) falls through to the loosest tier instead of the narrowest.
 
-zzz uses a codegen-driven `Record<Method, Handler>` map for the same
-narrowing — ideal when handlers are stateless free functions. fuz_app's
-handlers close over factory-captured deps (`log`, `audit`,
-`options.app_settings`, `options.max_tokens`), so per-pair typing via
-`rpc_action()` is the right shape here.
+fuz_app's handlers close over factory-captured deps (`log`, `audit`,
+`options.max_tokens`), so per-pair typing via `rpc_action()` is the shape
+that fits.
 
 ## Shared dispatch core (`actions/perform_action.ts`)
 
@@ -295,7 +295,7 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 5. Validate params (400) — first, one walk of object params (`scan_json_value` in `http/schema_helpers.ts`, iterative) refuses, on every input, an own `__proto__` key at any depth with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), then U+0000 in any string or key with `params_nul` (`ERROR_PARAMS_NUL` — Postgres refuses it in `text` and `jsonb`); the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal; then `spec.input` parses them (`parse`) with void / `?? {}` rules; a void input (`is_void_schema`: `s.void`) reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `meta` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the issues DEV-only, as `WireIssue`s (`to_wire_issues`)
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
-`PerformActionInput` carries `auth` (the request's `ResolvedAuth`, `null` for
+`PerformActionInput` carries `credential` (the request's `ResolvedAuth`, `null` for
 anonymous — the authorization phase reads its account, the post-authorization
 gates its type and scope, `ActionContext` its type and session hash),
 `client_ip`, `signal`, `notify`, optional `connection_id`, optional `preset`.

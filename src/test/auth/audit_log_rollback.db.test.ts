@@ -72,7 +72,7 @@ describe('audit rows and the request transaction', () => {
 		test_app = await create_test_app({
 			session_options,
 			create_route_specs: (ctx) => [
-				route('/api/failure_then_crash', async (_c, r) => {
+				route('/api/failure_then_crash', async (r) => {
 					await ctx.deps.audit.emit(r, {
 						event_type: 'login',
 						outcome: 'failure',
@@ -81,7 +81,7 @@ describe('audit rows and the request transaction', () => {
 					});
 					throw new Error('deliberate handler crash');
 				}),
-				route('/api/success_then_crash', async (_c, r) => {
+				route('/api/success_then_crash', async (r) => {
 					await ctx.deps.audit.emit(r, {
 						event_type: 'login',
 						metadata: { username: 'probe', test: 'success_rolls_back' }
@@ -89,7 +89,7 @@ describe('audit rows and the request transaction', () => {
 					timeline.push('handler threw');
 					throw new Error('deliberate handler crash');
 				}),
-				route('/api/success_commits', async (_c, r) => {
+				route('/api/success_commits', async (r) => {
 					await r.db.query('INSERT INTO audit_tx_probe (marker) VALUES ($1)', ['committed']);
 					await ctx.deps.audit.emit(r, {
 						event_type: 'login',
@@ -98,7 +98,7 @@ describe('audit rows and the request transaction', () => {
 					timeline.push('handler returned');
 					return route_ok({ ok: true });
 				}),
-				route('/api/audit_insert_fails', async (_c, r) => {
+				route('/api/audit_insert_fails', async (r) => {
 					await r.db.query('INSERT INTO audit_tx_probe (marker) VALUES ($1)', ['unaudited']);
 					// an account id that isn't a uuid — the in-transaction INSERT fails
 					await ctx.deps.audit.emit(r, {

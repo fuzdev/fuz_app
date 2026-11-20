@@ -35,7 +35,7 @@ import {
 import { ActingActor, type Uuid } from '../primitive_schemas.ts';
 
 import type { Db, DbType } from '../db/db.ts';
-import { define_route, get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
+import { define_route, type RouteSpec } from './route_spec.ts';
 import { route_fail, route_ok } from './route_result.ts';
 import {
 	REST_DATABASE_CONNECTION_FAILED,
@@ -47,7 +47,6 @@ import {
 } from './error_schemas.ts';
 import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
 import { pg_error_code } from '../db/pg_error.ts';
-import { get_client_ip } from './client_ip.ts';
 import { emit_after_commit } from './pending_effects.ts';
 
 /**
@@ -329,7 +328,7 @@ export const create_db_route_specs = (
 			input: literal(null),
 			output: loose_object({ connected: boolean }),
 			errors: [REST_DATABASE_CONNECTION_FAILED],
-			handler: async (_c, route) => {
+			handler: async (route) => {
 				try {
 					await route.db.query('SELECT 1');
 
@@ -372,7 +371,7 @@ export const create_db_route_specs = (
 				tables: array(object({ name: string, row_count: Count }))
 			}),
 			transaction: true,
-			handler: async (_c, route) => {
+			handler: async (route) => {
 				await set_statement_timeout(route.db);
 				// Existence still comes from `information_schema` — a listed table
 				// that hasn't migrated in yet is silently absent, not a 500.
@@ -425,9 +424,9 @@ export const create_db_route_specs = (
 				deletable: boolean
 			}),
 			transaction: true,
-			handler: async (c, route) => {
-				const { name } = get_route_params<{ name: string }>(c);
-				const { offset, limit } = get_route_query<{ offset: number; limit: number }>(c);
+			handler: async (route) => {
+				const { name } = route.params;
+				const { offset, limit } = route.query;
 
 				// Allowlist gate, masked: an unlisted (or floor) table answers
 				// exactly like one that doesn't exist.
@@ -514,8 +513,8 @@ export const create_db_route_specs = (
 				REST_ROW_NOT_FOUND,
 				REST_FOREIGN_KEY_VIOLATION
 			],
-			handler: async (c, route) => {
-				const { name, id } = get_route_params<{ name: string; id: string }>(c);
+			handler: async (route) => {
+				const { name, id } = route.params;
 
 				// Same allowlist gate and masking as the detail route — an
 				// unbrowsable table exposes no rows to delete either.
@@ -589,8 +588,8 @@ export const create_db_route_specs = (
 					// `emit_pool`, not the transaction-routing `emit`. Account-grain
 					// attribution — the browser is a raw storage surface, so no actor
 					// is claimed.
-					const account_id = c.var.request_context?.account.id ?? null;
-					const ip = get_client_ip(c);
+					const account_id = route.auth.account.id;
+					const ip = route.client_ip;
 					emit_after_commit(route, () =>
 						deps.audit.emit_pool({
 							event_type: 'db_admin_row_delete',

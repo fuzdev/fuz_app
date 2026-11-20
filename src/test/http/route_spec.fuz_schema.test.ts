@@ -28,14 +28,7 @@ import {
 	with_default
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import {
-	apply_route_specs,
-	define_route,
-	get_route_input,
-	get_route_params,
-	get_route_query,
-	type RouteSpec
-} from '#lib/http/route_spec.ts';
+import { apply_route_specs, define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { Uuid } from '#lib/primitive_schemas.ts';
 import { route_fail, route_ok, route_raw, type RouteRaw } from '#lib/http/route_result.ts';
@@ -71,11 +64,11 @@ const thing_route = define_route({
 	input: ThingInput,
 	output: ThingOutput,
 	errors: [REST_THING_NOT_FOUND],
-	handler: (c) => {
-		// the overloads infer each value's type from the fuz_schema schema
-		const { thing_id }: { thing_id: string } = get_route_params(c, ThingParams);
-		const { mode }: { mode: 'a' | 'b' } = get_route_query(c, ThingQuery);
-		const { name }: { name: string } = get_route_input(c, ThingInput);
+	handler: (route) => {
+		// each slot's type is inferred from the route's fuz_schema schema
+		const { thing_id }: { thing_id: string } = route.params;
+		const { mode }: { mode: 'a' | 'b' } = route.query;
+		const { name }: { name: string } = route.input;
 		if (name === 'missing') return route_fail(REST_THING_NOT_FOUND);
 		// deliberate violations, built raw
 		if (name === 'wrong_404') return json_raw({ error: 'something_else' }, 404);
@@ -231,7 +224,7 @@ describe('a fuz_schema route delivers', () => {
 			query: Q,
 			input: literal(null),
 			output: loose_object({}),
-			handler: (c) => route_ok(get_route_query(c, Q))
+			handler: (route) => route_ok(route.query)
 		});
 		const got = await send('/q', 'null', [spec]);
 		assert.strictEqual(got.status, 200);
@@ -252,7 +245,7 @@ describe('a fuz_schema route delivers', () => {
 			description: 'Echoes its input.',
 			input: I,
 			output: loose_object({}),
-			handler: (c) => route_ok(get_route_input(c, I))
+			handler: (route) => route_ok(route.input)
 		});
 		const got = await send('/i', '{"name":"abc"}', [spec]);
 		assert.strictEqual(got.status, 200);

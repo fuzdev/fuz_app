@@ -131,10 +131,10 @@ export interface PerformActionInput {
 	 * post-authorization gates read, and its type and session hash what the
 	 * handler sees on `ActionContext`.
 	 */
-	auth: ResolvedAuth | null;
+	credential: ResolvedAuth | null;
 	/** Resolved client IP (`'unknown'` if upstream couldn't resolve). */
 	client_ip: string;
-	/** Per-request abort signal. HTTP: `c.req.raw.signal`. WS: `AbortSignal.any([socket, request])`. */
+	/** Per-request abort signal. HTTP: `RouteContext.signal`. WS: `AbortSignal.any([socket, request])`. */
 	signal: AbortSignal;
 	/** Send a request-scoped notification. HTTP: DEV-warn-and-drop. WS: socket-scoped. */
 	notify: (method: string, params: unknown) => void;
@@ -202,7 +202,7 @@ export type PerformActionResult =
  * Phase order: 401 → authz → 403 → 429 → 400 → handler. On the test-preset path
  * the dispatcher skips the live authorization phase and uses the supplied
  * pre-baked context for post-authorization checks; the 401 still fires when
- * the harness omits `auth`.
+ * the harness omits `credential`.
  */
 export const perform_action = async (
 	input: PerformActionInput,
@@ -212,7 +212,7 @@ export const perform_action = async (
 		action,
 		raw_params,
 		request_id: id,
-		auth,
+		credential,
 		client_ip,
 		signal,
 		notify,
@@ -230,7 +230,7 @@ export const perform_action = async (
 	} = deps;
 	const { spec, handler } = action;
 	const action_auth = spec.auth;
-	const account_id = auth?.account_id ?? null;
+	const account_id = credential?.account_id ?? null;
 
 	// step 1: pre-authorization auth — 401 short-circuit.
 	const pre = check_action_auth_pre_authorization(action_auth, account_id);
@@ -279,7 +279,7 @@ export const perform_action = async (
 	const post = check_action_auth_post_authorization(
 		action_auth,
 		request_context,
-		auth,
+		credential,
 		action.spec.method
 	);
 	if (post) return error_result(post);
@@ -361,8 +361,8 @@ export const perform_action = async (
 			pending_effects,
 			post_commit_effects,
 			client_ip,
-			credential_type: auth?.credential_type ?? null,
-			session_hash: resolved_auth_session_hash(auth),
+			credential_type: credential?.credential_type ?? null,
+			session_hash: resolved_auth_session_hash(credential),
 			log,
 			notify,
 			signal

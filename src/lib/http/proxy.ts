@@ -14,6 +14,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { MiddlewareSpec } from './middleware_spec.ts';
 import { canonicalize_ip, IP_LITERAL_CHARS } from './ip_canonical.ts';
+import { CONNECTION_IP_KEY } from '../hono_context.ts';
 
 /**
  * Normalize an IP address for consistent matching and storage.
@@ -271,6 +272,7 @@ export const resolve_client_ip = (
  *
  * @param options - trusted proxy configuration
  * @mutates `c.var.client_ip` - set to the resolved (or `'unknown'`) client IP per request
+ * @mutates `c.var.connection_ip` - set to the connection's peer address, `null` when the runtime gave none (`CONNECTION_IP_KEY`)
  * @throws Error if any entry in `options.trusted_proxies` is invalid (parsed eagerly via `parse_proxy_entry`)
  */
 export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandler => {
@@ -312,6 +314,7 @@ export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandle
 		}
 
 		c.set('client_ip', client_ip);
+		c.set(CONNECTION_IP_KEY, connection_ip ?? null);
 		await next();
 	};
 };

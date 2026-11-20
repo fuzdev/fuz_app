@@ -65,6 +65,8 @@ export interface AppSurfaceRoute {
 	output_schema: unknown;
 	/** JSON Schema representations of error responses, keyed by HTTP status code. `null` when none. */
 	error_schemas: Record<string, unknown> | null;
+	/** The headers every answer of the route carries (`RouteSpec.response_headers`). Absent when none. */
+	response_headers?: Record<string, string>;
 }
 
 /** A middleware in the generated attack surface (JSON-serializable). */
@@ -393,7 +395,10 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				query_schema: r.query ? to_surface(r.query, 'input', `${route} query`) : null,
 				input_schema: to_surface(r.input, 'input', `${route} input`),
 				output_schema: to_surface(r.output, 'output', `${route} output`),
-				error_schemas
+				error_schemas,
+				...(r.response_headers && Object.keys(r.response_headers).length > 0
+					? { response_headers: { ...r.response_headers } }
+					: {})
 			};
 		}),
 		rpc_endpoints: rpc_endpoints?.length

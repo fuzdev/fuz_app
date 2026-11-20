@@ -16,7 +16,6 @@ import { literal, loose_object, nullable, object, string } from '@fuzdev/fuz_sch
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
-import { require_request_context } from '#lib/auth/request_context.ts';
 import {
 	create_app_server,
 	type AppServerOptions,
@@ -47,10 +46,8 @@ const create_authenticated_route_spec = (): RouteSpec =>
 		description: 'Return current account info',
 		input: literal(null),
 		output: loose_object({ username: string, actor_id: nullable(string) }),
-		handler: (c) => {
-			const ctx = require_request_context(c);
-			return route_ok({ username: ctx.account.username, actor_id: ctx.actor?.id ?? null });
-		}
+		handler: (route) =>
+			route_ok({ username: route.auth.account.username, actor_id: route.auth.actor?.id ?? null })
 	});
 
 /** Route that requires the keeper role. */

@@ -19,8 +19,9 @@
  *   (`RouteContext.open_sse`)
  *
  * A result is plain data, so domain code and shared helpers fail without the
- * Hono context (`return route_fail(REST_ROW_NOT_FOUND)`), and a handler
- * forwards a failure it was handed (`if (!result.ok) return result`).
+ * Hono context (`return route_fail(REST_ROW_NOT_FOUND)`), and a handler —
+ * which receives a `RouteContext`, never the Hono context — forwards a
+ * failure it was handed (`if (!result.ok) return result`).
  *
  * Hono-free: nothing here imports `hono`.
  *
@@ -228,21 +229,34 @@ export const route_fail = <TDef extends RestErrorDef>(
  *   way), one name twice in any case
  * - a non-null body without a `Content-Type` (a runtime would derive one,
  *   each its own way), and a body on a null-body status (204, 205, 304)
- * - a `Content-Length` that is not one run of ASCII digits, a list included,
- *   and one a text or bytes body doesn't have — the UTF-8 bytes of a string,
- *   the `byteLength` of a `Uint8Array`: a runtime either sends the wrong size
- *   or overrides it. With a null or stream body the size is the route's to
- *   declare: a `HEAD` or an `X-Accel-Redirect` answer sends one with no body
+ * - a `Content-Length` that is not a decimal integer without a leading zero
+ *   (`0` or `[1-9][0-9]*`), a list included, one past the safe integer range,
+ *   one on a 204 or 205 (no content to measure, RFC 9110 §8.6 and §15.3.6; a
+ *   304 may name the size of the representation it stands for, §15.4.5), and
+ *   one a text or bytes body doesn't have — the UTF-8 bytes of a string, the
+ *   `byteLength` of a `Uint8Array`. `@hono/node-server` sends any of these as
+ *   written while Bun rewrites them to the body it sends, so the two runtimes
+ *   would answer differently. With a null or stream body the size is the
+ *   route's to declare: an `X-Accel-Redirect` answer sends one with no body
  * - a body that is none of `RouteRawBody` (a `Response` included), a stream
- *   that is locked, and bytes whose buffer is detached
+ *   that is locked, bytes whose buffer is detached, and bytes whose resizable
+ *   buffer shrank below the view — read as empty, they would answer as zero
+ *   bytes on every runtime
  *
  * A stream that was read and released is unlocked yet can't be answered with,
  * and nothing shows it before a `Response` is built from it: that fails after
  * the commit, answering the error catch's 500 with an error naming the route
  * (or, on `@hono/node-server`, whose own `Response` reads the stream only as
- * it writes, an empty body). A stream body the route does not end up
- * answering with — refused here, or rolled back by a failed commit — is
- * cancelled, so its source is released.
+ * it writes, an empty body). A view whose resizable buffer shrinks after the
+ * result is prepared is past what the prepare can see.
+ *
+ * A stream body's `cancel` must release its source — close the file, end the
+ * child process: it is the one hook the spine calls for a stream it does not
+ * send. A stream body the route does not end up answering with — refused
+ * here, or rolled back by a failed commit — is cancelled, and so is one
+ * answering a `HEAD`, which gets the status and headers alone. A source opened
+ * before the status is known (a file opened to choose 200 or 404) is released
+ * the same way whichever answer it ends up behind.
  *
  * @param init - the status, headers, and body
  */

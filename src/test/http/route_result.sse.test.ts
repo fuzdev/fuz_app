@@ -57,7 +57,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/sse',
-				handler: (_c, route) => {
+				handler: (route) => {
 					opened = route.open_sse<{ n: number }>({ keep_alive_ms: null });
 					return route_sse(opened);
 				}
@@ -84,7 +84,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/sse',
-				handler: (_c, route) => {
+				handler: (route) => {
 					const stream = route.open_sse({ keep_alive_ms: null });
 					// the second request answers with the first one's stream
 					const answer = earlier ?? stream;
@@ -110,7 +110,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/sse',
-				handler: (_c, route) => {
+				handler: (route) => {
 					const stream = route.open_sse({ keep_alive_ms: null });
 					stream.on_close(() => {
 						closed = true;
@@ -134,7 +134,7 @@ describe('route_sse', () => {
 				...shape,
 				path: '/refused',
 				errors: [REST_ROW_NOT_FOUND],
-				handler: (_c, route) => {
+				handler: (route) => {
 					route.open_sse({ keep_alive_ms: null });
 					return route_fail(REST_ROW_NOT_FOUND);
 				}
@@ -142,7 +142,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/thrown',
-				handler: (_c, route) => {
+				handler: (route) => {
 					route.open_sse({ keep_alive_ms: null });
 					throw new Error('after the open');
 				}
@@ -164,7 +164,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/sse',
-				handler: (_c, route) => {
+				handler: (route) => {
 					const first = route.open_sse({ keep_alive_ms: null });
 					const second = route.open_sse({ keep_alive_ms: null });
 					first.on_close(() => closed.push('first'));
@@ -185,7 +185,7 @@ describe('route_sse', () => {
 			define_route({
 				...shape,
 				path: '/sse',
-				handler: (_c, route) => {
+				handler: (route) => {
 					const stream = route.open_sse({ keep_alive_ms: null });
 					stream.on_close(() => {
 						closed = true;
@@ -205,7 +205,7 @@ describe('route_sse', () => {
 				define_route({
 					...shape,
 					path: '/sse',
-					handler: (_c, route) => route_sse(route.open_sse())
+					handler: (route) => route_sse(route.open_sse())
 				})
 			],
 			false

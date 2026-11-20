@@ -7,7 +7,7 @@
  * @module
  */
 
-import { describe, assert, test } from 'vitest';
+import { describe, assert, expectTypeOf, test } from 'vitest';
 import type { Context } from 'hono';
 import {
 	array,
@@ -26,8 +26,12 @@ import {
 	attach_route_handler,
 	define_route,
 	define_route_shape,
+	type RouteContext,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
+import type { RequestActorContext, RequestContext } from '#lib/auth/request_context.ts';
+import type { ResolvedAuth } from '#lib/auth/resolved_auth.ts';
+import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
 import { route_fail, route_ok, route_raw, route_sse } from '#lib/http/route_result.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 import {
@@ -61,8 +65,8 @@ const unreachable = (): never => {
 	throw new Error('unreachable');
 };
 
-const prebuilt = (c: Context) =>
-	c.req.query('x') ? route_fail(REST_ROW_NOT_FOUND) : route_ok({ n: 1 });
+const prebuilt = (route: RouteContext) =>
+	route.query_first('x') ? route_fail(REST_ROW_NOT_FOUND) : route_ok({ n: 1 });
 
 const split_shape = define_route_shape({ ...shape, errors: [REST_TABLE_NOT_FOUND] });
 
@@ -73,14 +77,14 @@ export const type_cases = (c: Context): Array<unknown> => [
 	define_route({
 		...shape,
 		errors: [REST_TABLE_NOT_FOUND],
-		handler: async (c) => {
-			if (c.req.query('a')) return route_fail(REST_TABLE_NOT_FOUND);
-			if (c.req.query('b')) return route_fail(REST_INTERNAL_ERROR);
-			if (c.req.query('c')) return route_fail(REST_SERVICE_UNAVAILABLE);
-			if (c.req.query('d')) {
+		handler: async (route) => {
+			if (route.query_first('a')) return route_fail(REST_TABLE_NOT_FOUND);
+			if (route.query_first('b')) return route_fail(REST_INTERNAL_ERROR);
+			if (route.query_first('c')) return route_fail(REST_SERVICE_UNAVAILABLE);
+			if (route.query_first('d')) {
 				return route_raw({ status: 200, headers: { 'Content-Type': 'text/plain' }, body: 'bytes' });
 			}
-			if (c.req.query('e')) return route_sse(null as unknown as SseStream<{ n: number }>);
+			if (route.query_first('e')) return route_sse(null as unknown as SseStream<{ n: number }>);
 			return route_ok({ n: 1 });
 		}
 	}),
@@ -103,7 +107,7 @@ export const type_cases = (c: Context): Array<unknown> => [
 		handler: () => route_fail(REST_ROW_NOT_FOUND)
 	}),
 	// @ts-expect-error a `Response` is not a result
-	define_route({ ...shape, handler: (c) => c.json({ n: 1 }) }),
+	define_route({ ...shape, handler: () => c.json({ n: 1 }) }),
 	// @ts-expect-error the output is checked
 	define_route({ ...shape, handler: () => route_ok({ n: 'x' }) }),
 	define_route({
@@ -167,10 +171,10 @@ export const type_cases = (c: Context): Array<unknown> => [
 	define_route({
 		...shape,
 		errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP],
-		handler: (c) =>
-			c.req.query('a')
+		handler: (route) =>
+			route.query_first('a')
 				? route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP)
-				: c.req.query('b')
+				: route.query_first('b')
 					? route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, {})
 					: route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, { bootstrap_available: true })
 	}),
@@ -219,8 +223,8 @@ export const type_cases = (c: Context): Array<unknown> => [
 	define_route({
 		...shape,
 		auth: { account: 'required', actor: 'none', roles: ['admin'], credential_types: ['session'] },
-		handler: (c) =>
-			c.req.query('a')
+		handler: (route) =>
+			route.query_first('a')
 				? route_fail(REST_INSUFFICIENT_PERMISSIONS, { required_roles: ['admin'] })
 				: route_fail(REST_CREDENTIAL_TYPE_REQUIRED, { required_credential_types: ['session'] })
 	}),
@@ -257,7 +261,90 @@ export const type_cases = (c: Context): Array<unknown> => [
 	// @ts-expect-error an unknown output takes no `undefined`
 	define_route({ ...shape, output: unknown, handler: () => route_ok(undefined) }),
 	// @ts-expect-error nor does an optional one
-	define_route({ ...shape, output: optional(string), handler: () => route_ok(undefined) })
+	define_route({ ...shape, output: optional(string), handler: () => route_ok(undefined) }),
+	// @ts-expect-error a handler takes the route context, never the Hono context
+	define_route({ ...shape, handler: (_c: Context) => route_ok({ n: 1 }) }),
+	// @ts-expect-error nor the Hono context beside it
+	define_route({ ...shape, handler: (_c: Context, _route: RouteContext) => route_ok({ n: 1 }) })
+];
+
+const typed_input = object({ name: string, n: with_default(number, 1) });
+const typed_params = object({ id: string });
+const typed_query = object({ acting: ActingActor });
+
+const typed_split_shape = define_route_shape({
+	...shape,
+	method: 'POST',
+	input: typed_input,
+	params: typed_params
+});
+const actor_split_shape = define_route_shape({
+	...shape,
+	auth: { account: 'required', actor: 'required' },
+	query: typed_query
+});
+
+// What the handler's `route` is typed as, read off the spec — never called.
+export const typed_context_cases = (): Array<unknown> => [
+	define_route({
+		...shape,
+		method: 'POST',
+		input: typed_input,
+		params: typed_params,
+		handler: (route) => {
+			expectTypeOf(route.input).toEqualTypeOf<{ name: string; n: number }>();
+			expectTypeOf(route.params).toEqualTypeOf<{ id: string }>();
+			expectTypeOf(route.query).toEqualTypeOf<undefined>();
+			expectTypeOf(route.auth).toEqualTypeOf<RequestContext | null>();
+			expectTypeOf(route.credential).toEqualTypeOf<ResolvedAuth | null>();
+			expectTypeOf(route.client_ip).toEqualTypeOf<string>();
+			expectTypeOf(route.signal).toEqualTypeOf<AbortSignal>();
+			return route_ok({ n: route.input.n });
+		}
+	}),
+	define_route({
+		...shape,
+		// @ts-expect-error a route without `params` has none to read
+		handler: (route) => route_ok({ n: route.params.id })
+	}),
+	define_route({
+		...shape,
+		handler: (route) => {
+			expectTypeOf(route.input).toEqualTypeOf<null>();
+			return route_ok({ n: 1 });
+		}
+	}),
+	// an account-required route's `auth` is a request context, an actor-required
+	// one's carries its actor
+	define_route({
+		...shape,
+		auth: { account: 'required', actor: 'none' },
+		handler: (route) => {
+			expectTypeOf(route.auth).toEqualTypeOf<RequestContext>();
+			return route_ok({ n: route.auth.account.username.length });
+		}
+	}),
+	define_route({
+		...shape,
+		auth: { account: 'required', actor: 'required' },
+		query: typed_query,
+		handler: (route) => {
+			expectTypeOf(route.auth).toEqualTypeOf<RequestActorContext>();
+			expectTypeOf(route.query).toEqualTypeOf<{ acting?: Uuid | undefined }>();
+			return route_ok({ n: route.auth.actor.name.length });
+		}
+	}),
+	define_route({
+		...shape,
+		// @ts-expect-error a public route's `auth` may be null
+		handler: (route) => route_ok({ n: route.auth.account.username.length })
+	}),
+	// the split form types its handler's context from the shape
+	attach_route_handler(typed_split_shape, (route) =>
+		route_ok({ n: route.input.n + route.params.id.length })
+	),
+	// a handler written with no parameter still fits
+	attach_route_handler(split_shape, () => route_ok({ n: 1 }))
 ];
 
 // @ts-expect-error a spec literal has no brand: only `define_route` and `attach_route_handler` make one
@@ -272,6 +359,49 @@ describe('define_route', () => {
 	test('a spec has no brand property at runtime', () => {
 		const spec = define_route({ ...shape, handler: () => route_ok({ n: 1 }) });
 		assert.deepStrictEqual(Object.getOwnPropertySymbols(spec), []);
+	});
+});
+
+describe('define_route auth guard', () => {
+	const stub_route = (auth: RequestContext | null): RouteContext =>
+		({ auth }) as unknown as RouteContext;
+	const actor_context = {
+		account: { id: 'a' },
+		actor: { id: 'b' },
+		role_grants: []
+	} as unknown as RequestContext;
+	const account_context = { ...actor_context, actor: null } as unknown as RequestContext;
+
+	test('a public route keeps its handler as given', () => {
+		const handler = () => route_ok({ n: 1 });
+		assert.strictEqual(define_route({ ...shape, handler }).handler, handler);
+	});
+
+	test('an account-required route refuses to run without a request context', async () => {
+		const spec = define_route({
+			...shape,
+			auth: { account: 'required', actor: 'none' },
+			handler: () => route_ok({ n: 1 })
+		});
+		assert.throws(() => spec.handler(stub_route(null)), /no request context/);
+		assert.deepStrictEqual(await spec.handler(stub_route(account_context)), route_ok({ n: 1 }));
+	});
+
+	test('an actor-required route refuses to run without an acting actor', async () => {
+		const spec = attach_route_handler(actor_split_shape, () => route_ok({ n: 1 }));
+		assert.throws(() => spec.handler(stub_route(null)), /no request context/);
+		assert.throws(() => spec.handler(stub_route(account_context)), /no acting actor/);
+		assert.deepStrictEqual(await spec.handler(stub_route(actor_context)), route_ok({ n: 1 }));
+	});
+
+	test('a spread whose `auth` was rewritten keeps the guard its handler was typed for', () => {
+		const spec = define_route({
+			...shape,
+			auth: { account: 'required', actor: 'none' },
+			handler: () => route_ok({ n: 1 })
+		});
+		const rewritten = { ...spec, auth: { account: 'none', actor: 'none' } } as RouteSpec;
+		assert.throws(() => rewritten.handler(stub_route(null)), /no request context/);
 	});
 });
 

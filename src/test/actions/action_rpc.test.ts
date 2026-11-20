@@ -1172,6 +1172,35 @@ describe('GET dispatcher', () => {
 		assert.isNull(post.headers.get('cache-control'));
 	});
 
+	test('a GET whose action handler throws answers a 500 carrying no-store', async () => {
+		const app = create_test_app(
+			[
+				{
+					spec: create_get_spec(),
+					handler: () => {
+						throw new Error('the handler failed');
+					}
+				}
+			],
+			{ auth_context: create_test_request_context() }
+		);
+		const res = await app.request('/api/rpc?method=thing_list&id=1');
+		assert.strictEqual(res.status, 500);
+		assert.strictEqual(res.headers.get('cache-control'), RPC_GET_CACHE_CONTROL);
+	});
+
+	test('the GET route declares no-store as its `response_headers`, the POST route none', () => {
+		const [post_spec, get_spec] = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions: [],
+			log: new Logger('test', { level: 'off' }),
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null
+		});
+		assert.deepStrictEqual(get_spec!.response_headers, { 'Cache-Control': RPC_GET_CACHE_CONTROL });
+		assert.strictEqual(post_spec!.response_headers, undefined);
+	});
+
 	test('dispatches side_effects:false action via query string', async () => {
 		let received_input: unknown = 'sentinel';
 		const app = create_test_app([

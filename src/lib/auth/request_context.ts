@@ -61,7 +61,7 @@ import {
 } from '../hono_context.ts';
 import { credential_deadline_after } from './credential_deadline.ts';
 import { NAME_LENGTH_MAX } from './name_schema.ts';
-import { get_resolved_auth, resolved_auth_scope } from './resolved_auth.ts';
+import { get_resolved_auth, resolved_auth_scope, type ResolvedAuth } from './resolved_auth.ts';
 import {
 	is_route_scope_capability,
 	token_scope_admits_non_rpc,
@@ -149,6 +149,29 @@ export const require_request_context = (c: Context): RequestContext => {
 export interface RequestActorContext extends RequestContext {
 	actor: Actor;
 }
+
+/**
+ * The request context a handler of an auth shape is guaranteed — the one
+ * narrowing both handler kinds share, so a route's `route.auth`
+ * (`TypedRouteContext`) and an action's `ctx.auth` (`HandlerForSpec`) can't
+ * drift:
+ *
+ * - `actor: 'required'` → `RequestActorContext`
+ * - `account: 'required'` (with no actor) → `RequestContext`
+ * - anything else → `RequestContext | null`
+ *
+ * The bracketed form `[T] extends ['required']` keeps the conditional from
+ * distributing, so a degraded `AuthAxisState` union (a shape typed without
+ * keeping its literals) falls through to the loosest tier rather than the
+ * narrowest.
+ */
+export type RequestContextForAuth<TAuth extends Pick<RouteAuth, 'account' | 'actor'>> = [
+	TAuth['actor']
+] extends ['required']
+	? RequestActorContext
+	: [TAuth['account']] extends ['required']
+		? RequestContext
+		: RequestContext | null;
 
 /**
  * Whether the request context holds an active role_grant for `role` at `scope_id`.
@@ -421,18 +444,20 @@ export const token_scope_surface_denial = (c: Context, capability: string): Resp
  * that is a 403 (`auth.required_scope`); on one that answers them, a 403
  * would enforce nothing — the holder drops the `Authorization` header and
  * reads the anonymous answer anyway — so the narrowed token *is* the
- * anonymous caller there. Read the credential through this on any
- * `reads_credential` route instead of `get_resolved_auth` directly, so the
- * downgrade is one decision rather than an `&&` hand-rolled per handler.
+ * anonymous caller there. A `reads_credential` handler reads the account
+ * through this, never off `route.credential` directly, so the downgrade is
+ * one decision rather than an `&&` hand-rolled per handler.
  *
  * The RPC endpoint is the exception: its dispatcher gates each method against
  * the scope, so it reads the full credential.
  *
- * @param c - the request context, after the auth middleware chain
+ * @param route - the handler's `RouteContext`, or anything carrying its `credential`
  * @returns the account id, or `null` for an anonymous caller or a narrowed token
  */
-export const get_public_account_id = (c: Context): string | null => {
-	const auth = get_resolved_auth(c);
+export const get_public_account_id = (route: {
+	readonly credential: ResolvedAuth | null;
+}): string | null => {
+	const auth = route.credential;
 	if (auth === null) return null;
 	if (!token_scope_admits_non_rpc(resolved_auth_scope(auth)!)) return null;
 	return auth.account_id;
@@ -854,9 +879,10 @@ export const create_fuz_authorization_handler = (
  * authority gates (nothing about a route's body shape reaches a caller those
  * gates refuse), so the mutation half reads the raw body instead.
  *
- * The raw read mirrors `create_input_validation`'s own skip conditions exactly
- * — GETs and null-input specs — so this never parses a body the route itself
- * would have left alone. That matters for the routes carrying raw bytes rather
+ * The raw read mirrors `create_input_validation`'s own skip condition exactly
+ * — a null input, which every GET has (`apply_route_specs` refuses a GET with
+ * an input) — so this never parses a body the route itself would have left
+ * alone. That matters for the routes carrying raw bytes rather
  * than JSON (git smart-HTTP, binary uploads): they declare `input: literal(null)`,
  * so their stream reaches the handler untouched, and they carry `acting` on
  * `query` regardless.
@@ -871,7 +897,7 @@ export const create_fuz_authorization_handler = (
 const read_route_acting = async (c: Context, spec: RouteSpec): Promise<string | undefined> => {
 	const validated_query = c.get('validated_query') as { acting?: unknown } | undefined;
 	if (validated_query && typeof validated_query.acting === 'string') return validated_query.acting;
-	if (spec.method === 'GET' || is_null_schema(spec.input)) return undefined;
+	if (is_null_schema(spec.input)) return undefined;
 	const read = await read_json_body(c.req);
 	// Malformed body — input validation answers with the 400.
 	if (!read.ok) return undefined;

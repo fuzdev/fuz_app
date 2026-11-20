@@ -51,9 +51,9 @@ const echo_route = (errors?: RouteSpec['errors']): RouteSpec => {
 		description: 'Answers the error the query names.',
 		input: literal(null),
 		output: object({ ok: literal(true) }),
-		handler: (c) => {
-			const code = c.req.query('code');
-			const status = Number(c.req.query('status'));
+		handler: (route) => {
+			const code = route.query_first('code');
+			const status = Number(route.query_first('status'));
 			return code ? json_raw({ error: code }, status) : route_ok({ ok: true });
 		}
 	});

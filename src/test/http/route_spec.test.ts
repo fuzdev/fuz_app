@@ -24,7 +24,6 @@ import {
 	apply_route_specs,
 	define_route,
 	prefix_route_specs,
-	get_route_query,
 	type RouteSpec
 } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
@@ -429,10 +428,7 @@ describe('query validation', () => {
 				method: 'GET',
 				path: '/search',
 				auth: { account: 'none', actor: 'none' },
-				handler: (c) => {
-					const q = get_route_query<{ q: string }>(c);
-					return route_ok({ query: q.q });
-				},
+				handler: (route) => route_ok({ query: route.query.q }),
 				description: 'Search',
 				query: object({ q: pipe(string, min_length(1)) }),
 				input: literal(null),
@@ -672,7 +668,7 @@ describe('prefix_route_specs', () => {
 			roles: ['keeper'],
 			credential_types: ['daemon_token']
 		});
-		assert.strictEqual(prefixed[0]!.handler, handler);
+		assert.strictEqual(prefixed[0]!.handler, specs[0]!.handler);
 		assert.strictEqual(prefixed[0]!.description, 'Delete item');
 	});
 
@@ -1273,7 +1269,7 @@ describe('input validation', () => {
 });
 
 describe('GET body validation guard', () => {
-	test('GET route with non-null input skips body parsing', async () => {
+	test('GET route with non-null input is refused at registration', () => {
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			define_route({
@@ -1286,13 +1282,11 @@ describe('GET body validation guard', () => {
 				handler: () => route_ok({ ok: true })
 			})
 		];
-		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
-
-		// GET with no body — should succeed (no body parse attempted)
-		const res = await app.request('/items');
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.ok, true);
+		// a GET carries no body, so nothing would validate the input it declares
+		assert.throws(
+			() => apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db),
+			/^Route "GET \/items": input is not `literal\(null\)` — a GET carries no body; declare its fields on `query`$/
+		);
 	});
 
 	test('GET route with null input still works', async () => {
@@ -1351,7 +1345,8 @@ describe('GET body validation guard', () => {
 
 		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
-		// input_schema should be populated (not null) — surface reads from r.input directly
+		// a spec registration refuses still reaches a surface built from the specs
+		// alone, which reads `r.input` directly — what `assert_mutation_routes_use_post` flags
 		assert.ok(surface.routes[0]!.input_schema);
 	});
 });

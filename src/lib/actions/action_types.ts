@@ -24,7 +24,11 @@ import type { Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { ActionSpecUnion, RequestResponseActionSpec } from './action_spec.ts';
 import type { Uuid } from '../primitive_schemas.ts';
-import type { RequestActorContext, RequestContext } from '../auth/request_context.ts';
+import type {
+	RequestActorContext,
+	RequestContext,
+	RequestContextForAuth
+} from '../auth/request_context.ts';
 import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { Db } from '../db/db.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
@@ -216,25 +220,32 @@ export interface RpcAction {
 }
 
 /**
- * Conditional handler shape for `rpc_action` — picks the narrowest
- * `ctx.auth` type the dispatcher's runtime guarantee allows:
+ * The handler for a narrowed `auth` (`RequestContextForAuth`):
+ * `ActorActionHandler` for an acting actor, `AuthActionHandler` for an
+ * account, `ActionHandler` otherwise.
+ */
+type HandlerForAuth<TAuth extends RequestContext | null, TInput, TOutput> = [TAuth] extends [
+	RequestActorContext
+]
+	? ActorActionHandler<TInput, TOutput>
+	: [TAuth] extends [RequestContext]
+		? AuthActionHandler<TInput, TOutput>
+		: ActionHandler<TInput, TOutput>;
+
+/**
+ * Conditional handler shape for `rpc_action` — the narrowest `ctx.auth` the
+ * dispatcher's runtime guarantee allows, read off the spec's `auth` by
+ * `RequestContextForAuth`, the narrowing REST route handlers share:
  *
  * - `auth.actor === 'required'` → `ActorActionHandler` (`ctx.auth: RequestActorContext`).
  * - `auth.account === 'required' && auth.actor === 'none'` → `AuthActionHandler` (`ctx.auth: RequestContext`).
- * - else (public, optional axes) → `ActionHandler` (`ctx.auth: RequestContext | null`).
- *
- * The bracketed form `[T] extends ['required']` defeats distributive
- * conditionals so a degraded `AuthAxisState` union (when the spec was
- * typed without preserving its literal) falls through to the loosest
- * tier instead of collapsing to the narrowest.
+ * - else (public, optional axes, a degraded union) → `ActionHandler` (`ctx.auth: RequestContext | null`).
  */
-export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
-	TSpec['auth']['actor']
-] extends ['required']
-	? ActorActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>
-	: [TSpec['auth']['account']] extends ['required']
-		? AuthActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>
-		: ActionHandler<Infer<TSpec['input']>, Infer<TSpec['output']>>;
+export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = HandlerForAuth<
+	RequestContextForAuth<TSpec['auth']>,
+	Infer<TSpec['input']>,
+	Infer<TSpec['output']>
+>;
 
 /**
  * Pair a spec with a handler while preserving per-method input/output types

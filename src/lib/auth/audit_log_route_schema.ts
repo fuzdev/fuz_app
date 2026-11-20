@@ -46,7 +46,15 @@ export interface AuditStreamAuth {
  */
 export const create_audit_log_route_shape = (
 	required_role: string = DEFAULT_AUDIT_STREAM_ROLE
-): RouteShape<[], Schema<null, null, 'literal', null>, AuditStreamAuth, undefined> =>
+): RouteShape<
+	[],
+	Schema<null, null, 'literal', null>,
+	AuditStreamAuth,
+	undefined,
+	Schema<null, null, 'literal', null>,
+	undefined,
+	typeof AuditStreamQuery
+> =>
 	define_route_shape({
 		method: 'GET',
 		path: '/audit/stream',

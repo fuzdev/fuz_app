@@ -35,7 +35,7 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { emit_after_commit } from '#lib/http/pending_effects.ts';
-import { define_route, get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
@@ -109,8 +109,8 @@ const setup = async (get_db: () => Db) => {
 			input: probe_input,
 			output: probe_output,
 			description: 'Test probe REST route.',
-			handler: async (c, route) => {
-				const { fail, token } = get_route_input(c, probe_input);
+			handler: async (route) => {
+				const { fail, token } = route.input;
 				await route.db.query('INSERT INTO rollback_probe (token) VALUES ($1)', [token]);
 				// Eager: in-flight pool-style write — must survive rollback.
 				route.pending_effects.push(
@@ -137,14 +137,14 @@ const setup = async (get_db: () => Db) => {
 				output: probe_output,
 				transaction: path === REST_BUILD_PATH,
 				description: 'Test probe REST route whose result fails to become a response.',
-				handler: async (c, route) => {
-					const { mode, token } = get_route_input(c, build_probe_input);
+				handler: async (route) => {
+					const { mode, token } = route.input;
 					await route.db.query('INSERT INTO rollback_probe (token) VALUES ($1)', [token]);
 					emit_after_commit({ post_commit_effects: route.post_commit_effects }, () => {
 						rest_sinks.deferred.push(token);
 					});
 					// a handler typed `any`, or JS, gets past the types either way
-					if (mode === 'bare_response') return c.json({ ok: true }) as never;
+					if (mode === 'bare_response') return Response.json({ ok: true }) as never;
 					if (mode === 'malformed') return { ok: true } as never;
 					const unserializable: unknown = { ok: true, n: 1n };
 					return route_ok(unserializable as { ok: true });

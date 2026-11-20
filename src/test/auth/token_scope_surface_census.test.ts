@@ -174,6 +174,12 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 	},
 	// --- Exempt, with reasons ---
 	{
+		file: 'http/route_spec.ts',
+		role: 'exempt',
+		reason:
+			"builds each handler's `RouteContext`, handing it the credential the middleware resolved as `credential` and the request context as `auth` — it reads no scope and gates nothing: the rule-3 decision is each route's, a `required_scope` on its shape or `get_public_account_id` in a handler that answers anonymous callers"
+	},
+	{
 		file: 'auth/audit_log_routes.ts',
 		role: 'exempt',
 		reason:
@@ -198,6 +204,26 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
  * `require_request_context` alone, so a scan for the context *keys* would have
  * missed it.
  */
+/**
+ * A route handler's read of `RouteContext.credential` — any spelling: off a
+ * parameter of any name (`route.credential`, `r.credential`) or destructured
+ * (`({ credential })`), so the word itself, whole (`credential_type` is
+ * another word).
+ */
+const ROUTE_CREDENTIAL_READ = /\bcredential\b/u;
+
+/**
+ * A module that defines a route (`define_route`, `attach_route_handler`) or
+ * names the route context (`RouteContext`) and names the credential
+ * (`ROUTE_CREDENTIAL_READ`). Scoped to those modules because the word is
+ * everywhere else in the auth code; a handler can reach the credential only
+ * through its `RouteContext`, so every module that defines a handler or
+ * takes the context from one — a helper handed `route` — and names it is a
+ * site.
+ */
+const ROUTE_MODULE_CREDENTIAL_READ =
+	/^(?=[\s\S]*(?:\b(?:define_route|attach_route_handler)\s*\(|\bRouteContext\b))[\s\S]*\bcredential\b/u;
+
 const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	RESOLVED_AUTH_KEY_NAME,
 	get_resolved_auth.name,
@@ -209,6 +235,9 @@ const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	'get_request_context',
 	'token_scope_surface_denial',
 	'get_public_account_id',
+	// A route handler's read of the resolved credential, off its `RouteContext`
+	// — handlers receive no Hono context, so this is how one reaches it.
+	ROUTE_MODULE_CREDENTIAL_READ,
 	// Building a capability string is deciding what a credential's scope must
 	// admit, which is a census-worthy act even in a file that never reads one.
 	'token_scope_method_capability',
@@ -335,28 +364,29 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 }> = [
 	{
 		file: 'auth/account_routes.ts',
-		source: 'const account_id = get_public_account_id(c);',
+		source: 'const account_id = get_public_account_id(route);',
 		other_reads: [
 			{
-				source: 'const session_hash = resolved_auth_session_hash(get_resolved_auth(c));',
+				source: 'const session_hash = resolved_auth_session_hash(route.credential);',
 				reason:
 					'`/logout` revokes the session it was called on; its shape admits only a session credential, so no bearer reaches it'
 			},
 			{
-				source: 'const credential_type = get_resolved_auth(c)?.credential_type;',
+				source: 'const credential_type = route.credential?.credential_type;',
 				reason:
 					'`/password` records the credential type in its audit metadata; credential-gated to the session channel'
 			}
 		]
 	},
-	{ file: 'server/serve_fact_route.ts', source: 'const account_id = get_public_account_id(c);' }
+	{ file: 'server/serve_fact_route.ts', source: 'const account_id = get_public_account_id(route);' }
 ];
 
 /**
  * The raw reads of the resolved credential — the context key by constant
  * (`RESOLVED_AUTH_KEY`), by its value (the bare `resolved_auth`, which also
  * matches the literal in `c.get('resolved_auth')` and `c.var.resolved_auth`,
- * quote and dot being word boundaries), and the getter (`get_resolved_auth`).
+ * quote and dot being word boundaries), the getter (`get_resolved_auth`),
+ * and a handler's `credential`, however it reaches it (`ROUTE_CREDENTIAL_READ`).
  * The bare value skips a module path (`./resolved_auth.ts`), which names the
  * module, not the value. Built from
  * the live key value and the getter's name, so a rename moves the pattern
@@ -374,7 +404,8 @@ const RAW_CREDENTIAL_READ = new RegExp(
 	[
 		`\\b${RESOLVED_AUTH_KEY_NAME}\\b`,
 		`\\b${RESOLVED_AUTH_KEY}\\b(?!\\.ts)`,
-		`\\b${get_resolved_auth.name}\\s*\\(`
+		`\\b${get_resolved_auth.name}\\s*\\(`,
+		ROUTE_CREDENTIAL_READ.source
 	].join('|'),
 	'u'
 );
@@ -579,14 +610,21 @@ describe('token scope surface census', () => {
 			`c.get('${RESOLVED_AUTH_KEY}')`,
 			`c.var.${RESOLVED_AUTH_KEY}`,
 			`const { ${RESOLVED_AUTH_KEY} } = c.var;`,
-			`${get_resolved_auth.name}(c)`
+			`${get_resolved_auth.name}(c)`,
+			'route.credential',
+			'route.credential?.account_id',
+			'r.credential',
+			'async ({ credential, db }) =>',
+			'const { credential } = route;'
 		]) {
 			assert.ok(RAW_CREDENTIAL_READ.test(spelling), `the raw-read pattern misses \`${spelling}\``);
 		}
 		for (const near_miss of [
 			`import { x } from './${RESOLVED_AUTH_KEY}.ts';`,
 			`import { x } from '#lib/auth/${RESOLVED_AUTH_KEY}.ts';`,
-			`${RESOLVED_AUTH_KEY}_scope(auth)`
+			`${RESOLVED_AUTH_KEY}_scope(auth)`,
+			'ctx.credential_type',
+			'route.credential_type'
 		]) {
 			assert.ok(
 				!RAW_CREDENTIAL_READ.test(near_miss),
@@ -606,7 +644,8 @@ describe('token scope surface census', () => {
 		// each way to read the credential is a marker, and each reaches real code
 		for (const [marker, file] of [
 			[RESOLVED_AUTH_KEY_NAME, 'auth/bearer_auth.ts'],
-			[get_resolved_auth.name, 'actions/action_rpc.ts'],
+			[get_resolved_auth.name, 'actions/register_action_ws.ts'],
+			[ROUTE_MODULE_CREDENTIAL_READ, 'actions/action_rpc.ts'],
 			// a site handed the credential as a parameter, reached by the scope read alone
 			[resolved_auth_scope.name, 'actions/perform_action.ts']
 		] as const) {

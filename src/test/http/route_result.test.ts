@@ -50,6 +50,11 @@ const shape = {
 
 const create_app = (specs: Array<RouteSpec>): Hono => {
 	const app = new Hono();
+	// a line the middleware put on the context, as the session middleware's clear
+	app.use('/cookies/after_context', async (c, next) => {
+		c.header('Set-Cookie', 'first=; Max-Age=0', { append: true });
+		await next();
+	});
 	apply_route_specs(
 		app,
 		specs,
@@ -74,8 +79,8 @@ const app = create_app([
 		path: '/limited/:retry_after',
 		params: object({ retry_after: string }),
 		rate_limit: 'ip',
-		handler: (c) =>
-			route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: Number(c.req.param('retry_after')) })
+		handler: (route) =>
+			route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: Number(route.params.retry_after) })
 	}),
 	define_route({
 		...shape,
@@ -88,8 +93,8 @@ const app = create_app([
 		path: '/optional/:given',
 		params: object({ given: string }),
 		errors: [REST_AUTHENTICATION_REQUIRED_BOOTSTRAP],
-		handler: (c) =>
-			c.req.param('given') === 'yes'
+		handler: (route) =>
+			route.params.given === 'yes'
 				? route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP, { bootstrap_available: true })
 				: route_fail(REST_AUTHENTICATION_REQUIRED_BOOTSTRAP)
 	}),
@@ -98,8 +103,8 @@ const app = create_app([
 		path: '/forward/:id',
 		params: object({ id: string }),
 		errors: [REST_ROW_NOT_FOUND],
-		handler: (c) => {
-			const failure = find_row(c.req.param('id') ?? '');
+		handler: (route) => {
+			const failure = find_row(route.params.id);
 			if (failure) return failure;
 			return route_ok({ n: 2 });
 		}
@@ -112,11 +117,8 @@ const app = create_app([
 	define_route({
 		...shape,
 		path: '/cookies/after_context',
-		handler: (c) => {
-			// a line the middleware put on the context, as the session middleware's clear
-			c.header('Set-Cookie', 'first=; Max-Age=0', { append: true });
-			return route_ok({ n: 6 }, { set_cookie: ['second=1'] });
-		}
+		// the middleware `create_app` mounts puts a line on the context first
+		handler: () => route_ok({ n: 6 }, { set_cookie: ['second=1'] })
 	}),
 	define_route({
 		...shape,
@@ -177,33 +179,27 @@ const app = create_app([
 	define_route({
 		...shape,
 		path: '/headers/ok',
-		handler: (c) => {
-			c.header('Cache-Control', 'no-store');
-			return route_ok({ n: 3 });
-		}
+		response_headers: { 'Cache-Control': 'no-store' },
+		handler: () => route_ok({ n: 3 })
 	}),
 	define_route({
 		...shape,
 		path: '/headers/fail',
 		rate_limit: 'ip',
-		handler: (c) => {
-			c.header('Cache-Control', 'no-store');
-			return route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: 4 });
-		}
+		response_headers: { 'Cache-Control': 'no-store' },
+		handler: () => route_fail(REST_RATE_LIMIT_EXCEEDED, { retry_after: 4 })
 	}),
 	define_route({
 		...shape,
 		path: '/headers/raw',
-		handler: (c) => {
-			c.header('Cache-Control', 'no-store');
-			return route_raw({ status: 204 });
-		}
+		response_headers: { 'Cache-Control': 'no-store' },
+		handler: () => route_raw({ status: 204 })
 	}),
 	define_route({
 		...shape,
 		path: '/bare_response',
 		// a handler typed `any`, or JS, that still returns a `Response`
-		handler: (c) => c.json({ n: 4 }) as never
+		handler: () => Response.json({ n: 4 }) as never
 	}),
 	// results no factory makes: a success without a value, a failure without
 	// its definition, an `ok` of neither kind, a raw result without its fields
@@ -236,7 +232,7 @@ describe('route_ok', () => {
 		assert.strictEqual(await res.text(), '{"n":1}');
 	});
 
-	test('carries a header set on the context', async () => {
+	test("carries the route's `response_headers`", async () => {
 		const res = await app.request('/headers/ok');
 		assert.strictEqual(res.status, 200);
 		assert.strictEqual(res.headers.get('Cache-Control'), 'no-store');
@@ -320,7 +316,7 @@ describe('route_fail', () => {
 		assert.strictEqual(await found.text(), '{"n":2}');
 	});
 
-	test('carries a header set on the context beside its own', async () => {
+	test("carries the route's `response_headers` beside its own", async () => {
 		const res = await app.request('/headers/fail');
 		assert.strictEqual(res.status, 429);
 		assert.strictEqual(res.headers.get('Retry-After'), '4');
@@ -381,7 +377,7 @@ describe('route_raw', () => {
 		assert.strictEqual(res.headers.get('X-Many'), 'a, b');
 	});
 
-	test('carries a header set on the context', async () => {
+	test("carries the route's `response_headers`", async () => {
 		const res = await app.request('/headers/raw');
 		assert.strictEqual(res.status, 204);
 		assert.strictEqual(res.headers.get('Cache-Control'), 'no-store');

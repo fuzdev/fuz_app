@@ -28,7 +28,6 @@ import { ActingActor } from '#lib/primitive_schemas.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
-import { require_request_context } from '#lib/auth/request_context.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
@@ -49,7 +48,7 @@ const create_route_specs = (): Array<RouteSpec> => [
 		query: s.object({ acting: ActingActor }),
 		input: s.literal(null),
 		output: s.object({ actor_id: s.nullable(s.string) }),
-		handler: (c) => route_ok({ actor_id: require_request_context(c).actor?.id ?? null })
+		handler: (route) => route_ok({ actor_id: route.auth.actor.id })
 	})
 ];
 
