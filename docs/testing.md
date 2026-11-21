@@ -141,9 +141,9 @@ import { AUTH_MIGRATION_NS } from '@fuzdev/fuz_app/auth/migrations.ts';
 import {
 	create_default_db_factory,
 	create_pg_factory,
-	create_describe_db,
 	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
+import { create_describe_db } from '@fuzdev/fuz_app/testing/describe_db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS, MY_APP_MIGRATION_NS]);
@@ -187,7 +187,7 @@ and different migration namespaces.
 If your query modules follow fuz_app's named-projection convention (an
 exported `MY_TABLE_COLUMNS` const every read projects through — see
 ./architecture.md §Query Modules), guard each const against the live schema
-with `assert_columns_match_live` from `testing/db.ts` — per module as below,
+with `assert_columns_match_live` from `testing/describe_db.ts` — per module as below,
 or (as fuz_app does for itself) from one table → const registry whose key set
 you also assert against `query_public_columns`, so a new table can't ship
 without a const:
@@ -306,22 +306,24 @@ describe_standard_admin_integration_tests({
 - `rpc_endpoints` (optional) — RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).
 - `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_store, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The cross-backend harness exercises the success response, bootstrapping every backend it spawns.
 - `app_options` (optional) — `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
-- `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` and `ROLE_ADMIN` (`DEFAULT_IN_PROCESS_KEEPER_ROLES` — what a production bootstrap grants, and what the cross-process reset seeds). `default_in_process_setup` uses the same default when its `roles` is omitted; `create_test_app` called directly keeps `[ROLE_KEEPER]`.
+- `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` and `ROLE_ADMIN` (`DEFAULT_TEST_KEEPER_ROLES` — what a production bootstrap grants, and what the cross-process reset seeds). The same default holds wherever `roles` is omitted — `default_in_process_setup`, `create_test_app`, `create_test_app_server`.
 - `exclude_db_invariants` (optional) — invariants the per-test database check skips, each with its reason (§Database invariants after every test).
 - `surface_source` (optional) — Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).
 
 ### Database invariants after every test
 
-Both setups — `default_in_process_setup` (and so
-`default_in_process_suite_options`) and `default_cross_process_setup` — check
-the auth schema's invariants (`DB_INVARIANTS` in
-`@fuzdev/fuz_app/testing/db_invariant_queries.ts`) when each test that called
-`setup_test()` finishes: no credential, pending offer or unclaimed invite
+`create_test_app` — and so `default_in_process_setup` and
+`default_in_process_suite_options`, built on it — and
+`default_cross_process_setup` check the auth schema's invariants
+(`DB_INVARIANTS` in `@fuzdev/fuz_app/testing/db_invariant_queries.ts`) when
+each test that built an app or called `setup_test()` finishes: no credential, pending offer or unclaimed invite
 outliving its account, a bootstrapped database keeping a live keeper and a
 live admin, and the like, read from the rows and from `audit_log` so an
-undelete hides nothing. A test that already failed is not checked again. A
-fixture built in `beforeAll` is checked once after its describe's tests, by
-the shipped suites that build one. Cross-process, the check calls the
+undelete hides nothing. A test that already failed is not checked again. An app
+or fixture built in `beforeAll` registers nothing; check it once its
+describe's tests are done with `check_db_invariants_after_all(() => test_app)`, or, when the describe closes the app in its own `afterAll`, `check_db_invariants_after_suite(suite, test_app)` inside that hook ahead of the close
+(`testing/db_invariants.ts`), as the shipped suites that build one do.
+`TestApp.assert_db_invariants` checks on demand. Cross-process, the check calls the
 backend's `_testing_db_invariants` backdoor (bundled by
 `create_testing_actions` and by the Rust `fuz_testing::testing_reset_specs`),
 whatever its database. A backend must declare it in
@@ -331,7 +333,8 @@ check is turned off with its reason, `exclude_db_invariants: {all: '…'}`.
 A test that writes rows by hand without the cascade the spine runs (a
 tombstone set in SQL, a lock-ordering test playing half a delete) leaves a
 state the spine can't. Exclude what it breaks on the setup, each with its
-reason, which the run logs once per setup:
+reason, which the run logs once per setup (once per distinct set for
+`create_test_app`, which a test may call per test):
 
 ```ts
 const setup_test = default_cross_process_setup(handle, {
@@ -340,6 +343,23 @@ const setup_test = default_cross_process_setup(handle, {
 	}
 });
 ```
+
+In-process, the same option sits on `create_test_app` and the setups over it:
+
+```ts
+const test_app = await create_test_app({
+	session_options,
+	create_route_specs,
+	exclude_db_invariants: {
+		actor_tombstone_disagrees_with_account: 'one actor is soft-deleted by hand'
+	}
+});
+```
+
+Never exclude a state a production code path leaves — that is the bug the
+check exists to catch. A test that needs a keeper without admin passes
+`roles: [ROLE_KEEPER]` and ends with a live admin, or excludes
+`bootstrapped_without_live_admin` with its reason.
 
 A test an `xfail_until` marker tracks breaks what its gap breaks; exclude that
 on the setup the marked test uses, naming the marker's tracking id.
@@ -881,7 +901,7 @@ assert_error_coverage(collector, route_specs, {
 - `describe_rpc_round_trip_tests` (`testing/rpc_round_trip.ts`) — DB-backed round-trip for RPC methods (POST + GET); a crash on schema-valid params (500, `internal_error`, or a ≥500 with no JSON-RPC envelope) fails the method, while a declared 503/504 passes. A 401 to a non-public method fails too, since the call carried a credential its auth admits — unless the handler names its own reason (`data.reason`, such as `invalid_credentials`). A reason-less 401 reads as unauthenticated and fails, and `jsonrpc_errors.unauthenticated(message)` sends no `data` unless given one, so pass it `{reason}`. A side-effecting method called as the authed account runs on a fresh account of its own, so a self-targeting one (`account_delete` with no `account_id`, `account_session_revoke_all`) can't destroy the shared account's credential for the methods after it. `rpc_skip_methods` / `rpc_input_overrides` on the standard bundles forward to its `skip_methods` / `input_overrides`. Pass `success_fixtures: create_spine_rpc_success_fixtures()` (`testing/cross_backend/rpc_success_fixtures.ts`; `rpc_success_fixtures` on the standard bundles) to check the success body of the standard methods that act on an existing row
 - `describe_conformance_table_tests` (`testing/cross_backend/conformance_table.ts`) — Declarative behavioral/security cases — one row array, both transports (see §Cross-Backend Integration)
 - `describe_differential_conformance_tests` (`testing/cross_backend/differential.ts`) — The same cases sent to two backends, normalized responses compared, tracked differences in a ledger (see §Cross-backend differential)
-- `create_describe_db` (`testing/db.ts`) — Create a `describe_db` bound to factories + truncate tables
+- `create_describe_db` (`testing/describe_db.ts`) — Create a `describe_db` bound to factories + truncate tables
 
 ### Cross-Impl Schema Parity
 

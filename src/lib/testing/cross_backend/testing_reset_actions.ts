@@ -116,7 +116,6 @@ import type { AuditEmitter } from '../../auth/audit_emitter.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
 import type { Db } from '../../db/db.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '../../auth/role_schema.ts';
 import {
 	query_schema_snapshot,
 	SchemaSnapshot,
@@ -126,7 +125,11 @@ import {
 import { ActionManifest, build_action_manifest } from './action_manifest.ts';
 import { DbInvariantRows, query_db_invariant_rows } from '../db_invariant_queries.ts';
 import { create_test_extra_actor } from '../db_entities.ts';
-import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
+import {
+	create_test_account_with_credentials,
+	DEFAULT_TEST_KEEPER_ROLES,
+	mint_test_session
+} from '../app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
@@ -949,16 +952,16 @@ export const create_testing_actions = (
 			//    parity — same hash, same account+actor+role_grants+
 			//    api_token+session_cookie shape.
 			//
-			//    Roles default to `[ROLE_KEEPER, ROLE_ADMIN]` to match
-			//    production `bootstrap_account`. `extra_keeper_roles` adds
-			//    on top.
+			//    Roles default to `DEFAULT_TEST_KEEPER_ROLES` (keeper and
+			//    admin) to match production `bootstrap_account`.
+			//    `extra_keeper_roles` adds on top.
 			const keeper = await create_test_account_with_credentials({
 				db: ctx.db,
 				keyring: deps.keyring,
 				session_options,
 				password: deps.password,
 				password_value: DEFAULT_TEST_PASSWORD,
-				roles: [ROLE_KEEPER, ROLE_ADMIN, ...(input.extra_keeper_roles ?? [])]
+				roles: [...new Set([...DEFAULT_TEST_KEEPER_ROLES, ...(input.extra_keeper_roles ?? [])])]
 			});
 
 			// 6. Refresh the daemon-token cache so subsequent daemon-token

@@ -20,7 +20,6 @@ import {
 } from '#lib/auth/admin_action_specs.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
@@ -35,8 +34,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			const res = await rpc_call_for_spec({
@@ -77,8 +75,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			const res = await rpc_call_for_spec({

@@ -26,11 +26,8 @@ import { boolean, literal, object, one_of, string } from '@fuzdev/fuz_schema/sch
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
-import {
-	create_default_db_factory,
-	create_describe_db,
-	auth_integration_truncate_tables
-} from '#lib/testing/db.ts';
+import { create_default_db_factory, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';

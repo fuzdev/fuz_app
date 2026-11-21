@@ -14,6 +14,7 @@ import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -117,8 +118,15 @@ describe('audit rows and the request transaction', () => {
 		});
 	});
 
-	afterAll(async () => {
-		await test_app.cleanup();
+	// the app is built in `beforeAll`, outside any test, so it is checked
+	// once the describe's tests are done, ahead of the cleanup
+	// eslint-disable-next-line no-empty-pattern
+	afterAll(async ({}, suite) => {
+		try {
+			await check_db_invariants_after_suite(suite, test_app);
+		} finally {
+			await test_app.cleanup();
+		}
 	});
 
 	test('a failure row persists despite the transaction rollback', async () => {

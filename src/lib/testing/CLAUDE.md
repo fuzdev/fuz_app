@@ -145,7 +145,7 @@ measures one. Hono-free, imported by the cross-process token suite.
 - `RecordedClose` — `ConnectionCloseTarget | {kind: 'all'}`.
 - `RecordingCloser` — `{closer, calls}`.
 
-## Database — `db.ts`
+## Database — `db.ts` + `describe_db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their
 `init_schema` callback (which calls `run_migrations(db, [AUTH_MIGRATION_NS, ...app_migrations])`);
@@ -159,8 +159,12 @@ factories accept any migration namespace set.
 - `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Each `create()` opens a pool and resets the `public` schema before `init_schema`, like every other factory, so a persistent test database carries no stale DDL; a missing database (`3D000`) gets a `createdb` hint. Pool reused + cleaned up across `create()` calls.
 - `auth_truncate_tables` — `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.
 - `auth_integration_truncate_tables` — `auth_truncate_tables + ['audit_log']` for integration suites that exercise the audit path.
-- `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `log_db_factory_status(factories)` — console summary of enabled / skipped factories.
+
+`db.ts` is vitest-free (`app_server.ts` reaches it, and with it the spawned
+spine binary); the two helpers that call vitest live in `describe_db.ts`:
+
+- `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `assert_columns_match_live(db, table, columns)` — the named-projection drift guard: asserts a `*_COLUMNS` const (`ACCOUNT_COLUMNS`, `CELL_COLUMNS`, a consumer's own) names exactly the live `public`-schema columns of `table`, via `query_public_columns(db, {table})`. Per module, or iterated from a table → const registry (fuz_app's own: `src/test/db/column_projections.db.test.ts`).
 
 **WASM caching.** `create_pglite_factory` and `create_pglet_wasm_factory` each
@@ -187,21 +191,24 @@ which the Rust `fuz_testing` embeds byte for byte
 `format_db_invariant_violations`. `db_invariants.ts` holds the hooks:
 `assert_db_invariants` (over a `Db`), `assert_db_invariant_rows` (over
 rows a backend answered), `register_db_invariants_check`,
-`check_db_invariants_after_all`.
+`check_db_invariants_after_all`, `check_db_invariants_after_suite`.
 
-Both cross-backend setups build the fixture, then register
-`fixture.assert_db_invariants` to run when the test finishes
-(`register_db_invariants_check` — only inside a running test; skipped when
-the test already failed). In-process it queries the fixture's own database;
+`create_test_app` registers its `assert_db_invariants` to run when the test
+that built it finishes (`register_db_invariants_check` — only inside a running
+test; skipped when the test already failed), so a direct caller is checked
+too; `default_in_process_setup` uses the test app's check, and the
+cross-process setup registers its fixture's. In-process it queries the app's
+own database;
 cross-process it calls the backend's `_testing_db_invariants` on the keeper's
 daemon-token channel (unrecorded by a transcript), so `memory://` spawns are
 checked too. A backend not declaring `_testing_db_invariants` in
 `capabilities.testing_backdoors` throws at setup unless the setup passes
-`exclude_db_invariants: {all: reason}`. A fixture built in `beforeAll` is
-checked once its describe's tests are done, by the shipped suites that build
-one (`check_db_invariants_after_all`). Opt out per invariant with
-`exclude_db_invariants: {[name]: reason}` on the setup — reason required,
-logged once per setup, merged by name in `describe_spine_cross_suites` — for
+`exclude_db_invariants: {all: reason}`. An app or fixture built in `beforeAll` is
+checked once its describe's tests are done (`check_db_invariants_after_all`,
+or `check_db_invariants_after_suite` inside a describe's own closing
+`afterAll`, ahead of the close). Opt out per invariant with `exclude_db_invariants: {[name]:
+reason}` on `create_test_app` or the setup — reason required, validated on
+every call, logged once per distinct set, merged by name in `describe_spine_cross_suites` — for
 tests that write rows by hand without the cascade, or a gap an
 `xfail_until` marker tracks; `all` excludes every one.
 
@@ -210,7 +217,8 @@ tests that write rows by hand without the cascade, or a gap an
 ### `app_server.ts` and `test_app.ts`
 
 `app_server.ts` is vitest-free (the spawned spine binary, the reset actions
-and fuz_forge's server build import it): `create_test_app_server(options)`
+and fuz_forge's server build import it; `src/test/vitest_free_modules.test.ts`
+holds its import graph to that): `create_test_app_server(options)`
 bootstraps a minimal `AppBackend` with a keeper account, API token, session
 cookie, and signed `Keyring`. `test_app.ts` holds the test-app layer:
 `create_test_app(options)` layers `create_app_server` on top, returning a
@@ -240,10 +248,10 @@ do, so the returned `account.username` is its lowercase.
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
-- `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
+- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles` (default `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin, as a production bootstrap grants), `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
+- `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`), and `exclude_db_invariants?` (§`db_invariant_queries.ts` + `db_invariants.ts`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
-- `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
+- `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, assert_db_invariants, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins` exactly `TEST_ORIGIN` (built by
@@ -1194,10 +1202,9 @@ have files of their own.
   **Keeper ≠ admin.** `fixture.account` is the keeper account holding
   `[ROLE_KEEPER, ROLE_ADMIN]` — the role split mirrors production
   `bootstrap_account`, cross-process by the reset's seed and in-process by
-  `DEFAULT_IN_PROCESS_KEEPER_ROLES`, the keeper default of
-  `default_in_process_setup` (when `roles` is omitted) and
-  `default_in_process_suite_options` (`create_test_app` itself keeps
-  `[ROLE_KEEPER]`). `ROLE_KEEPER` does not grant admin reach; bootstrap
+  `DEFAULT_TEST_KEEPER_ROLES` (`app_server.ts`), the keeper default of
+  `bootstrap_test_keeper` and so of every in-process builder when `roles` is
+  omitted. `ROLE_KEEPER` does not grant admin reach; bootstrap
   just happens to land both as separate grants. Probing the separation (a
   keeper-only account must 403 on admin RPCs) requires declaring
   `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` — `ROLE_KEEPER`'s

@@ -14,7 +14,6 @@
  * @module
  */
 
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
 import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
@@ -86,7 +85,6 @@ export const create_cell_parity_setup = (
 		session_options: spine_session_options,
 		create_route_specs: () => [],
 		rpc_endpoints,
-		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		migration_namespaces: [CELL_MIGRATION_NS],
 		audit_factory: cell_parity_audit_factory,
 		extra_accounts,

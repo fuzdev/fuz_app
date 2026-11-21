@@ -13,7 +13,6 @@
  * @module
  */
 
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
@@ -36,7 +35,6 @@ const handle = inject_backend_handle();
 // at offer time, so the bootstrap-cradle seed is the only path).
 const setup_test = default_cross_process_setup(handle, {
 	reject_unknown_audit_metadata_keys: true,
-	extra_keeper_roles: [ROLE_ADMIN],
 	extra_accounts: [{ username: PARTICIPATION_HOLDER_USERNAME, roles: [SPINE_PARTICIPANT_ROLE] }]
 });
 const { capabilities } = handle.config;

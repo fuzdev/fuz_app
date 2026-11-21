@@ -75,8 +75,7 @@ const create_app = (
 	create_test_app({
 		session_options,
 		create_route_specs: create_standard_route_specs(authorize),
-		db: get_db(),
-		roles: [ROLE_ADMIN]
+		db: get_db()
 	});
 
 const call = (

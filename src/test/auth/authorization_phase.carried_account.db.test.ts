@@ -24,6 +24,7 @@
 import { assert, test } from 'vitest';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
@@ -89,9 +90,17 @@ const send_with_second_read_stalled = async <T>(
 	return { answer: await answer, read_again: first === 'read_again' };
 };
 
-const setup = async (db: Db): Promise<{ test_app: TestApp; gated: GatedDb }> => {
+const setup = async (
+	db: Db,
+	exclude_db_invariants?: DbInvariantExclusions
+): Promise<{ test_app: TestApp; gated: GatedDb }> => {
 	const gated = create_gated_db(db);
-	const test_app = await create_test_app({ session_options, db: gated.db, create_route_specs });
+	const test_app = await create_test_app({
+		session_options,
+		db: gated.db,
+		create_route_specs,
+		exclude_db_invariants
+	});
 	return { test_app, gated };
 };
 
@@ -179,7 +188,16 @@ describe_db('authorization phase: the carried account', (get_db) => {
 	// authorization phase makes, held while the account is removed.
 	for (const removal of ['delete', 'purge'] as const) {
 		test(`an actor-grain call whose account is removed (${removal}) after the credential leg answers 401`, async () => {
-			const { test_app, gated } = await setup(get_db());
+			// the delete leg tombstones by query, without the handler's cascade
+			const { test_app, gated } = await setup(
+				get_db(),
+				removal === 'delete'
+					? {
+							credential_of_tombstoned_account:
+								'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them'
+						}
+					: undefined
+			);
 			try {
 				const user = await test_app.create_account({ username: `removed_${removal}` });
 				const actor_list = gated.stall((sql) => /\bFROM actor WHERE account_id = \$1/.test(sql));
@@ -219,6 +237,16 @@ describe_db('authorization phase: the carried account', (get_db) => {
 	// credential leg answers the dead credential's 401 there. The window is
 	// that second read, held while the account is removed.
 	for (const removal of ['delete', 'purge'] as const) {
+		// the delete tombstones by query, without the handler's cascade
+		const exclude_db_invariants: DbInvariantExclusions | undefined =
+			removal === 'delete'
+				? {
+						credential_of_tombstoned_account:
+							'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them',
+						actor_tombstone_disagrees_with_account:
+							'the account is tombstoned by query, its actor left live — the handler tombstones it'
+					}
+				: undefined;
 		const remove = async (db: Db, account_id: string): Promise<void> => {
 			if (removal === 'delete') await query_account_soft_delete({ db }, account_id, null);
 			else await query_purge_account({ db }, account_id);
@@ -241,7 +269,7 @@ describe_db('authorization phase: the carried account', (get_db) => {
 		};
 
 		test(`account_verify on an account removed (${removal}) after the credential leg answers 401`, async () => {
-			const { test_app, gated } = await setup(get_db());
+			const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
 			try {
 				const user = await test_app.create_account({ username: `verify_${removal}` });
 				const answer = await with_second_read_held(gated, user.account.id, () =>
@@ -261,7 +289,7 @@ describe_db('authorization phase: the carried account', (get_db) => {
 		});
 
 		test(`account status on an account removed (${removal}) after the credential leg answers 401`, async () => {
-			const { test_app, gated } = await setup(get_db());
+			const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
 			try {
 				const user = await test_app.create_account({ username: `status_${removal}` });
 				const answer = await with_second_read_held(gated, user.account.id, async () =>

@@ -14,7 +14,6 @@ import * as s from '@fuzdev/fuz_schema/schema.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { describe_rpc_adversarial_cross_tests } from '#lib/testing/cross_backend/rpc_adversarial.ts';
@@ -64,7 +63,6 @@ const rpc_endpoints: Array<RpcEndpointSpec> = [
 describe_rpc_adversarial_cross_tests({
 	setup_test: default_in_process_setup({
 		session_options,
-		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		create_route_specs: () => [],
 		rpc_endpoints
 	}),

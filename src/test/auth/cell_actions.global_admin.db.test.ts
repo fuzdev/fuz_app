@@ -31,7 +31,7 @@ import {
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	type CellPath
 } from '#lib/auth/cell_action_specs.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	SPACE_CELL_KIND,
 	test_cell_gated_create_authorize
@@ -39,12 +39,7 @@ import {
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
 import type { Db } from '#lib/db/db.ts';
-import {
-	create_cell,
-	create_cell_admin_test_app,
-	create_cell_test_app,
-	call
-} from './cell_test_helpers.ts';
+import { create_cell, create_cell_test_app, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
@@ -57,7 +52,7 @@ describe_db('cell actions global-admin authority', (get_db) => {
 	install_audit_drift_guard();
 
 	test('the cell admin bypass requires a global admin', async () => {
-		const app = await create_cell_admin_test_app(get_db);
+		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({ username: 'bypass_owner' });
 		const { id } = await create_cell(app, {
 			kind: 'note',
@@ -107,7 +102,7 @@ describe_db('cell actions global-admin authority', (get_db) => {
 	});
 
 	test('cell_clone runs the create authorizer for every cell it writes', async () => {
-		const app = await create_cell_test_app(get_db, [ROLE_KEEPER, ROLE_ADMIN], {
+		const app = await create_cell_test_app(get_db, {
 			authorize_create: test_cell_gated_create_authorize
 		});
 		const member = await app.create_account({ username: 'clone_member' });
@@ -160,7 +155,7 @@ describe_db('cell actions global-admin authority', (get_db) => {
 	});
 
 	test('a scoped admin gets no clone bypass of the creation policy', async () => {
-		const app = await create_cell_test_app(get_db, [ROLE_KEEPER, ROLE_ADMIN], {
+		const app = await create_cell_test_app(get_db, {
 			authorize_create: test_cell_gated_create_authorize
 		});
 		const space = await create_cell(app, { kind: SPACE_CELL_KIND, data: {}, visibility: 'public' });

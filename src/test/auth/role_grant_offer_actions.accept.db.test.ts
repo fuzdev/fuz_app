@@ -35,8 +35,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'accept_recipient' });
 			const create_res = await rpc_call_for_spec({
@@ -68,8 +67,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'accept_idor_recipient' });
 			const attacker = await test_app.create_account({ username: 'accept_idor_attacker' });
@@ -103,8 +101,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'accept_terminal_recipient' });
 			const create_res = await rpc_call_for_spec({
@@ -145,8 +142,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'accept_expired_recipient' });
 			const db = get_db();
@@ -183,8 +179,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const grantor_b = await test_app.create_account({
 				username: 'sibling_grantor_b',
@@ -229,8 +224,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db_fn(),
-				roles: [ROLE_ADMIN]
+				db: get_db_fn()
 			});
 			const recipient = await test_app.create_account({
 				username: `accepted_terminal_${username_suffix}`

@@ -18,7 +18,7 @@ import {
 	account_delete_action_spec,
 	ERROR_CANNOT_DELETE_KEEPER
 } from '#lib/auth/admin_action_specs.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { credential_type_required_error } from '#lib/actions/perform_action.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
@@ -154,8 +154,7 @@ describe_db('account_delete self path is session-only', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs,
-			db: get_db(),
-			roles: [ROLE_KEEPER, ROLE_ADMIN]
+			db: get_db()
 		});
 		const admin = await test_app.create_account({ username: 'upper_admin', roles: [ROLE_ADMIN] });
 		const res = await rpc_call_for_spec({
@@ -175,8 +174,7 @@ describe_db('account_delete self path is session-only', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs,
-			db: get_db(),
-			roles: [ROLE_KEEPER, ROLE_ADMIN]
+			db: get_db()
 		});
 		for (const [username, headers] of [
 			['other_by_bearer', test_app.create_bearer_headers()],

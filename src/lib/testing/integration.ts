@@ -167,7 +167,7 @@ export interface StandardIntegrationTestOptions {
  * `fixture.account` is the fresh keeper, holding `ROLE_KEEPER` and
  * `ROLE_ADMIN` as a production bootstrap grants them (cross-process via
  * `_testing_reset`'s seeding; in-process via `bootstrap_test_keeper` with
- * `DEFAULT_IN_PROCESS_KEEPER_ROLES`), so the invite is admitted with no
+ * `DEFAULT_TEST_KEEPER_ROLES`), so the invite is admitted with no
  * per-role RPC cost or offer/accept round-trip. The tests run against
  * the production `open_signup: false` default — the cross-process
  * per-test secondary mint via `fixture.create_account()` is

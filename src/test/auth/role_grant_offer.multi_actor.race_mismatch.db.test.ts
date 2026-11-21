@@ -42,8 +42,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'race_loser_recipient' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'race_loser_b');
@@ -100,8 +99,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'race_idempotent_retry' });
 

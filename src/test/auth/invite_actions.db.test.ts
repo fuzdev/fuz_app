@@ -28,7 +28,6 @@ import {
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
@@ -42,8 +41,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			const res = await rpc_call_for_spec({
@@ -64,8 +62,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const existing_username = test_app.backend.account.username;
 
@@ -88,8 +85,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const existing_email = 'existing@example.test';
 			await query_create_account_with_actor(
@@ -120,8 +116,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const invitee_username = 'prospective_user';
 
@@ -152,8 +147,7 @@ describe_db('invite_actions_failure', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			const res = await rpc_call_for_spec({

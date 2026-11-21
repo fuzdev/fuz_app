@@ -85,7 +85,7 @@ describe_db('cell root policy', (get_db) => {
 			['no validate_policy', no_policy_reader]
 		] as const) {
 			test(`${label} → cell_policy_unsupported, and clearing still works`, async () => {
-				const app = await create_cell_test_app(get_db, [], { authorize_create });
+				const app = await create_cell_test_app(get_db, { authorize_create });
 				const owner = await app.create_account({ username: 'p_owner' });
 				const h = owner.create_session_headers();
 				const created = await call(
@@ -119,7 +119,7 @@ describe_db('cell root policy', (get_db) => {
 		}
 
 		test("the validator's refusal answers, and an accepted policy is stored", async () => {
-			const app = await create_cell_test_app(get_db, [], { authorize_create: reads_root_policy });
+			const app = await create_cell_test_app(get_db, { authorize_create: reads_root_policy });
 			const owner = await app.create_account({ username: 'p_validated' });
 			const h = owner.create_session_headers();
 			const refused = await call(
@@ -143,7 +143,7 @@ describe_db('cell root policy', (get_db) => {
 
 	describe('the policy is the manager’s', () => {
 		test('manage-tier, root-only, and read from the column', async () => {
-			const app = await create_cell_test_app(get_db, [], { authorize_create: reads_root_policy });
+			const app = await create_cell_test_app(get_db, { authorize_create: reads_root_policy });
 			const owner = await app.create_account({ username: 'p_mgr_owner' });
 			const editor = await app.create_account({ username: 'p_mgr_editor' });
 			const stranger = await app.create_account({ username: 'p_mgr_stranger' });

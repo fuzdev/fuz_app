@@ -6,7 +6,7 @@
  * authorizer parity on the spine binaries; this is the in-process leg that
  * makes bare `gro test` exercise the hook and the `kind` invariants (the cross
  * suite skips in-process, where the default app mounts no authorizer). The
- * gate is mounted via the optional third arg of `create_cell_test_app`.
+ * gate is mounted via the optional second arg of `create_cell_test_app`.
  *
  * @module
  */
@@ -54,7 +54,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 
 	describe('authorize_create gate', () => {
 		test('deny-all → cell_create is forbidden (403) for a parentless create', async () => {
-			const app = await create_cell_test_app(get_db, [], { authorize_create: deny_all });
+			const app = await create_cell_test_app(get_db, { authorize_create: deny_all });
 			const actor = await app.create_account({ username: 'authz_deny' });
 			const res = await call(
 				app,
@@ -67,7 +67,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('allow-all → create succeeds and stamps the kind column', async () => {
-			const app = await create_cell_test_app(get_db, [], { authorize_create: allow_all });
+			const app = await create_cell_test_app(get_db, { authorize_create: allow_all });
 			const actor = await app.create_account({ username: 'authz_allow' });
 			const res = await call(
 				app,
@@ -80,7 +80,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('gate-by-kind → gated denied, ungated open, typeless open', async () => {
-			const app = await create_cell_test_app(get_db, [], { authorize_create: deny_gated });
+			const app = await create_cell_test_app(get_db, { authorize_create: deny_gated });
 			const actor = await app.create_account({ username: 'authz_gate' });
 			const h = actor.create_session_headers();
 			const gated = await call(app, cell_create_action_spec, { kind: 'gated', data: {} }, h);
@@ -109,7 +109,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 			const async_deny: CellCreateAuthorize = {
 				authorize: () => Promise.resolve({ allow: false })
 			};
-			const app = await create_cell_test_app(get_db, [], { authorize_create: async_deny });
+			const app = await create_cell_test_app(get_db, { authorize_create: async_deny });
 			const actor = await app.create_account({ username: 'authz_async' });
 			const res = await call(
 				app,
@@ -323,7 +323,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 					return allow_all.authorize(auth, input, ctx);
 				}
 			};
-			const app = await create_cell_test_app(get_db, [], { authorize_create: counting_allow });
+			const app = await create_cell_test_app(get_db, { authorize_create: counting_allow });
 			const actor = await app.create_account({ username: 'tomb_gated' });
 			const h = actor.create_session_headers();
 			const post_id = await seed_post_under_deleted_space(app, h);

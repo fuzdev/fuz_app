@@ -481,7 +481,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 
 		test('it gates a manager after the spine gates, and a refusal writes nothing', async () => {
 			const deny = recording(false);
-			const app = await create_cell_test_app(get_db, [], {
+			const app = await create_cell_test_app(get_db, {
 				authorize_grant_create: deny.authorize
 			});
 			const owner = await app.create_account({ username: 'ga_owner' });
@@ -522,7 +522,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 
 		test('a level change goes through it, and an allow writes', async () => {
 			const allow = recording(true);
-			const app = await create_cell_test_app(get_db, [], {
+			const app = await create_cell_test_app(get_db, {
 				authorize_grant_create: allow.authorize
 			});
 			const owner = await app.create_account({ username: 'gb_owner' });
@@ -608,7 +608,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 
 		test('an allow revokes, audited `steward: true`, after asking with the grant', async () => {
 			const allow = recording(true);
-			const app = await create_cell_test_app(get_db, [], {
+			const app = await create_cell_test_app(get_db, {
 				authorize_grant_revoke: allow.authorize
 			});
 			const owner = await app.create_account({ username: 'rv_allow_owner' });
@@ -654,7 +654,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 				]);
 				return true;
 			};
-			const app = await create_cell_test_app(get_db, [], { authorize_grant_revoke: raced });
+			const app = await create_cell_test_app(get_db, { authorize_grant_revoke: raced });
 			const owner = await app.create_account({ username: 'rv_race_owner' });
 			const steward = await app.create_account({ username: 'rv_race_steward' });
 			const { id } = await create_cell(app, {
@@ -682,7 +682,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 
 		test('a refusal is the 404 mask — no audit row, the grant kept', async () => {
 			const deny = recording(false);
-			const app = await create_cell_test_app(get_db, [], {
+			const app = await create_cell_test_app(get_db, {
 				authorize_grant_revoke: deny.authorize
 			});
 			const owner = await app.create_account({ username: 'rv_deny_owner' });
@@ -709,7 +709,7 @@ describe_db('cell_grant_actions authz', (get_db) => {
 
 		test('fenced: actor-shaped, scopeless, manager, self, and deleted-cell revokes never ask', async () => {
 			const allow = recording(true);
-			const app = await create_cell_test_app(get_db, [], {
+			const app = await create_cell_test_app(get_db, {
 				authorize_grant_revoke: allow.authorize
 			});
 			const owner = await app.create_account({ username: 'rv_fence_owner' });

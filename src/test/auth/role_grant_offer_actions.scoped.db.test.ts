@@ -11,7 +11,6 @@
 import { describe, test, assert } from 'vitest';
 
 import { create_test_app } from '#lib/testing/test_app.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec
@@ -36,8 +35,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'scope_recipient' });
 			const scope_id = create_uuid();
@@ -74,8 +72,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'scope_sibling_recipient' });
 			const scope_a = create_uuid();

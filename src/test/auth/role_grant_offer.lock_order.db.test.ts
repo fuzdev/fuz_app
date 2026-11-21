@@ -52,7 +52,8 @@ import {
 	query_role_grant_revoke_for_scope
 } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 

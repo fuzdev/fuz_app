@@ -16,7 +16,6 @@ import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import { describe_audit_completeness_tests } from '#lib/testing/audit_completeness.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -54,7 +53,6 @@ describe_audit_completeness_tests(
 	default_in_process_suite_options({
 		session_options,
 		create_route_specs,
-		rpc_endpoints,
-		extra_keeper_roles: [ROLE_ADMIN]
+		rpc_endpoints
 	})
 );

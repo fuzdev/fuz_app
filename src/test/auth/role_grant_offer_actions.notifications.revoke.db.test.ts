@@ -78,8 +78,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_single_target' });
 		const db = get_db();
@@ -118,8 +117,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_scoped_target' });
 		const db = get_db();
@@ -176,8 +174,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs,
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_off_schema_target' });
 		const db = get_db();
@@ -216,8 +213,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_reason_target' });
 		const db = get_db();
@@ -245,8 +241,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const grantor_b = await test_app.create_account({
 			username: 'rpc_revoke_grantor_b',
@@ -308,8 +303,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_outgoing_target' });
 		const recipient = await test_app.create_account({ username: 'rpc_revoke_outgoing_to' });
@@ -349,8 +343,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
 		const target = await test_app.create_account({ username: 'rpc_revoke_no_offers_target' });
 		const db = get_db();
@@ -378,8 +371,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			...create_notification_app_options(sender),
-			db: get_db(),
-			roles: [ROLE_KEEPER, ROLE_ADMIN]
+			db: get_db()
 		});
 		// bootstrap account has the keeper role_grant.
 		const keeper_rows = await get_db().query<{ id: string; actor_id: string }>(

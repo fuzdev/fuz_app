@@ -18,9 +18,9 @@
 import { test, assert } from 'vitest';
 
 import { admin_session_revoke_all_action_spec } from '#lib/auth/admin_action_specs.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { ERROR_NO_ACTORS_ON_ACCOUNT } from '#lib/http/error_schemas.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
@@ -30,16 +30,16 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs: create_admin_route_specs,
-			db: get_db(),
-			roles: [ROLE_ADMIN]
+			db: get_db()
 		});
+		const victim = await test_app.create_account({ username: 'actorless', roles: [ROLE_ADMIN] });
 
-		// Delete every actor on the bootstrap account directly. The bearer
+		// Delete every actor on the victim account directly. The bearer
 		// token still validates — the `api_token` row is intact and the
 		// account row is intact — so this isolates the dispatcher's
 		// authorization phase as the only code that walks the actor list.
 		await test_app.backend.deps.db.query('DELETE FROM actor WHERE account_id = $1', [
-			test_app.backend.account.id
+			victim.account.id
 		]);
 
 		// Hit a role-gated RPC method (`auth: {account: 'required', actor: 'required', roles: ['admin']}`) over the
@@ -50,8 +50,8 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 			app: test_app.app,
 			path: RPC_PATH,
 			spec: admin_session_revoke_all_action_spec,
-			params: { account_id: test_app.backend.account.id },
-			headers: test_app.create_bearer_headers(),
+			params: { account_id: victim.account.id },
+			headers: victim.create_bearer_headers(),
 			suppress_default_origin: true
 		});
 

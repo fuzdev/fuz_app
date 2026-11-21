@@ -14,7 +14,7 @@ Tests live in `src/test/`, mirroring `src/lib/` structure
 
 ### Database Tests
 
-`create_describe_db(factories, truncate_tables)` from `#lib/testing/db.ts`
+`create_describe_db(factories, truncate_tables)` from `#lib/testing/describe_db.ts`
 returns a `describe_db(name, fn)` function bound to the given factories.
 Runs suites against the default in-memory driver (pglet-wasm) and optionally
 PostgreSQL (when `TEST_DATABASE_URL` is set). Consumer projects create a

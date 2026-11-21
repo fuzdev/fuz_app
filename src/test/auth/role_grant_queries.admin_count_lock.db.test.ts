@@ -22,7 +22,8 @@ import {
 	query_create_role_grant
 } from '#lib/auth/role_grant_queries.ts';
 import { query_account_soft_delete } from '#lib/auth/account_queries.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 
 import { pg_factory } from '../db_fixture.ts';
 import { make_account } from './role_grant_offer_queries.fixtures.ts';

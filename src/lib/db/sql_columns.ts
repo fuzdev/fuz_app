@@ -9,7 +9,7 @@
  * `qualify_columns` for reads that alias the table, `omit_columns` for a
  * client-safe subset — rather than spelling a second column list, so the
  * drift guard on the base const (`assert_columns_match_live` in
- * `testing/db.ts`) covers every derived projection too. Twin of the Rust
+ * `testing/describe_db.ts`) covers every derived projection too. Twin of the Rust
  * spine's `*_COLUMNS` consts + `fuz_db::qualify_columns` / `omit_columns`.
  *
  * A read that needs a column rendered as something other than the bare

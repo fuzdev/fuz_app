@@ -23,7 +23,8 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { query_session_cleanup_expired } from '#lib/auth/session_queries.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { pg_factory } from '../db_fixture.ts';

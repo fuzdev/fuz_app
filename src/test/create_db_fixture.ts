@@ -15,10 +15,10 @@ import {
 	create_default_db_factory,
 	create_pglite_factory,
 	create_pg_factory,
-	create_describe_db,
 	log_db_factory_status,
 	type DbFactory
 } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { create_pglet_server_factory } from './db_pglet_server_factory.ts';
 import { create_pglet_wasm_fork_factory } from './db_pglet_wasm_factory.ts';
 

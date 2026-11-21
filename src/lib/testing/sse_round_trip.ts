@@ -33,6 +33,7 @@ import {
 	type TestApp,
 	type TestAccount
 } from './test_app.ts';
+import { check_db_invariants_after_suite } from './db_invariants.ts';
 import { create_default_db_factory, type DbFactory } from './db.ts';
 import { find_route_spec, pick_auth_headers } from './integration_helpers.ts';
 import {
@@ -222,9 +223,16 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 						});
 					});
 
-					afterAll(async () => {
-						await test_app.cleanup();
-						await factory.close(db);
+					// the app is built in `beforeAll`, outside any test, so it is checked
+					// once the describe's tests are done, ahead of the cleanup
+					// eslint-disable-next-line no-empty-pattern
+					afterAll(async ({}, suite) => {
+						try {
+							await check_db_invariants_after_suite(suite, test_app);
+						} finally {
+							await test_app.cleanup();
+							await factory.close(db);
+						}
 					});
 
 					test('opens, emits payload, closes on revoke', async () => {

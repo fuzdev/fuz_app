@@ -32,8 +32,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'list_recipient' });
 			await rpc_call_for_spec({
@@ -82,8 +81,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'admin_list_target' });
 			await rpc_call_for_spec({
@@ -110,8 +108,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'list_upper_recipient' });
 			await rpc_call_for_spec({
@@ -168,8 +165,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const grantor_b = await test_app.create_account({
 				username: 'list_order_grantor_b',

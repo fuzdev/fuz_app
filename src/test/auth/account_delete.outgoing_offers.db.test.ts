@@ -20,7 +20,7 @@ import {
 	account_delete_action_spec,
 	account_purge_action_spec
 } from '#lib/auth/admin_action_specs.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
@@ -57,8 +57,6 @@ describe_db('account removal ends outgoing offers', (get_db) => {
 			session_options,
 			create_route_specs,
 			db: get_db(),
-			// the keeper deletes and purges
-			roles: [ROLE_KEEPER, ROLE_ADMIN],
 			audit_factory: (params) =>
 				create_audit_emitter({
 					...params,

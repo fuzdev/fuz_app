@@ -11,11 +11,8 @@ import {
 	query_app_settings_update
 } from '#lib/auth/app_settings_queries.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
-import {
-	create_default_db_factory,
-	create_describe_db,
-	auth_truncate_tables
-} from '#lib/testing/db.ts';
+import { create_default_db_factory, auth_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import type { Db } from '#lib/db/db.ts';

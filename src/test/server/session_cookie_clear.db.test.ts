@@ -27,6 +27,7 @@ import {
 } from '#lib/http/route_result.ts';
 import { REST_TABLE_NOT_FOUND } from '#lib/http/error_schemas.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 
 const session_options = create_session_config('test_session');
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
@@ -139,8 +140,15 @@ describe('session cookie clear beside another credential', () => {
 		});
 	});
 
-	afterAll(async () => {
-		await test_app.cleanup();
+	// the app is built in `beforeAll`, outside any test, so it is checked
+	// once the describe's tests are done, ahead of the cleanup
+	// eslint-disable-next-line no-empty-pattern
+	afterAll(async ({}, suite) => {
+		try {
+			await check_db_invariants_after_suite(suite, test_app);
+		} finally {
+			await test_app.cleanup();
+		}
 	});
 
 	const request = async (

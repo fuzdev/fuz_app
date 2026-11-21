@@ -42,8 +42,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_target' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second');
@@ -102,8 +101,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_b_session' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'recipient_b');
@@ -158,8 +156,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_action_wrong' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second_wrong');
@@ -224,8 +221,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_xacct_recipient' });
 			const stranger = await test_app.create_account({ username: 'multi_actor_xacct_stranger' });
@@ -274,8 +270,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await add_second_actor(test_app.backend.account.id, 'admin_second');
 

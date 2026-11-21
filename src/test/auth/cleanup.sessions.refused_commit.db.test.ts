@@ -19,7 +19,8 @@ import { assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { cleanup_expired_sessions } from '#lib/auth/cleanup.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 
 import { pg_factory } from '../db_fixture.ts';

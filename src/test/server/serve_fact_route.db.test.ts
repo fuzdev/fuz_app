@@ -450,7 +450,7 @@ describe_db('serve_fact_route', (get_db) => {
 	test("a disk fact streams; an external_url naming another fact's file → 404", async () => {
 		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_'));
 		try {
-			const app = await create_cell_test_app(get_db, [], { facts_dir });
+			const app = await create_cell_test_app(get_db, { facts_dir });
 			const owner = await app.create_account({ username: 'disk_fact_owner' });
 			const disk_store = new PgFactStore({
 				deps: { db: get_db() },
@@ -520,7 +520,7 @@ describe_db('serve_fact_route', (get_db) => {
 	test('a disk fact whose file is missing → 404; unopenable → 500; HEAD closes the file', async () => {
 		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_missing_'));
 		try {
-			const app = await create_cell_test_app(get_db, [], { facts_dir });
+			const app = await create_cell_test_app(get_db, { facts_dir });
 			const owner = await app.create_account({ username: 'disk_missing_owner' });
 			const disk_store = new PgFactStore({
 				deps: { db: get_db() },
@@ -626,7 +626,12 @@ describe_db('serve_fact_route', (get_db) => {
 		// Functional half: 1 active + 1 tombstoned is still a single-actor
 		// account. The tombstone must not push the active count to 2 and demote
 		// the owner to anonymous (denying them their own actor's view).
-		const app = await create_cell_test_app(get_db);
+		const app = await create_cell_test_app(get_db, {
+			exclude_db_invariants: {
+				actor_tombstone_disagrees_with_account:
+					'one of two actors of the owner is soft-deleted by hand — a state no handler produces yet'
+			}
+		});
 		const owner = await app.create_account({ username: 'tomb_extra_owner' });
 		const bytes = encode('extra-actor private bytes');
 		const hash = await put_embedded(bytes, 'text/plain', owner.actor.id);
@@ -653,7 +658,12 @@ describe_db('serve_fact_route', (get_db) => {
 		// would see one actor, resolve the deleted actor, and carry its
 		// `role_grants` into the read — admitting the caller to their own private
 		// cell after the actor was deleted.
-		const app = await create_cell_test_app(get_db);
+		const app = await create_cell_test_app(get_db, {
+			exclude_db_invariants: {
+				actor_tombstone_disagrees_with_account:
+					'the only actor of the account is soft-deleted by hand, the account left live — a state no handler produces yet'
+			}
+		});
 		const ghost = await app.create_account({ username: 'tomb_ghost_owner' });
 		const bytes = encode('ghost private bytes');
 		const hash = await put_embedded(bytes, 'text/plain', ghost.actor.id);

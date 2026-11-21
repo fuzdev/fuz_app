@@ -36,8 +36,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'create_recipient' });
 			const res = await rpc_call_for_spec({
@@ -83,8 +82,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// an uppercased own id is still self: `Uuid` lowercases it before the
 			// comparison against the stored (lowercase) grantor account
@@ -114,8 +112,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'reoffer_recipient' });
 			const first = await rpc_call_for_spec({
@@ -149,8 +146,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'bearer_offer_recipient' });
 			const count_rows = async (): Promise<{ offers: number; audits: number }> => {
@@ -209,8 +205,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: custom_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'custom_auth_recipient' });
 			// Admin is offering a role they don't hold — default policy would deny;

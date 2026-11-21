@@ -30,14 +30,10 @@ import {
 import { SPINE_RPC_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 
 const setup_test = default_in_process_setup({
 	reject_unknown_audit_metadata_keys: true,
 	session_options: spine_session_options,
-	// Keeper is also admin (matches the cross-process fresh keeper) so its
-	// session reaches the admin-gated delete/undelete verbs.
-	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	// tracked so `_testing_drain_effects` awaits the emitter, as on the binaries
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, track_inflight: true }),
 	create_route_specs: create_spine_route_specs,

@@ -1,9 +1,10 @@
 /**
- * The per-test invariant check the in-process setup registers: a test that
- * leaves a broken invariant fails through the hook though its body passed —
- * flagged `test.fails`, so the run passes only when the hook throws — and the
- * setup's `exclude_db_invariants` and the fixture's `assert_db_invariants`
- * behave as documented.
+ * The per-test invariant check `create_test_app` registers, and so the
+ * in-process setup over it: a test that leaves a broken invariant fails
+ * through the hook though its body passed — flagged `test.fails`, so the run
+ * passes only when the hook throws — for a direct `create_test_app` caller
+ * and a setup fixture alike, and the `exclude_db_invariants` and
+ * `assert_db_invariants` of both behave as documented.
  *
  * @module
  */
@@ -12,8 +13,8 @@ import { assert, onTestFinished, test } from 'vitest';
 
 import type { Db } from '#lib/db/db.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
@@ -29,7 +30,6 @@ const create_setup = (
 	let db: Db | null = null;
 	const setup_test = default_in_process_setup({
 		session_options: spine_session_options,
-		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		// the factory sees the app's database; the fixture exposes none
 		audit_factory: (deps) => {
 			db = deps.db;
@@ -117,5 +117,70 @@ test('the setup refuses an exclusion without a reason', () => {
 	assert.throws(
 		() => create_setup({ credential_of_tombstoned_account: '' }),
 		/exclude_db_invariants 'credential_of_tombstoned_account' needs a reason/
+	);
+});
+
+/** The errors the flagged direct-caller test finished with. */
+let direct_flagged_errors: Array<string> | null = null;
+
+test.fails('a direct create_test_app caller is checked when its test finishes', async () => {
+	onTestFinished(({ task }) => {
+		direct_flagged_errors = (task.result?.errors ?? []).map((e) => e.message);
+	});
+	const test_app = await create_test_app({
+		session_options: spine_session_options,
+		create_route_specs: create_spine_route_specs,
+		rpc_endpoints: spine_rpc_endpoints
+	});
+	const other = await test_app.create_account({ username: 'tombstoned' });
+	await tombstone_by_hand(test_app.backend.deps.db, other.account.id);
+});
+
+test('the flagged direct-caller test failed on the hook and nothing else', () => {
+	assert.ok(direct_flagged_errors, 'the flagged test ran');
+	assert.strictEqual(direct_flagged_errors.length, 1, direct_flagged_errors.join('\n'));
+	assert.match(direct_flagged_errors[0]!, /^database invariants broken \(in-process\)/);
+	assert.include(direct_flagged_errors[0], 'credential_of_tombstoned_account');
+});
+
+test('a direct caller excludes by name and checks on demand', async () => {
+	const test_app = await create_test_app({
+		session_options: spine_session_options,
+		create_route_specs: create_spine_route_specs,
+		rpc_endpoints: spine_rpc_endpoints,
+		exclude_db_invariants: {
+			credential_of_tombstoned_account: 'tombstoned by hand in this test',
+			actor_tombstone_disagrees_with_account: 'tombstoned by hand in this test'
+		}
+	});
+	const other = await test_app.create_account({ username: 'tombstoned' });
+	await tombstone_by_hand(test_app.backend.deps.db, other.account.id);
+	await test_app.assert_db_invariants();
+});
+
+test('the bootstrapped keeper holds keeper and admin, so a fresh app passes', async () => {
+	const test_app = await create_test_app({
+		session_options: spine_session_options,
+		create_route_specs: create_spine_route_specs,
+		rpc_endpoints: spine_rpc_endpoints
+	});
+	await test_app.assert_db_invariants();
+});
+
+test('create_test_app refuses an exclusion without a reason', async () => {
+	let error: unknown = null;
+	try {
+		await create_test_app({
+			session_options: spine_session_options,
+			create_route_specs: create_spine_route_specs,
+			exclude_db_invariants: { credential_of_tombstoned_account: ' ' }
+		});
+	} catch (e) {
+		error = e;
+	}
+	assert.ok(error instanceof Error, 'the call throws');
+	assert.match(
+		error.message,
+		/create_test_app: exclude_db_invariants 'credential_of_tombstoned_account' needs a reason/
 	);
 });

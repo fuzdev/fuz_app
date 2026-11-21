@@ -38,7 +38,6 @@ describe_db('role_grant_offer_actions.audit', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,

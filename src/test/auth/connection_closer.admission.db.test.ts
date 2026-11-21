@@ -58,7 +58,7 @@ import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { query_account_by_id } from '#lib/auth/account_queries.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -70,7 +70,8 @@ import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import { auth_integration_truncate_tables, create_describe_db } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { rpc_call } from '#lib/testing/rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
@@ -174,7 +175,6 @@ const create_harness = async (
 		session_options,
 		db: gated.db,
 		db_type: 'postgres',
-		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		app_options: { audit_log_sse: true },
 		create_route_specs: (ctx) => [
 			...prefix_route_specs(

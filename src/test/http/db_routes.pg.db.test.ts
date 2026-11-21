@@ -20,7 +20,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_db_route_specs } from '#lib/http/db_routes.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
-import { create_describe_db } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { pg_factory } from '../db_fixture.ts';

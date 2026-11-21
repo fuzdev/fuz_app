@@ -6,7 +6,9 @@ import './assert_dev_env.ts';
  * Provides factory builders for creating test databases with pglet-wasm (the
  * in-memory default), PGlite (in-memory) and pg (PostgreSQL) drivers. Consumer
  * projects provide their own schema initialization via `run_migrations` and
- * compose factories into test suites.
+ * compose factories into test suites with `create_describe_db`
+ * (`testing/describe_db.ts`). Vitest-free, so the spawned spine binary's
+ * import graph (through `testing/app_server.ts`) can reach it.
  *
  * @example
  * ```ts
@@ -25,20 +27,17 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { describe, beforeAll, beforeEach, afterAll, assert } from 'vitest';
 import type { Pool } from 'pg';
 
 import type { Db } from '../db/db.ts';
 import { create_pglite_db } from '../db/db_pglite.ts';
 import { create_pglet_db_driver, create_pglet_instance } from '../db/db_pglet.ts';
-import { assert_valid_sql_identifier } from '../db/sql_identifier.ts';
 import {
 	create_pg_db,
 	create_pg_pool,
 	DEFAULT_DB_CHECKOUT_TIMEOUT_MS,
 	register_pg_type_parsers
 } from '../db/db_pg.ts';
-import { query_public_columns } from '../db/schema_ready.ts';
 import { pg_error_code } from '../db/pg_error.ts';
 
 /**
@@ -300,48 +299,6 @@ export const auth_truncate_tables = [
 export const auth_integration_truncate_tables = [...auth_truncate_tables, 'audit_log'];
 
 /**
- * Create a `describe_db` function bound to specific factories and truncate tables.
- *
- * Returns a 2-arg `(name, fn)` function that runs the test suite against each
- * factory. Each factory gets its own `describe` block with a shared database
- * instance, automatic `beforeEach` truncation, and `afterAll` cleanup.
- * Skipped factories use `describe.skip`.
- *
- * @param factories - one or more database factories to run suites against
- * @param truncate_tables - tables to truncate between tests (children first for FK safety)
- * @mutates the underlying database between tests — `beforeEach` issues
- *   `TRUNCATE <truncate_tables> CASCADE` against the shared instance.
- */
-export const create_describe_db = (
-	factories: DbFactory | Array<DbFactory>,
-	truncate_tables: Array<string>
-): ((name: string, fn: (get_db: () => Db) => void) => void) => {
-	const factory_list = Array.isArray(factories) ? factories : [factories];
-	return (name, fn) => {
-		for (const factory of factory_list) {
-			const describe_fn = factory.skip ? describe.skip : describe;
-			describe_fn(`${name} (${factory.name})`, () => {
-				let db: Db | undefined;
-				beforeAll(async () => {
-					db = await factory.create();
-				});
-				beforeEach(async () => {
-					if (db && truncate_tables.length > 0) {
-						await db.query(
-							`TRUNCATE ${truncate_tables.map(assert_valid_sql_identifier).join(', ')} CASCADE`
-						);
-					}
-				});
-				afterAll(async () => {
-					if (db) await factory.close(db);
-				});
-				fn(() => db!);
-			});
-		}
-	};
-};
-
-/**
  * Log factory status to console.
  */
 export const log_db_factory_status = (factories: Array<DbFactory>): void => {
@@ -352,31 +309,4 @@ export const log_db_factory_status = (factories: Array<DbFactory>): void => {
 			skipped.length ? ` | skipped: ${skipped.join(', ')}` : ''
 		}`
 	);
-};
-
-/**
- * Assert a `*_COLUMNS` projection const names exactly the live columns of
- * `table` — the drift guard for an exported const (`ACCOUNT_COLUMNS`,
- * `CELL_COLUMNS`, a consumer's own).
- *
- * This is the reverse of the fail-loud read: a named projection makes a
- * *dropped* column fail loud at query time, but a column *added* to the table
- * and not to the projection would silently vanish from every row read. Both
- * directions are covered by the equality here. It guards one const; it can't
- * see a table that has *no* const — for that, keep a table → const registry
- * and assert its key set against `query_public_columns` (fuz_app's own is
- * `src/test/db/column_projections.db.test.ts`).
- *
- * @param db - a bootstrapped test database
- * @param table - the `public`-schema table the const projects
- * @param columns - the projection const's column names
- */
-export const assert_columns_match_live = async (
-	db: Db,
-	table: string,
-	columns: ReadonlyArray<string>
-): Promise<void> => {
-	const live = await query_public_columns(db, { table });
-	assert.ok(live[table], `table "${table}" is not in the live public schema`);
-	assert.deepEqual([...columns].sort(), live[table]);
 };

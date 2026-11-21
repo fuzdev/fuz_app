@@ -11,6 +11,7 @@
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -57,8 +58,15 @@ describe('password change multi-session invalidation', () => {
 		});
 	});
 
-	afterAll(async () => {
-		await test_app.cleanup();
+	// the app is built in `beforeAll`, outside any test, so it is checked
+	// once the describe's tests are done, ahead of the cleanup
+	// eslint-disable-next-line no-empty-pattern
+	afterAll(async ({}, suite) => {
+		try {
+			await check_db_invariants_after_suite(suite, test_app);
+		} finally {
+			await test_app.cleanup();
+		}
 	});
 
 	test('all sessions are revoked after password change', async () => {

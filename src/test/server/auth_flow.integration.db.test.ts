@@ -81,10 +81,9 @@ describe('auth flow integration', () => {
 	let result: AppServer;
 
 	beforeAll(async () => {
-		// Bootstrap a test server with keeper + admin roles
+		// Bootstrap a test server — the keeper holds keeper + admin by default
 		test_server = await create_test_app_server({
-			session_options,
-			roles: [ROLE_KEEPER, ROLE_ADMIN]
+			session_options
 		});
 
 		const base_config = {

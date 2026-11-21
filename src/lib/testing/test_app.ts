@@ -5,7 +5,9 @@ import './assert_dev_env.ts';
  *
  * `create_test_app` combines `create_test_app_server` (`testing/app_server.ts`,
  * the vitest-free backend primitives) with `create_app_server`, and hands back
- * the app, the backend, the surface, and request header builders.
+ * the app, the backend, the surface, and request header builders. Built inside
+ * a test, the app's database is held to the auth-schema invariants when the
+ * test finishes (`register_db_invariants_check`).
  *
  * @module
  */
@@ -37,6 +39,12 @@ import {
 	type TestAppServer,
 	type TestAppServerOptions
 } from './app_server.ts';
+import {
+	announce_db_invariant_exclusions,
+	assert_db_invariants,
+	register_db_invariants_check
+} from './db_invariants.ts';
+import type { DbInvariantExclusions } from './db_invariant_queries.ts';
 
 /**
  * Configuration for `create_test_app`.
@@ -69,6 +77,15 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 	 * above).
 	 */
 	app_options?: SuiteAppOptions;
+	/**
+	 * Database invariants left unchecked on this app's database, each with the
+	 * reason the test's state is deliberate — rows written by hand without the
+	 * cascade production runs. Every other invariant is checked when the test
+	 * that built the app finishes, and by `TestApp.assert_db_invariants`.
+	 * Never exclude a state a production path produces: that is a bug.
+	 * Validated on every call; logged once per distinct set.
+	 */
+	exclude_db_invariants?: DbInvariantExclusions;
 }
 
 /**
@@ -140,6 +157,15 @@ export interface TestApp {
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
 	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
+	/**
+	 * Check the app's database against the auth-schema invariants now, less
+	 * `exclude_db_invariants` — what runs when the test that built the app
+	 * finishes, and what `check_db_invariants_after_all` and
+	 * `check_db_invariants_after_suite` call for an app built in `beforeAll`.
+	 *
+	 * @throws Error listing every broken invariant and its rows
+	 */
+	assert_db_invariants: () => Promise<void>;
 	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, disposes the limiters the server built and removes the audit listeners and closer members it added, then the backend's `close`. Idempotent. */
 	cleanup: () => Promise<void>;
 }
@@ -186,10 +212,21 @@ const create_bearer_headers_builder =
  * server's deps (db, keyring), so reuse across servers is unsafe.
  * The expensive resource (the WASM database) is cached separately in `testing/db.ts`.
  *
+ * Built inside a running test, it registers the database invariant check
+ * (`register_db_invariants_check`) to run when the test finishes; built in
+ * `beforeAll`, nothing is registered, and the suite calls
+ * `check_db_invariants_after_all(() => test_app)`, or, when the describe
+ * closes the app in its own `afterAll`, `check_db_invariants_after_suite(suite,
+ * test_app)` inside that hook ahead of the close.
+ *
  * @param options - test app configuration
  * @returns a `TestApp` ready for HTTP testing
+ * @throws Error on an `exclude_db_invariants` entry naming no invariant or
+ *   carrying no reason
  */
 export const create_test_app = async (options: CreateTestAppOptions): Promise<TestApp> => {
+	const { exclude_db_invariants } = options;
+	announce_db_invariant_exclusions(exclude_db_invariants, 'create_test_app');
 	const test_server = await create_test_app_server(options);
 
 	// Daemon token state for keeper auth in tests.
@@ -259,6 +296,10 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		};
 	};
 
+	const check_db_invariants = (): Promise<void> =>
+		assert_db_invariants({ db: test_server.deps.db }, 'in-process', exclude_db_invariants);
+	register_db_invariants_check(check_db_invariants);
+
 	return {
 		app,
 		backend: test_server,
@@ -270,6 +311,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		create_bearer_headers,
 		create_daemon_token_headers,
 		create_account,
+		assert_db_invariants: check_db_invariants,
 		// the server's `close`, not the backend's: it also stops an auth cleanup
 		// schedule a suite opted into
 		cleanup: () => result.close()

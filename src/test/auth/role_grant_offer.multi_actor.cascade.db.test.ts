@@ -112,8 +112,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_expire' });
 
@@ -161,8 +160,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'multi_actor_supersede' });
 			const grantor_b = await test_app.create_account({

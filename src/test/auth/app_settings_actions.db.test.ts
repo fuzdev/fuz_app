@@ -19,7 +19,6 @@ import {
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { describe_db } from '../auth_db_default.ts';
@@ -46,8 +45,7 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -101,8 +99,7 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -121,8 +118,7 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -174,8 +170,7 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,

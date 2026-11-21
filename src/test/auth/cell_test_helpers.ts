@@ -23,7 +23,7 @@ import {
 	create_serve_cell_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_registry } from '#lib/auth/role_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
@@ -45,6 +45,7 @@ import {
 } from '#lib/auth/cell_item_action_specs.ts';
 import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { rpc_call_for_spec, type RpcCallResultForSpec } from '#lib/testing/rpc_helpers.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -91,6 +92,8 @@ export interface CellTestAppOptions {
 	validate_data?: CellActionDeps['validate_data'];
 	/** Where disk facts live (default: `CELL_TEST_FACTS_DIR_UNUSED`). */
 	facts_dir?: string;
+	/** The test app's database invariant exclusions (`CreateTestAppOptions.exclude_db_invariants`). */
+	exclude_db_invariants?: DbInvariantExclusions;
 }
 
 /**
@@ -142,7 +145,7 @@ export const create_cell_route_specs =
 
 /**
  * Default cell route specs — open create (no creation authorizer). Pass
- * `CellTestAppOptions` to `create_cell_route_specs` (or the third arg of
+ * `CellTestAppOptions` to `create_cell_route_specs` (or the second arg of
  * `create_cell_test_app`) to mount a seam.
  */
 export const create_route_specs = create_cell_route_specs();
@@ -157,13 +160,14 @@ const cell_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({ db, log, audit_log_config: cell_audit_config });
 
 /**
- * Create a cell test app bound to `get_db`, with cell events registered.
+ * Create a cell test app bound to `get_db`, with cell events registered; its
+ * bootstrapped account holds keeper + admin (`DEFAULT_TEST_KEEPER_ROLES`), and
+ * `test_app.create_account()` accounts hold no roles.
  * `options` mounts the seams (`CellTestAppOptions`) — `facts_dir` when the
  * suite serves disk facts from a temp dir it owns.
  */
 export const create_cell_test_app = (
 	get_db: () => Db,
-	roles?: Array<string>,
 	options?: CellTestAppOptions
 ): Promise<TestApp> =>
 	create_test_app({
@@ -171,15 +175,8 @@ export const create_cell_test_app = (
 		create_route_specs: options ? create_cell_route_specs(options) : create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),
-		roles: roles ?? []
+		exclude_db_invariants: options?.exclude_db_invariants
 	});
-
-/**
- * Cell test app whose bootstrapped account holds `keeper` + `admin`.
- * Additional accounts via `test_app.create_account()` default to no roles.
- */
-export const create_cell_admin_test_app = (get_db: () => Db): Promise<TestApp> =>
-	create_cell_test_app(get_db, [ROLE_KEEPER, ROLE_ADMIN]);
 
 /** `rpc_call_for_spec` with `app` + `path` pre-bound. */
 export const call = <TSpec extends RequestResponseActionSpec>(

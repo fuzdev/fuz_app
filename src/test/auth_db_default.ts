@@ -10,11 +10,8 @@
 
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import {
-	auth_integration_truncate_tables,
-	create_default_db_factory,
-	create_describe_db
-} from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables, create_default_db_factory } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 
 const factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);

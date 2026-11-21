@@ -23,7 +23,8 @@ import {
 	ERROR_CANNOT_REVOKE_LAST_ADMIN,
 	role_grant_revoke_action_spec
 } from '#lib/auth/role_grant_offer_action_specs.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
@@ -38,8 +39,7 @@ describe_pg('role_grant_revoke concurrent cross-revoke', (get_db) => {
 		const test_app = await create_test_app({
 			session_options,
 			create_route_specs,
-			db,
-			roles: [ROLE_ADMIN]
+			db
 		});
 		const admin_grant_of = async (actor_id: Uuid): Promise<Uuid> => {
 			const row = await db.query_one<{ id: Uuid }>(

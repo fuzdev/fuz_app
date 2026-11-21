@@ -26,6 +26,7 @@ import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	query_accept_offer,
@@ -55,12 +56,15 @@ import { error_reason } from './rpc_test_helpers.ts';
 
 type TestAccount = Awaited<ReturnType<TestApp['create_account']>>;
 
-const create_app = (get_db: () => Db): Promise<TestApp> =>
+const create_app = (
+	get_db: () => Db,
+	exclude_db_invariants?: DbInvariantExclusions
+): Promise<TestApp> =>
 	create_test_app({
 		session_options,
 		create_route_specs: create_app_role_route_specs(),
 		db: get_db(),
-		roles: [ROLE_ADMIN]
+		exclude_db_invariants
 	});
 
 /**
@@ -218,6 +222,8 @@ describe_db('role_grant_offer_actions.accept_builtin', (get_db) => {
 		const branches: Array<{
 			name: string;
 			break_grantor: (db: Db, grantor: TestAccount, grant_id: Uuid) => Promise<unknown>;
+			/** The states a branch writes by hand, without the cascade a handler runs. */
+			exclude_db_invariants?: DbInvariantExclusions;
 		}> = [
 			{
 				name: 'revoked global admin',
@@ -234,18 +240,32 @@ describe_db('role_grant_offer_actions.accept_builtin', (get_db) => {
 			{
 				name: 'tombstoned grantor actor',
 				break_grantor: (db, grantor) =>
-					db.query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [grantor.actor.id])
+					db.query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [grantor.actor.id]),
+				exclude_db_invariants: {
+					actor_tombstone_disagrees_with_account:
+						'the grantor actor is soft-deleted by hand, its account left live — a state no handler produces yet',
+					pending_offer_with_dead_party:
+						'the grantor actor is soft-deleted by hand, so its pending offer is not superseded'
+				}
 			},
 			{
 				name: 'tombstoned grantor account',
 				break_grantor: (db, grantor) =>
-					db.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [grantor.account.id])
+					db.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [grantor.account.id]),
+				exclude_db_invariants: {
+					credential_of_tombstoned_account:
+						'the grantor account is tombstoned by query, its credentials left live — the handler revokes them',
+					actor_tombstone_disagrees_with_account:
+						'the grantor account is tombstoned by query, its actor left live — the handler tombstones it',
+					pending_offer_with_dead_party:
+						'the grantor account is tombstoned by query, its pending offer left — the handler supersedes it'
+				}
 			}
 		];
 
-		for (const { name, break_grantor } of branches) {
+		for (const { name, break_grantor, exclude_db_invariants } of branches) {
 			test(name, async () => {
-				const test_app = await create_app(get_db);
+				const test_app = await create_app(get_db, exclude_db_invariants);
 				const db = get_db();
 				const grantor = await test_app.create_account({ username: 'branch_grantor' });
 				const grant_id = (await grant(db, grantor.actor.id, ROLE_ADMIN)).id;

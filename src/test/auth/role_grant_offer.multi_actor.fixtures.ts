@@ -16,7 +16,6 @@
  */
 
 import { create_test_app } from '#lib/testing/test_app.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -47,7 +46,6 @@ export const create_multi_actor_helpers = (
 			session_options,
 			create_route_specs,
 			db: get_db(),
-			roles: [ROLE_ADMIN],
 			audit_factory: (params) =>
 				create_audit_emitter({
 					...params,

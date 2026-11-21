@@ -72,8 +72,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_create_recipient' });
 
@@ -104,8 +103,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_retract_recipient' });
 
@@ -145,8 +143,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_decline_recipient' });
 
@@ -187,8 +184,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_decline_no_reason' });
 
@@ -223,8 +219,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const grantor_b = await test_app.create_account({
 				username: 'notif_accept_grantor_b',
@@ -288,8 +283,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_solo_accept_recipient' });
 
@@ -350,8 +344,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_replay_recipient' });
 
@@ -385,8 +378,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(sender),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_terminal_recipient' });
 

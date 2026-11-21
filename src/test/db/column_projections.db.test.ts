@@ -10,7 +10,7 @@
 import { assert, test } from 'vitest';
 
 import { query_public_columns } from '#lib/db/schema_ready.ts';
-import { assert_columns_match_live } from '#lib/testing/db.ts';
+import { assert_columns_match_live } from '#lib/testing/describe_db.ts';
 
 import { describe_db } from '../cell_db_fixture.ts';
 import { column_projections, column_projection_exempt_tables } from './column_projections.ts';

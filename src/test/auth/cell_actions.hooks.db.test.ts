@@ -46,7 +46,7 @@ describe_db('cell hooks see the kinds', (get_db) => {
 				return { allow: true, moderation_required: false };
 			}
 		};
-		const app = await create_cell_test_app(get_db, [], { validate_data, authorize_create });
+		const app = await create_cell_test_app(get_db, { validate_data, authorize_create });
 		const alice = await app.create_account({ username: 'hooks_kind_alice' });
 		const headers = alice.create_session_headers();
 		const create = async (params: CellCreateInput): Promise<Uuid> => {
@@ -125,7 +125,7 @@ describe_db('cell hooks see the kinds', (get_db) => {
 		const validate_data: CellActionDeps['validate_data'] = (_kind, data) => {
 			s.parse_or_throw(Counted, data);
 		};
-		const app = await create_cell_test_app(get_db, [], { validate_data });
+		const app = await create_cell_test_app(get_db, { validate_data });
 		const alice = await app.create_account({ username: 'hooks_issues_alice' });
 		const headers = alice.create_session_headers();
 		const refused = await call(
@@ -155,7 +155,7 @@ describe_db('cell hooks see the kinds', (get_db) => {
 		const validate_data: CellActionDeps['validate_data'] = (_kind, data) => {
 			s.parse_or_throw(Labeled, data);
 		};
-		const app = await create_cell_test_app(get_db, [], { validate_data });
+		const app = await create_cell_test_app(get_db, { validate_data });
 		const alice = await app.create_account({ username: 'hooks_store_alice' });
 		const bob = await app.create_account({ username: 'hooks_store_bob' });
 		const headers = bob.create_session_headers();

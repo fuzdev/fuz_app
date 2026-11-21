@@ -18,7 +18,7 @@ import { test, assert } from 'vitest';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	account_delete_action_spec,
 	account_purge_action_spec
@@ -50,9 +50,7 @@ describe_db('account removal supersede notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				...create_notification_app_options(create_capture_sender(calls)),
-				db: get_db(),
-				// the keeper deletes and purges
-				roles: [ROLE_KEEPER, ROLE_ADMIN]
+				db: get_db()
 			});
 			const db = get_db();
 			const removed = await test_app.create_account({ username: 'removal_removed' });

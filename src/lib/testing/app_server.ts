@@ -9,8 +9,11 @@ import './assert_dev_env.ts';
  * `isolate: false` + `fileParallelism: false`); pass `db` to use
  * an existing database (any driver) instead.
  *
- * Vitest-free, so the spawned spine binary and reset actions can import it;
- * the fully assembled Hono app (`create_test_app`) lives in `testing/test_app.ts`.
+ * Vitest-free, so the spawned spine binary, the reset actions and a
+ * consumer's test server build can import it — its import graph is held to
+ * that by `src/test/vitest_free_modules.test.ts`, which is why the
+ * vitest-bound database helpers live in `testing/describe_db.ts`. The fully
+ * assembled Hono app (`create_test_app`) lives in `testing/test_app.ts`.
  *
  * @module
  */
@@ -20,7 +23,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
-import { ROLE_KEEPER } from '../auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '../auth/role_schema.ts';
 import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { generate_api_token } from '../auth/api_token.ts';
 import type { Db, DbType } from '../db/db.ts';
@@ -61,6 +64,14 @@ export const stub_password_deps: PasswordHashDeps = {
 	verify_password: async (p, h) => h === `stub_hash_${p}`,
 	verify_dummy: async () => false
 };
+
+/**
+ * The test keeper's roles when none are given — keeper and admin, what a
+ * production bootstrap (`bootstrap_account`) grants and the cross-process
+ * `_testing_reset` seeds, so a test database starts in a state production
+ * reaches. A test that needs a keeper without admin passes `roles`.
+ */
+export const DEFAULT_TEST_KEEPER_ROLES: ReadonlyArray<string> = [ROLE_KEEPER, ROLE_ADMIN];
 
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
@@ -261,7 +272,9 @@ export const mint_test_session = async (
  * Flips `bootstrap_lock.bootstrapped = true` so the post-insert DB state
  * matches a real bootstrap completion — production code can trust the
  * lock as the single signal without a belt-and-suspenders
- * `query_account_has_any` defense.
+ * `query_account_has_any` defense. Grants `options.roles`, or
+ * `DEFAULT_TEST_KEEPER_ROLES` (keeper and admin, as a real bootstrap) when
+ * omitted.
  *
  * @mutates the underlying `options.db` — inserts the account/actor/roles/
  *   API token/session_cookie rows AND flips `bootstrap_lock.bootstrapped`.
@@ -274,7 +287,10 @@ export const bootstrap_test_keeper = async (
 	api_token: string;
 	session_cookie: string;
 }> => {
-	const result = await create_test_account_with_credentials(options);
+	const result = await create_test_account_with_credentials({
+		...options,
+		roles: options.roles ?? [...DEFAULT_TEST_KEEPER_ROLES]
+	});
 	// Lock flip — mirrors production `bootstrap_account` so test/prod write
 	// semantics stay in parity.
 	await options.db.query(
@@ -328,7 +344,13 @@ export interface TestAppServerOptions {
 	username?: string;
 	/** Password for the bootstrapped account. Default: `DEFAULT_TEST_PASSWORD`. */
 	password_value?: string;
-	/** Roles to grant. Default: `[ROLE_KEEPER]`. */
+	/**
+	 * Roles to grant the bootstrapped keeper. Default:
+	 * `DEFAULT_TEST_KEEPER_ROLES` (`ROLE_KEEPER` and `ROLE_ADMIN`, as a
+	 * production bootstrap grants). Override only for a test that needs a
+	 * narrower keeper — one leaving no live admin breaks the
+	 * `bootstrapped_without_live_admin` database invariant.
+	 */
 	roles?: Array<string>;
 	/**
 	 * Build the bound `AuditEmitter` used by the test backend. Defaults to
@@ -439,7 +461,8 @@ const _build_test_backend = async (
  * Sets up:
  * - Auth tables (via the cached default factory, or reuses existing `db`)
  * - A keeper account with hashed password
- * - Role role_grants for each role in `options.roles`
+ * - Role grants for each role in `options.roles` (default
+ *   `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin)
  * - An API token for Bearer auth
  * - A session with a signed cookie value
  *
@@ -461,7 +484,7 @@ export const create_test_app_server = async (
 		password = stub_password_deps,
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
-		roles = [ROLE_KEEPER]
+		roles
 	} = options;
 
 	const { backend, keyring } = await _build_test_backend(options);

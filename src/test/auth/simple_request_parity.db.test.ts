@@ -18,7 +18,6 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
@@ -27,7 +26,6 @@ const session_options = create_session_config('test_session');
 
 const setup_test = default_in_process_setup({
 	session_options,
-	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	create_route_specs: (ctx: AppServerContext): Array<RouteSpec> => [
 		...prefix_route_specs(
 			'/api/account',

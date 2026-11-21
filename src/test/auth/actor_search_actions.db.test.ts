@@ -175,7 +175,15 @@ describe_db('actor_search_actions', (get_db) => {
 		// The caller's own primary actor stays live, so the session still
 		// resolves and the only thing that can refuse the call is the admin gate.
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db,
+			exclude_db_invariants: {
+				actor_tombstone_disagrees_with_account:
+					'one actor of a live account is soft-deleted by hand — a state no handler produces yet'
+			}
+		});
 		const admin = await test_app.create_account({ username: 'admin_tombstoned' });
 		const second_actor = await db.query_one<{ id: Uuid }>(
 			`INSERT INTO actor (account_id, name) VALUES ($1, 'second') RETURNING id`,

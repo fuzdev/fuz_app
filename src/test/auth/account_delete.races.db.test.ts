@@ -44,10 +44,11 @@ import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { rpc_call } from '#lib/testing/rpc_helpers.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_registry, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '#lib/http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { query_count_active_accounts_with_global_role_locked } from '#lib/auth/role_grant_queries.ts';
 import { query_role_grant_offer_supersede_outgoing } from '#lib/auth/role_grant_offer_queries.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -91,9 +92,7 @@ const setup = async (gated: GatedDb) => {
 	const test_app: TestApp = await create_test_app({
 		session_options: create_session_config('test_session'),
 		db: gated.db,
-		create_route_specs,
-		// the keeper deletes
-		roles: [ROLE_KEEPER, ROLE_ADMIN]
+		create_route_specs
 	});
 	const grantor = await test_app.create_account({ username: 'race_grantor' });
 	const recipient = await test_app.create_account({ username: 'race_recipient' });

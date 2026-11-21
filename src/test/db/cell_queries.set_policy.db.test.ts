@@ -25,7 +25,8 @@ import {
 import { CELL_DROP_TABLES } from '#lib/db/cell_ddl.ts';
 import { FACT_DROP_TABLES } from '#lib/db/fact_ddl.ts';
 import type { CellPolicy } from '#lib/auth/cell_action_specs.ts';
-import { auth_integration_truncate_tables, create_describe_db } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 
 import { describe_db, pg_factory } from '../cell_db_fixture.ts';
 

@@ -15,7 +15,6 @@
  * @module
  */
 
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	type ReconstructedBootstrappedBackendHandle
@@ -116,9 +115,8 @@ export const describe_spine_differential_suites = (
 	});
 
 	// the same fixture options as the single-backend conformance legs
-	const keeper_setup = { extra_keeper_roles: [ROLE_ADMIN] };
-	const a_setup = default_cross_process_setup(a.handle, keeper_setup);
-	const b_setup = default_cross_process_setup(b.handle, keeper_setup);
+	const a_setup = default_cross_process_setup(a.handle);
+	const b_setup = default_cross_process_setup(b.handle);
 
 	describe_differential_conformance_tests({
 		...shared,
@@ -142,7 +140,7 @@ export const describe_spine_differential_suites = (
 		suite_name: `differential conformance over WS (${pair})`
 	});
 
-	const multi_actor_setup = { ...keeper_setup, extra_actors: [ACTING_EXTRA_ACTOR_NAME] };
+	const multi_actor_setup = { extra_actors: [ACTING_EXTRA_ACTOR_NAME] };
 	const a_multi_actor_setup = default_cross_process_setup(a.handle, multi_actor_setup);
 	const b_multi_actor_setup = default_cross_process_setup(b.handle, multi_actor_setup);
 	const multi_actor_cases = [...conformance_acting_cases, ...generated_auth_cases];
@@ -168,7 +166,6 @@ export const describe_spine_differential_suites = (
 	});
 
 	const participation_setup = {
-		extra_keeper_roles: [ROLE_ADMIN],
 		extra_accounts: [{ username: PARTICIPATION_HOLDER_USERNAME, roles: [SPINE_PARTICIPANT_ROLE] }]
 	};
 

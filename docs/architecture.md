@@ -273,7 +273,7 @@ array, rendered at each read site via `db/sql_columns.ts` — `columns_sql(COLS)
 for a single-table read, `qualify_columns(COLS, 'c')` for a read that aliases
 the table, `omit_columns(COLS, 'token_hash')` for a client-safe listing — so
 the guard on the base const covers every derived projection. The guard itself
-is an equality against the live schema, via `testing/db.ts`:
+is an equality against the live schema, via `testing/describe_db.ts`:
 
 ```ts
 await assert_columns_match_live(db, 'cell', CELL_COLUMNS);

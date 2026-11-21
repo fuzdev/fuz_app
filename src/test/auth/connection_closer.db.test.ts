@@ -121,7 +121,7 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
-import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_role_registry, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { GRANT_PATH_ADMIN, GRANT_PATH_SELF_SERVICE } from '#lib/auth/grant_path_schema.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -577,7 +577,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
@@ -613,7 +612,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
@@ -662,7 +660,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
@@ -712,7 +709,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
@@ -753,8 +749,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
-				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN]
+				db: get_db()
 			});
 			// Bare DB account — no session, no token, no role_grant.
 			const target = await create_test_account_with_actor(get_db(), {
@@ -780,8 +775,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
-				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await create_test_account_with_actor(get_db(), {
 				username: 'nolivetokens'
@@ -1011,8 +1005,7 @@ describe_db('connection_closer wiring', (get_db) => {
 						})
 					];
 				},
-				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN]
+				db: get_db()
 			});
 
 			// admin-side first — exercises the admin sub-factory's option
@@ -1158,7 +1151,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				db: gated.db,
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				// `create_app_server` adds the audit stream registry to the
 				// backend's closer; the registry is added by hand below, the way
 				// a `ws_endpoints` mount adds its own
@@ -1940,7 +1932,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				create_route_specs: make_create_route_specs(closer)
 			});
 			const { deps } = test_app.backend;

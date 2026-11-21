@@ -13,7 +13,6 @@
  * @module
  */
 
-import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import { describe_role_grant_participation_cross_tests } from '#lib/testing/cross_backend/role_grant_participation.ts';
@@ -46,7 +45,6 @@ const suite_options = default_in_process_suite_options({
 	session_options: spine_session_options,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints,
-	extra_keeper_roles: [ROLE_ADMIN],
 	extra_accounts
 });
 
@@ -70,7 +68,6 @@ const drained_setup_test = default_in_process_setup({
 			...endpoint,
 			actions: [...endpoint.actions, create_testing_drain_effects_action(ctx.deps.audit)]
 		})),
-	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, track_inflight: true }),
 	extra_accounts
 });

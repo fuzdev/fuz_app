@@ -21,6 +21,7 @@ import { describe, test, assert, beforeAll, afterAll, beforeEach } from 'vitest'
 
 import { stub_password_deps } from '#lib/testing/app_server.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
@@ -95,8 +96,15 @@ describe('login verify_dummy behavior', () => {
 		});
 	});
 
-	afterAll(async () => {
-		await test_app.cleanup();
+	// the app is built in `beforeAll`, outside any test, so it is checked
+	// once the describe's tests are done, ahead of the cleanup
+	// eslint-disable-next-line no-empty-pattern
+	afterAll(async ({}, suite) => {
+		try {
+			await check_db_invariants_after_suite(suite, test_app);
+		} finally {
+			await test_app.cleanup();
+		}
 	});
 
 	beforeEach(() => {

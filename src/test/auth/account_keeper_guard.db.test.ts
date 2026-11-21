@@ -20,7 +20,7 @@ import {
 	ERROR_CANNOT_DELETE_KEEPER,
 	ERROR_CANNOT_DELETE_LAST_ADMIN
 } from '#lib/auth/admin_action_specs.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
@@ -124,9 +124,17 @@ describe_db('account_delete keeper guard', (get_db) => {
 	});
 
 	test('the sole active admin cannot be deleted; a second admin lifts the guard', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
 		// The bootstrap keeper is keeper-only here (no admin grant), so a
-		// created admin account is genuinely the only active admin.
+		// created admin account is genuinely the only active admin — here, in
+		// the purge regression below (whose one *other* active admin must be
+		// the only one), and in the two tests after it. Each last-admin test
+		// ends with an active admin, so every invariant holds when it finishes.
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db: get_db(),
+			roles: [ROLE_KEEPER]
+		});
 		const admin = await test_app.create_account({ username: 'sole_admin', roles: [ROLE_ADMIN] });
 
 		// Self-delete the lone admin → refused as the last admin.
@@ -175,8 +183,14 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// exactly one *other* active admin therefore saw `has_role=true` +
 		// `count=1` and was falsely blocked as `cannot_delete_last_admin`,
 		// even though a tombstoned admin can't lower the active count. The
-		// admin branch now uses the active-account predicate.
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		// admin branch now uses the active-account predicate. Keeper-only
+		// bootstrap, as above: an admin keeper would be a second active admin.
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db: get_db(),
+			roles: [ROLE_KEEPER]
+		});
 		const admin_a = await test_app.create_account({ username: 'admin_a', roles: [ROLE_ADMIN] });
 		const admin_b = await test_app.create_account({ username: 'admin_b', roles: [ROLE_ADMIN] });
 
@@ -215,8 +229,13 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// Safety counterpart to the regression above: the active-account
 		// predicate must not swing too far. A tombstoned admin doesn't rescue
 		// the sole *active* admin — deleting it would leave no admin that can
-		// authenticate, so it stays blocked.
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		// authenticate, so it stays blocked. Keeper-only bootstrap, as above.
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db: get_db(),
+			roles: [ROLE_KEEPER]
+		});
 		const admin_a = await test_app.create_account({ username: 'admin_a', roles: [ROLE_ADMIN] });
 		const admin_b = await test_app.create_account({ username: 'admin_b', roles: [ROLE_ADMIN] });
 
@@ -256,7 +275,17 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// seeded directly. Mirrors the Rust
 		// `last_admin_guard_ignores_an_admin_grant_on_a_tombstoned_actor`.
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		// Keeper-only bootstrap, as above.
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db,
+			roles: [ROLE_KEEPER],
+			exclude_db_invariants: {
+				actor_tombstone_disagrees_with_account:
+					'one actor of a live account is soft-deleted by hand — a state no handler produces yet'
+			}
+		});
 		const admin_a = await test_app.create_account({
 			username: 'usable_admin',
 			roles: [ROLE_ADMIN]

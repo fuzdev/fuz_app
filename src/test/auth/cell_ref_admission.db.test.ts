@@ -37,12 +37,7 @@ import {
 } from '#lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
-import {
-	call,
-	create_cell,
-	create_cell_admin_test_app,
-	create_cell_test_app
-} from './cell_test_helpers.ts';
+import { call, create_cell, create_cell_test_app } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 
@@ -309,7 +304,7 @@ describe_db('cell ref admission', (get_db) => {
 	});
 
 	test('a global admin is not gated on refs; a scoped admin is', async () => {
-		const app = await create_cell_admin_test_app(get_db);
+		const app = await create_cell_test_app(get_db);
 		const seeded = await put('seeded', null);
 		const created = await call(
 			app,
@@ -339,7 +334,7 @@ describe_db('cell ref admission', (get_db) => {
 	});
 
 	test('admission answers after the 404 masks and the create policy', async () => {
-		const app = await create_cell_test_app(get_db, [], {
+		const app = await create_cell_test_app(get_db, {
 			authorize_create: test_cell_gated_create_authorize
 		});
 		const alice = await app.create_account({ username: 'adm_mask_alice' });

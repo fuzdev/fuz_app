@@ -16,6 +16,7 @@
 import { describe, test, assert } from 'vitest';
 
 import { create_test_app } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,
@@ -44,8 +45,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'revoke_target_basic' });
 			const db = get_db();
@@ -76,8 +76,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const caller = await test_app.create_account({ username: 'revoke_non_admin' });
 			const target = await test_app.create_account({ username: 'revoke_target_nonadmin' });
@@ -113,8 +112,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'revoke_idor_target' });
 			const other = await test_app.create_account({ username: 'revoke_idor_other' });
@@ -146,7 +144,6 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,
@@ -187,8 +184,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'revoke_missing_target' });
 			const res = await rpc_call_for_spec({
@@ -212,7 +208,6 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,
@@ -253,8 +248,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const grantor_b = await test_app.create_account({
 				username: 'revoke_supersede_grantor_b',
@@ -298,7 +292,6 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,
@@ -400,8 +393,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				const test_app = await create_test_app({
 					session_options,
 					create_route_specs,
-					db: get_db(),
-					roles: [ROLE_KEEPER, ROLE_ADMIN]
+					db: get_db()
 				});
 				// another admin exists, so only the keeper guard can refuse
 				const other = await test_app.create_account({
@@ -422,8 +414,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				const test_app = await create_test_app({
 					session_options,
 					create_route_specs,
-					db: get_db(),
-					roles: [ROLE_ADMIN]
+					db: get_db()
 				});
 				// the keeper drops out of the count (its grant revoked out of band),
 				// leaving one active admin, who tries to revoke their own grant
@@ -459,12 +450,14 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 			});
 
 			// the sole admin account with its admin grant on two actors
-			const create_sole_admin_with_two_actors = async () => {
+			const create_sole_admin_with_two_actors = async (
+				exclude_db_invariants?: DbInvariantExclusions
+			) => {
 				const test_app = await create_test_app({
 					session_options,
 					create_route_specs,
 					db: get_db(),
-					roles: [ROLE_ADMIN]
+					exclude_db_invariants
 				});
 				const keeper_admin = await admin_grant_of(test_app.backend.actor.id);
 				await get_db().query(`UPDATE role_grant SET revoked_at = NOW() WHERE id = $1`, [
@@ -510,7 +503,10 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 			test("a tombstoned actor's admin grant is revocable while an active admin remains", async () => {
 				const { test_app, sole, first_admin, second_id, second_admin } =
-					await create_sole_admin_with_two_actors();
+					await create_sole_admin_with_two_actors({
+						actor_tombstone_disagrees_with_account:
+							'one actor of a live account is soft-deleted by hand — a state no handler produces yet'
+					});
 				await get_db().query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [second_id]);
 
 				const allowed = await revoke(

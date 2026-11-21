@@ -1,9 +1,9 @@
 import './assert_dev_env.ts';
 
 /**
- * The per-test database invariant check — the hooks the cross-process and
- * in-process setups register, over the invariants and their statement in
- * `db_invariant_queries.ts`. In-process the check queries the fixture's own
+ * The per-test database invariant check — the hooks `create_test_app` and the
+ * cross-process setup register, over the invariants and their statement in
+ * `db_invariant_queries.ts`. In-process the check queries the test app's own
  * `Db` (`assert_db_invariants`); cross-process it reads the backend's
  * `_testing_db_invariants` backdoor (`assert_db_invariant_rows`).
  *
@@ -22,9 +22,14 @@ import {
 	type DbInvariantRow
 } from './db_invariant_queries.ts';
 
+/** The exclusion sets already logged, by label and set — the log's dedupe. */
+const announced_db_invariant_exclusions = new Set<string>();
+
 /**
  * Validate a setup's exclusions and log them, one line naming each with its
- * reason, so a run shows what it leaves unchecked. Silent when there are none.
+ * reason, so a run shows what it leaves unchecked. Validates on every call
+ * and logs a label's set once per module instance, since a direct
+ * `create_test_app` caller builds an app per test. Silent when there are none.
  *
  * @param exclude - the setup's exclusions
  * @param label - names the setup
@@ -37,6 +42,9 @@ export const announce_db_invariant_exclusions = (
 	validate_db_invariant_exclusions(exclude, label);
 	const entries = Object.entries(exclude ?? {});
 	if (entries.length === 0) return;
+	const key = JSON.stringify([label, entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))]);
+	if (announced_db_invariant_exclusions.has(key)) return;
+	announced_db_invariant_exclusions.add(key);
 	console.log(
 		`[db invariants] ${label} excludes ${entries.map(([name, reason]) => `${name} (${reason})`).join('; ')}`
 	);
@@ -78,13 +86,15 @@ export const assert_db_invariants = async (
 };
 
 /**
- * Run `check` when the current test finishes — the per-test hook the
- * cross-process and in-process setups register from `setup_test()`, with
- * `check` the fixture's `assert_db_invariants`.
+ * Run `check` when the current test finishes — the per-test hook
+ * `create_test_app` registers when it builds an app (in-process, and so every
+ * `default_in_process_setup` fixture) and the cross-process setup registers
+ * from `setup_test()`, with `check` the app's or fixture's
+ * `assert_db_invariants`.
  *
  * Runs after the test body and its `afterEach` hooks, before the next test's
  * setup resets the database. A test that already failed is left as it
- * failed: its state proves nothing more. Outside a test — a fixture built in
+ * failed: its state proves nothing more. Outside a test — an app or fixture built in
  * `beforeAll`, shared by a describe's tests — nothing is registered, and the
  * suite checks the fixture once its tests are done
  * (`check_db_invariants_after_all`).
@@ -111,11 +121,43 @@ const task_failed = (task: RunnerTask): boolean =>
 	task.result?.state === 'fail' || (task.type === 'suite' && task.tasks.some(task_failed));
 
 /**
+ * Check a describe-scoped fixture's database now, unless a test of `suite`
+ * failed or no fixture was built — the body of the suite-level check, for a
+ * describe's own `afterAll` that runs it ahead of its cleanup (a
+ * `create_test_app` app the describe closes, a database its factory closes):
+ *
+ * ```ts
+ * afterAll(async ({}, suite) => {
+ * 	try {
+ * 		await check_db_invariants_after_suite(suite, test_app);
+ * 	} finally {
+ * 		await test_app.cleanup();
+ * 	}
+ * });
+ * ```
+ *
+ * @param suite - the describe's task, the `afterAll` hook's second argument
+ * @param fixture - the shared fixture or test app, `null` or `undefined` until built
+ * @throws Error listing every broken invariant and its rows
+ */
+export const check_db_invariants_after_suite = async (
+	suite: RunnerTask,
+	fixture: { readonly assert_db_invariants: () => Promise<void> } | null | undefined
+): Promise<void> => {
+	if (!fixture || task_failed(suite)) return;
+	await fixture.assert_db_invariants();
+};
+
+/**
  * Check a describe-scoped fixture's database once the describe's tests are
  * done — the suite-level twin of the per-test hook, for a fixture built in
  * `beforeAll` and shared by the describe (the per-describe round-trip and
- * exposure suites). Skipped when a test of the describe failed, or when no
- * fixture was built. Call inside the `describe`, at collection.
+ * exposure suites), or a `create_test_app` app built there, which registers
+ * no per-test hook. Skipped when a test of the describe failed, or when no
+ * fixture was built. Call inside the `describe`, at collection. It registers
+ * an `afterAll` of its own, so it reads a fixture nothing closes in another
+ * `afterAll`; a describe that closes its app or database there calls
+ * `check_db_invariants_after_suite` in that hook, ahead of the close.
  *
  * @param get_fixture - the shared fixture, `null` or `undefined` until built
  */
@@ -125,8 +167,6 @@ export const check_db_invariants_after_all = (
 	// vitest requires the hook's context argument to be a destructuring pattern
 	// eslint-disable-next-line no-empty-pattern
 	afterAll(async ({}, suite) => {
-		const fixture = get_fixture();
-		if (!fixture || task_failed(suite)) return;
-		await fixture.assert_db_invariants();
+		await check_db_invariants_after_suite(suite, get_fixture());
 	});
 };

@@ -14,11 +14,8 @@ import { cell_create_action_spec, ERROR_CELL_REF_NOT_HELD } from '#lib/auth/cell
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { CELL_MIGRATION_NS, CELL_DROP_TABLES } from '#lib/db/cell_ddl.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
-import {
-	auth_integration_truncate_tables,
-	create_default_db_factory,
-	create_describe_db
-} from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables, create_default_db_factory } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { call, create_cell_test_app } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 

@@ -35,10 +35,10 @@ import { create_test_app, type SuiteAppOptions } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
 	create_default_db_factory,
-	create_describe_db,
 	auth_integration_truncate_tables,
 	type DbFactory
 } from './db.ts';
+import { create_describe_db } from './describe_db.ts';
 import { find_auth_route, assert_rate_limit_retry_after_header } from './integration_helpers.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 import { run_migrations } from '../db/migrate.ts';

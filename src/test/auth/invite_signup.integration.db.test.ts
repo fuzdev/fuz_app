@@ -28,7 +28,6 @@ import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { rpc_call_for_spec, type RpcCallResult } from '#lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import {
 	ERROR_NO_MATCHING_INVITE,
@@ -116,8 +115,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -138,8 +136,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -156,8 +153,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -173,8 +169,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -215,8 +210,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -247,8 +241,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const create_r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -284,8 +277,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Try to create invite for the bootstrapped account's username
 			const r = await rpc_call_for_spec({
@@ -302,8 +294,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Set email on the bootstrapped account
 			await get_db().query(`UPDATE account SET email = 'existing@example.com' WHERE id = $1`, [
@@ -323,8 +314,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Try uppercase variant of bootstrapped account's username
 			const r = await rpc_call_for_spec({
@@ -341,8 +331,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await get_db().query(`UPDATE account SET email = 'CaseTest@Example.COM' WHERE id = $1`, [
 				test_app.backend.account.id
@@ -361,8 +350,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -378,8 +366,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -395,8 +382,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Invite with both fields — username matches existing account, email does not
 			const r = await rpc_call_for_spec({
@@ -413,8 +399,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -437,8 +422,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -456,8 +440,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Admin creates invite
 			await rpc_call_for_spec({
@@ -487,8 +470,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -527,8 +509,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Create invite directly via query to bypass route-level account-exists check
 			await query_create_invite(
@@ -553,8 +534,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Create an account with an email first
 			const existing = await test_app.create_account({ username: 'existing' });
@@ -583,8 +563,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			// Set up username conflict
@@ -634,8 +613,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -669,8 +647,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -709,8 +686,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Admin creates email-only invite
 			await rpc_call_for_spec({
@@ -736,8 +712,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Admin creates invite with both fields
 			await rpc_call_for_spec({
@@ -779,8 +754,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Admin creates invite with mixed-case email
 			await rpc_call_for_spec({
@@ -804,8 +778,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Admin creates invite with mixed-case username
 			await rpc_call_for_spec({
@@ -874,8 +847,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
@@ -911,8 +883,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const create_r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -946,8 +917,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Enable open signup via admin RPC
 			const enable_res = await rpc_call_for_spec({
@@ -996,8 +966,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
@@ -1027,8 +996,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
@@ -1064,8 +1032,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
@@ -1144,8 +1111,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Create an invite directly to bypass the route-level account-exists check.
 			// The invite carries the bootstrapped account's username so the find succeeds
@@ -1188,8 +1154,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
@@ -1281,8 +1246,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_route_specs_floored,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			// Seed an invite for the bootstrapped account's username so the
 			// find succeeds inside the tx and the unique constraint fires
@@ -1323,8 +1287,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			await query_create_invite({ db: get_db() }, { username: 'internalerr', created_by: null });
 
@@ -1377,8 +1340,7 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const invite = await query_create_invite(
 				{ db: get_db() },

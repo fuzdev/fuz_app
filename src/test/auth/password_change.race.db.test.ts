@@ -37,7 +37,8 @@ import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 
 import { pg_factory } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';

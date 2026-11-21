@@ -11,7 +11,6 @@
  * @module
  */
 
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
@@ -37,10 +36,7 @@ import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
 const suite_options = default_in_process_suite_options({
 	session_options: spine_session_options,
 	create_route_specs: create_spine_route_specs,
-	rpc_endpoints: spine_rpc_endpoints,
-	// The keeper needs `ROLE_ADMIN` to pass the admin-gated success case;
-	// `ROLE_KEEPER` alone does not grant admin reach.
-	extra_keeper_roles: [ROLE_ADMIN]
+	rpc_endpoints: spine_rpc_endpoints
 });
 
 describe_conformance_table_tests({
@@ -66,7 +62,6 @@ const multi_actor_suite_options = default_in_process_suite_options({
 	session_options: spine_session_options,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints,
-	extra_keeper_roles: [ROLE_ADMIN],
 	extra_actors: [ACTING_EXTRA_ACTOR_NAME]
 });
 

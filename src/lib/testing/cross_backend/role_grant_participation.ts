@@ -106,10 +106,10 @@ export const describe_role_grant_participation_cross_tests = (
 			const fixture = await setup_test();
 			const recipient = await fixture.create_account({ username: 'participation_assignee' });
 
-			// The keeper holds ROLE_ADMIN (seeded via extra_keeper_roles), so it
-			// clears the dispatcher admin gate; `participant` is admin-grantable, so
-			// it clears the grant-path gate; the recipient is single-actor, so the
-			// target actor resolves without `to_actor_id`.
+			// The keeper holds ROLE_ADMIN (seeded by default, as a production
+			// bootstrap), so it clears the dispatcher admin gate; `participant` is
+			// admin-grantable, so it clears the grant-path gate; the recipient is
+			// single-actor, so the target actor resolves without `to_actor_id`.
 			const first = await rpc(
 				fixture.transport,
 				'role_grant_assign',

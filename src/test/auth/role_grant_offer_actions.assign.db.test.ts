@@ -54,8 +54,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'assign_target_basic' });
 			const db = get_db();
@@ -89,7 +88,6 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,
@@ -134,7 +132,6 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,
@@ -180,8 +177,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const caller = await test_app.create_account({ username: 'assign_non_admin' });
 			const target = await test_app.create_account({ username: 'assign_non_admin_target' });
@@ -206,8 +202,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 
 			const res = await rpc_call_for_spec({
@@ -225,8 +220,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'assign_mismatch_target' });
 			const other = await test_app.create_account({ username: 'assign_mismatch_other' });
@@ -251,8 +245,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'assign_idempotent_target' });
 
@@ -282,8 +275,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username: 'assign_multi_actor_target' });
 			const db = get_db();
@@ -330,8 +322,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_app_role_route_specs({ authorize: admit_all_authorize }),
-				db: get_db(),
-				roles: [ROLE_ADMIN]
+				db: get_db()
 			});
 			const target = await test_app.create_account({ username });
 			const assign = (params: { scope_kind?: string; scope_id?: string }) =>
@@ -397,7 +388,6 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 				session_options,
 				create_route_specs: create_app_role_route_specs({ authorize: scoped_only }),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
 				audit_factory: (params) =>
 					create_audit_emitter({
 						...params,

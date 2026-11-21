@@ -21,7 +21,6 @@
  * @module
  */
 
-import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
@@ -49,9 +48,9 @@ import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
 import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
 
 const handle = inject_backend_handle();
-// `ROLE_ADMIN` on the fresh-per-test keeper so the success case can list
-// accounts; `ROLE_KEEPER` alone does not grant admin reach.
-const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });
+// the fresh-per-test keeper holds `ROLE_ADMIN` by default, so the success
+// case can list accounts; `ROLE_KEEPER` alone does not grant admin reach
+const setup_test = default_cross_process_setup(handle);
 const { capabilities, base_url, ws_path } = handle.config;
 const surface_source = create_spine_surface_spec();
 const live_rpc_endpoints = create_spine_live_rpc_endpoints();
@@ -104,7 +103,6 @@ if (ws) {
 }
 
 const multi_actor_setup_test = default_cross_process_setup(handle, {
-	extra_keeper_roles: [ROLE_ADMIN],
 	extra_actors: [ACTING_EXTRA_ACTOR_NAME]
 });
 const multi_actor_cases = [...conformance_acting_cases, ...generated_auth_cases];

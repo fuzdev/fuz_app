@@ -39,6 +39,7 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { stub_password_deps } from '#lib/testing/app_server.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
@@ -55,7 +56,8 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { DEFAULT_MAX_SESSIONS, DEFAULT_MAX_TOKENS } from '#lib/auth/account_route_schema.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { create_describe_db } from '#lib/testing/describe_db.ts';
 import type { PasswordHashDeps } from '#lib/auth/password.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -129,13 +131,14 @@ interface Setup {
 	admin_headers: () => Record<string, string>;
 }
 
-const setup = async (db: Db): Promise<Setup> => {
+const setup = async (db: Db, exclude_db_invariants?: DbInvariantExclusions): Promise<Setup> => {
 	const latched = create_latched_password();
 	const test_app = await create_test_app({
 		session_options,
 		db,
 		password: latched.deps,
-		create_route_specs
+		create_route_specs,
+		exclude_db_invariants
 	});
 	const admin = await test_app.create_account({ username: 'race_admin', roles: [ROLE_ADMIN] });
 	const victim = await test_app.create_account({
@@ -411,7 +414,12 @@ describe_db('credential mint race', (get_db) => {
 	});
 
 	test('a session or token on a tombstoned account is the anonymous caller', async () => {
-		const s = await setup(get_db());
+		const s = await setup(get_db(), {
+			credential_of_tombstoned_account:
+				'the account is tombstoned by query, its session and token left live — the handler revokes them',
+			actor_tombstone_disagrees_with_account:
+				'the account is tombstoned by query, its actor left live — the handler tombstones it'
+		});
 		try {
 			const cookie = cookie_of(await login(s.test_app, OLD_PASSWORD));
 			const token_result = await token_create(s, cookie);

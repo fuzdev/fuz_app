@@ -48,6 +48,7 @@ import {
 import { SSE_CONNECTED_COMMENT, SSE_KEEP_ALIVE_COMMENT } from '#lib/realtime/sse_constants.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/test_app.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_sse_frame_reader } from '#lib/testing/transports/sse_frame_reader.ts';
 
@@ -67,8 +68,14 @@ interface Harness {
 
 let admin_counter = 0;
 
-/** The real audit stream route + the account routes, over a `Db` a test can stall. */
-const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQuery }> => {
+/**
+ * The real audit stream route + the account routes, over a `Db` a test can
+ * stall; `exclude_db_invariants` names the states a test leaves by hand.
+ */
+const create_harness = async (
+	db: Db,
+	exclude_db_invariants?: DbInvariantExclusions
+): Promise<Harness & { stall: () => StalledQuery }> => {
 	const gated = create_gated_db(db);
 	const infos: Array<Array<unknown>> = [];
 	const recording_console: LogConsole = {
@@ -84,6 +91,7 @@ const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQ
 	const test_app = await create_test_app({
 		session_options,
 		db: gated.db,
+		exclude_db_invariants,
 		app_options: { audit_log_sse: true },
 		create_route_specs: (ctx) => [
 			...prefix_route_specs('/api/account', [
@@ -215,7 +223,10 @@ describe_db('audit log stream admission', (get_db) => {
 	 */
 	test('an acting actor deleted during the request opens no stream', async () => {
 		const db = get_db();
-		const h = await create_harness(db);
+		const h = await create_harness(db, {
+			actor_tombstone_disagrees_with_account:
+				'the only actor of a live account is soft-deleted by hand — a state no handler produces yet'
+		});
 
 		const { response, stalled } = await open_stalled(h);
 		assert.ok(await query_actor_soft_delete({ db }, h.admin.actor.id, null));
