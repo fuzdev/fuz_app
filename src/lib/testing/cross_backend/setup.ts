@@ -23,6 +23,8 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import { afterAll, TestRunner } from 'vitest';
+
 import {
 	array,
 	boolean,
@@ -47,6 +49,14 @@ import { MigrationTracker, type SchemaSnapshot } from '../schema_introspect.ts';
 import { ActionManifest } from './action_manifest.ts';
 import type { BackendHandle } from './spawn_backend.ts';
 import { SPINE_ACCOUNT_LOGIN_PATH, SPINE_ACCOUNT_SIGNUP_PATH } from './spine_surface_constants.ts';
+import { create_db, is_pg_database_url, type CreateDbResult } from '../../db/create_db.ts';
+import type { QueryDeps } from '../../db/query_deps.ts';
+import {
+	announce_db_invariant_exclusions,
+	assert_db_invariants,
+	register_db_invariants_check,
+	type DbInvariantExclusions
+} from '../db_invariants.ts';
 
 /**
  * Options for `TestFixture.create_account` — mints an additional
@@ -270,6 +280,15 @@ export interface TestFixture {
 	 * `assert_audit_event_metadata`.
 	 */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
+	/**
+	 * Check the database invariants (`DB_INVARIANTS`, less the setup's
+	 * `exclude_db_invariants`) now, throwing on a violation; a no-op where the
+	 * test process can't reach the database (a `memory://` spawn). The setup
+	 * already runs it when each test finishes if built inside that test; a
+	 * fixture built in `beforeAll` and shared by a describe is checked by the
+	 * suite (`check_db_invariants_after_all`).
+	 */
+	readonly assert_db_invariants: () => Promise<void>;
 }
 
 /**
@@ -521,6 +540,18 @@ export interface CrossProcessSetupOptions {
 	readonly signup_path?: string;
 	/** REST login route `fixture.create_account` logs in through. Default `SPINE_ACCOUNT_LOGIN_PATH`. */
 	readonly login_path?: string;
+	/**
+	 * Database invariants (`DB_INVARIANTS`) left unchecked after each test,
+	 * each with the non-empty reason it can't hold — tests that write rows
+	 * directly, without the cascade the spine runs, or a gap an `xfail_until`
+	 * marker tracks (`DbInvariantExclusions`). Every other invariant is checked
+	 * when a test that called `setup_test()` finishes, on a backend whose
+	 * `DATABASE_URL` is a PostgreSQL URL the test process can reach
+	 * (`memory://` is skipped); the setup logs its exclusions once. Under
+	 * `describe.concurrent` a violation can land on a sibling of the test that
+	 * left it (`register_db_invariants_check`).
+	 */
+	readonly exclude_db_invariants?: DbInvariantExclusions;
 }
 
 /**
@@ -1219,6 +1250,45 @@ const grant_roles_via_offer_accept = async (
 };
 
 /**
+ * One pool per backend database, shared by every setup over it in the worker
+ * and opened on the first check. The `afterAll` of each setup built at
+ * collection closes it and drops it from the map, so a later check opens a
+ * fresh one rather than reusing a closed pool. A setup built inside a test
+ * registers no `afterAll`, and one built in a hook registers it after
+ * collection, where vitest may never run it — a pool only such setups opened
+ * lasts until the worker exits.
+ */
+const invariant_dbs: Map<string, Promise<CreateDbResult>> = new Map();
+
+/**
+ * The per-test invariant check's database for `handle`: a PostgreSQL
+ * `DATABASE_URL` the test process connects to itself, else `null` (a
+ * `memory://` backend's database lives in its process).
+ */
+const to_invariant_db_getter = (
+	handle: ReconstructedBootstrappedBackendHandle
+): (() => Promise<QueryDeps>) | null => {
+	const database_url = handle.config.env.DATABASE_URL;
+	if (!database_url || !is_pg_database_url(database_url)) return null;
+	if (!TestRunner.getCurrentTest()) {
+		afterAll(async () => {
+			const opened = invariant_dbs.get(database_url);
+			if (!opened) return;
+			invariant_dbs.delete(database_url);
+			await (await opened).close();
+		});
+	}
+	return async () => {
+		let opened = invariant_dbs.get(database_url);
+		if (!opened) {
+			opened = create_db(database_url);
+			invariant_dbs.set(database_url, opened);
+		}
+		return { db: (await opened).db };
+	};
+};
+
+/**
  * Build a keeper-authenticated `FetchTransport` that closes over the
  * supplied session cookie. Used by the per-test fixture so each call to
  * `setup_test()` builds a transport carrying the freshly re-seeded
@@ -1285,6 +1355,12 @@ export const default_cross_process_setup = (
 	const signup_path = options?.signup_path ?? SPINE_ACCOUNT_SIGNUP_PATH;
 	const login_path = options?.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
 	const { cookie_name } = handle.config;
+	const exclude_db_invariants = options?.exclude_db_invariants;
+	announce_db_invariant_exclusions(
+		exclude_db_invariants,
+		`default_cross_process_setup(${handle.config.name})`
+	);
+	const get_invariant_db = to_invariant_db_getter(handle);
 	return async () => {
 		const {
 			keeper,
@@ -1370,7 +1446,7 @@ export const default_cross_process_setup = (
 			initial_cookies: [`${cookie_name}=${keeper.session_cookie}`]
 		});
 
-		return {
+		const fixture: TestFixture = {
 			transport,
 			fresh_transport: (fresh_options) =>
 				create_fetch_transport({
@@ -1386,6 +1462,14 @@ export const default_cross_process_setup = (
 			extra_accounts,
 			extra_actors,
 			reject_unknown_audit_metadata_keys: options?.reject_unknown_audit_metadata_keys ?? false,
+			assert_db_invariants: async () => {
+				if (!get_invariant_db) return;
+				await assert_db_invariants(
+					await get_invariant_db(),
+					handle.config.name,
+					exclude_db_invariants
+				);
+			},
 			// Forge over the wire — the cross-process driver has no keyring,
 			// so `_testing_mint_session` mints the backdated row + signs the
 			// cookie server-side over the keeper's daemon-token channel.
@@ -1534,5 +1618,7 @@ export const default_cross_process_setup = (
 				return other.api_token;
 			}
 		};
+		register_db_invariants_check(fixture.assert_db_invariants);
+		return fixture;
 	};
 };

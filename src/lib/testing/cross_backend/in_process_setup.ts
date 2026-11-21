@@ -24,7 +24,7 @@ import type { AppSurfaceSpec } from '../../http/surface.ts';
 import type { BootstrapServerOptions } from '../../server/app_server.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
-import { ROLE_KEEPER } from '../../auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '../../auth/role_schema.ts';
 import {
 	AUTH_SESSION_LIFETIME_MS,
 	query_session_revoke_for_account
@@ -46,6 +46,12 @@ import {
 } from '../app_server.ts';
 import { create_test_app_surface_spec } from '../stubs.ts';
 import {
+	announce_db_invariant_exclusions,
+	assert_db_invariants,
+	register_db_invariants_check,
+	type DbInvariantExclusions
+} from '../db_invariants.ts';
+import {
 	find_rpc_action,
 	http_transport,
 	resolve_rpc_endpoints_for_setup,
@@ -62,8 +68,16 @@ import {
 	EXPIRED_TOKEN_WAIT_MS,
 	to_test_account,
 	type SetupTest,
+	type TestFixture,
 	type ExtraAccountSpec
 } from './setup.ts';
+
+/**
+ * The keeper's roles when `InProcessSetupOptions.roles` is omitted — what a
+ * production bootstrap grants and the cross-process `_testing_reset` seeds.
+ * `create_test_app`'s own default stays `[ROLE_KEEPER]`.
+ */
+export const DEFAULT_IN_PROCESS_KEEPER_ROLES: ReadonlyArray<string> = [ROLE_KEEPER, ROLE_ADMIN];
 
 /**
  * Wrap a Hono-style app into a `FetchTransport`-shaped object so the
@@ -104,6 +118,12 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 	 * `CrossProcessSetupOptions.reject_unknown_audit_metadata_keys`.
 	 */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
+	/**
+	 * Database invariants left unchecked after each test, each with its reason
+	 * — see `CrossProcessSetupOptions.exclude_db_invariants`. Every other one
+	 * is checked on the app's database when a test finishes.
+	 */
+	readonly exclude_db_invariants?: DbInvariantExclusions;
 }
 
 /**
@@ -120,20 +140,28 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
  * `_testing_reset` cradle so suite bodies read
  * `fixture.extra_accounts[username]` uniformly regardless of transport.
  *
+ * The keeper holds `options.roles`, or `DEFAULT_IN_PROCESS_KEEPER_ROLES`
+ * when omitted — keeper and admin, as a production bootstrap and the
+ * cross-process reset seed it. Each fixture registers the database
+ * invariant check (`register_db_invariants_check`) when built inside a test.
+ *
  * The describe-level `auth_integration_truncate_tables` / WASM database
  * cache lifecycle stays in `create_default_db_factory` / `create_describe_db`
  * (`testing/db.ts`) — `default_in_process_setup` doesn't manage db state
  * beyond what `create_test_app` already does.
  */
-export const default_in_process_setup =
-	(options: InProcessSetupOptions): SetupTest =>
-	async () => {
+export const default_in_process_setup = (options: InProcessSetupOptions): SetupTest => {
+	announce_db_invariant_exclusions(options.exclude_db_invariants, 'default_in_process_setup');
+	return async () => {
 		// Per-test fresh db. When `options.migration_namespaces` is set,
 		// `create_test_app` provisions an auth+extras database (e.g. the cell
 		// layer); otherwise the auth-only default. Either way the factory
 		// resets + re-migrates on each `create`, so the per-test keeper
 		// bootstrap below lands on a clean DB.
-		const test_app = await create_test_app(options);
+		const test_app = await create_test_app({
+			...options,
+			roles: options.roles ?? [...DEFAULT_IN_PROCESS_KEEPER_ROLES]
+		});
 
 		// Seed bootstrap-time secondaries against the same DB the keeper
 		// just landed on. Direct-insert is the only path for roles whose
@@ -183,7 +211,7 @@ export const default_in_process_setup =
 			extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 		}
 
-		return {
+		const fixture: TestFixture = {
 			transport: in_process_fetch_transport(test_app.app),
 			// In-process the wrapper is stateless and never auto-adds Origin —
 			// `options` is accepted for API symmetry with cross-process but
@@ -198,6 +226,12 @@ export const default_in_process_setup =
 			extra_accounts,
 			extra_actors,
 			reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys ?? false,
+			assert_db_invariants: () =>
+				assert_db_invariants(
+					{ db: test_app.backend.deps.db },
+					'in-process',
+					options.exclude_db_invariants
+				),
 			// Forge directly against the live backend's DB + keyring — no wire
 			// hop needed in-process.
 			mint_expired_session: async () => {
@@ -283,7 +317,10 @@ export const default_in_process_setup =
 				return other.api_token;
 			}
 		};
+		register_db_invariants_check(fixture.assert_db_invariants);
+		return fixture;
 	};
+};
 
 /**
  * Consumer-facing options for `default_in_process_suite_options` — the
@@ -305,14 +342,10 @@ export interface DefaultInProcessSuiteOptions {
 	app_options?: SuiteAppOptions;
 	/**
 	 * Additional roles to grant the bootstrapped keeper alongside
-	 * `ROLE_KEEPER` — additive, never replaces. The keeper account
-	 * always holds `ROLE_KEEPER` (otherwise daemon-token auth breaks);
-	 * pass extras here for suites that need additional role coverage.
-	 *
-	 * Admin-suite consumers pass `[ROLE_ADMIN]` so the default keeper
-	 * can hit admin-gated RPC methods.
-	 * `describe_standard_admin_integration_tests` and
-	 * `describe_audit_completeness_tests` need this.
+	 * `DEFAULT_IN_PROCESS_KEEPER_ROLES` (`ROLE_KEEPER` and `ROLE_ADMIN`, what a
+	 * production bootstrap grants) — additive, never replaces. Pass extras
+	 * here for suites that need additional role coverage; listing
+	 * `ROLE_ADMIN` again is harmless.
 	 */
 	extra_keeper_roles?: Array<string>;
 	/**
@@ -333,6 +366,11 @@ export interface DefaultInProcessSuiteOptions {
 	 * `CrossProcessSetupOptions.reject_unknown_audit_metadata_keys`.
 	 */
 	reject_unknown_audit_metadata_keys?: boolean;
+	/**
+	 * Database invariants left unchecked after each test, each with its reason
+	 * — see `CrossProcessSetupOptions.exclude_db_invariants`.
+	 */
+	exclude_db_invariants?: DbInvariantExclusions;
 	/**
 	 * Pre-built `AppSurfaceSpec` — overrides the default which calls
 	 * `create_test_app_surface_spec` against the same factory inputs.
@@ -401,10 +439,13 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
 		app_options: options.app_options,
-		roles: [ROLE_KEEPER, ...(options.extra_keeper_roles ?? [])],
+		roles: [
+			...new Set([...DEFAULT_IN_PROCESS_KEEPER_ROLES, ...(options.extra_keeper_roles ?? [])])
+		],
 		extra_accounts: options.extra_accounts,
 		extra_actors: options.extra_actors,
-		reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys
+		reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys,
+		exclude_db_invariants: options.exclude_db_invariants
 	}),
 	surface_source:
 		options.surface_source ??

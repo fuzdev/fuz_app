@@ -215,7 +215,9 @@ const fake_fixture = {
 		const cookie = `account_${++account_counter}`;
 		live_sessions.add(cookie);
 		return create_account_stub(cookie);
-	}
+	},
+	// no database behind the fake
+	assert_db_invariants: async () => {}
 } as unknown as TestFixture;
 
 describe_round_trip_validation({

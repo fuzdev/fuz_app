@@ -172,6 +172,27 @@ with `isolate: false` + `fileParallelism: false` to amortize WASM boot across
 every DB test file — which also makes that one instance the whole run's; a
 project that isolates its files gets one per worker instead.
 
+### `db_invariants.ts` — auth-schema invariants after every test
+
+`DB_INVARIANTS` — named SQL checks over the auth tables and `audit_log`, one
+set for both spines and run as one statement; the list, what each holds and
+how a creation is ordered against a removal are the module's TSDoc.
+`query_db_invariant_violations` / `assert_db_invariants` /
+`format_db_invariant_violations`.
+
+Both cross-backend setups build the fixture, then register
+`fixture.assert_db_invariants` to run when the test finishes
+(`register_db_invariants_check` — only inside a running test; skipped when
+the test already failed). Cross-process it reads a PostgreSQL `DATABASE_URL`
+the test process reaches (one pool per database, closed in an `afterAll`), so
+`memory://` spawns go unchecked. A fixture built in `beforeAll` is checked
+once its describe's tests are done, by the shipped suites that build one
+(`check_db_invariants_after_all`). Opt out per invariant with
+`exclude_db_invariants: {[name]: reason}` on the setup — reason required,
+logged once per setup, merged by name in `describe_spine_cross_suites` — for
+tests that write rows by hand without the cascade, or a gap an
+`xfail_until` marker tracks.
+
 ## Test app assembly
 
 ### `app_server.ts`
@@ -1156,7 +1177,11 @@ have files of their own.
 
   **Keeper ≠ admin.** `fixture.account` is the keeper account holding
   `[ROLE_KEEPER, ROLE_ADMIN]` — the role split mirrors production
-  `bootstrap_account`. `ROLE_KEEPER` does not grant admin reach; bootstrap
+  `bootstrap_account`, cross-process by the reset's seed and in-process by
+  `DEFAULT_IN_PROCESS_KEEPER_ROLES`, the keeper default of
+  `default_in_process_setup` (when `roles` is omitted) and
+  `default_in_process_suite_options` (`create_test_app` itself keeps
+  `[ROLE_KEEPER]`). `ROLE_KEEPER` does not grant admin reach; bootstrap
   just happens to land both as separate grants. Probing the separation (a
   keeper-only account must 403 on admin RPCs) requires declaring
   `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` — `ROLE_KEEPER`'s

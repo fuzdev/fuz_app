@@ -1091,7 +1091,10 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	}
 };
 
-/** Concatenate a suite's seeding onto the base setup options. */
+/**
+ * Concatenate a suite's seeding onto the base setup options, and merge their
+ * database invariant exclusions by name.
+ */
 const merge_setup_options = (
 	base: CrossProcessSetupOptions | undefined,
 	seed: CrossProcessSetupOptions | undefined
@@ -1100,7 +1103,8 @@ const merge_setup_options = (
 	...seed,
 	extra_keeper_roles: [...(base?.extra_keeper_roles ?? []), ...(seed?.extra_keeper_roles ?? [])],
 	extra_accounts: [...(base?.extra_accounts ?? []), ...(seed?.extra_accounts ?? [])],
-	extra_actors: [...(base?.extra_actors ?? []), ...(seed?.extra_actors ?? [])]
+	extra_actors: [...(base?.extra_actors ?? []), ...(seed?.extra_actors ?? [])],
+	exclude_db_invariants: { ...base?.exclude_db_invariants, ...seed?.exclude_db_invariants }
 });
 
 /**

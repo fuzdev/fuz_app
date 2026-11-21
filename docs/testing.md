@@ -47,7 +47,7 @@ run the same standard suites against it over real HTTP — a Rust spine
   wipe + inline re-seed of a fresh keeper (and any declared
   `extra_accounts`) — so cross-process tests run against a freshly
   bootstrapped keeper per test, matching in-process semantics. Pass
-  `{extra_keeper_roles: [ROLE_ADMIN, ...]}` to bootstrap the fresh
+  `{extra_keeper_roles: [...]}` to bootstrap the fresh
   keeper with extra roles in addition to `[ROLE_KEEPER, ROLE_ADMIN]`
   (seeded in the same transaction; no per-role RPC cost). Pass
   `{extra_accounts: [{username, roles}]}` to seed bootstrap-time
@@ -293,7 +293,7 @@ describe_standard_admin_integration_tests({
 		session_options: my_session_config,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs,
-		extra_keeper_roles: [ROLE_ADMIN]
+		extra_keeper_roles: ['teacher'] // beside the default keeper and admin
 	}),
 	roles: my_roles
 });
@@ -306,8 +306,40 @@ describe_standard_admin_integration_tests({
 - `rpc_endpoints` (optional) — RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).
 - `bootstrap` (optional) — Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_store, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The cross-backend harness exercises the success response, bootstrapping every backend it spawns.
 - `app_options` (optional) — `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
-- `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]` so the keeper hits admin-gated RPC methods.
+- `extra_keeper_roles` (optional) — Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` and `ROLE_ADMIN` (`DEFAULT_IN_PROCESS_KEEPER_ROLES` — what a production bootstrap grants, and what the cross-process reset seeds). `default_in_process_setup` uses the same default when its `roles` is omitted; `create_test_app` called directly keeps `[ROLE_KEEPER]`.
+- `exclude_db_invariants` (optional) — invariants the per-test database check skips, each with its reason (§Database invariants after every test).
 - `surface_source` (optional) — Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).
+
+### Database invariants after every test
+
+Both setups — `default_in_process_setup` (and so
+`default_in_process_suite_options`) and `default_cross_process_setup` — check
+the auth schema's invariants (`DB_INVARIANTS` in
+`@fuzdev/fuz_app/testing/db_invariants.ts`) when each test that called
+`setup_test()` finishes: no credential, pending offer or unclaimed invite
+outliving its account, a bootstrapped database keeping a live keeper and a
+live admin, and the like, read from the rows and from `audit_log` so an
+undelete hides nothing. A test that already failed is not checked again. A
+fixture built in `beforeAll` is checked once after its describe's tests, by
+the shipped suites that build one. Cross-process, only a backend whose
+`DATABASE_URL` is a PostgreSQL URL the test process can reach is checked; a
+`memory://` spawn is skipped.
+
+A test that writes rows by hand without the cascade the spine runs (a
+tombstone set in SQL, a lock-ordering test playing half a delete) leaves a
+state the spine can't. Exclude what it breaks on the setup, each with its
+reason, which the run logs once per setup:
+
+```ts
+const setup_test = default_cross_process_setup(handle, {
+	exclude_db_invariants: {
+		credential_of_tombstoned_account: 'the played delete tombstones the account by hand'
+	}
+});
+```
+
+A test an `xfail_until` marker tracks breaks what its gap breaks; exclude that
+on the setup the marked test uses, naming the marker's tracking id.
 
 The helper output covers every required suite field; consumer call sites
 only add suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
@@ -415,11 +447,9 @@ describe_standard_admin_integration_tests({
 	...default_in_process_suite_options({
 		session_options: my_session_config,
 		create_route_specs: create_my_route_specs,
-		rpc_endpoints: build_rpc_endpoint_specs,
-		// admin tests need the keeper to also carry ROLE_ADMIN so admin-gated
-		// RPC methods (admin_account_list, etc.) accept the default fixture.
-		// ROLE_KEEPER is always implied — list only the extras.
-		extra_keeper_roles: [ROLE_ADMIN]
+		// the keeper holds ROLE_KEEPER and ROLE_ADMIN by default, so the
+		// admin-gated RPC methods (admin_account_list, etc.) accept it
+		rpc_endpoints: build_rpc_endpoint_specs
 	}),
 	roles: my_roles, // RoleRegistry from create_role_registry() — distinct from extra_keeper_roles
 	admin_prefix: '/api/admin' // default, scopes schema validation

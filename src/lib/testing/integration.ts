@@ -163,15 +163,12 @@ export interface StandardIntegrationTestOptions {
  * message if the consumer's route specs are misconfigured.
  *
  * The two signup-invite-edge-case tests call `invite_create_action_spec`
- * (admin-gated) over the fixture's session, so consumers wiring signup +
- * admin actions must thread `extra_keeper_roles: [ROLE_ADMIN]` through
- * either `default_in_process_suite_options` or
- * `default_cross_process_setup(handle, {extra_keeper_roles:
- * [ROLE_ADMIN]})`. In both modes the fixture's `fixture.account` is the
- * fresh keeper, and the extra-keeper-roles list grants the bootstrapped
- * keeper additional roles inline (cross-process via `_testing_reset`'s
- * bootstrap-time seeding; in-process via `bootstrap_test_keeper`) — no
- * per-role RPC cost, no offer/accept round-trip. The tests run against
+ * (admin-gated) over the fixture's session. In both modes the fixture's
+ * `fixture.account` is the fresh keeper, holding `ROLE_KEEPER` and
+ * `ROLE_ADMIN` as a production bootstrap grants them (cross-process via
+ * `_testing_reset`'s seeding; in-process via `bootstrap_test_keeper` with
+ * `DEFAULT_IN_PROCESS_KEEPER_ROLES`), so the invite is admitted with no
+ * per-role RPC cost or offer/accept round-trip. The tests run against
  * the production `open_signup: false` default — the cross-process
  * per-test secondary mint via `fixture.create_account()` is
  * invite-gated (keeper drives `invite_create` before signup) so the
@@ -1552,10 +1549,9 @@ export const describe_standard_integration_tests = (
 				// Drive the admin-gated `invite_create` over the fixture's
 				// session. In both modes the fixture is the fresh keeper,
 				// holding `[ROLE_KEEPER, ROLE_ADMIN, ...extra_keeper_roles]`
-				// from the bootstrap-equivalent seed step — `extra_keeper_roles:
-				// [ROLE_ADMIN]` is technically redundant for the admin suite
-				// but harmless. `fixture.create_session_headers()` resolves to
-				// a session with admin role.
+				// from the bootstrap-equivalent seed step, so
+				// `fixture.create_session_headers()` resolves to a session with
+				// the admin role.
 
 				// `open_signup` stays at production default (`false`) across both
 				// in-process (per-test bootstrap default) and cross-process (the

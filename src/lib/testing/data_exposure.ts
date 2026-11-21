@@ -21,6 +21,8 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, beforeAll, assert } from 'vitest';
+
+import { check_db_invariants_after_all } from './db_invariants.ts';
 import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppSurfaceSpec } from '../http/surface.ts';
@@ -363,6 +365,8 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 	describe('data exposure — runtime', () => {
 		let fixture: TestFixture;
+		// `fixture` is unassigned until `beforeAll` runs, which the check allows for
+		check_db_invariants_after_all(() => fixture);
 		let authed_account: TestAccount;
 		let admin_account: TestAccount;
 

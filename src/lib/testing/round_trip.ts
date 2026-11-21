@@ -24,6 +24,8 @@ import './assert_dev_env.ts';
 
 import { describe, test, beforeAll, assert } from 'vitest';
 
+import { check_db_invariants_after_all } from './db_invariants.ts';
+
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { format_route_key } from '../http/surface_query.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
@@ -155,6 +157,8 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 
 	describe('round-trip validation', () => {
 		let fixture: TestFixture;
+		// `fixture` is unassigned until `beforeAll` runs, which the check allows for
+		check_db_invariants_after_all(() => fixture);
 		let authed_account: TestAccount;
 		let admin_account: TestAccount;
 

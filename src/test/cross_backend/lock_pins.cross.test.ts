@@ -104,7 +104,16 @@ const SETTLE_BOUND_MS = 10_000;
 const parity = inject_parity_handles();
 
 const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBackendHandle): void => {
-	const setup_test = default_cross_process_setup(handle);
+	// the played transactions tombstone accounts by hand, without the cascade a
+	// delete runs (the actors and credentials are left as they were)
+	const setup_test = default_cross_process_setup(handle, {
+		exclude_db_invariants: {
+			credential_of_tombstoned_account:
+				'a played delete tombstones the account by hand and leaves its credentials',
+			actor_tombstone_disagrees_with_account:
+				'a played delete tombstones the account by hand and leaves its actors live'
+		}
+	});
 	const rpc_path = handle.config.rpc_path;
 	const database_url = handle.config.env.DATABASE_URL ?? '';
 
