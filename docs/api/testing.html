@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DkVawWv8.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DSWkh0vO.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CWhYyQRM.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DCG71tXn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -159,7 +159,10 @@ authenticating; a bearer self-delete is 403 <!--]--><!--[3--><!--[0--><!--[--><!
 the session left live; the delete, undelete and purge success rows snapshot
 the victim's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->username<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; the keeper guard and a second undelete each write
 an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->outcome: 'failure'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> row; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admin_account_list<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->include_deleted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-lists tombstoned rows with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deleted_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> set.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two credential end states, each proven live before it is killed: a session
+lists tombstoned rows with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->deleted_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> set.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A purge ends the pending offers made to the account before its cascade
+deletes them, as a delete does — one <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_supersede<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> row each,
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account_deleted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with the account as cause — and the grantor's history no
+longer lists them: the audit row is what remains.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two credential end states, each proven live before it is killed: a session
 and an API token minted before a soft delete stay dead after the undelete
 (the delete removed their rows, and the undelete clears only the
 tombstones), each answering as an anonymous request does, while a fresh
@@ -1547,12 +1550,17 @@ machinery proof for the consentful-role-grants notification fan-out across
 any spine backend. Covers every server-initiated notification of the
 lifecycle:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_received<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (offer created)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_accepted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient accepts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_declined<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → grantor (recipient declines)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_retracted<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → recipient (grantor retracts)<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoked<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (flat, omits <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->revoked_by<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) → revokee (active grant
 revoked by the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> action), for a global grant and a
-scoped one unless <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_supersede<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → each superseded sibling's grantor, fired on
-BOTH the accept-cascade (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'sibling_accepted'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the
-revoke-cascade (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'role_grant_revoked'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->)<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->These exercise only spine primitives (accounts, role-grants, offers, WS
+scoped one unless <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->scope_kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_supersede<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → each live party of an offer a cascade ended:
+an accept's siblings' grantors (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'sibling_accepted'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the
+recipient being the caller), both parties of every offer a revoke ends
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'role_grant_revoked'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the revokee's incoming siblings and its
+own outgoing offers), and the other party of every offer an account
+removal ends (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->reason: 'account_deleted'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, delete and purge — gated on
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilities.account_lifecycle<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> too; the removed account's socket closes
+and hears none of it)<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->These exercise only spine primitives (accounts, role-grants, offers, WS
 notifications) — zero consumer domain — so the suite lives here and runs
-against any backend that wires the standard RPC actions' <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->notification_sender<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-and mounts a registered WS socket: fuz_app's own spine self-tests
+against any backend that mounts the standard RPC actions and a WS endpoint
+their notifications reach: fuz_app's own spine self-tests
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> + the Rust <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_stub<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and downstream
 twin-impl consumers (the fuz_forge Deno/Hono + Rust <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_forge_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 backends) alike.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Each case is a *targeted* server-initiated notification (vs the broadcast in
@@ -1566,7 +1574,10 @@ once the targeted frame has landed, asserts the bystander received nothing
 but the answers to its own requests, behind a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->heartbeat<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> barrier on its
 socket (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->assert_bystander_heard_nothing<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> says why the barrier makes the
 silence meaningful). A fan-out that reached past its target account fails
-there.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Sends are queued on the post-commit drain (handler-emit, not audit-derived),
+there. The target is held the same way, behind a barrier of its own: its
+socket heard exactly the notifications the case addressed to it, each once,
+in order — so a backend delivering one twice (a registry reached through
+two paths) fails, which the frame's own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->wait_for<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> can't see.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Sends are queued on the post-commit drain (handler-emit, not audit-derived),
 so a frame may land a beat after the RPC resolves — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WsClient.wait_for<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> polls
 already-received messages then waits, absorbing the fan-out latency without a
 sleep, and its method+predicate filter ignores unrelated frames (e.g. the
@@ -1574,11 +1585,12 @@ sleep, and its method+predicate filter ignores unrelated frames (e.g. the
 admin-grantable role; accounts that already hold it can still be offered it
 again (a fresh pending row — the prior accept is terminal, no already-granted
 guard), and accept stays idempotent on the role_grant while still superseding
-pending siblings. Gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilities.ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The revoke case revokes the revokee's only <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_ADMIN"><!--[0--><!--[-1-->ROLE_ADMIN<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> grant. On an endpoint
+pending siblings. Gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->capabilities.ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The revoke cases revoke the revokee's only <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_ADMIN"><!--[0--><!--[-1-->ROLE_ADMIN<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> grant. On an endpoint
 gated on that role (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws_required_roles<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) the revokee's socket loses its
 access by the same revoke: it is closed with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
-and the notification may or may not reach it first (nothing orders the two),
-so the case asserts the close there and the frame on an ungated endpoint.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Cross-process only: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/ws_transport.ts#create_admitted_ws_transport"><!--[0--><!--[-1-->create_admitted_ws_transport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> needs a real bound socket, so wire
+and its notifications may or may not reach it first (nothing orders the
+two), so the cases assert the close there — and at most the start of what it
+would have heard, in order — and the frames on an ungated endpoint.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Cross-process only: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/ws_transport.ts#create_admitted_ws_transport"><!--[0--><!--[-1-->create_admitted_ws_transport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> needs a real bound socket, so wire
 it from a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*.cross.test.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> file, never an in-process setup. Authed cookies
 come from the per-account session minted by <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fixture.create_account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fixture.create_session_headers<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/role_grant_participation.ts"><!--[-1-->testing/cross_backend/role_grant_participation.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for <!--]--><!--[4--><strong><!--[--><!--[2-->role-gated participation conferral — the
@@ -1777,7 +1789,14 @@ the login that evicts it must close the socket it opened
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> with its reason), once the eviction has
 committed, and leave a socket on a session it kept open and dispatching. A
 spine that only deletes the row leaves the socket running on a dead
-session; one that closes the account's sockets drops the kept one.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Why <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->max_sessions + 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> logins and not <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->max_sessions<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></strong><!--]--><!--[2--> The starting session
+session; one that closes the account's sockets drops the kept one.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->concurrent logins at the cap all succeed<!--]--><!--]--><!----></strong><!--]--><!--[2--> and leave the account at
+exactly the cap. The logins of one account take turns on its row lock, so
+each evicts against a count holding the ones before it; without that, two
+logins each count without the other's row and both commit above the cap,
+or deadlock in their evictions and answer 500. The burst can only show the
+race when it happens: the exact pin — a login waiting on another's
+uncommitted mint — is each spine's own real-Postgres test (and a backend
+on a one-connection engine serializes the burst whatever it locks).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Why <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->max_sessions + 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> logins and not <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->max_sessions<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></strong><!--]--><!--[2--> The starting session
 count isn't zero and isn't guaranteed equal across impls — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->create_account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 seeds its own session on the Rust cradle. Overshooting by one guarantees at
 least one eviction whatever the baseline is, and the *oldest* login is the
@@ -1791,10 +1810,7 @@ on every spine, so this is an imperative suite (not a <!--]--><!--[3--><!--[0-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fresh_transport<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and identified by that transport's cookie jar, which
 in-process is a jar-less passthrough. That also keeps the suite free of a
 fourth <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Set-Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> parser — reading the raw header is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cookie_attributes.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s
-job, and this case only needs "does this login still authenticate".<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->What it does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> pin: concurrent creators. Two simultaneous logins can
-each evict against a stale count under Read Committed and both commit above
-the cap — see <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_queries.ts#query_session_enforce_limit"><!--[0--><!--[-1-->query_session_enforce_limit<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s race note. That needs a
-barrier-based test against one backend, not a parity case.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/session_cookie_codec.ts"><!--[-1-->testing/cross_backend/session_cookie_codec.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for the <!--]--><!--[4--><strong><!--[--><!--[2-->signed session cookie codec<!--]--><!--]--><!----></strong><!--]--><!--[2--> over real
+job, and this case only needs "does this login still authenticate".<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/session_cookie_codec.ts"><!--[-1-->testing/cross_backend/session_cookie_codec.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for the <!--]--><!--[4--><strong><!--[--><!--[2-->signed session cookie codec<!--]--><!--]--><!----></strong><!--]--><!--[2--> over real
 HTTP: which spellings of a correctly signed cookie each spine accepts.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The cookie is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->${token}:${expires_at}.${signature}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the signature the padded
 standard base64 of an HMAC-SHA256 MAC. Both spines must accept exactly one
 spelling of a given signed payload, or a cookie that one spine refuses would
@@ -2849,16 +2865,16 @@ close-on-revoke).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div
 			
 			<script>
 				{
-					__sveltekit_g787na = {
+					__sveltekit_ah8xmb = {
 						base: "",
-						version: "0114ee449d883bdde68886e245dc348c93529924"
+						version: "550055b98f84f58d633f7d6cda0ff75d05e69684"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_g787na);
-						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
+						kit.init(__sveltekit_ah8xmb);
+						const app = await import("/_app/immutable/entry/app.DkVawWv8.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

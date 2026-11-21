@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.AlwMae45.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.D3dHaYj0.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.DkVawWv8.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DSWkh0vO.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Drg58GiV.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.jQgKOX8v.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CWhYyQRM.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DCG71tXn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -178,14 +178,14 @@ status — are a future refinement; there is no such concept today, so
 the bare-hash route stays strictly admin-gated.)<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Auth shape on the cell-scoped route is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{account: 'none', actor: 'none'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 — the dispatcher's authorization phase is skipped for pure-public routes,
 so the handler builds the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> itself from the resolved account
-id (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account_id"><!--[0--><!--[-1-->get_public_account_id<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, over what the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/api/*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> auth middleware set) by
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account"><!--[0--><!--[-1-->get_public_account<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, over what the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/api/*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> auth middleware set) by
 resolving the caller's single actor and loading their role_grants.
 Unauthed callers pass through with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and are admitted only by
 a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell.visibility === 'public'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cell whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->moderation<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> admits an audience (unmoderated or
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'approved'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). Multi-actor accounts fall through with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->req_ctx: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 — there's no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->acting?<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> slot on a pure-public route, so multi-actor
 callers are treated as anonymous. A scope-narrowed API token is treated as
-anonymous too, not refused (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account_id"><!--[0--><!--[-1-->get_public_account_id<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a narrowed token
+anonymous too, not refused (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#get_public_account"><!--[0--><!--[-1-->get_public_account<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a narrowed token
 reaches no non-RPC surface, but on a route that admits anonymous callers
 a 403 would enforce nothing — the holder drops the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Authorization<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header and
 re-reads every public cell anyway.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->404 is the universal "not viewable" response: missing fact, missing or
@@ -319,16 +319,16 @@ the same fixture corpus.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!---
 			
 			<script>
 				{
-					__sveltekit_g787na = {
+					__sveltekit_ah8xmb = {
 						base: "",
-						version: "0114ee449d883bdde68886e245dc348c93529924"
+						version: "550055b98f84f58d633f7d6cda0ff75d05e69684"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_g787na);
-						const app = await import("/_app/immutable/entry/app.AlwMae45.js");
+						kit.init(__sveltekit_ah8xmb);
+						const app = await import("/_app/immutable/entry/app.DkVawWv8.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
