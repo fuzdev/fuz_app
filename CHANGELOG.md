@@ -1,5 +1,50 @@
 # @fuzdev/fuz_app
 
+## 0.182.0
+
+### Minor Changes
+
+- break: the authorization phase builds on the account the credential leg read, and an account removed after that read answers 401, never 500 ([2cead6f](https://github.com/fuzdev/fuz_app/commit/2cead6f))
+  
+  - break: `ResolvedAuth`'s arms carry `account: Account` (the row the credential leg read) in place of `account_id`; the daemon-token leg reads its keeper's row per request (a missing keeper is no credential). `create_test_resolved_auth` takes `{account}`
+  - break: `apply_authorization_phase(deps, account, auth, acting)` takes the `Account | null` the credential leg read, reading the account again only when it finds no actor; `resolve_acting_actor` answers the actor row (`{ok: true, actor}`) or `account_removed`; `build_request_context(deps, account, actor)` reads only the role grants and never answers `null`; `build_account_context` is removed. `get_public_account_id(route)` is now `get_public_account(route)`, answering the `Account`
+  - break: `ERROR_ACCOUNT_VANISHED` and `REST_ACCOUNT_VANISHED` are removed with the 500 they named; surfaces no longer list it. An account-grain handler whose account is deleted after the credential leg runs on the row that leg read, as on the Rust spine. An actor-grain call finds no actor and answers the dead credential's 401 `authentication_required` (RPC `unauthenticated`) when the account was removed — `no_actors_on_account` stays the 500 for a live account with no actor. `derive_route_errors` declares that 401 on every route with an actor axis, actor-optional included, so consumers' surface snapshots move
+  - fix: `account_verify` re-reads the account live and answers the dead credential's 401 for one removed since the credential leg, as account status already answered the anonymous 401 (the Rust spine now does both)
+- fix: logins and token creations of one account take turns, so the session and token caps hold under concurrency, and no credential delete deadlocks another ([51cde57](https://github.com/fuzdev/fuz_app/commit/51cde57))
+  
+  - fix: concurrent logins to an account at its session cap each evicted against a stale count and committed above the cap (the token cap the same, for `account_token_create`); on Postgres the evictions could also deadlock and answer 500. The mint locks (`query_account_lock_verified` for login, `query_account_lock_live` for token creation) take the account row `FOR NO KEY UPDATE` in place of `FOR SHARE`, so two mints of one account take turns; they still wait on, and are waited on by, a password change or a delete as before
+  - fix: every multi-row delete of `auth_session` or `api_token` rows — the revoke-alls, the cap evictions, the expiry sweep — locks its rows through an id-ordered subselect, so two of them never lock in opposite orders, whatever plan the database picks
+  - fix: `account_purge` takes the account row before any of its other writes (`query_account_lock_for_purge`, new, `FOR UPDATE`, tombstoned or not), and revokes the account's sessions and tokens before its `DELETE`; a purge racing a login, a token creation, a password change or a delete of that account answered 500 on a deadlock
+  - `invite_create` locks its issuer through `query_account_lock_live_many`, keeping the `FOR SHARE` it took before: invites by one issuer don't take turns, and an invite still waits on, and is waited on by, a login or token creation of its issuer
+- fix: an admin-offer accept and a removal of its grantor no longer deadlock ([c43729b](https://github.com/fuzdev/fuz_app/commit/c43729b))
+  
+  - fix: the last-admin guard locked the counted account, actor and grant rows `FOR UPDATE`, which also blocks the foreign-key key share of an insert naming those rows; an accept of an admin offer inserting its grant while a removal of its grantor held the guard deadlocked, and one of them answered 500. The guard takes `FOR NO KEY UPDATE`: it still conflicts with another guard and with every write that can lower the count (a revoke's or a soft delete's `UPDATE`, a purge's `DELETE`), and with an admin-offer accept's `FOR SHARE` on its grantor's account row, so two removals of the last two admins still serialize and exactly one succeeds
+  - break: `query_count_active_accounts_with_global_role_for_update` is renamed `query_count_active_accounts_with_global_role_locked`
+- break: the WebSocket notification sender is the backend's, on every action's context, never a factory option ([30b95b5](https://github.com/fuzdev/fuz_app/commit/30b95b5))
+  
+  - break: `AppDeps.notification_sender` (required) is a `RealtimeNotificationSender` — `create_realtime_notification_sender`, the backend's one fan-out over every WebSocket registry, twin of the Rust `backend.notification_sender()`. `create_app_backend` builds it; `create_app_server` adds every registry it mounts and removes them on `close` or a failed assembly. Hand-built `AppDeps` add `create_realtime_notification_sender()`
+  - break: `ActionContext.notification_sender` (never null) is how a handler sends; `create_rpc_endpoint` and `register_action_ws` take a required `notification_sender` (`deps.notification_sender`, or `noop_notification_sender`), and a hand mount of `register_action_ws` adds the returned registry to it itself (`RealtimeNotificationSender.add`)
+  - break: `create_role_grant_offer_actions` no longer takes `notification_sender` (its deps are `RevokingActionFactoryDeps`); `StandardRpcActionsDeps` is deleted (`create_standard_rpc_actions(ctx.deps)`); `FullSpineMountOptions.notification_sender`, `SpineRpcEndpointsOptions` and `spine_rpc_endpoints`' second parameter are deleted
+  - break: `NotificationSender` moves to `actions/notification_sender.ts`
+  - feat: `queue_offer_notification` and `queue_supersede_notifications` (`auth/role_grant_offer_notifications.ts`), the post-commit send helpers, twins of the Rust ones
+  - an action's notification reaches the account's sockets on every registry the server mounts, once per registry, as on the Rust spine; the DEV params check (`create_validated_notification_sender`) now covers every action's sends, applied once per dispatch. No wire change
+- fix: an offer accept and the bulk offer writes no longer deadlock ([a049cfd](https://github.com/fuzdev/fuz_app/commit/a049cfd))
+  
+  - fix: two sibling accepts (one recipient, two grantors' offers for one role), an accept across a purge of its recipient, and the purge of a recipient whose actor granted the grantor's admin each deadlocked on both spines, one side answering 500. The accept locks both parties' accounts first, lower id first — the recipient's `FOR NO KEY UPDATE`, checked live, and for an unscoped `admin` offer the grantor's `FOR SHARE` (`query_account_lock_for_offer_accept`, new) in place of the share lock on the grantor's grant — reads the grantor's authority under it, then claims its offer with its pending siblings in one id-ordered statement. Accepts of one recipient take turns, and wait behind its logins and token creates (and, for an admin offer, the grantor's)
+  - fix: a transaction writing more than one offer row locks them all first, in id order: delete and purge over both directions (`query_role_grant_offer_lock_for_account_removal`, new), a revoke before its grant update (`query_role_grant_offer_lock_for_revoke`, new; `query_revoke_role_grant` does it too), scope teardown, the expiry sweep, and the supersede queries; a purge against a revoke of the account's grant, or against the sweep, deadlocked
+  - fix: a revoke locks its revokee's account first (`query_account_lock_for_revoke`, new; also at the head of `query_revoke_role_grant`), so an offer made and accepted in the window before its supersede no longer deadlocks it; revokes wait behind that account's logins, token creates, offers and accepts. `query_role_grant_revoke_for_scope` supersedes only the offers it locked — one made at the scope after that stays pending
+  - fix: a purge first locks every account holding an unrevoked global admin plus its target, in one id-ordered statement (`query_account_lock_admins_for_purge`, new) — its cascade writes other admins' grant rows, and deadlocked any removal's guard and another purge. Purges wait behind admins' logins and token creates, and take turns
+  - fix: an accept by a recipient deleted in flight answers the dead credential's 401 `authentication_required`, declared on the accept
+  - `AcceptOfferResult` gains `from_account_id` (the accept reads it with the claim; the per-accept grantor lookup is gone)
+- break: every live party to a superseded offer is told, and an account removal tells them too ([f378f18](https://github.com/fuzdev/fuz_app/commit/f378f18))
+  
+  - break: the `role_grant_offer_supersede` notification's `reason` gains `account_deleted` and loses `scope_destroyed` (declared, never sent; the audit reason set keeps it). A consumer that switches exhaustively on the reason breaks at compile time
+  - feat: the notification has a second audience — an offer's recipient hears it when a revoke, a delete or a purge supersedes the offer, beside the grantor, who now also hears it when the recipient's account is deleted or purged or the recipient disables the role — and so does the disabling recipient, whose answer lists no offers. A removed account hears nothing (its sockets close), and an accept's own caller still gets only its accept answer. On a removal a recipient's `cause_id` is the offer's `from_actor_id` — a recipient never learns the grantor's account id; the audit row keeps the account
+  - fix: `account_purge` supersedes the offers made to the account before its cascade, so each leaves a `role_grant_offer_supersede` audit row, as on a delete (they were deleted unaudited); the grantor's history no longer lists them once the account is gone
+  - break: `queue_supersede_notifications(ctx, offers, reason, audience)` drops its `cause_id` argument: `SupersedeAudience` names each told party's `cause_id`, a `SupersedeCause` (an id, or `from_actor`) — both new exports; twin of the Rust helper
+  - the `superseded_at` field's description names every cascade that sets it, so consumers' surface snapshots move
+  - testing: the notification suite's revoke case opens every party's socket, and two cases cover a delete and a purge (gated on `ws` and `account_lifecycle`); `account_lifecycle` adds a purge case for the incoming offers' audit rows
+
 ## 0.181.0
 
 ### Minor Changes
@@ -126,7 +171,7 @@
 
 ### Patch Changes
 
-- testing: the cross-backend suites pin four lifecycle end states ([4ce9245](https://github.com/fuzdev/fuz_app/commit/4ce9245))
+- the cross-backend suites pin four lifecycle end states ([4ce9245](https://github.com/fuzdev/fuz_app/commit/4ce9245)) ([testing](https://github.com/fuzdev/fuz_app/commit/testing))
   
   - `account_lifecycle`: a session and an API token minted before a delete stay refused after the undelete, and a fresh login authenticates (gated on `account_lifecycle`); a password change ends every session and API token of the account while another account's session stays live, and only the new password logs in (ungated — it needs the REST login and password routes). The suite takes optional `login_path` / `password_path` options, defaulting to the spine's
   - `role_grant_offer_lifecycle`: an accept after a decline or a retract answers 400 `role_grant_offer_terminal` and grants nothing; a replayed accept answers the first grant
