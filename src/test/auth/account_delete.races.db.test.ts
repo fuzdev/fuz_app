@@ -493,13 +493,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 						[grantor.actor.id, ROLE_ADMIN]
 					)
 				)[0]!.id;
-				const until_waiters = async (n: number, what: string): Promise<void> => {
-					const deadline = Date.now() + 2000;
-					while ((await lock_waiters(db)) < n) {
-						assert.ok(Date.now() < deadline, what);
-						await wait(5);
-					}
-				};
+				const until_waiters = (n: number, what: string) => until_lock_waiters(db, n, what);
 
 				const release = Promise.withResolvers<void>();
 				const locked = Promise.withResolvers<void>();

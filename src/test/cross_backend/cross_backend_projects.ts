@@ -106,6 +106,7 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// transcript differential (the imperative suites run on each, every
 	// request and answer diffed). The copy check of the twin conformance
 	// tables rides here too: it reads the Rust checkout the stub was built from.
+	// So do the lock pins, which need both spines on PostgreSQL.
 	{
 		name: 'cross_backend_parity',
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
@@ -114,7 +115,8 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 			'src/test/cross_backend/action_manifest_parity.cross.test.ts',
 			'src/test/cross_backend/differential.cross.test.ts',
 			'src/test/cross_backend/conformance_table_copies.cross.test.ts',
-			'src/test/cross_backend/transcript_differential.cross.test.ts'
+			'src/test/cross_backend/transcript_differential.cross.test.ts',
+			'src/test/cross_backend/lock_pins.cross.test.ts'
 		]
 	},
 	// The security gates spawn both backends with the login and action limiters

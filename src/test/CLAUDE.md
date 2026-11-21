@@ -50,9 +50,12 @@ delete wait on each other's account-row lock),
 `auth/account_delete.races.db.test.ts` (an offer or invite create across a
 delete, the last-admin guard's order), `auth/password_change.race.db.test.ts`,
 `auth/connection_closer.admission.db.test.ts`,
-`auth/cleanup.sessions.refused_commit.db.test.ts`. Each module doc names its
-Postgres-only half. A change to a row lock, a locking read or a `RETURNING`
-order runs them locally first.
+`auth/cleanup.sessions.refused_commit.db.test.ts`,
+`auth/session_sweep.order.db.test.ts` (the expiry sweep's id order). Each
+module doc names its Postgres-only half. A change to a row lock, a locking
+read or a `RETURNING` order runs them locally first — and
+`npm run test:cross:parity`, whose `lock_pins.cross.test.ts` holds the same
+locks on both spines (below).
 
 **Choosing drivers.** These env vars are read once per run — the first picks the
 default factory's driver, the other two add legs to the four-driver set:
@@ -316,7 +319,8 @@ nothing — with a floor behind it: no response outside 2xx mints a session
 cookie, and a row expecting one is refused when the table is described.
 
 The dual-spawn files — `schema_parity.cross.test.ts`,
-`action_manifest_parity.cross.test.ts` and `differential.cross.test.ts` — are
+`action_manifest_parity.cross.test.ts`, `differential.cross.test.ts` and
+`lock_pins.cross.test.ts` — are
 **not** among the single-backend files above: they run under the shared
 dual-spawn `cross_backend_parity` project (`global_setup_schema_parity.ts`
 brings up the TS spine + `testing_spine_stub` together and provides
@@ -356,6 +360,18 @@ on an entry that no longer differs; and
 to the copy the Rust spine embeds, failing when the checkout the stub builds
 from lacks one
 — all under `npm run test:cross:parity`.
+`lock_pins.cross.test.ts` is the local gate for the row locks, on both spines
+at once: each case plays the other transaction itself over a raw `pg`
+connection, leaves it open, sends the request, commits once the request waits
+on a lock or has answered, and asserts the final state — never a wait or a
+duration. Its groups: a credential mint across a password change and a delete;
+an offer and an invite across a delete of a party; the last-admin guard per
+pair of removals and an admin-offer accept against a removal of its grantor,
+in both orders; the session and token caps; a purge across each writer of the
+account; and each multi-row credential delete's id order, its rows seeded
+against id order. It runs only here, where both spines are on Postgres — the
+single-backend projects exclude it, and each case asserts its backend's
+database URL is Postgres.
 The differential's suite composition is `spine_differential.ts`
 (`describe_spine_differential_suites`), shared with a second dual-spawn
 project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`

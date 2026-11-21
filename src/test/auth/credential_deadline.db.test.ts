@@ -41,7 +41,8 @@ import type { Db } from '#lib/db/db.ts';
 import { describe_db } from '../db_fixture.ts';
 import { create_test_keyring } from './session_test_helpers.ts';
 
-const DAY_MS = 86_400_000;
+const DAY_S = 86_400;
+const DAY_MS = DAY_S * 1000;
 
 /** Slack for the clock reads between the row's `NOW()` and `performance.now()`. */
 const SLACK_MS = 5000;
@@ -63,8 +64,13 @@ const assert_near = (actual: number | null, expected: number, what: string): voi
 	);
 };
 
-const set_expiry = async (db: Db, table: string, interval: string): Promise<void> => {
-	await db.query(`UPDATE ${table} SET expires_at = NOW() + INTERVAL '${interval}'`);
+/**
+ * Move every row's deadline `seconds` ahead of the database clock. Seconds, not
+ * days: Postgres adds an interval's days on the session time zone's calendar,
+ * so a span of days crossing a daylight-saving change lands an hour off.
+ */
+const set_expiry = async (db: Db, table: string, seconds: number): Promise<void> => {
+	await db.query(`UPDATE ${table} SET expires_at = NOW() + INTERVAL '${seconds} seconds'`);
 };
 
 const keyring = create_test_keyring('k'.repeat(32));
@@ -110,7 +116,7 @@ describe_db('credential deadline', (get_db) => {
 		const account_id = await create_account(db);
 		const token_hash = hash_session_token(generate_session_token());
 		await query_create_session({ db }, token_hash, account_id, new Date(Date.now() + DAY_MS));
-		await set_expiry(db, 'auth_session', '3 seconds');
+		await set_expiry(db, 'auth_session', 3);
 		const session = await query_session_get_valid({ db }, token_hash);
 		assert.ok(session);
 		assert_near(session.expires_in_ms, 3000, 'session row');
@@ -134,7 +140,7 @@ describe_db('credential deadline', (get_db) => {
 		assert.ok(eternal);
 		assert.strictEqual(eternal.expires_in_ms, null);
 
-		await set_expiry(db, 'api_token', '36500 days');
+		await set_expiry(db, 'api_token', 36_500 * DAY_S);
 		const far = await query_validate_api_token(deps, minted.token);
 		assert_near(far?.expires_in_ms ?? null, 36_500 * DAY_MS, 'far token row');
 	});
@@ -159,11 +165,11 @@ describe_db('credential deadline', (get_db) => {
 		assert_near(by_row.ahead_ms, DAY_MS, 'row under cookie');
 
 		// the cookie once the row outlives it
-		await set_expiry(db, 'auth_session', '40 days');
+		await set_expiry(db, 'auth_session', 40 * DAY_S);
 		assert_near((await get_deadline(app, headers)).ahead_ms, SESSION_AGE_MAX * 1000, 'cookie');
 
 		// the row again, pulled in to seconds
-		await set_expiry(db, 'auth_session', '3 seconds');
+		await set_expiry(db, 'auth_session', 3);
 		assert_near((await get_deadline(app, headers)).ahead_ms, 3000, 'shortened row');
 	});
 
@@ -187,7 +193,7 @@ describe_db('credential deadline', (get_db) => {
 		assert.strictEqual(eternal.credential_type, 'api_token');
 		assert.strictEqual(eternal.ahead_ms, null);
 
-		await set_expiry(db, 'api_token', '3 seconds');
+		await set_expiry(db, 'api_token', 3);
 		assert_near((await get_deadline(app, headers)).ahead_ms, 3000, 'token row');
 	});
 });

@@ -2,15 +2,11 @@
  * The authorization phase builds on the account the credential leg read and
  * reads it no second time — on every transport that runs the phase: the REST
  * route wrapper, HTTP RPC, and (through the same `perform_action`) each WS
- * message.
- *
- * A second read was a torn-read window: an account removed between the
- * credential leg and the phase answered a 500 there, where the Rust spine,
- * whose phase takes the resolved account, answers as it does for any request
- * the removal lands behind. The window is made exact here: the next account
- * read after the leg's own is stalled. It must never come — the request is
- * answered with the stall still armed. Were it to come, the account is
- * soft-deleted while it is held, which is what the stall makes observable.
+ * message, as the Rust spine's phase takes the resolved account. The window
+ * is made exact here: the next account read after the leg's own is stalled.
+ * It must never come — the request is answered with the stall still armed.
+ * Were it to come, the account is soft-deleted while it is held, which is what
+ * the stall makes observable.
  *
  * An account removed in the window is still met by the actor-grain phase,
  * whose actor list finds the account's actors gone: that answers the dead
