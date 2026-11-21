@@ -204,6 +204,13 @@ export const query_session_revoke_for_account = async (
 /**
  * Revoke all sessions for an account.
  *
+ * Locks its rows in id order before it deletes them (`ORDER BY id FOR
+ * UPDATE`), as every multi-row delete of `auth_session` rows does — the cap's
+ * eviction, the expiry sweep, the revoke-all — so two of them reaching the
+ * same rows wait one on the other instead of deadlocking in the opposite
+ * orders their plans would otherwise walk. Twin of the Rust
+ * `fuz_auth::query_session_revoke_all_for_account`.
+ *
  * @returns the number of sessions revoked
  * @mutates `auth_session` table - deletes every row for `account_id`
  */
@@ -212,7 +219,9 @@ export const query_session_revoke_all_for_account = async (
 	account_id: string
 ): Promise<number> => {
 	const rows = await deps.db.query<{ id: string }>(
-		`DELETE FROM auth_session WHERE account_id = $1 RETURNING id`,
+		`DELETE FROM auth_session
+		 WHERE id IN (SELECT id FROM auth_session WHERE account_id = $1 ORDER BY id FOR UPDATE)
+		 RETURNING id`,
 		[account_id]
 	);
 	return rows.length;
@@ -238,21 +247,21 @@ export const query_session_list_for_account = async (
  * Keeps the newest `max_sessions` sessions and deletes the rest.
  *
  * Race safety: this function must run inside a transaction alongside the
- * INSERT that created the new session. All callers satisfy this requirement:
- * - The `account_token_create` RPC handler runs under the dispatcher's
- *   transaction path because its spec declares `side_effects: true`
- * - `POST /login`, `POST /bootstrap` and `POST /signup` manage their own
- *   transactions and pass the transaction-scoped `deps` to
- *   `create_capped_session`
+ * INSERT that created the new session. Its one caller is
+ * `create_capped_session`, which `POST /login`, `POST /bootstrap` and
+ * `POST /signup` each run in a transaction of their own.
  *
  * The transaction makes one creator's INSERT + enforce_limit pair atomic, but it
  * does **not** serialize concurrent creators. Under Read Committed, two
  * transactions can't see each other's uncommitted session row, so each computes
  * its `OFFSET` eviction against a stale count, each preserves its own row, and
- * both commit above `max_sessions`. A transaction is necessary here but not
- * sufficient. Closing this needs one serialization point per
- * `(account_id, credential_kind)` — a locked parent row or a transaction-scoped
- * advisory lock — taken before count/evict/insert.
+ * both commit above `max_sessions` — and their two `DELETE`s lock the same old
+ * rows in orders the plan picks, so they can deadlock. A transaction is
+ * necessary here but not sufficient: a creator for an existing account first
+ * takes its account row `FOR NO KEY UPDATE` (`query_account_lock_verified`),
+ * which makes the creators of one account take turns, each counting the rows
+ * the one before committed. A creator for an account its own transaction just
+ * made needs none — no other can reach the account.
  *
  * Ordering is `created_at DESC, id DESC`. The `id` leg is a **stability**
  * tie-breaker, not a recency one: `created_at` defaults to `NOW()`, the
@@ -261,10 +270,16 @@ export const query_session_list_for_account = async (
  * `OFFSET` may keep a different set on two evaluations of the same rows. `id` is
  * the blake3 token hash, so the tie-break is arbitrary but deterministic; it
  * makes the survivors reproducible, it does not make the row just inserted a
- * guaranteed survivor. Only the serialization point above does that.
+ * guaranteed survivor. Only the account lock above does that.
  *
  * Expired-but-unreaped rows count toward the cap (the predicate is `account_id`
  * alone). Matches the Rust twin `query_session_enforce_limit`.
+ *
+ * The victims are locked in id order before the delete (`ORDER BY id FOR
+ * UPDATE`), as every multi-row delete of `auth_session` rows locks them: a
+ * revoke-all or the expiry sweep reaching the same rows waits on the eviction,
+ * or the eviction on it, instead of the two deadlocking in whatever orders
+ * their plans walk (`query_session_revoke_all_for_account`).
  *
  * Deleting a session row does not end the connections it opened: a WebSocket
  * keeps the authority it resolved at upgrade and an SSE stream never rechecks.
@@ -287,9 +302,14 @@ export const query_session_enforce_limit = async (
 		`DELETE FROM auth_session
 		 WHERE id IN (
 		   SELECT id FROM auth_session
-		   WHERE account_id = $1
-		   ORDER BY created_at DESC, id DESC
-		   OFFSET $2
+		   WHERE id IN (
+		     SELECT id FROM auth_session
+		     WHERE account_id = $1
+		     ORDER BY created_at DESC, id DESC
+		     OFFSET $2
+		   )
+		   ORDER BY id
+		   FOR UPDATE
 		 ) RETURNING id`,
 		[account_id, max_sessions]
 	);
@@ -339,8 +359,10 @@ export const query_session_list_all_active = async (
  * a concurrent pass gets a disjoint set. Run it in a transaction, as the
  * caller above does, so the ids are in hand before the delete commits — on a
  * pool-level `Db` a connection lost on the response leaves the rows deleted
- * and their ids unread. Served by `idx_auth_session_expires`. Twin of the
- * Rust `query_session_cleanup_expired`.
+ * and their ids unread. Served by `idx_auth_session_expires`. The rows are
+ * locked in id order before the delete, as every multi-row delete of
+ * `auth_session` rows locks them (`query_session_revoke_all_for_account`). Twin
+ * of the Rust `query_session_cleanup_expired`.
  *
  * @param deps - query dependencies (transaction-scoped, see above)
  * @returns the deleted sessions' ids (their token hashes), empty when nothing had expired
@@ -348,7 +370,9 @@ export const query_session_list_all_active = async (
  */
 export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<Array<string>> => {
 	const rows = await deps.db.query<{ id: string }>(
-		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`
+		`DELETE FROM auth_session
+		 WHERE id IN (SELECT id FROM auth_session WHERE expires_at <= NOW() ORDER BY id FOR UPDATE)
+		 RETURNING id`
 	);
 	return rows.map((row) => row.id);
 };
@@ -389,6 +413,12 @@ export interface CappedSession {
  * connections once its transaction commits — `queue_connection_close` with a
  * `session` target, as `POST /login` does. A caller that mints for an account
  * created in the same transaction (signup, bootstrap) evicts nothing.
+ *
+ * A caller minting for an existing account first takes its row lock in the
+ * same transaction (`query_account_lock_verified`) and refuses on `false`: a
+ * password change or a delete in flight is ordered against the mint, and the
+ * account's mints take turns, which the cap counts on
+ * (`query_session_enforce_limit`).
  *
  * @returns the signed cookie value and the evicted sessions' token hashes
  * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)

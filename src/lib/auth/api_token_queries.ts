@@ -211,6 +211,12 @@ export const query_api_token_live_account = async (
 /**
  * Revoke all tokens for an account.
  *
+ * Locks its rows in id order before it deletes them (`ORDER BY id FOR
+ * UPDATE`), as the cap's eviction (`query_api_token_enforce_limit`) does, so
+ * the two reaching the same rows wait one on the other instead of
+ * deadlocking in the opposite orders their plans would otherwise walk. Twin
+ * of the Rust `fuz_auth::query_revoke_all_api_tokens_for_account`.
+ *
  * @param deps - query dependencies
  * @param account_id - the account whose tokens to revoke
  * @returns the number of tokens revoked
@@ -221,7 +227,9 @@ export const query_revoke_all_api_tokens_for_account = async (
 	account_id: string
 ): Promise<number> => {
 	const rows = await deps.db.query<{ id: string }>(
-		`DELETE FROM api_token WHERE account_id = $1 RETURNING id`,
+		`DELETE FROM api_token
+		 WHERE id IN (SELECT id FROM api_token WHERE account_id = $1 ORDER BY id FOR UPDATE)
+		 RETURNING id`,
 		[account_id]
 	);
 	return rows.length;
@@ -274,14 +282,16 @@ export const query_api_token_list_for_account = async (
  * spec declares `side_effects: true`, making one creator's INSERT +
  * enforce_limit pair atomic. That does **not** serialize concurrent creators:
  * under Read Committed, two transactions can't see each other's uncommitted
- * token row, so each evicts against a stale count and both can commit above
- * `max_tokens`. Closing this needs one serialization point per
- * `(account_id, credential_kind)` before count/evict/insert — see the matching
- * note on `query_session_enforce_limit`.
+ * token row, so each would evict against a stale count and both commit above
+ * `max_tokens`. The handler serializes them first, taking the account row
+ * `FOR NO KEY UPDATE` (`query_account_lock_live`) — see the matching note on
+ * `query_session_enforce_limit`.
  *
  * Ordering carries the same `id DESC` stability tie-breaker, with the same
  * caveat, as `query_session_enforce_limit` — deterministic survivors under a
- * `created_at` tie, not a guarantee that the row just inserted survives.
+ * `created_at` tie, not a guarantee that the row just inserted survives. The
+ * victims are locked in id order before the delete, as the revoke-all
+ * (`query_revoke_all_api_tokens_for_account`) locks its rows.
  *
  * Deleting a token row does not end the connections it opened, so the
  * returned ids are what the caller closes once the transaction commits
@@ -303,9 +313,14 @@ export const query_api_token_enforce_limit = async (
 		`DELETE FROM api_token
 		 WHERE id IN (
 		   SELECT id FROM api_token
-		   WHERE account_id = $1
-		   ORDER BY created_at DESC, id DESC
-		   OFFSET $2
+		   WHERE id IN (
+		     SELECT id FROM api_token
+		     WHERE account_id = $1
+		     ORDER BY created_at DESC, id DESC
+		     OFFSET $2
+		   )
+		   ORDER BY id
+		   FOR UPDATE
 		 ) RETURNING id`,
 		[account_id, max_tokens]
 	);

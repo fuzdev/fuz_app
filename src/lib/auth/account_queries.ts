@@ -233,9 +233,22 @@ export const query_update_account_password = async (
  * writers write the account row before they revoke, which is what makes the
  * lock order them.
  *
- * `FOR SHARE` is the weakest lock that conflicts with their `UPDATE`s (the
- * session insert's foreign-key `FOR KEY SHARE` does not), and concurrent
- * logins of one account share it. Twin of the Rust
+ * `FOR NO KEY UPDATE`, the strength of their `UPDATE`s, so it also conflicts
+ * with itself: the mints of one account take turns. The session cap needs
+ * that. A mint inserts its session and evicts the oldest past the cap in one
+ * transaction, and two mints running together each count without the other's
+ * uncommitted row — both commit above the cap — while their evictions lock
+ * the same old rows in orders the query plan picks, and can deadlock. Taken
+ * in turn, the second mint runs its statements after the first commits and
+ * counts its row. The foreign-key `FOR KEY SHARE` of a row inserted under the
+ * account does not conflict with it, so no write that merely references the
+ * account waits on a login. Besides the writers it orders against, it
+ * conflicts with `query_account_lock_live` (the token mint, the same
+ * strength), the `FOR SHARE` of `query_account_lock_live_many` (an offer or
+ * invite create), and the last-admin guard's `FOR UPDATE`. None of those
+ * waits on an account row while holding a session row, and once a mint holds
+ * the lock it waits on nothing but the session rows its eviction deletes, so
+ * no cycle runs through it. Twin of the Rust
  * `fuz_auth::query_account_lock_verified`.
  *
  * @param deps - query dependencies (must be the mint's transaction)
@@ -251,7 +264,7 @@ export const query_account_lock_verified = async (
 	const row = await deps.db.query_one<{ id: string }>(
 		`SELECT id FROM account
 		 WHERE id = $1 AND deleted_at IS NULL AND password_hash = $2
-		 FOR SHARE`,
+		 FOR NO KEY UPDATE`,
 		[id, password_hash]
 	);
 	return row !== undefined;
@@ -266,13 +279,13 @@ export const query_account_lock_verified = async (
  * token before the new one exists. Run first in the mint's transaction, this
  * read waits on the delete's row lock and then sees its tombstone; once it
  * holds the lock, a delete waits for the mint to commit and then revokes the
- * token. The password is not re-checked: the mint verified none. `invite_create`
- * takes the same lock on its issuer's account, before its insert, so an
- * invite and a delete of its issuer are ordered: the invite is refused, or the
- * delete deletes it. An offer locks two accounts, so it takes them together
- * through `query_account_lock_live_many`. Twin of the Rust
- * `fuz_auth::query_account_lock_live`; `query_account_lock_verified` has why
- * `FOR SHARE`.
+ * token. The password is not re-checked: the mint verified none. Taken
+ * `FOR NO KEY UPDATE` for the token cap, as the login's lock is for the session
+ * cap — `query_account_lock_verified` has why, and what it conflicts with; a
+ * token mint and a login of one account take turns too. A write that only
+ * needs ordering against a delete takes `query_account_lock_live_many`, which
+ * lets such writes run together. Twin of the Rust
+ * `fuz_auth::query_account_lock_live`.
  *
  * @param deps - query dependencies (must be the mint's transaction)
  * @param id - the account the credential is for
@@ -280,16 +293,58 @@ export const query_account_lock_verified = async (
  */
 export const query_account_lock_live = async (deps: QueryDeps, id: string): Promise<boolean> => {
 	const row = await deps.db.query_one<{ id: string }>(
-		`SELECT id FROM account WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
+		`SELECT id FROM account WHERE id = $1 AND deleted_at IS NULL FOR NO KEY UPDATE`,
 		[id]
 	);
 	return row !== undefined;
 };
 
 /**
- * Lock several live account rows in one statement, in id order, for a write
- * that must be ordered against a delete of any of them — the two parties of an
- * offer (`query_role_grant_offer_create`).
+ * Lock an account row for its purge, tombstoned or not.
+ *
+ * Every writer of an account takes the account row before its other rows — a
+ * credential mint its lock, a password change or a delete its `UPDATE` — and a
+ * purge takes it first as well, ahead of the credential rows its revokes and
+ * its cascade delete. A purge reaching the row only at its `DELETE` would hold
+ * the account's sessions and tokens while waiting on a writer that holds the
+ * row and goes on to those same rows: a login evicting at the cap, a password
+ * change or a delete revoking. `FOR UPDATE`, the lock the purge's `DELETE`
+ * takes anyway: it conflicts with every other lock on the row, so a writer
+ * holding one is waited out, and a writer arriving later waits for the purge
+ * and then finds no row. No `deleted_at` filter — a purge removes a tombstoned
+ * account too. Run after the last-admin guard, which takes an admin target's
+ * account row among the others in id order
+ * (`query_count_active_accounts_with_global_role_locked`), so the two never
+ * take the rows in opposite orders. Twin of the Rust
+ * `fuz_auth::account_queries::query_account_lock_for_purge`.
+ *
+ * @param deps - query dependencies (must be the purge's transaction)
+ * @param id - the account to purge
+ * @returns `true` when the row is locked, `false` when there is no such account
+ */
+export const query_account_lock_for_purge = async (
+	deps: QueryDeps,
+	id: string
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{ id: string }>(
+		`SELECT id FROM account WHERE id = $1 FOR UPDATE`,
+		[id]
+	);
+	return row !== undefined;
+};
+
+/**
+ * Lock live account rows in one statement, in id order, for a write that must
+ * be ordered against a delete of any of them.
+ *
+ * An offer locks its two parties (`query_role_grant_offer_create`), an invite
+ * its issuer (`invite_create`, one id).
+ *
+ * `FOR SHARE`: the weakest lock that conflicts with a delete's `UPDATE` of the
+ * row, so these writes don't wait on one another. It also waits on a
+ * credential mint's `FOR NO KEY UPDATE` (`query_account_lock_verified`), and a
+ * mint waits on it — but a mint holding its lock waits on no row these writes
+ * hold.
  *
  * The rows are locked as the sort returns them, so every caller takes them in
  * id order, as the last-admin guard

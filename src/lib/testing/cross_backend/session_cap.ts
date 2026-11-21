@@ -32,6 +32,14 @@ import '../assert_dev_env.ts';
  *   committed, and leave a socket on a session it kept open and dispatching. A
  *   spine that only deletes the row leaves the socket running on a dead
  *   session; one that closes the account's sockets drops the kept one.
+ * - **concurrent logins at the cap all succeed** and leave the account at
+ *   exactly the cap. The logins of one account take turns on its row lock, so
+ *   each evicts against a count holding the ones before it; without that, two
+ *   logins each count without the other's row and both commit above the cap,
+ *   or deadlock in their evictions and answer 500. The burst can only show the
+ *   race when it happens: the exact pin — a login waiting on another's
+ *   uncommitted mint — is each spine's own real-Postgres test (and a backend
+ *   on a one-connection engine serializes the burst whatever it locks).
  *
  * **Why `max_sessions + 1` logins and not `max_sessions`.** The starting session
  * count isn't zero and isn't guaranteed equal across impls — `create_account`
@@ -50,11 +58,6 @@ import '../assert_dev_env.ts';
  * in-process is a jar-less passthrough. That also keeps the suite free of a
  * fourth `Set-Cookie` parser — reading the raw header is `cookie_attributes.ts`'s
  * job, and this case only needs "does this login still authenticate".
- *
- * What it does **not** pin: concurrent creators. Two simultaneous logins can
- * each evict against a stale count under Read Committed and both commit above
- * the cap — see `query_session_enforce_limit`'s race note. That needs a
- * barrier-based test against one backend, not a parity case.
  *
  * @module
  */
@@ -196,6 +199,40 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 				listed.length,
 				max_sessions,
 				`the account must hold exactly ${max_sessions} sessions after the cap evicts`
+			);
+		});
+
+		test(`${
+			max_sessions * 3
+		} concurrent logins all succeed and leave exactly ${max_sessions} sessions`, async () => {
+			const fixture = await setup_test();
+			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
+			const burst = max_sessions * 3;
+			// each asserts its own 200 — a login lost to an eviction deadlock is a 500
+			const sessions = await Promise.all(
+				Array.from({ length: burst }, (_, i) =>
+					login(fixture, `concurrent login ${i + 1}/${burst}`)
+				)
+			);
+			let listed: number | null = null;
+			for (const transport of sessions) {
+				const result = await cross_rpc_call(
+					transport,
+					rpc_path,
+					'account_session_list',
+					undefined,
+					{}
+				);
+				// an evicted login's transport is the anonymous caller
+				if (!result.ok) continue;
+				listed = expect_output(result, SessionListOutput).sessions.length;
+				break;
+			}
+			assert.strictEqual(
+				listed,
+				max_sessions,
+				`the account must hold exactly ${max_sessions} sessions after a concurrent burst — ` +
+					'each login evicting against the sessions committed before it'
 			);
 		});
 

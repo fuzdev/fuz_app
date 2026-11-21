@@ -303,7 +303,10 @@ legitimate operator.
   [Connection Admission](#connection-admission), "What remains")
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached, and the connections it opened are
-  closed once the login commits
+  closed once the login commits. Logins of one account take turns on the
+  account row (`FOR NO KEY UPDATE`), so concurrent logins never overshoot the
+  cap, and every multi-row session delete — the eviction, the revoke-alls, the
+  expiry sweep — locks its rows in id order, so two never deadlock
 - **Password change**: Revokes all sessions and API tokens — every session
   of the account, not only the one the change was made on — and clears the
   session cookie, so a compromised credential does not persist after
@@ -371,7 +374,8 @@ accepted spelling, on both spines.
   never returns a status of its own
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached, and the connections it opened
-  are closed once the creation commits
+  are closed once the creation commits. Token creations take turns with each
+  other and with logins as above, and token deletes lock in id order
 
 ### Token scoping
 
@@ -2786,6 +2790,14 @@ recipient), so an offer between two admins and an admin's removal never wait
 on each other in opposite orders.
 No web path grants admin back once the last active admin is gone, so the guard
 holds as an invariant rather than a recoverable foot-gun stop.
+
+Every writer of an account takes the account row before the rows that hang
+off it — a mint, a password change and a delete through their first write
+or lock, a purge through `query_account_lock_for_purge` (`FOR UPDATE`,
+tombstoned or not) right after its guard. A purge then revokes the
+account's sessions and tokens in id order before its `DELETE`, so the
+cascade, which deletes in whatever order the plan walks, finds no
+credential row to lock.
 
 ### PostgreSQL Error Code Detection
 

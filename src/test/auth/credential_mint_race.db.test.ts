@@ -14,9 +14,11 @@
  * The lock is shown to serialize on real `pg` only (`TEST_DATABASE_URL`): a
  * mint waits on an uncommitted change's row lock, and a change waits on an
  * uncommitted mint's — so the change's revoke, which runs after its account
- * write, reaches the session the mint inserted. The in-memory drivers have one
- * connection, so the second transaction would queue behind the held one
- * whatever it locks.
+ * write, reaches the session the mint inserted. Two mints of one account at
+ * its cap take turns: the second waits on the first's commit and then counts
+ * the first's row, so the account ends at the cap, not one over. The
+ * in-memory drivers have one connection, so the second transaction would
+ * queue behind the held one whatever it locks.
  *
  * Also here: a session or API token on a tombstoned account, seeded directly,
  * authenticates nothing — the anonymous caller's 401, as on the Rust spine.
@@ -51,6 +53,7 @@ import {
 	ERROR_INVALID_CREDENTIALS
 } from '#lib/http/error_schemas.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { DEFAULT_MAX_SESSIONS, DEFAULT_MAX_TOKENS } from '#lib/auth/account_route_schema.ts';
 import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import type { PasswordHashDeps } from '#lib/auth/password.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -589,6 +592,55 @@ describe_pg('credential mint race: the lock serializes', (get_db) => {
 			assert.ok((await deleted).ok);
 			assert_unauthenticated(await raced, 'the mint that waited');
 			assert.strictEqual(await count_rows(s, 'api_token'), 0);
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('a login at the cap waits on an uncommitted login, then evicts past it', async () => {
+		const gated = create_gated_db(get_db());
+		const s = await setup(gated.db);
+		try {
+			while ((await count_rows(s, 'auth_session')) < DEFAULT_MAX_SESSIONS) {
+				assert.strictEqual((await login(s.test_app, OLD_PASSWORD)).status, 200);
+			}
+			const held = gated.hold_commit();
+			const first = login(s.test_app, OLD_PASSWORD);
+			await held.reached;
+			const raced = login(s.test_app, OLD_PASSWORD);
+			await assert_waits_on_held_commit(gated, held, raced);
+			assert.strictEqual((await first).status, 200);
+			assert.strictEqual((await raced).status, 200, 'the login that waited mints');
+			assert.strictEqual(
+				await count_rows(s, 'auth_session'),
+				DEFAULT_MAX_SESSIONS,
+				"the second login's eviction counts the first's session"
+			);
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('a token create at the cap waits on an uncommitted token create, then evicts past it', async () => {
+		const gated = create_gated_db(get_db());
+		const s = await setup(gated.db);
+		try {
+			const cookie = cookie_of(await login(s.test_app, OLD_PASSWORD));
+			while ((await count_rows(s, 'api_token')) < DEFAULT_MAX_TOKENS) {
+				assert.ok((await token_create(s, cookie)).ok);
+			}
+			const held = gated.hold_commit();
+			const first = token_create(s, cookie);
+			await held.reached;
+			const raced = token_create(s, cookie);
+			await assert_waits_on_held_commit(gated, held, raced);
+			assert.ok((await first).ok);
+			assert.ok((await raced).ok, 'the token create that waited mints');
+			assert.strictEqual(
+				await count_rows(s, 'api_token'),
+				DEFAULT_MAX_TOKENS,
+				"the second mint's eviction counts the first's token"
+			);
 		} finally {
 			await s.test_app.cleanup();
 		}

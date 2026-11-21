@@ -58,7 +58,8 @@ import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
-	query_account_lock_live,
+	query_account_lock_for_purge,
+	query_account_lock_live_many,
 	query_account_soft_delete,
 	query_account_undelete,
 	query_actor_soft_delete,
@@ -327,7 +328,7 @@ export const create_admin_actions = (
 		// is, as `account_token_create` refuses it — and one still to commit
 		// waits on this lock, then deletes the invite with the account's other
 		// unclaimed ones: a delete writes its tombstone first.
-		if (!(await query_account_lock_live(ctx, auth.account.id))) {
+		if (!(await query_account_lock_live_many(ctx, [auth.account.id])).has(auth.account.id)) {
 			throw jsonrpc_errors.unauthenticated('unauthenticated', {
 				reason: ERROR_AUTHENTICATION_REQUIRED
 			});
@@ -618,16 +619,7 @@ export const create_admin_actions = (
 		}
 		// Keeper + last-admin guards (fail-loud, before the cascade).
 		await assert_account_removable(ctx, input.account_id, 'account_purge');
-		// Snapshot actors before the cascade removes them.
-		const actors = await query_actors_by_account(ctx, input.account_id);
-		// Before the cascade, whose `ON DELETE CASCADE` would take the offers
-		// with no audit row.
-		await cancel_outgoing_offers(ctx, input.account_id, actors);
-		// Before the cascade too: `invite.created_by` is `ON DELETE SET NULL`, so
-		// the cascade would leave the account's unclaimed invites usable.
-		await void_unclaimed_invites(ctx, actors);
-		const snapshot = await query_purge_account(ctx, input.account_id);
-		if (!snapshot) {
+		const refuse_not_found = async (): Promise<never> => {
 			await deps.audit.emit(ctx, {
 				event_type: 'account_purge',
 				outcome: 'failure',
@@ -637,7 +629,25 @@ export const create_admin_actions = (
 				metadata: { reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id }
 			});
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
-		}
+		};
+		// The account row before any write, as every writer of the account takes
+		// it — `query_account_lock_for_purge` has why.
+		if (!(await query_account_lock_for_purge(ctx, input.account_id))) await refuse_not_found();
+		// Snapshot actors before the cascade removes them.
+		const actors = await query_actors_by_account(ctx, input.account_id);
+		// Before the cascade, whose `ON DELETE CASCADE` would take the offers
+		// with no audit row.
+		await cancel_outgoing_offers(ctx, input.account_id, actors);
+		// Before the cascade too: `invite.created_by` is `ON DELETE SET NULL`, so
+		// the cascade would leave the account's unclaimed invites usable.
+		await void_unclaimed_invites(ctx, actors);
+		// Before the cascade as well: it would delete the account's sessions and
+		// tokens in its own plan's order, against a revoke or a sweep of the
+		// same rows taking them in id order — the order these take them in.
+		await query_session_revoke_all_for_account(ctx, input.account_id);
+		await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
+		const snapshot =
+			(await query_purge_account(ctx, input.account_id)) ?? (await refuse_not_found());
 		// The cascade removed every credential of the account; its connections
 		// close once that has committed.
 		queue_connection_close(ctx, connection_closer, {
