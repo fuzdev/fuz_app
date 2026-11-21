@@ -610,6 +610,11 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 						await tx.query(`UPDATE actor SET deleted_at = NOW() WHERE account_id = $1`, [
 							grantor.account.id
 						]);
+						// a delete ends the account's credentials, as the handler's does
+						await tx.query(`DELETE FROM auth_session WHERE account_id = $1`, [
+							grantor.account.id
+						]);
+						await tx.query(`DELETE FROM api_token WHERE account_id = $1`, [grantor.account.id]);
 					} else if (removal === 'revoke') {
 						await tx.query(`UPDATE role_grant SET revoked_at = NOW() WHERE id = $1`, [grant_id]);
 					}
