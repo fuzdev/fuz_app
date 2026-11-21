@@ -436,7 +436,9 @@ malformed hop such as `ip:port` stopping the walk, so the request keys on the
 connection IP rather than the client-written entry left of it; an IPv6
 client keyed by its `/64`, its audit rows keeping the full address, and a
 password change from an exhausted `/64` refused), a concurrent burst getting at
-most the cap past the limiter, and the distributed-spray backstop (a success
+most the cap past the limiter, a concurrent burst of correct logins all
+answering `200` and leaving the account at exactly the session cap (Postgres
+leg only), and the distributed-spray backstop (a success
 must not refund the per-IP budget). The second drives
 `describe_ws_action_rate_limit_cross_tests`: an account-limited action refused
 on the WS call past the cap, a malformed `acting` selector still charged (the

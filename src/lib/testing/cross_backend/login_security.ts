@@ -39,7 +39,10 @@ import '../assert_dev_env.ts';
  * - **a burst of correct logins past the cap waits, then succeeds** — attempts
  *   count while in flight whatever their outcome, so `2 × ip_limit` correct
  *   logins at once from one address meet the cap; the ones past it wait for a
- *   slot (at most the cap of them) and all answer `200`. Runs on a backend
+ *   slot (at most the cap of them) and all answer `200`. Afterward the account
+ *   holds exactly the session cap (`max_sessions`): concurrent mints of one
+ *   account take turns on its row lock, each evicting against the sessions
+ *   committed before it, so none commits above the cap. Runs on a backend
  *   that serves concurrent transactions (`concurrent_transactions`).
  * - **every `X-Forwarded-For` line is read** — a client that sends its own
  *   line ahead of the one the trusted proxy appended can't choose its bucket:
@@ -79,6 +82,8 @@ import '../assert_dev_env.ts';
 
 import { describe, test, assert } from 'vitest';
 
+import { SessionListOutput } from '../../auth/account_action_specs.ts';
+import { DEFAULT_MAX_SESSIONS } from '../../auth/account_route_schema.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED } from '../../http/error_schemas.ts';
 import {
 	raw_http_exchange,
@@ -91,9 +96,11 @@ import {
 } from '../../rate_limiter.ts';
 import type { SetupTest } from './setup.ts';
 import { list_audit_events } from './audit_cross_helpers.ts';
+import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
-	SPINE_ACCOUNT_PASSWORD_PATH
+	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_RPC_PATH
 } from './spine_surface_constants.ts';
 
 /** Options for the login-security parity suite. */
@@ -104,6 +111,18 @@ export interface LoginSecurityCrossTestOptions {
 	readonly login_path?: string;
 	/** REST password-change route path. Default `/api/account/password`. */
 	readonly password_path?: string;
+	/**
+	 * JSON-RPC endpoint path, for the burst-of-correct-logins case's session
+	 * count. Default `SPINE_RPC_PATH`.
+	 */
+	readonly rpc_path?: string;
+	/**
+	 * The per-account session cap the backend enforces, which the
+	 * burst-of-correct-logins case holds the account to. Defaults to
+	 * `DEFAULT_MAX_SESSIONS` — the TS route default and the Rust `const`. A
+	 * backend that overrides `max_sessions` on the TS side passes its value here.
+	 */
+	readonly max_sessions?: number;
 	/**
 	 * Whether the backend serves concurrent logins — each its own database
 	 * transaction — at once, for the burst-of-correct-logins case. Default
@@ -175,6 +194,8 @@ export const describe_login_security_cross_tests = (
 	const { setup_test } = options;
 	const login_path = options.login_path ?? SPINE_ACCOUNT_LOGIN_PATH;
 	const password_path = options.password_path ?? SPINE_ACCOUNT_PASSWORD_PATH;
+	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const max_sessions = options.max_sessions ?? DEFAULT_MAX_SESSIONS;
 	const concurrent_transactions = options.concurrent_transactions ?? false;
 	const base_url = options.base_url ?? null;
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */
@@ -188,6 +209,11 @@ export const describe_login_security_cross_tests = (
 	assert(
 		default_login_account_rate_limit.max_attempts > ip_limit,
 		'login-security XFF segregation needs the per-account cap above the per-IP cap'
+	);
+	// The concurrent correct-login burst counts on filling the session cap.
+	assert(
+		ip_limit * 2 >= max_sessions,
+		`the login burst (${ip_limit * 2}) must reach the session cap (${max_sessions})`
 	);
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
@@ -425,6 +451,25 @@ export const describe_login_security_cross_tests = (
 					statuses,
 					Array<number>(ip_limit * 2).fill(200),
 					'the logins past the cap wait for a slot rather than being refused'
+				);
+				// The burst alone fills the session cap (asserted at collection), so
+				// whatever the account held before it, exactly the cap remains. Listed
+				// with the account's API token, which no session eviction touches.
+				const { sessions } = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						'account_session_list',
+						undefined,
+						account.create_bearer_headers()
+					),
+					SessionListOutput
+				);
+				assert.strictEqual(
+					sessions.length,
+					max_sessions,
+					`the account must hold exactly ${max_sessions} sessions after a concurrent burst ` +
+						'of logins — each mint evicting against the sessions committed before it'
 				);
 			}
 		);
