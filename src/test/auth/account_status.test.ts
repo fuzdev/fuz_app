@@ -70,12 +70,12 @@ const create_test_app = (
 				scope
 					? create_test_resolved_auth({
 							credential_type: 'api_token',
-							account_id: auth_ctx.account.id,
+							account: auth_ctx.account,
 							scope
 						})
 					: create_test_resolved_auth({
 							credential_type: 'session',
-							account_id: auth_ctx.account.id
+							account: auth_ctx.account
 						})
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);

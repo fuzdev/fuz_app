@@ -243,7 +243,7 @@ describe('account route audit logging', () => {
 					RESOLVED_AUTH_KEY,
 					create_test_resolved_auth({
 						credential_type: 'session',
-						account_id: options.inject_ctx!.account.id
+						account: options.inject_ctx!.account
 					})
 				);
 				c.set(REQUEST_CONTEXT_KEY, options.inject_ctx!);

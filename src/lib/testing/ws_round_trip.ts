@@ -191,7 +191,7 @@ export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context 
 		[REQUEST_CONTEXT_KEY]: request_context,
 		[RESOLVED_AUTH_KEY]: create_test_resolved_auth({
 			credential_type: opts.credential_type,
-			account_id: request_context.account.id,
+			account: request_context.account,
 			session_id: auth_session_id ?? undefined,
 			api_token_id: opts.api_token_id
 		}),
@@ -500,13 +500,14 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		const session_id = identity.session_id ?? create_uuid();
 		const roles = identity.roles ?? [];
 
+		const request_context = build_multi_role_request_context(account_id, roles);
 		const ctx_store = new Map<string, unknown>([
-			[REQUEST_CONTEXT_KEY, build_multi_role_request_context(account_id, roles)],
+			[REQUEST_CONTEXT_KEY, request_context],
 			[
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type,
-					account_id,
+					account: request_context.account,
 					session_id,
 					api_token_id: identity.api_token_id
 				})

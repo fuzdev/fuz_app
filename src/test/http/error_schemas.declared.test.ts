@@ -258,11 +258,6 @@ const DEFINITIONS: Record<
 		code: 'no_actors_on_account',
 		sample: { error: 'no_actors_on_account' }
 	},
-	REST_ACCOUNT_VANISHED: {
-		status: 500,
-		code: 'account_vanished',
-		sample: { error: 'account_vanished' }
-	},
 	REST_INTERNAL_ERROR: {
 		status: 500,
 		code: 'internal_error',

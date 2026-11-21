@@ -197,7 +197,7 @@ export interface RouteAuth {
 	 * RPC endpoint runs its own per-method check inside the dispatcher, the
 	 * `reads_credential` routes that answer anonymous callers (account status,
 	 * the cell-scoped fact read) can't take the field and answer a narrowed
-	 * token as anonymous in their handler (`get_public_account_id`), and the
+	 * token as anonymous in their handler (`get_public_account`), and the
 	 * server-status route admits a narrowed token by design — and all are
 	 * route specs too.
 	 *

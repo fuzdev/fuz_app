@@ -69,10 +69,10 @@ const build_app = (opts: BuildOptions = {}) => {
 				scoped_methods
 					? create_test_resolved_auth({
 							credential_type: 'api_token',
-							account_id: ctx.account.id,
+							account: ctx.account,
 							scope: token_scope_methods(scoped_methods)
 						})
-					: create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+					: create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		}

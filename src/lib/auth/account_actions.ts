@@ -35,7 +35,7 @@ import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { queue_connection_close } from '../actions/connection_closer.ts';
 import { to_session_account, type SessionAccountJson } from './account_schema.ts';
-import { query_account_lock_live } from './account_queries.ts';
+import { query_account_by_id, query_account_lock_live } from './account_queries.ts';
 import {
 	query_session_is_live,
 	query_session_list_for_account,
@@ -112,8 +112,21 @@ export const create_account_actions = (
 	const { max_tokens = DEFAULT_MAX_TOKENS } = options;
 	const { connection_closer } = deps;
 
-	const verify_handler = (_input: VerifyInput, ctx: ActionAuthContext): SessionAccountJson => {
-		return to_session_account(ctx.auth.account);
+	// The account read again, live: the answer is the account itself, so one
+	// deleted or purged since the credential leg is the dead credential's 401,
+	// not a description of a removed account. The Rust twin reads its summary
+	// the same way.
+	const verify_handler = async (
+		_input: VerifyInput,
+		ctx: ActionAuthContext
+	): Promise<SessionAccountJson> => {
+		const account = await query_account_by_id(ctx, ctx.auth.account.id);
+		if (!account) {
+			throw jsonrpc_errors.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED
+			});
+		}
+		return to_session_account(account);
 	};
 
 	const session_list_handler = async (

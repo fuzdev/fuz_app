@@ -29,6 +29,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],
@@ -261,7 +262,10 @@ describe('create_auth_middleware_specs — the chain starts from a clean slate',
 			app.use('/*', async (c, next) => {
 				c.set(
 					RESOLVED_AUTH_KEY,
-					create_test_resolved_auth({ credential_type: 'daemon_token', account_id: 'acct-preset' })
+					create_test_resolved_auth({
+						credential_type: 'daemon_token',
+						account: create_test_account({ id: 'acct-preset' })
+					})
 				);
 				await next();
 			});

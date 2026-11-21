@@ -52,7 +52,9 @@ import {
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_role_grant, query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
 import {
+	query_account_by_id,
 	query_account_soft_delete,
+	query_actor_by_id,
 	query_actor_soft_delete,
 	query_create_account_with_actor
 } from '#lib/auth/account_queries.ts';
@@ -63,10 +65,10 @@ import {
 	query_revoke_api_token_for_account
 } from '#lib/auth/api_token_queries.ts';
 import {
-	build_account_context,
 	build_request_context,
 	create_request_context_middleware,
-	REQUEST_CONTEXT_KEY
+	REQUEST_CONTEXT_KEY,
+	type RequestContext
 } from '#lib/auth/request_context.ts';
 import {
 	generate_session_token,
@@ -158,6 +160,13 @@ const create_session = async (
 	return { session_token, token_hash };
 };
 
+/** The account-grain context the authorization phase builds on the account's row. */
+const account_context = async (db: Db, account_id: string): Promise<RequestContext> => {
+	const account = await query_account_by_id({ db }, account_id);
+	assert.ok(account, 'the account is live');
+	return { account, actor: null, role_grants: [] };
+};
+
 /** A fake Hono `Context` over a plain variable bag — only `get` / `set`. */
 const create_context = (vars: Record<string, unknown> = {}): Context =>
 	({
@@ -190,20 +199,18 @@ const create_upgrade_context = async (
 		vars[SESSION_TOKEN_KEY] = credential.session_token;
 		await create_request_context_middleware({ db })(c, async () => {});
 		assert.strictEqual(
-			(vars[RESOLVED_AUTH_KEY] as { account_id?: string } | undefined)?.account_id,
+			(vars[RESOLVED_AUTH_KEY] as { account?: { id: string } } | undefined)?.account?.id,
 			account_id,
 			'the session resolved'
 		);
 	} else {
 		vars[RESOLVED_AUTH_KEY] = create_test_resolved_auth({
 			credential_type: 'api_token',
-			account_id,
+			account: (await account_context(db, account_id)).account,
 			api_token_id: credential.api_token_id
 		});
 	}
-	const request_context = await build_account_context({ db }, account_id);
-	assert.ok(request_context);
-	vars[REQUEST_CONTEXT_KEY] = request_context;
+	vars[REQUEST_CONTEXT_KEY] = await account_context(db, account_id);
 	return c;
 };
 
@@ -572,7 +579,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const account_id = await create_account(db);
 			const endpoint = create_endpoint(db);
 			const c = create_context({
-				[REQUEST_CONTEXT_KEY]: await build_account_context({ db }, account_id)
+				[REQUEST_CONTEXT_KEY]: await account_context(db, account_id)
 			});
 
 			await assert_rejects(() => endpoint.create_events(c), /no resolved credential/);
@@ -587,10 +594,7 @@ describe_db('register_action_ws admission', (get_db) => {
 			const endpoint = create_endpoint(db);
 			// the credential resolves to one account, the request context names another
 			const c = await create_upgrade_context(db, other_account_id, session);
-			c.set(
-				REQUEST_CONTEXT_KEY as never,
-				(await build_account_context({ db }, account_id)) as never
-			);
+			c.set(REQUEST_CONTEXT_KEY as never, (await account_context(db, account_id)) as never);
 
 			await assert_rejects(() => endpoint.create_events(c), /name different accounts/);
 			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
@@ -942,8 +946,13 @@ describe_db('register_action_ws admission', (get_db) => {
 				}
 			);
 			const c = await create_upgrade_context(db, account_id, session);
-			const request_context = await build_request_context({ db }, account_id, actor_id);
-			assert.ok(request_context);
+			const actor = await query_actor_by_id({ db }, actor_id);
+			assert.ok(actor);
+			const request_context = await build_request_context(
+				{ db },
+				(await account_context(db, account_id)).account,
+				actor
+			);
 			c.set(REQUEST_CONTEXT_KEY, request_context);
 			return { account_id, actor_id, role_grant_id: role_grant.id, c };
 		};

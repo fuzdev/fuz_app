@@ -69,7 +69,7 @@ export const create_test_app_from_specs = (
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type: credential_type ?? CREDENTIAL_TYPE_SESSION,
-					account_id: auth_ctx.account.id
+					account: auth_ctx.account
 				})
 			);
 			c.set(REQUEST_CONTEXT_KEY, auth_ctx);

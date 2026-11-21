@@ -112,7 +112,7 @@ const create_daemon_app = (state: DaemonTokenState): Hono => {
 	app.get('/test', (c) => {
 		const auth = get_resolved_auth(c);
 		return c.json({
-			context: auth ? { account_id: auth.account_id, actor_id: null } : null,
+			context: auth ? { account_id: auth.account.id, actor_id: null } : null,
 			credential_type: auth?.credential_type ?? null,
 			api_token_id: resolved_auth_api_token_id(auth),
 			resolved: auth
@@ -251,7 +251,10 @@ describe('create_daemon_token_middleware', () => {
 			// a layer mounted before the credential legs
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: 'acct-preset' })
+				create_test_resolved_auth({
+					credential_type: 'session',
+					account: create_test_account({ id: 'acct-preset' })
+				})
 			);
 			await next();
 		});
@@ -292,11 +295,26 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.credential_type, 'daemon_token');
 		assert.strictEqual(body.api_token_id, null);
 		// the daemon arm, with nothing of another credential's
-		assert.deepStrictEqual(body.resolved, {
-			credential_type: 'daemon_token',
-			account_id: 'acct-keeper',
-			credential_deadline: null
+		const { account: resolved_account, ...arm } = body.resolved;
+		assert.strictEqual(resolved_account.id, 'acct-keeper', "the keeper's row, read by the leg");
+		assert.deepStrictEqual(arm, { credential_type: 'daemon_token', credential_deadline: null });
+	});
+
+	test('a valid token whose keeper account is gone authenticates nothing', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+		mock_query_account_by_id.mockImplementation(async () => undefined);
+
+		const res = await app.request('/test', {
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(
+			body.resolved,
+			null,
+			'no credential — the keeper row is what it resolves to'
+		);
 	});
 
 	test('valid previous token sets account_id and credential_type', async () => {
@@ -507,11 +525,9 @@ describe('create_daemon_token_middleware', () => {
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.deepStrictEqual(body.resolved, {
-			credential_type: 'daemon_token',
-			account_id: 'acct-keeper',
-			credential_deadline: null
-		});
+		const { account: resolved_account, ...arm } = body.resolved;
+		assert.strictEqual(resolved_account.id, 'acct-keeper', "the keeper's row, read by the leg");
+		assert.deepStrictEqual(arm, { credential_type: 'daemon_token', credential_deadline: null });
 	});
 });
 

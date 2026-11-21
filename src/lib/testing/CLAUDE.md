@@ -66,7 +66,7 @@ casts — the factory brands internally. Exported as `TestAccountOverrides` /
 
 ### `resolved_auth.ts` — `ResolvedAuth` factory
 
-`create_test_resolved_auth({credential_type, account_id, session_id?,
+`create_test_resolved_auth({credential_type, account, session_id?,
 api_token_id?, scope?, credential_deadline?})` — the `ResolvedAuth` arm for a
 credential type, as the auth middleware builds it: a session's `session_hash`
 is `hash_session_token(session_id)` (default a fresh uuid), an API token's id

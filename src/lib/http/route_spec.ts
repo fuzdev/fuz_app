@@ -188,7 +188,7 @@ export interface RouteContext<
 	 * The credential the auth middleware resolved, `null` for an anonymous
 	 * caller. A `reads_credential` route — one that answers anonymous callers
 	 * itself — reads the account it may act on through
-	 * `get_public_account_id(route)` (`auth/request_context.ts`), never from
+	 * `get_public_account(route)` (`auth/request_context.ts`), never from
 	 * here: a scope-narrowed API token is the anonymous caller there, and only
 	 * that function applies the rule.
 	 */
@@ -410,7 +410,7 @@ export interface RouteSpec {
 	 * The handler owns the token-scope rule a gate would otherwise apply: a
 	 * scope-narrowed API token reaches no non-RPC surface that reads account
 	 * data, and `auth.required_scope` is refused on a route that admits
-	 * anonymous callers. Read the credential through `get_public_account_id`
+	 * anonymous callers. Read the credential through `get_public_account`
 	 * (`auth/request_context.ts`), not `get_resolved_auth`, so a narrowed token is
 	 * answered as the anonymous caller. The RPC endpoint is the exception — its
 	 * dispatcher gates each method against the scope.

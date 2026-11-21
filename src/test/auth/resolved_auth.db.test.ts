@@ -42,6 +42,7 @@ import { token_scope_full } from '#lib/auth/token_scope.ts';
 import { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -64,7 +65,7 @@ const resolve_session = async (
 	const session_hash = hash_session_token(generate_session_token());
 	await query_create_session({ db }, session_hash, account_id, expires_at);
 	return {
-		account_id,
+		account: create_test_account({ id: account_id }),
 		credential_type: 'session',
 		session_hash,
 		credential_deadline: null
@@ -88,7 +89,7 @@ const resolve_api_token = async (
 		expires_at
 	);
 	return {
-		account_id,
+		account: create_test_account({ id: account_id }),
 		credential_type: 'api_token',
 		api_token_id: id,
 		scope: token_scope_full(),
@@ -97,7 +98,7 @@ const resolve_api_token = async (
 };
 
 const resolve_daemon_token = (account_id: string): ResolvedAuth => ({
-	account_id,
+	account: create_test_account({ id: account_id }),
 	credential_type: 'daemon_token',
 	credential_deadline: null
 });

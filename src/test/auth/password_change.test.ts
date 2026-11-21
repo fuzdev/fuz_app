@@ -214,7 +214,7 @@ const create_password_change_app = (
 	app.use('/*', async (c, next) => {
 		c.set(
 			RESOLVED_AUTH_KEY,
-			create_test_resolved_auth({ credential_type: 'session', account_id: fake_ctx.account.id })
+			create_test_resolved_auth({ credential_type: 'session', account: fake_ctx.account })
 		);
 		c.set(REQUEST_CONTEXT_KEY, fake_ctx);
 		c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);

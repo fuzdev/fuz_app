@@ -9,11 +9,7 @@
 import { assert, test } from 'vitest';
 
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import {
-	query_create_account,
-	query_create_account_with_actor,
-	query_account_by_id
-} from '#lib/auth/account_queries.ts';
+import { query_create_account_with_actor, query_account_by_id } from '#lib/auth/account_queries.ts';
 import { to_session_account } from '#lib/auth/account_schema.ts';
 import {
 	query_create_role_grant,
@@ -130,9 +126,8 @@ describe_db('build_request_context', (get_db) => {
 		});
 		await query_create_role_grant(deps, { actor_id: actor.id, role: ROLE_ADMIN, granted_by: null });
 
-		const ctx = await build_request_context(deps, account.id, actor.id);
+		const ctx = await build_request_context(deps, account, actor);
 
-		assert.ok(ctx !== null);
 		assert.strictEqual(ctx.account.id, account.id);
 		assert.strictEqual(ctx.account.username, 'ws_ctx');
 		assert.strictEqual(ctx.actor.id, actor.id);
@@ -150,8 +145,7 @@ describe_db('build_request_context', (get_db) => {
 		});
 		await query_create_role_grant(deps, { actor_id: actor.id, role: ROLE_ADMIN, granted_by: null });
 
-		const ctx = await build_request_context(deps, account.id, actor.id);
-		assert.ok(ctx !== null);
+		const ctx = await build_request_context(deps, account, actor);
 
 		// raw context includes password_hash (needed for internal operations)
 		assert.ok('password_hash' in ctx.account);
@@ -167,51 +161,6 @@ describe_db('build_request_context', (get_db) => {
 		assert.strictEqual(safe.username, ctx.account.username);
 	});
 
-	test('returns null for nonexistent account', async () => {
-		const db = get_db();
-		const deps = { db };
-		const ctx = await build_request_context(
-			deps,
-			'00000000-0000-0000-0000-000000000000',
-			'00000000-0000-0000-0000-000000000001'
-		);
-		assert.strictEqual(ctx, null);
-	});
-
-	test('returns null when actor is missing for account', async () => {
-		const db = get_db();
-		const deps = { db };
-		// create account directly (no actor)
-		const account = await query_create_account(deps, {
-			username: 'no_actor',
-			password_hash: STUB_HASH
-		});
-
-		const ctx = await build_request_context(
-			deps,
-			account.id,
-			'00000000-0000-0000-0000-000000000001'
-		);
-		assert.strictEqual(ctx, null);
-	});
-
-	test('returns null when actor belongs to a different account', async () => {
-		const db = get_db();
-		const deps = { db };
-		const a = await query_create_account_with_actor(deps, {
-			username: 'wrong_actor_a',
-			password_hash: STUB_HASH
-		});
-		const b = await query_create_account_with_actor(deps, {
-			username: 'wrong_actor_b',
-			password_hash: STUB_HASH
-		});
-
-		// Pass account A's id with actor B's id — must return null.
-		const ctx = await build_request_context(deps, a.account.id, b.actor.id);
-		assert.strictEqual(ctx, null);
-	});
-
 	test('returns empty role_grants when account has no grants', async () => {
 		const db = get_db();
 		const deps = { db };
@@ -220,9 +169,8 @@ describe_db('build_request_context', (get_db) => {
 			password_hash: STUB_HASH
 		});
 
-		const ctx = await build_request_context(deps, account.id, actor.id);
+		const ctx = await build_request_context(deps, account, actor);
 
-		assert.ok(ctx !== null);
 		assert.strictEqual(ctx.account.id, account.id);
 		assert.strictEqual(ctx.actor.id, actor.id);
 		assert.strictEqual(ctx.role_grants.length, 0);

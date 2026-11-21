@@ -17,7 +17,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
-import { query_create_actor } from '#lib/auth/account_queries.ts';
+import { query_account_by_id, query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
@@ -46,7 +46,9 @@ const create_route_specs = () => [create_account_status_route_spec({ path: STATU
 const build_ws_app = (db: Db, account_id: string) => {
 	const app = new Hono();
 	app.use('*', async (c, next) => {
-		c.set(RESOLVED_AUTH_KEY, create_test_resolved_auth({ credential_type: 'session', account_id }));
+		const account = await query_account_by_id({ db }, account_id);
+		assert.ok(account);
+		c.set(RESOLVED_AUTH_KEY, create_test_resolved_auth({ credential_type: 'session', account }));
 		await next();
 	});
 	const stub = create_stub_upgrade();

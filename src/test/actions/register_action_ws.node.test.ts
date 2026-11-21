@@ -124,7 +124,7 @@ const start_server = async (
 			RESOLVED_AUTH_KEY,
 			create_test_resolved_auth({
 				credential_type: 'session',
-				account_id: ACCOUNT_ID,
+				account: create_test_account({ id: ACCOUNT_ID }),
 				session_id: 'raw_session'
 			})
 		);

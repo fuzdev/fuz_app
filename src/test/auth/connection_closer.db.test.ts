@@ -112,6 +112,7 @@ import {
 	create_recording_closer
 } from '#lib/testing/connection_closer_helpers.ts';
 import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
+import { query_account_by_id, query_actor_by_id } from '#lib/auth/account_queries.ts';
 import { build_request_context, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { query_session_revoke_all_for_account } from '#lib/auth/session_queries.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
@@ -1981,16 +1982,14 @@ describe_db('connection_closer wiring', (get_db) => {
 				log
 			});
 			// what the auth middleware leaves on the context for a role-gated upgrade
-			const request_context = await build_request_context(
-				{ db: deps.db },
-				account_id,
-				test_app.backend.actor.id
-			);
-			assert.ok(request_context);
+			const account = await query_account_by_id({ db: deps.db }, account_id);
+			const actor = await query_actor_by_id({ db: deps.db }, test_app.backend.actor.id);
+			assert.ok(account && actor);
+			const request_context = await build_request_context({ db: deps.db }, account, actor);
 			const vars: Record<string, unknown> = {
 				[RESOLVED_AUTH_KEY]: {
 					credential_type: 'session',
-					account_id,
+					account,
 					session_hash,
 					credential_deadline: null
 				},

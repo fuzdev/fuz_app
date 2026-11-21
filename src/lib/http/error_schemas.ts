@@ -192,23 +192,10 @@ export const ERROR_ACTOR_NOT_ON_ACCOUNT = 'actor_not_on_account' as const;
  * violation — signup / bootstrap always create an actor in the same
  * transaction. Surfaced from the dispatcher's authorization phase as a
  * 500 so the operator sees the corruption signal rather than a confusing
- * 4xx. Distinct from `ERROR_ACCOUNT_VANISHED`: the actor list was
- * enumerated successfully and came back empty.
+ * 4xx. An account removed after its credential was read reaches it too: the
+ * removal takes the account's actors with it.
  */
 export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
-
-/**
- * Authentication validated an account, but a follow-up read in the
- * authorization phase came back null — the account or its named actor
- * row was deleted between the credential check and the dispatcher's
- * `build_request_context` / `build_account_context` step. Torn read,
- * not a missing-actor invariant violation. Surfaced as 500 so the
- * operator sees the race signal; clients can retry. Distinct from
- * `ERROR_ACCOUNT_NOT_FOUND` (stale token referencing a long-deleted
- * account, raised at credential validation) and
- * `ERROR_NO_ACTORS_ON_ACCOUNT` (the actor list enumerated empty).
- */
-export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
 
 // --- Keeper / daemon token ---
 
@@ -618,8 +605,6 @@ export const REST_RATE_LIMIT_EXCEEDED = rest_error(
 // 500: the authorization phase, and the catch layer any route can answer with
 /** The account's actors enumerated empty, a signup invariant broken. */
 export const REST_NO_ACTORS_ON_ACCOUNT = rest_error(500, ERROR_NO_ACTORS_ON_ACCOUNT);
-/** The account or actor row was deleted between credential validation and the actor read. */
-export const REST_ACCOUNT_VANISHED = rest_error(500, ERROR_ACCOUNT_VANISHED);
 export const REST_INTERNAL_ERROR = rest_error(500, ERROR_INTERNAL_ERROR);
 /** Bootstrap's token matched and its file couldn't be burned; the bootstrap rolled back. */
 export const REST_TOKEN_FILE_UNDELETABLE = rest_error(500, ERROR_TOKEN_FILE_UNDELETABLE);
@@ -671,9 +656,11 @@ export interface DeriveRouteErrorsOptions {
  *   the body's errors there either.
  * - **`params`**: 400 `invalid_route_params`. **`query`**: 400
  *   `invalid_query_params`.
- * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
+ * - **`auth.account === 'required'`** or **`auth.actor !== 'none'`**: 401
  *   `authentication_required` — the pre-authorization gate's refusal when the
- *   credential isn't there. `'optional'` does not derive 401.
+ *   credential isn't there, and the authorization phase's when the account it
+ *   resolved was removed before the phase listed its actors. An optional
+ *   account with no actor axis does not derive 401.
  * - **`auth.required_scope`**: 403 `token_scope_required` (carrying
  *   `required_scope`). **`auth.credential_types?.length`**: 403
  *   `credential_type_required` (carrying `required_credential_types`).
@@ -681,9 +668,9 @@ export interface DeriveRouteErrorsOptions {
  *   `required_roles`). In the order the gates fire; a route with more than
  *   one has each.
  * - **`auth.actor !== 'none'`**: 400 `actor_required` and
- *   `actor_not_on_account`, and 500 `no_actors_on_account` and
- *   `account_vanished` — what the dispatcher's authorization phase emits
- *   when it resolves an actor.
+ *   `actor_not_on_account`, and 500 `no_actors_on_account` — what the
+ *   dispatcher's authorization phase emits when it resolves an actor (its 401
+ *   is the rule above).
  * - **`rate_limit`**: 429 `rate_limit_exceeded` (with `retry_after`).
  * - **`POST`**: 415 `unsupported_content_type` (see
  *   `is_post_content_type_refused` in `http/simple_request.ts`).
@@ -709,19 +696,16 @@ export const derive_route_errors = ({
 	if (has_params) defs.push(REST_INVALID_ROUTE_PARAMS);
 	if (has_query) defs.push(REST_INVALID_QUERY_PARAMS);
 	if (needs_actor(auth)) {
-		defs.push(
-			REST_ACTOR_REQUIRED,
-			REST_ACTOR_NOT_ON_ACCOUNT,
-			REST_NO_ACTORS_ON_ACCOUNT,
-			REST_ACCOUNT_VANISHED
-		);
+		defs.push(REST_ACTOR_REQUIRED, REST_ACTOR_NOT_ON_ACCOUNT, REST_NO_ACTORS_ON_ACCOUNT);
 	}
 
 	// 401 fires when the dispatcher's pre-authorization gate rejects an
 	// unauthenticated caller — `account === 'required'` (no credential) or
 	// `actor === 'required'` (no credential to resolve an actor against,
-	// per registry-time invariant 3 forbidding accountless actors in v1).
-	if (auth.account === 'required' || auth.actor === 'required') {
+	// per registry-time invariant 3 forbidding accountless actors in v1) — and
+	// when the authorization phase, resolving an actor, finds the account
+	// removed since its credential was read
+	if (auth.account === 'required' || needs_actor(auth)) {
 		defs.push(REST_AUTHENTICATION_REQUIRED);
 	}
 

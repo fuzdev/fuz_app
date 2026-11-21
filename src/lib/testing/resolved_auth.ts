@@ -9,6 +9,7 @@ import './assert_dev_env.ts';
  */
 
 import { create_uuid } from '../primitive_schemas.ts';
+import type { Account } from '../auth/account_schema.ts';
 import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { ResolvedAuth } from '../auth/resolved_auth.ts';
 import { hash_session_token } from '../auth/session_queries.ts';
@@ -17,7 +18,8 @@ import { token_scope_full, type TokenScope } from '../auth/token_scope.ts';
 /** Options for `create_test_resolved_auth`. */
 export interface TestResolvedAuthOptions {
 	credential_type: BuiltinCredentialType;
-	account_id: string;
+	/** The account the credential resolved — the row the authorization phase builds on. */
+	account: Account;
 	/**
 	 * The raw session token a `session` credential carries, hashed into its
 	 * `session_hash` the way the session leg hashes the cookie's. Default a
@@ -40,25 +42,25 @@ export interface TestResolvedAuthOptions {
  * @returns the resolved credential
  */
 export const create_test_resolved_auth = (options: TestResolvedAuthOptions): ResolvedAuth => {
-	const { credential_type, account_id } = options;
+	const { credential_type, account } = options;
 	const credential_deadline = options.credential_deadline ?? null;
 	switch (credential_type) {
 		case 'session':
 			return {
 				credential_type,
-				account_id,
+				account,
 				session_hash: hash_session_token(options.session_id ?? create_uuid()),
 				credential_deadline
 			};
 		case 'api_token':
 			return {
 				credential_type,
-				account_id,
+				account,
 				api_token_id: options.api_token_id ?? create_uuid(),
 				scope: options.scope ?? token_scope_full(),
 				credential_deadline
 			};
 		case 'daemon_token':
-			return { credential_type, account_id, credential_deadline: null };
+			return { credential_type, account, credential_deadline: null };
 	}
 };

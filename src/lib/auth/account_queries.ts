@@ -110,8 +110,8 @@ export const query_create_account = async (
 /**
  * Find an **active** account by id (`deleted_at IS NULL`).
  *
- * This is the auth-resolution workhorse (`build_request_context` /
- * `build_account_context`) and the admin-target lookup, so it
+ * This is the auth-resolution workhorse (every credential leg reads the
+ * account through it) and the admin-target lookup, so it
  * deliberately excludes soft-deleted accounts: a tombstoned account must
  * not authenticate (`delete` = soft, `purge` = hard). Purge, which must operate on
  * soft-deleted rows too, uses `query_purge_account` directly.

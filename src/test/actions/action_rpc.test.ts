@@ -137,7 +137,7 @@ const create_test_app = (
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type: token_scope ? 'api_token' : (credential_type ?? 'session'),
-					account_id: auth_context.account.id,
+					account: auth_context.account,
 					scope: token_scope
 				})
 			);

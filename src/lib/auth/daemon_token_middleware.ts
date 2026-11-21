@@ -23,6 +23,7 @@ import { get_resolved_auth } from './resolved_auth.ts';
 import { get_header_lines } from '../http/header_lines.ts';
 import { is_browser_context } from '../http/request_headers.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
+import { query_account_by_id } from './account_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { ROLE_KEEPER } from './role_schema.ts';
 import { read_daemon_token } from './credential_headers.ts';
@@ -161,13 +162,23 @@ export const create_daemon_token_middleware = (
 			await next();
 			return;
 		}
+		// The keeper's row, read per request as every credential leg reads its
+		// account, so the authorization phase builds on it. A keeper account
+		// gone or tombstoned (no API path removes it) authenticates nothing —
+		// as the Rust spine's daemon leg.
+		const account = await query_account_by_id(deps, state.keeper_account_id);
+		if (!account) {
+			log.warn('daemon token auth soft-fail: keeper account not found');
+			await next();
+			return;
+		}
 
 		// Full authority (`resolved_auth_scope`): singular, filesystem-proved,
 		// keeper-bound — no minting step at which a narrowing could have been
 		// chosen. No row, no expiry.
 		c.set(RESOLVED_AUTH_KEY, {
 			credential_type: 'daemon_token',
-			account_id: state.keeper_account_id,
+			account,
 			credential_deadline: null
 		});
 

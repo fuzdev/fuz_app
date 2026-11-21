@@ -1,15 +1,14 @@
 /**
  * Unit tests for `apply_authorization_phase`.
  *
- * Covers the four failure shapes the dispatcher's authorization phase
- * can return — both 400 reasons (`actor_required`, `actor_not_on_account`)
- * and both 500 reasons (`no_actors_on_account` for the
- * empty-actor-list invariant; `account_vanished` for the torn-read
- * race where `build_request_context` / `build_account_context` return
- * null after `resolve_acting_actor` succeeded).
+ * Covers the failure shapes the dispatcher's authorization phase can return
+ * — both 400 reasons (`actor_required`, `actor_not_on_account`), the 401
+ * `authentication_required` of an account removed since its credential was
+ * read, and the 500 `no_actors_on_account` (a live account listed no active
+ * actor).
  *
- * `apply_authorization_phase` is pure data — it takes `account_id`
- * directly and returns an `AuthorizationResult`:
+ * `apply_authorization_phase` is pure data — it takes the account the
+ * credential resolved and returns an `AuthorizationResult`:
  * `{ok: true, request_context: RequestContext | null} | {ok: false, status, body}`.
  * Public actions and the unauthenticated-optional axis both collapse to
  * `{ok: true, request_context: null}`; resolved actor / account-only
@@ -19,13 +18,12 @@
  * share, and the HTTP RPC dispatcher) — see `request_context.test_context_preset.test.ts`
  * for that coverage.
  *
- * The torn-read 500 is unreachable from an integration test that
- * deletes the `account` row — the `ON DELETE CASCADE` chain tears down
- * `api_token` / `auth_session` first, so bearer auth fails before the
- * dispatcher runs. Mocking `query_account_by_id` / `query_actor_by_id`
- * to return null is the only way to deterministically exercise the
- * branch. The companion `bearer_actor_deleted.db.test.ts` covers the
- * `no_actors_on_account` arm at the integration level.
+ * The phase reads neither the account nor the acting actor a second time: the
+ * account is the credential leg's row and the actor the row the account's actor
+ * list returned, so an account removed after the leg is no torn read. The mocks
+ * pin that `query_account_by_id` and `query_actor_by_id` are never called —
+ * the account read comes only when the actor list is empty, to tell a removed
+ * account from a live one.
  *
  * @module
  */
@@ -43,7 +41,7 @@ import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
-	ERROR_ACCOUNT_VANISHED
+	ERROR_AUTHENTICATION_REQUIRED
 } from '#lib/http/error_schemas.ts';
 import {
 	create_test_account,
@@ -68,6 +66,12 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+/** The phase builds on the rows it was handed and the actor list — it reads neither again. */
+const assert_no_second_read = (): void => {
+	assert.strictEqual(vi.mocked(query_account_by_id).mock.calls.length, 0, 'no account read');
+	assert.strictEqual(vi.mocked(query_actor_by_id).mock.calls.length, 0, 'no actor read');
+};
+
 const ACCOUNT_ID = 'acct-1';
 const ACTOR_ID = 'actor-1';
 const SECOND_ACTOR_ID = 'actor-2';
@@ -87,7 +91,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 	test('returns request_context: null when both axes are none (public — no resolution)', async () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'none', actor: 'none' },
 			undefined
 		);
@@ -96,7 +100,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 		assert.strictEqual(vi.mocked(query_active_actors_by_account).mock.calls.length, 0);
 	});
 
-	test('returns request_context: null when account_id is null (unauthenticated — downstream auth guard handles 401)', async () => {
+	test('returns request_context: null when the account is null (unauthenticated — downstream auth guard handles 401)', async () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			null,
@@ -110,12 +114,10 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 });
 
 describe('apply_authorization_phase — needs_actor: false (account-grain)', () => {
-	test('builds account-only context on success (actor: null, empty role_grants)', async () => {
-		vi.mocked(query_account_by_id).mockResolvedValue(account);
-
+	test('builds account-only context on the carried account (actor: null, empty role_grants)', async () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'none' },
 			undefined
 		);
@@ -124,36 +126,19 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 			ok: true,
 			request_context: { account, actor: null, role_grants: [] }
 		});
-	});
-
-	test('returns 500 account_vanished when query_account_by_id returns null', async () => {
-		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
-
-		const result = await apply_authorization_phase(
-			mock_deps,
-			ACCOUNT_ID,
-			{ account: 'required', actor: 'none' },
-			undefined
-		);
-
-		assert.deepStrictEqual(result, {
-			ok: false,
-			status: 500,
-			body: { error: ERROR_ACCOUNT_VANISHED }
-		});
+		assert.strictEqual(result.ok && result.request_context?.account, account, 'the same row');
+		assert_no_second_read();
 	});
 });
 
 describe('apply_authorization_phase — needs_actor: true', () => {
 	test('builds full context on single-actor success (no acting supplied)', async () => {
 		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
-		vi.mocked(query_account_by_id).mockResolvedValue(account);
-		vi.mocked(query_actor_by_id).mockResolvedValue(actor);
 		vi.mocked(query_role_grant_find_active_for_actor).mockResolvedValue(role_grants);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'required' },
 			undefined
 		);
@@ -162,14 +147,16 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 			ok: true,
 			request_context: { account, actor, role_grants }
 		});
+		assert_no_second_read();
 	});
 
-	test('returns 500 no_actors_on_account when query_active_actors_by_account is empty', async () => {
+	test('returns 500 no_actors_on_account when a live account lists no actors', async () => {
 		vi.mocked(query_active_actors_by_account).mockResolvedValue([]);
+		vi.mocked(query_account_by_id).mockResolvedValue(account);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'required' },
 			undefined
 		);
@@ -181,12 +168,31 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		});
 	});
 
+	test('returns 401 authentication_required when the account lists no actors because it is gone', async () => {
+		// removed since the credential leg read it, its actors with it
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([]);
+		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
+
+		const result = await apply_authorization_phase(
+			mock_deps,
+			account,
+			{ account: 'required', actor: 'required' },
+			undefined
+		);
+
+		assert.deepStrictEqual(result, {
+			ok: false,
+			status: 401,
+			body: { error: ERROR_AUTHENTICATION_REQUIRED }
+		});
+	});
+
 	test('returns 400 actor_required with available list on multi-actor + no acting', async () => {
 		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor, second_actor]);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'required' },
 			undefined
 		);
@@ -215,7 +221,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'required' },
 			SECOND_ACTOR_ID // the (now soft-deleted) sibling — absent from the active list
 		);
@@ -236,7 +242,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 
 		const result = await apply_authorization_phase(
 			mock_deps,
-			ACCOUNT_ID,
+			account,
 			{ account: 'required', actor: 'required' },
 			'actor-not-here'
 		);
@@ -251,78 +257,6 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 	test('resolve_acting_actor matches a supplied acting id whatever its case', async () => {
 		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor, second_actor]);
 		const result = await resolve_acting_actor(mock_deps, ACCOUNT_ID, SECOND_ACTOR_ID.toUpperCase());
-		assert.deepStrictEqual(result, { ok: true, actor_id: SECOND_ACTOR_ID });
-	});
-
-	test('returns 500 account_vanished when query_account_by_id is null after resolve (torn read)', async () => {
-		// `query_active_actors_by_account` succeeds — `resolve_acting_actor`
-		// returns {ok: true}. `build_request_context`'s account lookup then returns
-		// null (account row deleted between the two reads — production is a
-		// concurrent-deletion race; here we simulate it directly).
-		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
-		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
-
-		const result = await apply_authorization_phase(
-			mock_deps,
-			ACCOUNT_ID,
-			{ account: 'required', actor: 'required' },
-			undefined
-		);
-
-		assert.deepStrictEqual(result, {
-			ok: false,
-			status: 500,
-			body: { error: ERROR_ACCOUNT_VANISHED }
-		});
-	});
-
-	test('returns 500 account_vanished when query_actor_by_id is null after resolve (torn read)', async () => {
-		// `query_active_actors_by_account` returned the actor; `query_account_by_id`
-		// found the account; but `query_actor_by_id` returns null — the
-		// actor row was deleted between enumeration and lookup.
-		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
-		vi.mocked(query_account_by_id).mockResolvedValue(account);
-		vi.mocked(query_actor_by_id).mockResolvedValue(undefined);
-
-		const result = await apply_authorization_phase(
-			mock_deps,
-			ACCOUNT_ID,
-			{ account: 'required', actor: 'required' },
-			undefined
-		);
-
-		assert.deepStrictEqual(result, {
-			ok: false,
-			status: 500,
-			body: { error: ERROR_ACCOUNT_VANISHED }
-		});
-	});
-
-	test('returns 500 account_vanished when actor.account_id mismatch (defense-in-depth branch)', async () => {
-		// Defense-in-depth: `resolve_acting_actor` already verified the actor
-		// belongs to the account, but `build_request_context` re-checks the
-		// binding. The mismatch sub-branch fires when `actor.account_id`
-		// flipped between the two reads — production-unreachable on paper,
-		// but the docstring documents that it collapses into the torn-read
-		// 500 shape rather than its own status code.
-		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
-		vi.mocked(query_account_by_id).mockResolvedValue(account);
-		vi.mocked(query_actor_by_id).mockResolvedValue({
-			...actor,
-			account_id: 'different-account' as typeof actor.account_id
-		});
-
-		const result = await apply_authorization_phase(
-			mock_deps,
-			ACCOUNT_ID,
-			{ account: 'required', actor: 'required' },
-			undefined
-		);
-
-		assert.deepStrictEqual(result, {
-			ok: false,
-			status: 500,
-			body: { error: ERROR_ACCOUNT_VANISHED }
-		});
+		assert.deepStrictEqual(result, { ok: true, actor: second_actor });
 	});
 });

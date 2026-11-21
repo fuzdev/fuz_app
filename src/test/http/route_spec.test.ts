@@ -158,7 +158,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context();
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -210,7 +210,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context('viewer');
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -243,7 +243,7 @@ describe('apply_route_specs', () => {
 			const ctx = create_test_request_context('admin');
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -288,7 +288,7 @@ describe('auth.required_scope', () => {
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type: 'api_token',
-					account_id: ctx.account.id,
+					account: ctx.account,
 					scope
 				})
 			);
@@ -342,7 +342,7 @@ describe('auth.required_scope', () => {
 					RESOLVED_AUTH_KEY,
 					create_test_resolved_auth({
 						credential_type: 'api_token',
-						account_id: ctx.account.id,
+						account: ctx.account,
 						scope
 					})
 				);

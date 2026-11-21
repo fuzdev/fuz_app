@@ -13,7 +13,7 @@ import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { is, object, string } from '@fuzdev/fuz_schema/schema.ts';
-import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import type { ActionContext } from '#lib/actions/action_types.ts';
@@ -341,7 +341,7 @@ describe('register_action_ws closes', () => {
 		// a real upgrade context: no test preset, so admission re-reads the credential
 		const preset = create_fake_hono_context({ credential_type: 'daemon_token' });
 		const read = preset.get as (key: string) => unknown;
-		const account_id = (read(RESOLVED_AUTH_KEY) as ResolvedAuth).account_id as Uuid;
+		const account_id = (read(RESOLVED_AUTH_KEY) as ResolvedAuth).account.id;
 		const c = {
 			get: (key: string) => (key === TEST_CONTEXT_PRESET_KEY ? undefined : read(key))
 		} as unknown as Context;

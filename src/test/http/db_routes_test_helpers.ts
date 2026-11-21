@@ -41,7 +41,7 @@ export const create_db_routes_test_app = (specs: Array<RouteSpec>, db: Db, log: 
 			RESOLVED_AUTH_KEY,
 			create_test_resolved_auth({
 				credential_type: 'daemon_token',
-				account_id: db_routes_keeper_ctx.account.id
+				account: db_routes_keeper_ctx.account
 			})
 		);
 		c.set(REQUEST_CONTEXT_KEY, db_routes_keeper_ctx);

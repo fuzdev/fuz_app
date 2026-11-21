@@ -37,15 +37,15 @@ import {
 	query_session_revoke_by_hash_unscoped
 } from './session_queries.ts';
 import {
+	query_account_by_id,
 	query_account_by_username_or_email,
 	query_account_lock_verified,
 	query_update_account_password
 } from './account_queries.ts';
 import { query_revoke_all_api_tokens_for_account } from './api_token_queries.ts';
 import {
-	build_account_context,
 	build_request_context,
-	get_public_account_id,
+	get_public_account,
 	resolve_acting_actor
 } from './request_context.ts';
 import { resolved_auth_session_hash } from './resolved_auth.ts';
@@ -81,7 +81,7 @@ import { query_first } from '../http/request_target.ts';
  * its verification state, and the acting actor's role grants; the route
  * already answers anonymous callers, so that answer is the refusal — a 403
  * would tell the holder nothing that dropping the header doesn't. The handler
- * reads the credential through `get_public_account_id`, which applies it.
+ * reads the credential through `get_public_account`, which applies it.
  *
  * This eliminates the need for a separate `/health` fetch on page load —
  * the frontend gets both session state and bootstrap availability in one request.
@@ -102,7 +102,7 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 		},
 		async (route) => {
 			// a narrowed token is the anonymous caller here, never a refusal
-			const account_id = get_public_account_id(route);
+			const account_id = get_public_account(route)?.id;
 			if (!account_id) return fail_anonymous();
 			// Honor a pre-populated request context. The dispatcher's authorization
 			// phase doesn't run for `auth: 'none'` routes, but a caller (test
@@ -137,33 +137,34 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			if (!route.query_pairs.ok) return route_fail(REST_INVALID_QUERY_PARAMS);
 			const acting_raw = query_first(route.query_pairs.value, 'acting');
 			const acting = parse_acting(acting_raw);
+			// The account read again for the answer, live (`deleted_at IS NULL`),
+			// as the Rust twin's summary read is: one deleted or purged since the
+			// credential leg is the anonymous caller.
+			const account = await query_account_by_id(route, account_id);
+			if (!account) return fail_anonymous();
 			const acting_result =
 				acting_raw !== undefined && acting === undefined
 					? null
-					: await resolve_acting_actor(route, account_id, acting);
+					: await resolve_acting_actor(route, account.id, acting);
 			if (acting_result?.ok) {
-				const ctx = await build_request_context(route, account_id, acting_result.actor_id);
-				if (ctx) {
-					const role_grants: Array<RoleGrantSummaryJson> = ctx.role_grants.map((p) => ({
-						id: p.id,
-						role: p.role,
-						scope_kind: p.scope_kind,
-						scope_id: p.scope_id,
-						created_at: p.created_at,
-						expires_at: p.expires_at,
-						granted_by: p.granted_by
-					}));
-					return route_ok({
-						account: to_session_account(ctx.account),
-						actor: { id: ctx.actor.id, name: ctx.actor.name },
-						role_grants
-					});
-				}
+				const ctx = await build_request_context(route, account, acting_result.actor);
+				const role_grants: Array<RoleGrantSummaryJson> = ctx.role_grants.map((p) => ({
+					id: p.id,
+					role: p.role,
+					scope_kind: p.scope_kind,
+					scope_id: p.scope_id,
+					created_at: p.created_at,
+					expires_at: p.expires_at,
+					granted_by: p.granted_by
+				}));
+				return route_ok({
+					account: to_session_account(ctx.account),
+					actor: { id: ctx.actor.id, name: ctx.actor.name },
+					role_grants
+				});
 			}
-			const account_ctx = await build_account_context(route, account_id);
-			if (!account_ctx) return fail_anonymous();
 			return route_ok({
-				account: to_session_account(account_ctx.account),
+				account: to_session_account(account),
 				actor: null,
 				role_grants: []
 			});

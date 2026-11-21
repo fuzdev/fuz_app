@@ -432,7 +432,7 @@ reads the server's version and uptime. That is non-account metadata — no
 account data, no authority.
 
 Refusals sit at two kinds of site, both ahead of the role gate (the two
-anonymous answers above read the credential through `get_public_account_id`,
+anonymous answers above read the credential through `get_public_account`,
 which a consumer's own `reads_credential` route uses the same way):
 
 - **Per method**, inside `perform_action` — between the credential gate and

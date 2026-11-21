@@ -19,27 +19,28 @@ import {
 } from '#lib/auth/resolved_auth.ts';
 import { token_scope_full, token_scope_methods } from '#lib/auth/token_scope.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
 
 const create_context = (vars: Record<string, unknown>): Context =>
 	({ get: (key: string) => vars[key] }) as unknown as Context;
 
 const session: ResolvedAuth = {
 	credential_type: 'session',
-	account_id: 'acc_1',
+	account: create_test_account({ id: 'acc_1' }),
 	session_hash: 'hash_1',
 	credential_deadline: 1234
 };
 const narrowed_scope = token_scope_methods(['thing_list']);
 const api_token: ResolvedAuth = {
 	credential_type: 'api_token',
-	account_id: 'acc_1',
+	account: create_test_account({ id: 'acc_1' }),
 	api_token_id: 'tok_1',
 	scope: narrowed_scope,
 	credential_deadline: null
 };
 const daemon_token: ResolvedAuth = {
 	credential_type: 'daemon_token',
-	account_id: 'keeper_1',
+	account: create_test_account({ id: 'keeper_1' }),
 	credential_deadline: null
 };
 
@@ -98,14 +99,14 @@ describe('ResolvedAuth shape', () => {
 			// @ts-expect-error an api token needs its id
 			{
 				credential_type: 'api_token',
-				account_id: 'a',
+				account: create_test_account({ id: 'a' }),
 				scope: narrowed_scope,
 				credential_deadline: null
 			},
 			// @ts-expect-error an api token needs its scope
 			{
 				credential_type: 'api_token',
-				account_id: 'a',
+				account: create_test_account({ id: 'a' }),
 				api_token_id: 't',
 				credential_deadline: null
 			},

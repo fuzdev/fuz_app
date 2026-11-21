@@ -445,8 +445,9 @@ shapes of one code at one status are both kept.
   account or actor is required, a 403 per gate the route declares (token scope,
   credential type, role), 429 with `rate_limit`, 415 on a `POST`. When
   `auth.actor !== 'none'` it adds the authorization phase's 400s
-  (`actor_required`, `actor_not_on_account`) and 500s (`no_actors_on_account`,
-  `account_vanished`).
+  (`actor_required`, `actor_not_on_account`), its 500 (`no_actors_on_account`)
+  and its 401 `authentication_required` (an account removed after the
+  credential leg read it), the last declared whatever the account axis.
 - `MiddlewareSpec.errors` declares what each middleware layer can return —
   the body limit's 413 `payload_too_large` and 400 `invalid_content_length`
   (`create_app_server` mounts the limit as a `*` spec ahead of the others

@@ -314,7 +314,7 @@ describe('require_auth', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -348,7 +348,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -370,7 +370,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -391,7 +391,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -414,7 +414,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -436,7 +436,7 @@ describe('require_role', () => {
 		app.use('/*', async (c, next) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
@@ -543,7 +543,7 @@ describe('create_request_context_middleware', () => {
 			const context = c.get(REQUEST_CONTEXT_KEY);
 			return c.json({
 				resolved: auth,
-				account_id: auth?.account_id ?? null,
+				account_id: auth?.account.id ?? null,
 				credential_type: auth?.credential_type ?? null,
 				context: context ?? null
 			});
@@ -571,16 +571,17 @@ describe('create_request_context_middleware', () => {
 		assert.strictEqual(body.context, null);
 	});
 
-	test('valid session sets account_id and credential_type to session', async () => {
+	test('valid session sets the account it read and credential_type to session', async () => {
 		configure_mocks();
 		const app = create_ctx_app();
 
 		const res = await app.request('/test');
 		const body = await res.json();
 		// the session arm, with nothing of another credential's
+		// the account row the leg read, carried for the authorization phase
 		assert.deepStrictEqual(body.resolved, {
 			credential_type: 'session',
-			account_id: 'acct-1',
+			account: JSON.parse(JSON.stringify(account)),
 			session_hash: hash_session_token('test-token'),
 			credential_deadline: null
 		});
@@ -595,7 +596,7 @@ describe('create_request_context_middleware', () => {
 		vi.mocked(query_session_get_valid).mockClear();
 		const daemon = create_test_resolved_auth({
 			credential_type: 'daemon_token',
-			account_id: 'acct-keeper'
+			account: create_test_account({ id: 'acct-keeper' })
 		});
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
@@ -625,7 +626,10 @@ describe('create_request_context_middleware', () => {
 			// a layer mounted before the credential legs, with a cookie that fails
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'api_token', account_id: 'acct-preset' })
+				create_test_resolved_auth({
+					credential_type: 'api_token',
+					account: create_test_account({ id: 'acct-preset' })
+				})
 			);
 			c.set('auth_session_id', 'test-token');
 			await next();

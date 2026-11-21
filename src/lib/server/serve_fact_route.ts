@@ -71,14 +71,14 @@
  * Auth shape on the cell-scoped route is `{account: 'none', actor: 'none'}`
  * — the dispatcher's authorization phase is skipped for pure-public routes,
  * so the handler builds the `RequestContext` itself from the resolved account
- * id (`get_public_account_id`, over what the `/api/*` auth middleware set) by
+ * (`get_public_account`, over what the `/api/*` auth middleware set) by
  * resolving the caller's single actor and loading their role_grants.
  * Unauthed callers pass through with `req_ctx: null` and are admitted only by
  * a `cell.visibility === 'public'` cell whose `moderation` admits an audience (unmoderated or
  * `'approved'`). Multi-actor accounts fall through with `req_ctx: null`
  * — there's no `acting?` slot on a pure-public route, so multi-actor
  * callers are treated as anonymous. A scope-narrowed API token is treated as
- * anonymous too, not refused (`get_public_account_id`): a narrowed token
+ * anonymous too, not refused (`get_public_account`): a narrowed token
  * reaches no non-RPC surface, but on a route that admits anonymous callers
  * a 403 would enforce nothing — the holder drops the `Authorization` header and
  * re-reads every public cell anyway.
@@ -141,7 +141,7 @@ import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	build_request_context,
-	get_public_account_id,
+	get_public_account,
 	has_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
@@ -313,10 +313,10 @@ const serve_fact_bytes = async (
 
 /**
  * Resolve the caller's `RequestContext` on a pure-public route from the
- * session-middleware-set account id, read through `get_public_account_id`, so
- * a scope-narrowed API token returns `null` — downgraded to anonymous, not
- * refused (see the module doc). Twin of the Rust
- * `AuthGate::public_request_context`.
+ * account the auth middleware resolved, read through `get_public_account`,
+ * so a scope-narrowed API token returns `null` — downgraded to anonymous, not
+ * refused (see the module doc). The account is that row, not read again. Twin
+ * of the Rust `AuthGate::public_request_context`.
  *
  * Multi-actor accounts return `null` (no `acting?` slot on a public route to
  * disambiguate); single active-actor accounts resolve their actor and
@@ -329,11 +329,11 @@ const build_public_request_context = async (
 	route: RouteContext
 ): Promise<RequestContext | null> => {
 	// a narrowed token is the anonymous caller here, never a refusal
-	const account_id = get_public_account_id(route);
-	if (!account_id) return null;
-	const actors = await query_active_actors_by_account({ db: route.db }, account_id);
+	const account = get_public_account(route);
+	if (!account) return null;
+	const actors = await query_active_actors_by_account({ db: route.db }, account.id);
 	if (actors.length !== 1) return null;
-	return build_request_context({ db: route.db }, account_id, actors[0]!.id);
+	return build_request_context({ db: route.db }, account, actors[0]!);
 };
 
 /**
@@ -349,7 +349,7 @@ const build_public_request_context = async (
  * other referrers.
  *
  * Pure-public auth — the handler builds the per-request `RequestContext`
- * from the resolved account id (`get_public_account_id`) and enforces
+ * from the resolved account id (`get_public_account`) and enforces
  * visibility per-reference.
  */
 export const create_serve_cell_fact_route_spec = (

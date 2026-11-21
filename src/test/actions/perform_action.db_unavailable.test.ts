@@ -23,6 +23,7 @@ import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
 import { Db } from '#lib/db/db.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
@@ -60,7 +61,10 @@ const create_app = (db: Db): Hono => {
 		// a resolved session, and no preset context — the authorization phase runs
 		(c as any).set(
 			RESOLVED_AUTH_KEY,
-			create_test_resolved_auth({ credential_type: 'session', account_id: create_uuid() })
+			create_test_resolved_auth({
+				credential_type: 'session',
+				account: create_test_account({ id: create_uuid() })
+			})
 		);
 		await next();
 	});

@@ -48,7 +48,7 @@ const log = new Logger('test', { level: 'off' });
 const request_context = create_test_request_context('admin');
 const resolved = create_test_resolved_auth({
 	credential_type: 'session',
-	account_id: request_context.account.id
+	account: request_context.account
 });
 
 /** An app whose layer ahead of the routes sets what the auth middleware and the proxy would. */

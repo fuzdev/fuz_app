@@ -15,12 +15,13 @@
  *    schema declared `acting?: ActingActor` (reference equality with the
  *    canonical `ActingActor` schema) or the auth requires role_grants
  *    (`role` / `keeper`), `apply_authorization_phase` resolves the actor
- *    against the resolved account id plus the validated `acting` value via
+ *    against the resolved account plus the validated `acting` value via
  *    `resolve_acting_actor`, builds the `{account, actor, role_grants}`
  *    context via `build_request_context`, and sets it on
  *    `REQUEST_CONTEXT_KEY` before auth guards fire. Authenticated routes
- *    that don't need an actor still get an account-only context via
- *    `build_account_context` so handler signatures stay uniform.
+ *    that don't need an actor still get an account-only context, so handler
+ *    signatures stay uniform. The account is the row the credential leg
+ *    read (`ResolvedAuth.account`) — the phase does not read it again.
  *
  * Account-grain operations (logout, password_change, account_verify,
  * etc.) declare neither `acting` nor role_grant-requiring auth, so no actor
@@ -29,9 +30,9 @@
  * which is what makes multi-actor logout work without first picking a
  * persona.
  *
- * `build_request_context` loads `account → actor → role_grants` and verifies
- * the `actor.account_id === account.id` binding. `refresh_role_grants`
- * reloads role_grants on an existing context.
+ * `build_request_context` loads the acting actor's role_grants onto the
+ * account and the actor `resolve_acting_actor` read off that account.
+ * `refresh_role_grants` reloads role_grants on an existing context.
  *
  * @module
  */
@@ -46,11 +47,7 @@ import {
 	type RoleGrant
 } from './account_schema.ts';
 import { hash_session_token, query_session_get_valid } from './session_queries.ts';
-import {
-	query_account_by_id,
-	query_actor_by_id,
-	query_active_actors_by_account
-} from './account_queries.ts';
+import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
 import { query_role_grant_find_active_for_actor } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import {
@@ -76,8 +73,7 @@ import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
-	ERROR_NO_ACTORS_ON_ACCOUNT,
-	ERROR_ACCOUNT_VANISHED
+	ERROR_NO_ACTORS_ON_ACCOUNT
 } from '../http/error_schemas.ts';
 import { read_json_body } from '../http/json_text.ts';
 
@@ -92,8 +88,9 @@ import { read_json_body } from '../http/json_text.ts';
  * `actor: null` as "no role_grants" so callers don't have to narrow.
  *
  * Multi-actor invariant: when populated, `actor.account_id === account.id`.
- * `build_request_context` enforces this; the dispatcher's authorization
- * phase rejects with `actor_not_on_account` before reaching the handler.
+ * `resolve_acting_actor` picks the actor from the account's own active
+ * actors, and the dispatcher's authorization phase rejects with
+ * `actor_not_on_account` before reaching the handler.
  */
 export interface RequestContext {
 	account: Account;
@@ -245,12 +242,13 @@ export const has_any_scoped_role = (
 };
 
 /**
- * Result of `resolve_acting_actor` — either an actor id or a structured
- * error the caller maps to an HTTP response.
+ * Result of `resolve_acting_actor` — either the actor, as read, or a
+ * structured error the caller maps to an HTTP response.
  */
 export type ResolveActingActorResult =
-	| { ok: true; actor_id: string }
+	| { ok: true; actor: Actor }
 	| { ok: false; reason: 'no_actors' }
+	| { ok: false; reason: 'account_removed' }
 	| { ok: false; reason: 'actor_required'; available: Array<{ id: string; name: string }> }
 	| { ok: false; reason: 'actor_not_on_account' };
 
@@ -262,15 +260,20 @@ export type ResolveActingActorResult =
  * (from the request payload). Applies the uniform resolution rules:
  *
  * - `acting_actor_id` omitted + 1 actor → use it.
- * - `acting_actor_id` omitted + 0 actors → `no_actors` (defensive —
+ * - 0 actors → `no_actors` when the account is still live (defensive —
  *   signup / bootstrap always create an actor in the same tx, so this
- *   is a server error).
+ *   is a server error), `account_removed` when it is tombstoned or gone:
+ *   removed since its credential was read, its actors with it.
  * - `acting_actor_id` omitted + multiple actors → `actor_required` with
  *   the available list so the client can prompt; never pick silently.
  * - `acting_actor_id` present + matches an actor on the account → use it.
  * - `acting_actor_id` present + does not match → `actor_not_on_account`.
  *   The available list is intentionally not echoed in this branch (treat
  *   as opaque rejection).
+ *
+ * The actor comes back as the row the account's actor list read, so the
+ * caller builds on it without reading it again — one read, as on the Rust
+ * spine, which leaves no window for the actor to vanish between two.
  *
  * `acting_actor_id` is compared lowercased, the form actor ids are stored and
  * read back in, so a caller passing an id that skipped the `Uuid` schema
@@ -286,9 +289,15 @@ export const resolve_acting_actor = async (
 	acting_actor_id: string | undefined
 ): Promise<ResolveActingActorResult> => {
 	const actors = await query_active_actors_by_account(deps, account_id);
-	if (actors.length === 0) return { ok: false, reason: 'no_actors' };
+	if (actors.length === 0) {
+		// a live account with no actor, or one removed since its credential was
+		// read — one read, on this path alone, tells them apart
+		return (await query_account_by_id(deps, account_id))
+			? { ok: false, reason: 'no_actors' }
+			: { ok: false, reason: 'account_removed' };
+	}
 	if (acting_actor_id == null) {
-		if (actors.length === 1) return { ok: true, actor_id: actors[0]!.id };
+		if (actors.length === 1) return { ok: true, actor: actors[0]! };
 		return {
 			ok: false,
 			reason: 'actor_required',
@@ -298,7 +307,7 @@ export const resolve_acting_actor = async (
 	const acting = acting_actor_id.toLowerCase();
 	const match = actors.find((a) => a.id === acting);
 	if (!match) return { ok: false, reason: 'actor_not_on_account' };
-	return { ok: true, actor_id: match.id };
+	return { ok: true, actor: match };
 };
 
 /** Options for `create_request_context_middleware`. */
@@ -381,7 +390,8 @@ export const create_request_context_middleware = (
 		}
 		// a tombstoned account authenticates nothing — its session resolves as
 		// no credential, the anonymous caller, as on the Rust spine
-		if (!(await query_account_by_id(deps, session.account_id))) {
+		const account = await query_account_by_id(deps, session.account_id);
+		if (!account) {
 			await next();
 			return;
 		}
@@ -391,7 +401,7 @@ export const create_request_context_middleware = (
 		const cookie_expires_at = c.get(SESSION_COOKIE_EXPIRES_AT_KEY) ?? null;
 		c.set(RESOLVED_AUTH_KEY, {
 			credential_type: 'session',
-			account_id: session.account_id,
+			account,
 			session_hash,
 			credential_deadline: credential_deadline_after([
 				cookie_expires_at === null ? null : cookie_expires_at * 1000 - Date.now(),
@@ -439,10 +449,10 @@ export const token_scope_surface_denial = (c: Context, capability: string): Resp
 };
 
 /**
- * The account id a public route — one that answers anonymous callers and reads
- * the credential (`reads_credential`) — may act on: `null` for the anonymous
- * caller **and for a scope-narrowed API token**. Rule 3 in its
- * anonymous-admitting disposition — the downgrade the Rust
+ * The account a public route — one that answers anonymous callers and reads
+ * the credential (`reads_credential`) — may act on, as the credential leg read
+ * it: `null` for the anonymous caller **and for a scope-narrowed API token**.
+ * Rule 3 in its anonymous-admitting disposition — the downgrade the Rust
  * `AuthGate::public_request_context` applies.
  *
  * A narrowed token reaches no non-RPC surface that reads account data
@@ -458,15 +468,15 @@ export const token_scope_surface_denial = (c: Context, capability: string): Resp
  * the scope, so it reads the full credential.
  *
  * @param route - the handler's `RouteContext`, or anything carrying its `credential`
- * @returns the account id, or `null` for an anonymous caller or a narrowed token
+ * @returns the account the credential resolved, or `null` for an anonymous caller or a narrowed token
  */
-export const get_public_account_id = (route: {
+export const get_public_account = (route: {
 	readonly credential: ResolvedAuth | null;
-}): string | null => {
+}): Account | null => {
 	const auth = route.credential;
 	if (auth === null) return null;
 	if (!token_scope_admits_non_rpc(resolved_auth_scope(auth)!)) return null;
-	return auth.account_id;
+	return auth.account;
 };
 
 /**
@@ -622,65 +632,32 @@ export const refresh_role_grants = async (
 };
 
 /**
- * Build a full `RequestContext` from an account id and an explicit
- * actor id (already resolved via `resolve_acting_actor`).
+ * Build an actor-bound `RequestContext` from the account the credential
+ * resolved and the actor `resolve_acting_actor` read off it, loading the
+ * actor's active role_grants.
  *
- * Loads `account` + the named `actor` + the actor's active role_grants.
- * Verifies the `actor.account_id === account.id` binding so downstream
- * handlers can trust `ctx.actor.account_id === ctx.account.id`. Returns
- * `null` when the account is missing, the actor is missing, or the
- * actor doesn't belong to the supplied account.
+ * Reads only the grants: the account is the credential leg's row
+ * (`ResolvedAuth.account`) and the actor the account's own actor list read,
+ * so neither is read twice in a request and there is no torn read between
+ * the reads — a delete landing after them is the handler's to meet, as on
+ * the Rust spine.
  *
- * Called by the route-spec / RPC dispatcher's authorization phase for
- * routes that need an acting actor; account-grain routes use
- * `build_account_context` instead.
+ * Called by the dispatcher's authorization phase for routes that need an
+ * acting actor; account-grain routes get `{account, actor: null,
+ * role_grants: []}` with no read at all.
  *
  * @param deps - query dependencies
- * @param account_id - the account to build context for
- * @param actor_id - the actor this request acts as
- * @returns a request context, or `null` if account/actor not found or mismatched
+ * @param account - the account the credential resolved
+ * @param actor - the acting actor, one of `account`'s active actors
+ * @returns the actor-bound request context
  */
 export const build_request_context = async (
 	deps: QueryDeps,
-	account_id: string,
-	actor_id: string
-): Promise<RequestActorContext | null> => {
-	const account = await query_account_by_id(deps, account_id);
-	if (!account) return null;
-
-	const actor = await query_actor_by_id(deps, actor_id);
-	if (!actor) return null;
-	if (actor.account_id !== account.id) return null;
-
+	account: Account,
+	actor: Actor
+): Promise<RequestActorContext> => {
 	const role_grants = await query_role_grant_find_active_for_actor(deps, actor.id);
 	return { account, actor, role_grants };
-};
-
-/**
- * Build an account-only `RequestContext` (no actor, no role_grants) from
- * an account id.
- *
- * Used by the dispatcher's authorization phase for authenticated routes
- * that don't need an acting actor — account-grain operations (logout,
- * password change, account self-service). Lets handlers read
- * `auth.account.id` / `auth.account.username` uniformly with role_grant-bound
- * routes; the cost is one extra `query_account_by_id` per request.
- *
- * Returns `null` when the account row is missing (e.g. deleted between
- * the auth middleware's session lookup and the dispatcher) — caller
- * surfaces that as a 500 since it represents a torn read.
- *
- * @param deps - query dependencies
- * @param account_id - the account to build context for
- * @returns an account-only request context, or `null` if the account is missing
- */
-export const build_account_context = async (
-	deps: QueryDeps,
-	account_id: string
-): Promise<RequestContext | null> => {
-	const account = await query_account_by_id(deps, account_id);
-	if (!account) return null;
-	return { account, actor: null, role_grants: [] };
 };
 
 /**
@@ -697,8 +674,8 @@ export const build_account_context = async (
 export type AuthorizationFailureBody =
 	| { error: typeof ERROR_ACTOR_REQUIRED; available: Array<{ id: string; name: string }> }
 	| { error: typeof ERROR_ACTOR_NOT_ON_ACCOUNT }
-	| { error: typeof ERROR_NO_ACTORS_ON_ACCOUNT }
-	| { error: typeof ERROR_ACCOUNT_VANISHED };
+	| { error: typeof ERROR_AUTHENTICATION_REQUIRED }
+	| { error: typeof ERROR_NO_ACTORS_ON_ACCOUNT };
 
 /**
  * Result of the authorization phase. Pure data — the auth domain stops
@@ -711,15 +688,16 @@ export type AuthorizationFailureBody =
  *   access on an `'optional'` axis. Public and unauthenticated collapse
  *   to the same null `request_context`; every transport already treated
  *   them identically.
- * - **`{ok: false, status, body}`** — 400/500 failure. `status` is
- *   narrowed to the two values the auth phase emits, so Hono's `c.json`
- *   status overload accepts the literals directly. The 500 reasons stay
- *   distinct in `body`: `no_actors_on_account` (signup invariant
- *   violation); `account_vanished` (torn read after resolve).
+ * - **`{ok: false, status, body}`** — 400/401/500 failure. `status` is
+ *   narrowed to the values the auth phase emits, so Hono's `c.json` status
+ *   overload accepts the literals directly. The 401 is the dead credential's
+ *   `authentication_required`: the account was removed since the credential
+ *   leg read it. The one 500 is `no_actors_on_account`: a live account listed
+ *   no active actor.
  */
 export type AuthorizationResult =
 	| { ok: true; request_context: RequestContext | null }
-	| { ok: false; status: 400 | 500; body: AuthorizationFailureBody };
+	| { ok: false; status: 400 | 401 | 500; body: AuthorizationFailureBody };
 
 /**
  * Apply the dispatcher's authorization phase against the flat-record
@@ -729,41 +707,47 @@ export type AuthorizationResult =
  * input validation 400.
  *
  * Pure data — the function does not touch a Hono context. Each transport
- * passes `account_id` (extracted from its own credential surface) and
+ * passes the account its credential resolved (`ResolvedAuth.account`) and
  * binds the returned `AuthorizationResult` to its wire shape. The REST
  * pipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream
  * `require_role` / `require_credential_types` middleware that still reads
  * the resolved context off the Hono context.
  *
+ * The account is never read here: the context is built on the credential
+ * leg's row, so a request reads its account once, as on the Rust spine,
+ * whose `apply_authorization_phase` takes the resolved account the same way.
+ *
  * Branching by `auth.account` × `auth.actor`:
  *
  * - Both `'none'` → `{ok: true, request_context: null}`. Public actions
  *   never see a `RequestContext`.
- * - `account_id == null` on any non-public route → same null
+ * - `account == null` on any non-public route → same null
  *   `request_context`. The `'required'` callers were already rejected at
  *   the pre-authorization gate in the dispatcher; only genuine anonymous
  *   access on an `'optional'` axis lands here.
- * - `actor === 'none'` → builds account-only context via
- *   `build_account_context`. Null lookup → `account_vanished` 500 failure.
+ * - `actor === 'none'` → an account-only context, `{account, actor: null,
+ *   role_grants: []}`.
  * - `actor === 'required'` → resolves the actor from `acting_value` (or
- *   single-actor account); failures map to 400 / 500.
+ *   single-actor account); failures map to 400 / 401 / 500.
  * - `actor === 'optional'` → same as `'required'` except multi-actor
  *   accounts without an `acting` value fall back to account-only context
  *   (no `actor_required` 400). Bad `acting` ids still 400.
  *
- * 500 branches stay distinct: `ERROR_NO_ACTORS_ON_ACCOUNT` (signup
- * invariant violation), `ERROR_ACCOUNT_VANISHED` (torn read after
- * resolve).
+ * An account removed since the credential leg read it takes its actors with
+ * it: an actor-grain route then finds none, and answers the dead credential's
+ * 401 `ERROR_AUTHENTICATION_REQUIRED`, as a request that arrived after the
+ * removal does. The one 500 is `ERROR_NO_ACTORS_ON_ACCOUNT`: a live account
+ * with no active actor, a signup invariant violation.
  */
 export const apply_authorization_phase = async (
 	deps: QueryDeps,
-	account_id: string | null,
+	account: Account | null,
 	auth: RouteAuth,
 	acting_value: string | undefined
 ): Promise<AuthorizationResult> => {
 	if (is_public_auth(auth)) return { ok: true, request_context: null };
 
-	if (account_id == null) {
+	if (account === null) {
 		// Optional-auth route hit without a credential — leave `RequestContext`
 		// null so the handler can branch on it. `'required'` callers already
 		// got rejected at the pre-authorization gate.
@@ -771,20 +755,16 @@ export const apply_authorization_phase = async (
 	}
 
 	if (!needs_actor(auth)) {
-		const ctx = await build_account_context(deps, account_id);
-		if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
-		return { ok: true, request_context: ctx };
+		return { ok: true, request_context: { account, actor: null, role_grants: [] } };
 	}
 
 	// actor 'required' or 'optional' — resolve.
-	const acting = await resolve_acting_actor(deps, account_id, acting_value);
+	const acting = await resolve_acting_actor(deps, account.id, acting_value);
 	if (!acting.ok) {
 		if (acting.reason === 'actor_required') {
 			if (auth.actor === 'optional') {
 				// Multi-actor account, no pick — fall back to account-only context.
-				const ctx = await build_account_context(deps, account_id);
-				if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
-				return { ok: true, request_context: ctx };
+				return { ok: true, request_context: { account, actor: null, role_grants: [] } };
 			}
 			return {
 				ok: false,
@@ -795,11 +775,12 @@ export const apply_authorization_phase = async (
 		if (acting.reason === 'actor_not_on_account') {
 			return { ok: false, status: 400, body: { error: ERROR_ACTOR_NOT_ON_ACCOUNT } };
 		}
+		if (acting.reason === 'account_removed') {
+			return { ok: false, status: 401, body: { error: ERROR_AUTHENTICATION_REQUIRED } };
+		}
 		return { ok: false, status: 500, body: { error: ERROR_NO_ACTORS_ON_ACCOUNT } };
 	}
-	const ctx = await build_request_context(deps, account_id, acting.actor_id);
-	if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
-	return { ok: true, request_context: ctx };
+	return { ok: true, request_context: await build_request_context(deps, account, acting.actor) };
 };
 
 /**
@@ -824,8 +805,9 @@ export const apply_authorization_phase = async (
  * @param deps - query deps for actor resolution
  * @param auth - the route's auth shape
  * @param acting - the `acting` selector, already through `parse_acting`; `undefined` when absent
- * @returns the refusal to answer (`400` actor selection, `500` a vanished
- *   account), or nothing when the request may proceed
+ * @returns the refusal to answer (`400` actor selection, `401` an account
+ *   removed since its credential was read, `500` a live account with no active
+ *   actor), or nothing when the request may proceed
  */
 export const run_authorization_phase = async (
 	c: Context,
@@ -835,8 +817,8 @@ export const run_authorization_phase = async (
 ): Promise<Response | void> => {
 	if (has_test_context_preset(c)) return;
 	if (is_public_auth(auth)) return;
-	const account_id = get_resolved_auth(c)?.account_id ?? null;
-	const result = await apply_authorization_phase(deps, account_id, auth, acting);
+	const account = get_resolved_auth(c)?.account ?? null;
+	const result = await apply_authorization_phase(deps, account, auth, acting);
 	if (!result.ok) return c.json(result.body, result.status);
 	if (result.request_context !== null) {
 		c.set(REQUEST_CONTEXT_KEY, result.request_context);

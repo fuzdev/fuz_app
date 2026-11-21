@@ -152,13 +152,13 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'server/serve_fact_route.ts',
 		role: 'consults',
 		reason:
-			"declares `required_scope: 'surface:fact_bare'` — the admin-only bare-hash read serves any stored fact with no per-reference cell check. The sibling per-cell route answers anonymous callers, so it reads the credential through `get_public_account_id`: a narrowed token is the anonymous caller there and reads public cells' facts only, never one its account could otherwise view"
+			"declares `required_scope: 'surface:fact_bare'` — the admin-only bare-hash read serves any stored fact with no per-reference cell check. The sibling per-cell route answers anonymous callers, so it reads the credential through `get_public_account`: a narrowed token is the anonymous caller there and reads public cells' facts only, never one its account could otherwise view"
 	},
 	{
 		file: 'auth/account_routes.ts',
 		role: 'consults',
 		reason:
-			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so it reads the credential through `get_public_account_id` and a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
+			"`/status` hands out the account's email, its verification, and the acting actor's role grants — a non-RPC surface, so it reads the credential through `get_public_account` and a narrowed token is answered as the anonymous caller (401 plus the bootstrap flag): the route answers anonymous callers, so a 403 would add nothing to that. `/login` mints and `/logout` tears down; `/password` is already credential-gated to the session channel, so no bearer credential arrives"
 	},
 	{
 		file: 'server/surface_route.ts',
@@ -171,7 +171,7 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'http/route_spec.ts',
 		role: 'exempt',
 		reason:
-			"builds each handler's `RouteContext`, handing it the credential the middleware resolved as `credential` and the request context as `auth` — it reads no scope and gates nothing: the rule-3 decision is each route's, a `required_scope` on its shape or `get_public_account_id` in a handler that answers anonymous callers"
+			"builds each handler's `RouteContext`, handing it the credential the middleware resolved as `credential` and the request context as `auth` — it reads no scope and gates nothing: the rule-3 decision is each route's, a `required_scope` on its shape or `get_public_account` in a handler that answers anonymous callers"
 	},
 	{
 		file: 'auth/audit_log_routes.ts',
@@ -228,7 +228,7 @@ const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	'require_request_context',
 	'get_request_context',
 	'token_scope_surface_denial',
-	'get_public_account_id',
+	'get_public_account',
 	// A route handler's read of the resolved credential, off its `RouteContext`
 	// — handlers receive no Hono context, so this is how one reaches it.
 	ROUTE_MODULE_CREDENTIAL_READ,
@@ -336,7 +336,7 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
  * Such a route can't declare `required_scope` (the guard resolver refuses it on
  * an unrestricted route — the holder would drop the credential and read the
  * anonymous answer anyway), so it applies rule 3 itself by reading the
- * credential through `get_public_account_id`, which answers a narrowed token
+ * credential through `get_public_account`, which answers a narrowed token
  * as anonymous. Pinned by exact source for the same reason as
  * `RULE_3_SURFACE_SITES`: a handler that reverts to reading `get_resolved_auth`
  * directly would hand a narrowed token the account's view with nothing else
@@ -354,7 +354,7 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 }> = [
 	{
 		file: 'auth/account_routes.ts',
-		source: 'const account_id = get_public_account_id(route);',
+		source: 'const account_id = get_public_account(route)?.id;',
 		other_reads: [
 			{
 				source: 'const session_hash = resolved_auth_session_hash(route.credential);',
@@ -368,7 +368,7 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 			}
 		]
 	},
-	{ file: 'server/serve_fact_route.ts', source: 'const account_id = get_public_account_id(route);' }
+	{ file: 'server/serve_fact_route.ts', source: 'const account = get_public_account(route);' }
 ];
 
 /**

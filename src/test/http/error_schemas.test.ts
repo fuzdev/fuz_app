@@ -54,8 +54,6 @@ import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
-	ERROR_ACCOUNT_VANISHED,
-	REST_ACCOUNT_VANISHED,
 	REST_ACTOR_NOT_ON_ACCOUNT,
 	REST_ACTOR_REQUIRED,
 	REST_FOREIGN_KEY_VIOLATION,
@@ -306,7 +304,17 @@ describe('derive_route_errors', () => {
 				'400 actor_required',
 				'400 actor_not_on_account',
 				'500 no_actors_on_account',
-				'500 account_vanished',
+				'401 authentication_required'
+			]
+		);
+		// an optional account on an actor axis: the phase's 401 for an account
+		// removed since its credential was read
+		assert.deepStrictEqual(
+			derived({ method: 'GET', auth: { account: 'optional', actor: 'optional' } }),
+			[
+				'400 actor_required',
+				'400 actor_not_on_account',
+				'500 no_actors_on_account',
 				'401 authentication_required'
 			]
 		);
@@ -446,11 +454,6 @@ describe('authorization-phase actor error schemas', () => {
 
 	test('REST_NO_ACTORS_ON_ACCOUNT accepts the literal-only shape', () => {
 		const result = parse(REST_NO_ACTORS_ON_ACCOUNT.schema, { error: ERROR_NO_ACTORS_ON_ACCOUNT });
-		assert.isTrue(result.ok);
-	});
-
-	test('REST_ACCOUNT_VANISHED accepts the literal-only shape', () => {
-		const result = parse(REST_ACCOUNT_VANISHED.schema, { error: ERROR_ACCOUNT_VANISHED });
 		assert.isTrue(result.ok);
 	});
 });

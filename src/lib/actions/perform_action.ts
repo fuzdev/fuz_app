@@ -230,10 +230,10 @@ export const perform_action = async (
 	} = deps;
 	const { spec, handler } = action;
 	const action_auth = spec.auth;
-	const account_id = credential?.account_id ?? null;
+	const account = credential?.account ?? null;
 
 	// step 1: pre-authorization auth — 401 short-circuit.
-	const pre = check_action_auth_pre_authorization(action_auth, account_id);
+	const pre = check_action_auth_pre_authorization(action_auth, account?.id ?? null);
 	if (pre) return error_result(pre);
 
 	// step 2: authorization phase. `acting` reads off the raw params rather
@@ -254,7 +254,7 @@ export const perform_action = async (
 		try {
 			result = await apply_authorization_phase(
 				{ db },
-				account_id,
+				account,
 				action_auth,
 				read_acting(action_auth, raw_params)
 			);
@@ -262,6 +262,9 @@ export const perform_action = async (
 			return thrown_error_result(err, `authorization phase error: ${spec.method}`, log);
 		}
 		if (!result.ok) {
+			// an account removed since its credential was read: the dead
+			// credential's 401, as the pre-authorization gate answers it
+			if (result.status === 401) return error_result(unauthenticated_error());
 			const { error: reason, ...rest } = result.body;
 			const code = http_status_to_jsonrpc_error_code(result.status);
 			return {
@@ -496,18 +499,22 @@ const check_action_auth_pre_authorization = (
 	account_id: string | null
 ): JsonrpcErrorObject | null => {
 	if (auth.account === 'required' || auth.actor === 'required') {
-		if (account_id == null) {
-			// Carry the reason on `error.data.reason` (symmetric with the 403
-			// credential / role gates) so a 401 can be asserted on reason, not
-			// just status. The reason is generic — it leaks nothing about
-			// whether a credential was present or what the route demanded.
-			return jsonrpc_error_messages.unauthenticated('unauthenticated', {
-				reason: ERROR_AUTHENTICATION_REQUIRED
-			});
-		}
+		if (account_id == null) return unauthenticated_error();
 	}
 	return null;
 };
+
+/**
+ * The dead or missing credential's 401. Carries the reason on
+ * `error.data.reason` (symmetric with the 403 credential / role gates) so a
+ * 401 can be asserted on reason, not just status. The reason is generic — it
+ * leaks nothing about whether a credential was present or what the route
+ * demanded.
+ */
+const unauthenticated_error = (): JsonrpcErrorObject =>
+	jsonrpc_error_messages.unauthenticated('unauthenticated', {
+		reason: ERROR_AUTHENTICATION_REQUIRED
+	});
 
 /**
  * The credential-type 403 — one builder, so the dispatcher's gate below and a

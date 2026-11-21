@@ -4,16 +4,9 @@
  * The bearer middleware validates the token and sets the account-grain
  * `ResolvedAuth` only — actor + role_grant resolution lives in the
  * dispatcher's authorization phase. When the actor list is empty the
- * authorization phase surfaces `ERROR_NO_ACTORS_ON_ACCOUNT` (500).
- *
- * The other 500 reason `apply_authorization_phase` can emit —
- * `ERROR_ACCOUNT_VANISHED` (torn read race where
- * `query_account_by_id` / `query_actor_by_id` returns null after a
- * successful `resolve_acting_actor`) — is exercised at the unit level
- * in `request_context.authorization_phase.test.ts`. Reaching it via
- * a real DB requires deleting the `account` row mid-request, which
- * cascades to `api_token` / `auth_session` and tears down the
- * credential before the dispatcher ever runs.
+ * authorization phase surfaces `ERROR_NO_ACTORS_ON_ACCOUNT` (500) — its one
+ * 500: the phase builds on the account the bearer leg read and the actor
+ * the account's actor list returned, reading neither again.
  *
  * Companion to `role_grant_offer.multi_actor.*.db.test.ts` which exercises
  * the `actor_not_on_account` / `actor_required` (400) branches via the

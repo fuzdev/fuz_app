@@ -55,7 +55,8 @@ import { create_revocation_guard } from '#lib/actions/connection_closer.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
-import { build_account_context, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import { query_account_by_id } from '#lib/auth/account_queries.ts';
+import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
@@ -133,25 +134,25 @@ const create_ws_endpoint = (
 	return {
 		registry,
 		open: async (account_id, credential) => {
+			const account = await query_account_by_id({ db: h.gated.db }, account_id);
+			assert.ok(account);
 			// what the auth middleware leaves on the context for the upgrade
 			const vars: Record<string, unknown> = {
 				[RESOLVED_AUTH_KEY]:
 					'session_hash' in credential
 						? {
 								credential_type: 'session',
-								account_id,
+								account,
 								session_hash: credential.session_hash,
 								credential_deadline: null
 							}
 						: create_test_resolved_auth({
 								credential_type: 'api_token',
-								account_id,
+								account,
 								api_token_id: credential.api_token_id
 							})
 			};
-			const request_context = await build_account_context({ db: h.gated.db }, account_id);
-			assert.ok(request_context);
-			vars[REQUEST_CONTEXT_KEY] = request_context;
+			vars[REQUEST_CONTEXT_KEY] = { account, actor: null, role_grants: [] };
 			const c = { get: (key: string) => vars[key] } as unknown as Context;
 			const events = await stub.get_create_events()(c);
 			const fake = create_fake_ws();

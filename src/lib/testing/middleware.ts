@@ -98,7 +98,7 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	 * `ResolvedAuth` — its fields and no others.
 	 */
 	assert_account_set?: boolean;
-	/** Expected `ResolvedAuth.account_id` when `assert_account_set` is true. */
+	/** Expected `ResolvedAuth.account.id` when `assert_account_set` is true. */
 	expected_account_id?: string;
 	/** If set, assert the resolved `api_token_id` after a successful bearer auth. */
 	expected_api_token_id?: string;
@@ -220,7 +220,7 @@ export const create_bearer_auth_test_app = (
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type: 'session',
-					account_id: pre_context.account.id
+					account: pre_context.account
 				})
 			);
 			c.set(REQUEST_CONTEXT_KEY, pre_context);
@@ -317,13 +317,13 @@ export const describe_bearer_auth_cases = (
 					assert.ok(resolved, 'the request should resolve to a credential');
 					assert.deepStrictEqual(
 						Object.keys(resolved).sort(),
-						['account_id', 'api_token_id', 'credential_deadline', 'credential_type', 'scope'],
+						['account', 'api_token_id', 'credential_deadline', 'credential_type', 'scope'],
 						'the resolved credential should be the api_token arm, with no other fields'
 					);
 					assert.strictEqual(resolved.credential_type, 'api_token');
 					if (tc.expected_account_id !== undefined) {
 						assert.strictEqual(
-							resolved.account_id,
+							(resolved.account as { id?: unknown } | null)?.id,
 							tc.expected_account_id,
 							'account_id should match the validated api_token.account_id'
 						);
@@ -464,13 +464,13 @@ export const create_test_middleware_stack_app = (
 	app.use(AUTH_MIDDLEWARE_PATH, bearer_mw);
 
 	// echo route for assertions — exposes the account-grain identity bearer
-	// auth writes (`ResolvedAuth.account_id`); the full request context is the
+	// auth writes (`ResolvedAuth.account`); the full request context is the
 	// dispatcher's authorization phase concern, not middleware.
 	app.get(TEST_MIDDLEWARE_PATH, (c) => {
 		return c.json({
 			ok: true,
 			client_ip: get_client_ip(c),
-			account_id: get_resolved_auth(c)?.account_id ?? null
+			account_id: get_resolved_auth(c)?.account.id ?? null
 		});
 	});
 

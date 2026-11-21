@@ -33,7 +33,7 @@ describe('audit log stream handler', () => {
 			auth: request_context,
 			credential: create_test_resolved_auth({
 				credential_type: 'session',
-				account_id: request_context.account.id
+				account: request_context.account
 			}),
 			has_test_context_preset: true,
 			db: create_stub_db(),

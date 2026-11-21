@@ -19,6 +19,7 @@ import type { Context } from 'hono';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
+import type { Account } from './account_schema.ts';
 import { query_api_token_live_account } from './api_token_queries.ts';
 import {
 	has_any_scoped_role,
@@ -31,12 +32,16 @@ import { token_scope_full, type TokenScope } from './token_scope.ts';
 /** The fields every resolved credential carries. */
 interface ResolvedAuthBase {
 	/**
-	 * The authenticated account. Its id, not its row — the twin of the Rust
-	 * spine's `ResolvedAuth::account`, which loads the row as it resolves. Here
-	 * the middleware stays one query per credential and the authorization phase
-	 * loads the account when a route needs it.
+	 * The authenticated account, as the credential leg read it — live, not
+	 * tombstoned. The authorization phase builds its request context on this
+	 * row rather than reading the account again, so a request reads its account
+	 * once, and an account removed after the leg is no torn read. On a
+	 * long-lived connection it is the row read at the upgrade: a revocation
+	 * closes the connection after its commit, and a re-read would race the
+	 * revocation the same way. The twin of the Rust spine's
+	 * `ResolvedAuth::account`.
 	 */
-	readonly account_id: string;
+	readonly account: Account;
 	/**
 	 * When the credential stops authenticating, as a monotonic
 	 * `performance.now()` timestamp — the moment a long-lived connection opened
@@ -183,7 +188,7 @@ export const revalidate_resolved_auth = async (
 	deps: QueryDeps,
 	resolved: ResolvedAuth
 ): Promise<boolean> => {
-	const { account_id } = resolved;
+	const account_id = resolved.account.id;
 	let credential_is_live: boolean;
 	switch (resolved.credential_type) {
 		case 'session': {
@@ -258,7 +263,7 @@ export const recheck_admission = async (
 	if (!(await revalidate_resolved_auth(deps, resolved))) return 'credential_revoked';
 	const acting_actor = request_context.actor;
 	if (acting_actor) {
-		const active = await query_active_actors_by_account(deps, resolved.account_id);
+		const active = await query_active_actors_by_account(deps, resolved.account.id);
 		if (!active.some((a) => a.id === acting_actor.id)) return 'actor_inactive';
 	}
 	if (required_roles.length > 0) {

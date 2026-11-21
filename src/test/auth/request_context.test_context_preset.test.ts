@@ -33,6 +33,7 @@ import { run_authorization_phase } from '#lib/auth/request_context.ts';
 import { Db } from '#lib/db/db.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
 
 /** Walk a directory tree, yielding absolute paths of every regular file. */
 const walk = (root: string): Array<string> => {
@@ -138,7 +139,7 @@ test('only the `TEST_CONTEXT_PRESET` symbol sets the preset', () => {
 });
 
 test('a truthy non-preset value under the key runs the live authorization phase', async () => {
-	// the phase reads the database when it runs and skips it under the
+	// the phase reads the account's actors when it runs and skips it under the
 	// preset, so a query count tells the two apart
 	let queries = 0;
 	const db: Db = new Db({
@@ -156,13 +157,16 @@ test('a truthy non-preset value under the key runs the live authorization phase'
 		app.get('/test', async (c) => {
 			c.set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id })
+				create_test_resolved_auth({
+					credential_type: 'session',
+					account: create_test_account({ id: account_id })
+				})
 			);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, value);
 			const refused = await run_authorization_phase(
 				c,
 				{ db },
-				{ account: 'required', actor: 'none' },
+				{ account: 'required', actor: 'required' },
 				undefined
 			);
 			return refused ?? c.json({ ok: true });
@@ -174,8 +178,9 @@ test('a truthy non-preset value under the key runs the live authorization phase'
 	assert.strictEqual(queries, 0);
 	for (const value of [true, 'test_context_preset']) {
 		queries = 0;
-		// the phase ran: the account read found nothing, a vanished account
-		assert.strictEqual(await statuses(value), 500, `${String(value)} does not skip the phase`);
+		// the phase ran: the actor list and the account read found nothing, a
+		// removed account
+		assert.strictEqual(await statuses(value), 401, `${String(value)} does not skip the phase`);
 		assert.ok(queries > 0);
 	}
 });

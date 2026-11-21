@@ -498,7 +498,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					`register_action_ws: no resolved credential for the upgrade on ${path} — is the auth middleware wired?`
 				);
 			}
-			if (resolved.account_id !== upgrade_context.account.id) {
+			if (resolved.account.id !== upgrade_context.account.id) {
 				throw new Error(
 					`register_action_ws: the credential and the request context name different accounts for the upgrade on ${path}`
 				);

@@ -148,7 +148,7 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
  * so it fits in one sentence a user can hold — *a scoped token is RPC-only*.
  * Placement is per site: a route that refuses anonymous callers declares
  * `auth.required_scope`, one that answers them reads the credential through
- * `get_public_account_id` and answers a narrowed token as anonymous, and the
+ * `get_public_account` and answers a narrowed token as anonymous, and the
  * surface census pins every site.
  */
 export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.kind === 'full';

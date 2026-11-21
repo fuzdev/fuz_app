@@ -497,7 +497,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			'/api/*',
 			create_bearer_auth_middleware(deps, new Logger('api_token', { level: 'error' }))
 		);
-		app.get('/api/whoami', (c) => c.json({ account_id: get_resolved_auth(c)?.account_id ?? null }));
+		app.get('/api/whoami', (c) => c.json({ account_id: get_resolved_auth(c)?.account.id ?? null }));
 		const res = await app.request('/api/whoami', {
 			headers: { authorization: `Bearer ${token}` }
 		});

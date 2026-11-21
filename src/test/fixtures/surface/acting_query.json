@@ -209,34 +209,17 @@
 				]
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			},
 			"503": {
 				"type": "object",
@@ -479,34 +462,17 @@
 				]
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			}
 		}
 	},
@@ -677,34 +643,17 @@
 				"additionalProperties": {}
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			}
 		}
 	},
@@ -858,34 +807,17 @@
 				]
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			}
 		}
 	},
@@ -1107,34 +1039,17 @@
 				]
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			}
 		}
 	},
@@ -1355,34 +1270,17 @@
 				]
 			},
 			"500": {
-				"anyOf": [
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "no_actors_on_account"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
-					},
-					{
-						"type": "object",
-						"properties": {
-							"error": {
-								"type": "string",
-								"const": "account_vanished"
-							}
-						},
-						"required": [
-							"error"
-						],
-						"additionalProperties": {}
+				"type": "object",
+				"properties": {
+					"error": {
+						"type": "string",
+						"const": "no_actors_on_account"
 					}
-				]
+				},
+				"required": [
+					"error"
+				],
+				"additionalProperties": {}
 			}
 		}
 	}

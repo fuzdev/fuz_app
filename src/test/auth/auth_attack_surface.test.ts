@@ -112,7 +112,7 @@ const create_test_app = (
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
 					credential_type: credential_type ?? 'session',
-					account_id: auth_ctx.account.id
+					account: auth_ctx.account
 				})
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, auth_ctx);
@@ -429,7 +429,7 @@ describe('targeted adversarial tests', () => {
 			const ctx = create_test_ctx('viewer');
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
-				create_test_resolved_auth({ credential_type: 'session', account_id: ctx.account.id })
+				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
 			);
 			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);

@@ -115,7 +115,8 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 		}
 		// a tombstoned account authenticates nothing — its token resolves as no
 		// credential, the anonymous caller, as on the Rust spine
-		if (!(await query_account_by_id(deps, api_token.account_id))) {
+		const account = await query_account_by_id(deps, api_token.account_id);
+		if (!account) {
 			log.debug('bearer auth soft-fail: account not found or deleted');
 			await next();
 			return;
@@ -131,7 +132,7 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 
 		c.set(RESOLVED_AUTH_KEY, {
 			credential_type: 'api_token',
-			account_id: api_token.account_id,
+			account,
 			api_token_id: api_token.id,
 			// Parsed by the query, which refuses a token whose stored scope is
 			// unreadable — there is no default to fall back to.
