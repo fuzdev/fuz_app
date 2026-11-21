@@ -13,9 +13,14 @@ import '../assert_dev_env.ts';
  * - `role_grant_revoked` (flat, omits `revoked_by`) → revokee (active grant
  *   revoked by the `role_grant_revoke` action), for a global grant and a
  *   scoped one unless `scope_kind` is `null`
- * - `role_grant_offer_supersede` → each superseded sibling's grantor, fired on
- *   BOTH the accept-cascade (`reason: 'sibling_accepted'`) and the
- *   revoke-cascade (`reason: 'role_grant_revoked'`)
+ * - `role_grant_offer_supersede` → each live party of an offer a cascade ended:
+ *   an accept's siblings' grantors (`reason: 'sibling_accepted'`, the
+ *   recipient being the caller), both parties of every offer a revoke ends
+ *   (`reason: 'role_grant_revoked'` — the revokee's incoming siblings and its
+ *   own outgoing offers), and the other party of every offer an account
+ *   removal ends (`reason: 'account_deleted'`, delete and purge — gated on
+ *   `capabilities.account_lifecycle` too; the removed account's socket closes
+ *   and hears none of it)
  *
  * These exercise only spine primitives (accounts, role-grants, offers, WS
  * notifications) — zero consumer domain — so the suite lives here and runs
@@ -51,12 +56,12 @@ import '../assert_dev_env.ts';
  * guard), and accept stays idempotent on the role_grant while still superseding
  * pending siblings. Gated on `capabilities.ws`.
  *
- * The revoke case revokes the revokee's only `ROLE_ADMIN` grant. On an endpoint
+ * The revoke cases revoke the revokee's only `ROLE_ADMIN` grant. On an endpoint
  * gated on that role (`ws_required_roles`) the revokee's socket loses its
  * access by the same revoke: it is closed with `WS_CLOSE_PERMISSION_REVOKED`,
- * and the notification may or may not reach it first (nothing orders the two),
- * so the case asserts the close there — and at most that one notification
- * ahead of it — and the frame on an ungated endpoint.
+ * and its notifications may or may not reach it first (nothing orders the
+ * two), so the cases assert the close there — and at most the start of what it
+ * would have heard, in order — and the frames on an ungated endpoint.
  *
  * Cross-process only: `create_admitted_ws_transport` needs a real bound socket, so wire
  * it from a `*.cross.test.ts` file, never an in-process setup. Authed cookies
@@ -71,7 +76,12 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { rpc_call } from '../rpc_helpers.ts';
 import { WS_ADMISSION_PROBE_ID } from '../transports/ws_transport.ts';
-import { is_notification_with, is_response_for, type WsClient } from '../transports/ws_client.ts';
+import {
+	is_notification,
+	is_notification_with,
+	is_response_for,
+	type WsClient
+} from '../transports/ws_client.ts';
 import { ROLE_ADMIN, is_builtin_role } from '../../auth/role_schema.ts';
 import {
 	WS_CLOSE_PERMISSION_REVOKED,
@@ -96,6 +106,8 @@ import {
 	create_active_role_grant,
 	create_pending_role_grant_offer
 } from './role_grant_cross_helpers.ts';
+import { cross_account_purge } from './revocation_drivers.ts';
+import type { TestAccount } from '../app_server.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, type WsEndpointTarget, type WsSessionAccount } from './ws_endpoint.ts';
@@ -153,10 +165,11 @@ export interface RoleGrantOfferNotificationWsTestOptions extends WsEndpointTarge
 /**
  * Register the role-grant-offer WS notification suite — cases over a real
  * upgrade, one per server-initiated notification (received / accepted /
- * declined / retracted / revoke, global and scoped, + supersede on both the
- * accept and revoke cascades). Each opens the affected counterparty's socket, drives the
- * lifecycle RPC, and strict-parses the delivered frame against its canonical
- * params schema. Gated on `capabilities.ws`.
+ * declined / retracted / revoke, global and scoped, + supersede on the accept,
+ * revoke, delete and purge cascades). Each opens every party's socket, drives
+ * the lifecycle RPC, and strict-parses the delivered frames against their
+ * canonical params schema. Gated on `capabilities.ws`, the removals on
+ * `capabilities.account_lifecycle` too.
  */
 export const describe_role_grant_offer_notification_ws_tests = (
 	options: RoleGrantOfferNotificationWsTestOptions
@@ -249,6 +262,33 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'the target socket did not hear exactly the notifications addressed to it, each once'
 		);
 	};
+
+	/**
+	 * Wait for the `role_grant_offer_supersede` frame of `offer_id` on `ws` and
+	 * strict-parse its params against the canonical wire schema.
+	 */
+	const wait_for_supersede = async (
+		ws: WsClient,
+		offer_id: string
+	): Promise<RoleGrantOfferSupersedeParams> => {
+		const frame = await ws.wait_for(
+			is_notification_with<{ offer: { id: string } }>(
+				ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+				(p) => p.offer.id === offer_id
+			),
+			5000
+		);
+		const params = parse_or_throw(RoleGrantOfferSupersedeParams, frame.params);
+		assert.strictEqual(params.offer.id, offer_id);
+		assert.isNotNull(params.offer.superseded_at);
+		return params;
+	};
+
+	/** The offer ids of the supersede frames `ws` heard, in order. */
+	const supersede_offer_ids = (ws: WsClient): Array<string> =>
+		ws.messages
+			.filter(is_notification(ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD))
+			.map((msg) => (msg as { params: { offer: { id: string } } }).params.offer.id);
 
 	/** Drive a JSON-RPC call over the fixture's HTTP transport. */
 	const rpc = (
@@ -648,61 +688,173 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 		test_if(
 			capabilities.ws,
-			'revoke supersedes a pending sibling offer and notifies its grantor WS',
+			"revoke supersedes the revokee's pending offers both ways and notifies both parties of each",
 			async () => {
 				const fixture = await setup_test();
 				const grantor = await fixture.create_account({ roles: [ROLE_ADMIN] });
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const role_grant_id = await create_active_role_grant(fixture, revokee, {
 					rpc_path: SPINE_RPC_PATH
 				});
 
-				// A *pending* sibling offer for the same (account, role) — this is what
-				// the revoke cascade supersedes.
+				// A pending sibling for the revoked grant's (account, role), and an
+				// offer the revokee made — the revoke's two cascades, in that order.
 				const sibling_offer = await create_pending_offer(
 					fixture,
 					revokee.account.id,
 					grantor.create_session_headers()
 				);
+				const outgoing_offer = await create_pending_offer(
+					fixture,
+					recipient.account.id,
+					revokee.create_session_headers()
+				);
 
-				// Watch the sibling grantor's socket for the supersede push.
 				const bystander_ws = await open_bystander(fixture);
+				const grantor_ws = await open_ws(grantor);
+				const revokee_ws = await open_ws(revokee);
+				const recipient_ws = await open_ws(recipient);
 				try {
-					const grantor_ws = await open_ws(grantor);
-					try {
-						const revoked = await rpc(
-							fixture,
-							'role_grant_revoke',
-							{ actor_id: revokee.actor.id, role_grant_id },
-							fixture.create_session_headers()
-						);
-						assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
+					const revoked = await rpc(
+						fixture,
+						'role_grant_revoke',
+						{ actor_id: revokee.actor.id, role_grant_id },
+						fixture.create_session_headers()
+					);
+					assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
 
-						const frame = await grantor_ws.wait_for(
-							is_notification_with<{ offer: { id: string } }>(
-								ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-								(p) => p.offer.id === sibling_offer.id
-							),
-							5000
-						);
-						const params = parse_or_throw(RoleGrantOfferSupersedeParams, frame.params);
-						assert.strictEqual(params.offer.id, sibling_offer.id);
+					const assert_supersede = async (ws: WsClient, offer_id: string): Promise<void> => {
+						const params = await wait_for_supersede(ws, offer_id);
 						assert.strictEqual(params.reason, 'role_grant_revoked');
 						// cause_id points at the revoked role_grant.
 						assert.strictEqual(params.cause_id, role_grant_id);
-						assert.isNotNull(params.offer.superseded_at);
-						await assert_target_heard_exactly(grantor_ws, [
-							ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
-						]);
-						await assert_bystander_heard_nothing(bystander_ws);
-					} finally {
-						await grantor_ws.close();
+					};
+					// the sibling's grantor and the outgoing offer's recipient
+					await assert_supersede(grantor_ws, sibling_offer.id);
+					await assert_target_heard_exactly(grantor_ws, [
+						ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+					]);
+					await assert_supersede(recipient_ws, outgoing_offer.id);
+					await assert_target_heard_exactly(recipient_ws, [
+						ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+					]);
+					// the revokee is the sibling's recipient and the outgoing offer's
+					// grantor: the revoke, then the two offers in the cascade's order
+					const revokee_heard = [
+						ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
+						ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+						ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+					];
+					if (revoke_closes_the_socket) {
+						// the gated socket closes with the revoke, hearing at most the
+						// start of what it would have heard, in order
+						const closed = await revokee_ws.wait_for_close(5000);
+						assert.ok(closed, 'the gated socket did not close after the revoke');
+						assert.strictEqual(revokee_ws.close_code, WS_CLOSE_PERMISSION_REVOKED);
+						const heard = to_heard_frames(revokee_ws);
+						assert.deepStrictEqual(heard, revokee_heard.slice(0, heard.length));
+					} else {
+						await assert_supersede(revokee_ws, outgoing_offer.id);
+						await assert_target_heard_exactly(revokee_ws, revokee_heard);
+						assert.deepStrictEqual(
+							supersede_offer_ids(revokee_ws),
+							[sibling_offer.id, outgoing_offer.id],
+							"the revokee hears the sibling's supersede, then its own offer's"
+						);
 					}
+					await assert_bystander_heard_nothing(bystander_ws);
 				} finally {
+					await Promise.all([recipient_ws.close(), revokee_ws.close(), grantor_ws.close()]);
 					await bystander_ws.close();
 				}
 			}
+		);
+
+		/**
+		 * The account removals: `remove` ends `removed`'s account, whose pending
+		 * offers both ways are superseded with `reason: 'account_deleted'`, the
+		 * account as the grantor's cause and its actor as the recipient's. Each
+		 * offer's other party hears it once; the removed account's socket closes
+		 * and hears none of it.
+		 */
+		const removal_case = async (
+			remove: (fixture: TestFixture, removed: TestAccount) => Promise<void>
+		): Promise<void> => {
+			const fixture = await setup_test();
+			const removed = await fixture.create_account({ roles: [ROLE_ADMIN] });
+			const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
+			const grantor = await fixture.create_account({ roles: [ROLE_ADMIN] });
+			const outgoing_offer = await create_pending_offer(
+				fixture,
+				recipient.account.id,
+				removed.create_session_headers()
+			);
+			const incoming_offer = await create_pending_offer(
+				fixture,
+				removed.account.id,
+				grantor.create_session_headers()
+			);
+
+			const bystander_ws = await open_bystander(fixture);
+			const removed_ws = await open_ws(removed);
+			const recipient_ws = await open_ws(recipient);
+			const grantor_ws = await open_ws(grantor);
+			try {
+				await remove(fixture, removed);
+
+				// the recipient is sent the grantor's actor, an id it already holds —
+				// never the removed account's id; the grantor is sent the removed
+				// account, its offer's `to_account_id`
+				for (const [ws, offer_id, cause_id] of [
+					[recipient_ws, outgoing_offer.id, removed.actor.id],
+					[grantor_ws, incoming_offer.id, removed.account.id]
+				] as const) {
+					const params = await wait_for_supersede(ws, offer_id);
+					assert.strictEqual(params.reason, 'account_deleted');
+					assert.strictEqual(params.cause_id, cause_id);
+					await assert_target_heard_exactly(ws, [ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD]);
+				}
+				const closed = await removed_ws.wait_for_close(5000);
+				assert.ok(closed, "the removed account's socket did not close");
+				// binds only on a spine that delivers a frame queued ahead of the close;
+				// one whose close drops it passes either way, so the spine's own fan-out
+				// tests are what hold a send to the removed account out
+				assert.deepStrictEqual(
+					to_heard_frames(removed_ws),
+					[],
+					"the removed account's socket heard a notification before its close"
+				);
+				await assert_bystander_heard_nothing(bystander_ws);
+			} finally {
+				await Promise.all([grantor_ws.close(), recipient_ws.close(), removed_ws.close()]);
+				await bystander_ws.close();
+			}
+		};
+
+		test_if(
+			capabilities.ws && capabilities.account_lifecycle,
+			"delete supersedes the account's pending offers both ways and notifies each other party",
+			() =>
+				removal_case(async (fixture, removed) => {
+					const deleted = await rpc(
+						fixture,
+						'account_delete',
+						{ account_id: removed.account.id },
+						fixture.create_session_headers()
+					);
+					assert.isTrue(deleted.ok, `delete failed: ${JSON.stringify(deleted)}`);
+				})
+		);
+
+		test_if(
+			capabilities.ws && capabilities.account_lifecycle,
+			"purge supersedes the account's pending offers both ways and notifies each other party",
+			() =>
+				removal_case((fixture, removed) =>
+					cross_account_purge(fixture, SPINE_RPC_PATH, removed.account.id)
+				)
 		);
 	});
 };

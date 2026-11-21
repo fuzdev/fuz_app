@@ -55,6 +55,10 @@ import { query_create_role_grant, query_revoke_role_grant } from './role_grant_q
 import { is_role_grant_active } from './account_schema.ts';
 import { has_scoped_role } from './request_context.ts';
 import {
+	queue_supersede_notifications,
+	type SupersedeCause
+} from './role_grant_offer_notifications.ts';
+import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
 	type SelfServiceRoleSetInput,
@@ -257,8 +261,9 @@ export const create_self_service_role_actions = (
 		// for the same `(account, role, scope)` superseded as a side effect, and
 		// each gets its forensic row like the admin revoke's (empty in practice:
 		// offer creation gates on the role's `grant_paths`, so only a role that is
-		// both offerable and self-service-eligible has siblings). The WS supersede
-		// notification to each grantor is not sent (twin of the Rust path).
+		// both offerable and self-service-eligible has siblings). Both parties are
+		// told, as the admin revoke tells them: the recipient is the caller, but
+		// its answer lists no offers, so its other connections learn of them here.
 		for (const offer of result.superseded_offers) {
 			await deps.audit.emit_role_grant_target(ctx, auth, {
 				event_type: 'role_grant_offer_supersede',
@@ -273,6 +278,11 @@ export const create_self_service_role_actions = (
 				}
 			});
 		}
+		const revoked_grant: SupersedeCause = { kind: 'id', id: result.id };
+		queue_supersede_notifications(ctx, result.superseded_offers, 'role_grant_revoked', {
+			grantor: revoked_grant,
+			recipient: revoked_grant
+		});
 
 		return { ok: true, enabled: false, changed: true };
 	};

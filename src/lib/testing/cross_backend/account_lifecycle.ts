@@ -22,6 +22,11 @@ import '../assert_dev_env.ts';
  * an `outcome: 'failure'` row; `admin_account_list` with `include_deleted`
  * lists tombstoned rows with `deleted_at` set.
  *
+ * A purge ends the pending offers made to the account before its cascade
+ * deletes them, as a delete does — one `role_grant_offer_supersede` row each,
+ * `account_deleted` with the account as cause — and the grantor's history no
+ * longer lists them: the audit row is what remains.
+ *
  * Two credential end states, each proven live before it is killed: a session
  * and an API token minted before a soft delete stay dead after the undelete
  * (the delete removed their rows, and the undelete clears only the
@@ -316,6 +321,77 @@ export const describe_account_lifecycle_cross_tests = (
 				'account_purge snapshots the username'
 			);
 		});
+
+		test_if(
+			capabilities.account_lifecycle,
+			'a purge supersedes the offers made to the account, audited, before its cascade deletes them',
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({ username: 'lifecycle_purge_offered' });
+				const grantor = await fixture.create_account({
+					username: 'lifecycle_purge_offerer',
+					roles: [ROLE_ADMIN]
+				});
+				const offer = async (headers: Record<string, string>, params: object) => {
+					const res = await rpc(
+						fixture,
+						'role_grant_offer_create',
+						{ to_account_id: victim.account.id, role: ROLE_ADMIN, ...params },
+						headers
+					);
+					if (!res.ok) assert.fail(`role_grant_offer_create: ${JSON.stringify(res)}`);
+					return (res.result as { offer: { id: string } }).offer.id;
+				};
+				const by_account = await offer(fixture.create_session_headers(), {});
+				const by_actor = await offer(grantor.create_session_headers(), {
+					to_actor_id: victim.actor.id
+				});
+
+				expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport({ origin: null }),
+						rpc_path,
+						'account_purge',
+						{ account_id: victim.account.id, confirm: true },
+						fixture.create_daemon_token_headers()
+					),
+					AccountPurgeOutput
+				);
+
+				const supersedes = await list_audit_events(
+					fixture,
+					{ event_type: 'role_grant_offer_supersede' },
+					rpc_path
+				);
+				for (const [offer_id, grantor_headers, label] of [
+					[by_account, fixture.create_session_headers(), 'the account-addressed offer'],
+					[by_actor, grantor.create_session_headers(), 'the actor-addressed offer']
+				] as const) {
+					const rows = supersedes.filter(
+						(e) => (e.metadata as { offer_id?: unknown } | null)?.offer_id === offer_id
+					);
+					assert.strictEqual(rows.length, 1, `one role_grant_offer_supersede row for ${label}`);
+					assert.strictEqual(rows[0]!.target_account_id, victim.account.id, label);
+					assert_audit_metadata_fields(fixture, rows[0]!.metadata, {
+						offer_id,
+						role: ROLE_ADMIN,
+						scope_id: null,
+						reason: 'account_deleted',
+						cause_id: victim.account.id
+					});
+					// the cascade deleted the row: the audit row is all that remains
+					const { offers } = expect_output(
+						await rpc(fixture, 'role_grant_offer_history', {}, grantor_headers),
+						RoleGrantOfferHistoryOutput
+					);
+					assert.notInclude(
+						offers.map((o) => o.id),
+						offer_id,
+						`the grantor's history no longer lists ${label}`
+					);
+				}
+			}
+		);
 
 		test_if(
 			capabilities.account_lifecycle,

@@ -886,8 +886,8 @@ export const query_accept_offer = async (
  * (`account_delete` / `account_purge`, every actor of the account) end the
  * grantor's outgoing pending offers in the same transaction. Each row carries
  * the grantor's `from_account_id`, as every supersede cascade's does; the
- * caller emits a `role_grant_offer_supersede` audit event per entry, and the
- * revoke caller also sends the supersede notification. Twin of the Rust
+ * caller emits a `role_grant_offer_supersede` audit event per entry and
+ * queues its notifications (`queue_supersede_notifications`). Twin of the Rust
  * `query_role_grant_offer_supersede_outgoing`.
  *
  * @param deps - query dependencies
@@ -916,7 +916,7 @@ export const query_role_grant_offer_supersede_outgoing = async (
 
 /**
  * Supersede every pending offer **made to** `to_account_id` — the
- * recipient-side cascade of an account delete.
+ * recipient-side cascade of an account delete or purge.
  *
  * An undelete restores the account, so an offer left pending through the
  * delete would come back with it and could then be accepted; superseding it
@@ -924,8 +924,9 @@ export const query_role_grant_offer_supersede_outgoing = async (
  * `to_account_id` alone covers the actor-addressed offers too: an offer's
  * `to_actor_id` is bound to its `to_account_id` at create. Each row carries
  * the grantor's `from_account_id`, as every supersede cascade's does; the
- * caller emits a `role_grant_offer_supersede` audit event per entry. Twin of
- * the Rust `query_role_grant_offer_supersede_incoming`.
+ * caller emits a `role_grant_offer_supersede` audit event per entry and
+ * queues its notifications (`queue_supersede_notifications`). Twin of the Rust
+ * `query_role_grant_offer_supersede_incoming`.
  *
  * @param deps - query dependencies
  * @param to_account_id - the recipient account whose pending offers end

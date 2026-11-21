@@ -16,6 +16,9 @@
  *   assign inputs has no JSON Schema form, an `info` diagnostic on each
  * - the WS endpoint lists the role_grant_offer notifications after the
  *   actions, as `remote_notification` methods
+ * - the supersede notification's `reason` trades `scope_destroyed`, which no
+ *   spine sends, for `account_deleted`, and its description names both parties
+ * - the offer's `superseded_at` description names every cascade that sets it
  *
  * @module
  */
@@ -27,6 +30,8 @@ import { all_role_grant_offer_action_specs } from '#lib/auth/role_grant_offer_ac
 import {
 	role_grant_offer_notification_actions,
 	role_grant_offer_notification_specs,
+	role_grant_offer_supersede_notification_spec,
+	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
 } from '#lib/auth/role_grant_offer_notifications.ts';
 import { to_ws_actions, protocol_actions } from '#lib/actions/protocol.ts';
@@ -35,6 +40,10 @@ import { generate_app_surface, type AppSurfaceDiagnostic } from '#lib/http/surfa
 import { NAME_LENGTH_MAX, NAME_REGEX } from '#lib/auth/name_schema.ts';
 
 import { with_timestamp_format } from '../surface_test_helpers.ts';
+
+/** The offer's `superseded_at` description, as the schema now declares it. */
+const SUPERSEDED_AT_DESCRIPTION =
+	'ISO timestamp when a cascade ended this pending offer: a sibling accept, a revoke of the recipient’s grant of its role and scope, an admin revoke of any grant of its grantor’s actor, the removal of either party’s account, or the teardown of its scope.';
 
 const FIXTURE_PATH = new URL('../fixtures/surface/role_grant_offer.json', import.meta.url);
 
@@ -94,9 +103,27 @@ const with_strict_scope_kind = (value: unknown): unknown => {
 	return out;
 };
 
-/** The scope_kind and the timestamp moves, which every entry and event takes. */
+// the offer's `superseded_at` description at capture
+const HEAD_SUPERSEDED_AT_DESCRIPTION =
+	'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.';
+
+// declared: every `superseded_at` node's description names every cascade
+const with_superseded_at_description = (value: unknown): unknown => {
+	if (Array.isArray(value)) return value.map(with_superseded_at_description);
+	if (typeof value !== 'object' || value === null) return value;
+	const out: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		out[key] =
+			key === 'description' && child === HEAD_SUPERSEDED_AT_DESCRIPTION
+				? SUPERSEDED_AT_DESCRIPTION
+				: with_superseded_at_description(child);
+	}
+	return out;
+};
+
+/** The scope_kind, timestamp and `superseded_at` moves, which every entry and event takes. */
 const with_declared_moves = (value: unknown): unknown =>
-	with_timestamp_format(with_strict_scope_kind(value));
+	with_superseded_at_description(with_timestamp_format(with_strict_scope_kind(value)));
 
 // the method the revokee's notification had in the capture, the admin action's
 const HEAD_REVOKE_NOTIFICATION_METHOD = 'role_grant_revoke';
@@ -112,6 +139,25 @@ const with_revoke_scope_kind = (params_schema: any): unknown => {
 		key === 'scope_id' ? ['scope_kind', key] : [key]
 	);
 	return { ...params_schema, properties, required };
+};
+
+// declared: the supersede notification's reasons and description
+const with_supersede_reasons = (event: SurfaceCapture['events'][number]): unknown => {
+	const params_schema = event.params_schema as any;
+	return {
+		...event,
+		description: role_grant_offer_supersede_notification_spec.description,
+		params_schema: {
+			...params_schema,
+			properties: {
+				...params_schema.properties,
+				reason: {
+					...params_schema.properties.reason,
+					enum: ['sibling_accepted', 'role_grant_revoked', 'account_deleted']
+				}
+			}
+		}
+	};
 };
 
 const check_diagnostic = (source: string): AppSurfaceDiagnostic => ({
@@ -158,7 +204,9 @@ describe('role_grant_offer surface', () => {
 						method: ROLE_GRANT_REVOKED_NOTIFICATION_METHOD,
 						params_schema: with_revoke_scope_kind(e.params_schema)
 					}
-				: e
+				: e.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+					? with_supersede_reasons(e)
+					: e
 		);
 		assert.deepStrictEqual(surface.events, expected);
 	});

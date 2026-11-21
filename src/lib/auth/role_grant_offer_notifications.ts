@@ -10,9 +10,9 @@
  * - `role_grant_offer_retracted` → recipient's sockets when a grantor retracts
  * - `role_grant_offer_accepted` → grantor's sockets when the recipient accepts
  * - `role_grant_offer_declined` → grantor's sockets when the recipient declines
- * - `role_grant_offer_supersede` → grantor's sockets when a sibling accept,
- *   a revoke of the resulting role_grant, or destruction of the parent scope
- *   row obsoletes their pending offer
+ * - `role_grant_offer_supersede` → each live party to a pending offer a
+ *   cascade ended — a sibling accept, a revoke, an account removal — but the
+ *   one the cascade's own answer or socket close already covers
  * - `role_grant_revoked` → revokee's sockets when one of their active
  *   role_grants is revoked by the `role_grant_revoke` action (companion to the
  *   `role_grant_revoke` audit event)
@@ -105,18 +105,21 @@ export const RoleGrantOfferDeclinedParams = object({
 export type RoleGrantOfferDeclinedParams = Infer<typeof RoleGrantOfferDeclinedParams>;
 
 /**
- * Params for `role_grant_offer_supersede`. Fires to the grantor's sockets when
- * their pending offer is obsoleted — either by a sibling accept
- * (`reason: 'sibling_accepted'`), by revoke of the resulting role_grant or of
- * one of the grantor's own (`reason: 'role_grant_revoked'`), or by deletion of
- * the parent scope row
- * the offer was bound to (`reason: 'scope_destroyed'`). `cause_id` points
- * at the accepted offer id, the revoked role_grant id, or the destroyed scope
- * row id respectively.
+ * Params for `role_grant_offer_supersede`, sent to a party of a pending offer
+ * a cascade ended: a sibling accept (`reason: 'sibling_accepted'`), a revoke of
+ * the recipient's grant or of any grant of the grantor's actor
+ * (`reason: 'role_grant_revoked'`), or the removal of either party's account
+ * (`reason: 'account_deleted'`). `cause_id` points at the accepted offer, the
+ * revoked role_grant, or the removed account respectively — the `cause_id` of
+ * the offer's `role_grant_offer_supersede` audit row — except on a recipient's
+ * frame of its grantor's account removal, where it is the offer's grantor
+ * actor (`from_actor_id`), an id the recipient already holds. The audit
+ * metadata's reason set is wider: a consumer's scope teardown audits
+ * `scope_destroyed`, which no notification carries.
  */
 export const RoleGrantOfferSupersedeParams = object({
 	offer: RoleGrantOfferJson,
-	reason: one_of(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed']),
+	reason: one_of(['sibling_accepted', 'role_grant_revoked', 'account_deleted']),
 	cause_id: UuidSchema
 });
 export type RoleGrantOfferSupersedeParams = Infer<typeof RoleGrantOfferSupersedeParams>;
@@ -198,7 +201,7 @@ export const role_grant_offer_supersede_notification_spec = {
 	output: fuz_void,
 	async: true,
 	description:
-		'A grantor’s pending role_grant offer was obsoleted by a sibling accept, by revoke of the resulting role_grant, or by destruction of the parent scope row.'
+		'A pending role_grant offer this account was a party to, as its grantor or its recipient, was ended by a sibling accept, a role_grant revoke, or the removal of the other party’s account.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_revoked_notification_spec = {
@@ -347,32 +350,66 @@ export const queue_offer_notification = (
 };
 
 /**
- * Queue a `role_grant_offer_supersede` notification to the grantor of each
- * superseded offer — `from_account_id`, off the cascade's `RETURNING`, never
- * the audit row's target, which is the recipient.
+ * The `cause_id` a party of a superseded offer is sent: an id the cascade
+ * names (`id` — the accepted offer, the revoked role_grant, the removed
+ * account), or the offer's own grantor actor (`from_actor`, an id its
+ * recipient already holds). Twin of the Rust `SupersedeCause`.
+ */
+export type SupersedeCause = { kind: 'id'; id: Uuid } | { kind: 'from_actor' };
+
+/**
+ * Which parties of a superseded offer a cascade tells, and the `cause_id`
+ * each is sent; `null` leaves that party out. A party the cascade's own answer
+ * covers (the accepting recipient) or whose account it removes (its
+ * connections close) is left out by the call site, which knows which side
+ * that party is on. A recipient told of its grantor's account removal is sent
+ * the grantor's actor, never the account id, which no recipient sees
+ * otherwise. Twin of the Rust `SupersedeAudience`.
+ */
+export interface SupersedeAudience {
+	grantor: SupersedeCause | null;
+	recipient: SupersedeCause | null;
+}
+
+const to_supersede_cause_id = (cause: SupersedeCause, offer: SupersededOffer): Uuid =>
+	cause.kind === 'id' ? cause.id : offer.from_actor_id;
+
+/**
+ * Queue a `role_grant_offer_supersede` notification to the parties of each
+ * superseded offer `audience` names, each with its own `cause_id` — the
+ * grantor (`from_account_id`, off the cascade's `RETURNING`) and the recipient
+ * (`to_account_id`). Sent in the cascade's row order, which is the order of
+ * its audit rows, each offer's parties together and its grantor ahead of its
+ * recipient — one fixed order, so both spines send a cascade's frames alike.
  *
  * Twin of the Rust spine's `queue_supersede_notifications`.
  *
  * @param ctx - the handler context, whose sender the sends go through
  * @param superseded - the offers the cascade superseded
  * @param reason - why they were superseded
- * @param cause_id - the accepted offer or the revoked role_grant
+ * @param audience - which party of each offer is told, and the `cause_id` it is sent
  */
 export const queue_supersede_notifications = (
 	ctx: NotificationQueueContext,
 	superseded: ReadonlyArray<SupersededOffer>,
 	reason: RoleGrantOfferSupersedeParams['reason'],
-	cause_id: Uuid
+	audience: SupersedeAudience
 ): void => {
 	for (const offer of superseded) {
-		queue_offer_notification(
-			ctx,
-			offer.from_account_id,
-			build_role_grant_offer_supersede_notification({
-				offer: to_role_grant_offer_json(offer),
-				reason,
-				cause_id
-			})
-		);
+		for (const [party, cause] of [
+			[offer.from_account_id, audience.grantor],
+			[offer.to_account_id, audience.recipient]
+		] as const) {
+			if (!cause) continue;
+			queue_offer_notification(
+				ctx,
+				party,
+				build_role_grant_offer_supersede_notification({
+					offer: to_role_grant_offer_json(offer),
+					reason,
+					cause_id: to_supersede_cause_id(cause, offer)
+				})
+			);
+		}
 	}
 };

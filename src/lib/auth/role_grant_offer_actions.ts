@@ -48,7 +48,8 @@
  * (`ctx.notification_sender`), queued post-commit (`queue_offer_notification`,
  * `queue_supersede_notifications`): offer lifecycle transitions notify the
  * counterparty, `role_grant_revoke` notifies the revokee (`role_grant_revoked`)
- * plus each superseded pending offer's grantor. `role_grant_revoke` of a global
+ * plus both parties of each superseded pending offer, and an accept each
+ * superseded sibling's grantor. `role_grant_revoke` of a global
  * grant also closes the revokee's connections gated on the role through
  * `deps.connection_closer`, after the commit.
  *
@@ -123,7 +124,8 @@ import {
 	build_role_grant_offer_retracted_notification,
 	build_role_grant_revoked_notification,
 	queue_offer_notification,
-	queue_supersede_notifications
+	queue_supersede_notifications,
+	type SupersedeCause
 } from './role_grant_offer_notifications.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -562,7 +564,8 @@ export const create_role_grant_offer_actions = (
 		// rollback). A replay (or a race loser) wrote nothing — the accept that
 		// minted the grant already audited it and notified the grantor — so it
 		// queues nothing; repeating the notification would let any replay send
-		// them without bound.
+		// them without bound. Only the siblings' grantors hear the supersede: their
+		// recipient is the caller, whose answer lists `superseded_offer_ids`.
 		if (result.created) {
 			emit_after_commit(ctx, () => {
 				fan_out_audit_events(result.audit_events, audit);
@@ -574,12 +577,10 @@ export const create_role_grant_offer_actions = (
 					build_role_grant_offer_accepted_notification({ offer: offer_json })
 				);
 			}
-			queue_supersede_notifications(
-				ctx,
-				result.superseded_offers,
-				'sibling_accepted',
-				result.offer.id
-			);
+			queue_supersede_notifications(ctx, result.superseded_offers, 'sibling_accepted', {
+				grantor: { kind: 'id', id: result.offer.id },
+				recipient: null
+			});
 		}
 
 		return {
@@ -866,7 +867,14 @@ export const create_role_grant_offer_actions = (
 				reason: input.reason ?? null
 			})
 		);
-		queue_supersede_notifications(ctx, result.superseded_offers, 'role_grant_revoked', result.id);
+		// Both parties of each superseded offer: the revokee is the recipient of
+		// its incoming siblings and the grantor of its outgoing offers, and the
+		// other party of each is told as well.
+		const revoked_grant: SupersedeCause = { kind: 'id', id: result.id };
+		queue_supersede_notifications(ctx, result.superseded_offers, 'role_grant_revoked', {
+			grantor: revoked_grant,
+			recipient: revoked_grant
+		});
 
 		return { ok: true, revoked: true };
 	};

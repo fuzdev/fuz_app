@@ -6,8 +6,9 @@
  * JSON-RPC endpoint. Asserts:
  *
  * - Single revoke fires one `role_grant_revoked` notification to the revokee.
- * - Revoke that supersedes pending sibling offers fires one
- *   `role_grant_offer_supersede` per grantor (in addition to `role_grant_revoked`).
+ * - Revoke that supersedes pending offers — the revokee's incoming siblings
+ *   and its own outgoing offers — fires one `role_grant_offer_supersede` to
+ *   each party of each, the grantor first (in addition to `role_grant_revoked`).
  * - Revoke with no pending offers fires only `role_grant_revoked`.
  * - Revoking a non-web-grantable role_grant (keeper) fires no notifications.
  * - `reason` provided on the request rides through to the WS payload.
@@ -45,6 +46,7 @@ import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
 	create_notification_app_options,
+	to_captured_supersedes,
 	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
@@ -237,7 +239,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		assert.strictEqual(params.reason, 'policy violation');
 	});
 
-	test('revoke supersedes pending offers and notifies each grantor', async () => {
+	test('revoke supersedes pending siblings and notifies both parties of each', async () => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
@@ -289,28 +291,56 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		assert.strictEqual(revokes.length, 1);
 		assert.strictEqual(revokes[0]?.account_id, target.account.id);
 
-		const supersedes = calls.filter(
-			(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+		// in the cascade's order, each offer's grantor and then its recipient —
+		// the revokee, told of each offer made to it
+		const cause = { reason: 'role_grant_revoked', cause_id: role_grant_id };
+		assert.deepStrictEqual(to_captured_supersedes(calls), [
+			{ account_id: test_app.backend.account.id, offer_id: offer_a_id, ...cause },
+			{ account_id: target.account.id, offer_id: offer_a_id, ...cause },
+			{ account_id: grantor_b.account.id, offer_id: offer_b_id, ...cause },
+			{ account_id: target.account.id, offer_id: offer_b_id, ...cause }
+		]);
+	});
+
+	test("revoke supersedes the revokee's outgoing offers and notifies both parties of each", async () => {
+		const calls: Array<CapturedNotificationCall> = [];
+		const sender = create_capture_sender(calls);
+		const test_app = await create_test_app({
+			session_options,
+			...create_notification_app_options(sender),
+			db: get_db(),
+			roles: [ROLE_ADMIN]
+		});
+		const target = await test_app.create_account({ username: 'rpc_revoke_outgoing_target' });
+		const recipient = await test_app.create_account({ username: 'rpc_revoke_outgoing_to' });
+		const db = get_db();
+		const { id: role_grant_id } = await query_create_role_grant(
+			{ db },
+			{ actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id }
 		);
-		assert.strictEqual(supersedes.length, 2);
+		const { id: offer_id } = await query_role_grant_offer_create(
+			{ db },
+			{
+				from_actor_id: target.actor.id,
+				to_account_id: recipient.account.id,
+				role: ROLE_ADMIN,
+				expires_at: new Date(Date.now() + 60 * 60 * 1000)
+			}
+		);
 
-		const supersede_targets = new Set(supersedes.map((c) => c.account_id));
-		assert.ok(supersede_targets.has(test_app.backend.account.id));
-		assert.ok(supersede_targets.has(grantor_b.account.id));
+		calls.length = 0;
+		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
+			actor_id: target.actor.id,
+			role_grant_id
+		});
+		assert.strictEqual(res.status, 200);
 
-		for (const call of supersedes) {
-			const params = call.params as {
-				offer?: { id?: string };
-				reason?: string;
-				cause_id?: string;
-			};
-			assert.strictEqual(params.reason, 'role_grant_revoked');
-			assert.strictEqual(params.cause_id, role_grant_id);
-			assert.ok(
-				params.offer?.id === offer_a_id || params.offer?.id === offer_b_id,
-				`supersede payload should reference one of the pending offers; got ${params.offer?.id}`
-			);
-		}
+		// the revokee as the offer's grantor, then its recipient
+		const cause = { reason: 'role_grant_revoked', cause_id: role_grant_id };
+		assert.deepStrictEqual(to_captured_supersedes(calls), [
+			{ account_id: target.account.id, offer_id, ...cause },
+			{ account_id: recipient.account.id, offer_id, ...cause }
+		]);
 	});
 
 	test('revoke with no pending offers fires only role_grant_revoked', async () => {

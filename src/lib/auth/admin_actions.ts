@@ -55,6 +55,10 @@ import {
 } from './role_grant_offer_queries.ts';
 import type { SupersededOffer } from './role_grant_offer_schema.ts';
 import {
+	queue_supersede_notifications,
+	type SupersedeAudience
+} from './role_grant_offer_notifications.ts';
+import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
@@ -440,11 +444,14 @@ export const create_admin_actions = (
 
 	// One `role_grant_offer_supersede` row per offer an account removal ended,
 	// `reason: 'account_deleted'` and `cause_id` the removed account, whichever
-	// side of the offer the account was on.
+	// side of the offer the account was on, then the notification to the offer's
+	// other party — `audience`, the side the removed account is not on, with the
+	// `cause_id` that side is sent; the account's own connections close with it.
 	const emit_account_deleted_supersedes = async (
 		ctx: ActionActorContext,
 		target_account_id: Uuid,
-		superseded: ReadonlyArray<SupersededOffer>
+		superseded: ReadonlyArray<SupersededOffer>,
+		audience: SupersedeAudience
 	): Promise<void> => {
 		for (const offer of superseded) {
 			await deps.audit.emit_role_grant_target(ctx, ctx.auth, {
@@ -460,13 +467,15 @@ export const create_admin_actions = (
 				}
 			});
 		}
+		queue_supersede_notifications(ctx, superseded, 'account_deleted', audience);
 	};
 
 	// Supersede every pending offer the removed account's actors made, audited
 	// — the cascade a revoke runs on the revokee's offers. An offer records no
 	// authority, so one outliving its grantor's account would still confer on
-	// accept. No supersede notification: a cascade notifies the grantor, and the
-	// grantor's connections close with its account. `cause_id` is the account.
+	// accept. Each recipient is told, sent its grantor's actor as `cause_id` — an
+	// id it already holds, where the audit row's is the removed account's; the
+	// grantor is the removed account.
 	const cancel_outgoing_offers = async (
 		ctx: ActionActorContext,
 		target_account_id: Uuid,
@@ -476,19 +485,27 @@ export const create_admin_actions = (
 			ctx,
 			actors.map((a) => a.id)
 		);
-		await emit_account_deleted_supersedes(ctx, target_account_id, superseded);
+		await emit_account_deleted_supersedes(ctx, target_account_id, superseded, {
+			grantor: null,
+			recipient: { kind: 'from_actor' }
+		});
 	};
 
-	// Supersede every pending offer made to the deleted account, account- or
-	// actor-addressed, audited as the outgoing cascade is and, like it, with no
-	// notification. An undelete restores the account, so an offer left pending
-	// through the delete would come back with it and could be accepted.
+	// Supersede every pending offer made to the removed account, account- or
+	// actor-addressed, audited as the outgoing cascade is, each grantor told,
+	// sent the removed account as `cause_id` (the offer's `to_account_id`). An
+	// undelete restores a deleted account, so an offer left pending through the
+	// delete would come back with it and could be accepted; a purge's cascade
+	// would take the offers with no audit row and no word to their grantors.
 	const cancel_incoming_offers = async (
 		ctx: ActionActorContext,
 		target_account_id: Uuid
 	): Promise<void> => {
 		const superseded = await query_role_grant_offer_supersede_incoming(ctx, target_account_id);
-		await emit_account_deleted_supersedes(ctx, target_account_id, superseded);
+		await emit_account_deleted_supersedes(ctx, target_account_id, superseded, {
+			grantor: { kind: 'id', id: target_account_id },
+			recipient: null
+		});
 	};
 
 	// Delete the unclaimed invites the removed account's actors issued, each
@@ -519,7 +536,8 @@ export const create_admin_actions = (
 	// session-only — enforced here, not on the spec, whose gate stays open so
 	// an admin deleting another account keeps any credential. Tombstones the
 	// account + its actor(s), supersedes the pending offers its actors made and
-	// the ones made to it, revokes sessions/tokens, deletes the unclaimed
+	// the ones made to it (each offer's other party told), revokes
+	// sessions/tokens, deletes the unclaimed
 	// invites its actors issued, closes sockets, and
 	// emits `account_delete` + one `actor_delete` per soft-deleted actor —
 	// each carrying its identity snapshot. `delete` = soft.
@@ -602,7 +620,9 @@ export const create_admin_actions = (
 	};
 
 	// Hard-purge an account (keeper-only, irreversible). Fail-loud:
-	// requires `confirm: true` + emits a WARN. Snapshots identity into
+	// requires `confirm: true` + emits a WARN. Supersedes the account's pending
+	// offers, both ways, as a delete does, before its cascade deletes the rows —
+	// the audit rows and the notifications are what remain of them. Snapshots identity into
 	// `account_purge` + per-actor `actor_purge` before the cascading delete
 	// removes the rows — the `audit_log` id columns carry no FK, so the
 	// purged ids survive on historical rows and the snapshots name them.
@@ -636,8 +656,11 @@ export const create_admin_actions = (
 		// Snapshot actors before the cascade removes them.
 		const actors = await query_actors_by_account(ctx, input.account_id);
 		// Before the cascade, whose `ON DELETE CASCADE` would take the offers
-		// with no audit row.
+		// with no audit row and no notification, the ones the account made and
+		// the ones made to it. After the account row: an offer create from or to
+		// the account takes that row first, so it has committed or waits.
 		await cancel_outgoing_offers(ctx, input.account_id, actors);
+		await cancel_incoming_offers(ctx, input.account_id);
 		// Before the cascade too: `invite.created_by` is `ON DELETE SET NULL`, so
 		// the cascade would leave the account's unclaimed invites usable.
 		await void_unclaimed_invites(ctx, actors);

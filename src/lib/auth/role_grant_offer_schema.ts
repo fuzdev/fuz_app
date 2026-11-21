@@ -164,7 +164,7 @@ export const RoleGrantOfferJson = meta(
 		}),
 		superseded_at: meta(nullable(Timestamp), {
 			description:
-				'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.'
+				'ISO timestamp when a cascade ended this pending offer: a sibling accept, a revoke of the recipient’s grant of its role and scope, an admin revoke of any grant of its grantor’s actor, the removal of either party’s account, or the teardown of its scope.'
 		}),
 		resulting_role_grant_id: meta(nullable(UuidSchema), {
 			description: 'Role grant produced by accepting this offer. `null` until/unless accepted.'

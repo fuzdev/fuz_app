@@ -563,7 +563,9 @@ export interface RevokeForScopeResult {
 	/**
 	 * Every pending offer at the scope — tuple-matched and orphan, undifferentiated
 	 * — superseded in the same cascade. Each entry carries its grantor's
-	 * `from_account_id` for `role_grant_offer_supersede` notification fan-out.
+	 * `from_account_id`, as every supersede cascade's does; no
+	 * `role_grant_offer_supersede` notification carries `scope_destroyed`, so a
+	 * scope teardown tells no one.
 	 *
 	 * The caller is responsible for emitting `role_grant_offer_supersede` audit
 	 * events with `reason: 'scope_destroyed'` and `cause_id: <destroyed scope row id>`

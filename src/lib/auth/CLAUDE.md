@@ -605,8 +605,11 @@ account event plus one per-actor event (`delete` = soft, `purge` = hard,
 "Account-removal target guards").
 
 `role_grant_offer_supersede` carries
-`reason: 'sibling_accepted' | 'role_grant_revoked' | 'scope_destroyed' | 'account_deleted'` (for `account_deleted`, `cause_id` is the removed account, the grantor's or the recipient's; the WS `_supersede` notification never carries it — an account removal notifies no one)
-plus `cause_id` pointing to the row that triggered the supersede.
+`reason: 'sibling_accepted' | 'role_grant_revoked' | 'scope_destroyed' | 'account_deleted'` (for `account_deleted`, `cause_id` is the removed account, the grantor's or the recipient's)
+plus `cause_id` pointing to the row that triggered the supersede. The WS
+`role_grant_offer_supersede` notification's reason set is narrower —
+`sibling_accepted | role_grant_revoked | account_deleted`; `scope_destroyed`
+is an audit reason only (a consumer's own cascade writes it).
 
 ### Keeper auth shape
 
@@ -712,7 +715,7 @@ authenticate.
 
 - `admin_account_list_action_spec` — read; input `{limit?, offset?, include_deleted?}`; output `{accounts, grantable_roles}`. On it and the other paged reads (`audit_log_list`, `audit_log_role_grant_history`, `role_grant_offer_history`) `limit` / `offset` declare `invalid_reason` `ERROR_LIMIT_INVALID` / `ERROR_OFFSET_INVALID` (`http/error_schemas.ts`), and `audit_log_list`'s `since_seq` / `outcome` `ERROR_SINCE_SEQ_INVALID` / `ERROR_OUTCOME_INVALID`: every refusal of the field carries it. `include_deleted` (default false) surfaces soft-deleted rows (with `account.deleted_at` set) for the admin UI's reactivation view.
 - `account_delete_action_spec` — mutation (soft delete); self-or-admin (`{account, actor}`, handler elevates to admin when `account_id` ≠ self); the self path is session-only, handler-enforced ahead of the target guards (an API or daemon token gets the dispatcher's `ERROR_CREDENTIAL_TYPE_REQUIRED` 403 via `credential_type_required_error`), while an admin deleting another account keeps any credential; input `{account_id?}`; output `{ok, deleted}`. Tombstones account + actor(s), supersedes every pending offer the account made and every pending offer made to it (`reason: 'account_deleted'`, an audit row each), revokes sessions/tokens, deletes the unclaimed invites the account issued (an `invite_delete` row each), emits `account_delete` + per-actor `actor_delete`. Role grants are kept — inert while the account is tombstoned. Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`) — both fail-loud with a failure-audit row.
-- `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. After the guard it locks the account row (`query_account_lock_for_purge`), supersedes the account's outgoing offers, deletes the unclaimed invites it issued, revokes its sessions and tokens (id-ordered, so the cascade deletes no credential row), then the cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
+- `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. After the guard it locks the account row (`query_account_lock_for_purge`), supersedes the offers the account made and those made to it (audited and notified, as `account_delete` does), deletes the unclaimed invites it issued, revokes its sessions and tokens (id-ordered, so the cascade deletes no credential row), then the cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
 - `account_undelete_action_spec` — mutation (reactivation, inverse of soft delete); admin-only (`roles: ['admin']` — no self path, a tombstoned account can't authenticate); input `{account_id}`; output `{ok, undeleted}`. Clears the `deleted_at` tombstone on the account + its actor(s), emits `account_undelete` + per-actor `actor_undelete`. Restores the account, its actors and its role grants as they were; does not restore revoked sessions/tokens, superseded offers, or deleted invites.
 - `admin_session_list_action_spec` — read; input `{acting?}` (an omitted input reads as `{}`); output `{sessions}`.
 - `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
@@ -807,10 +810,12 @@ the list and history inputs read an omitted input as a fresh `{}`
   revokee's incoming sibling offers, the revoke supersedes every pending offer
   the revokee's actor made (`query_role_grant_offer_supersede_outgoing`) —
   `account_delete` / `account_purge` do the same for every actor of the account
-  (`reason: 'account_deleted'`, audited, no notification), and `account_delete`
-  also supersedes every pending offer made TO the account
-  (`query_role_grant_offer_supersede_incoming`, same reason). Every supersede
-  cascade returns — and audits — its rows ordered by `created_at, id`.
+  (`reason: 'account_deleted'`, audited, each recipient notified), and both
+  also supersede every pending offer made TO the account
+  (`query_role_grant_offer_supersede_incoming`, same reason, each grantor
+  notified) — purge before its cascade, so those offers are audited, and then
+  gone from history with the account. Every supersede cascade returns — and
+  audits and notifies — its rows ordered by `created_at, id`.
 - `role_grant_assign_action_spec` — global-admin-only immediate conferral (no
   consent step); input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?}`
   (the pair as on offer-create); output `{ok, role_grant_id}`. The handler:
@@ -904,7 +909,19 @@ Post-commit via `emit_after_commit` (see `http/CLAUDE.md` §Pending Effects):
 - Retract — `role_grant_offer_retracted` → recipient.
 - Accept — `role_grant_offer_accepted` → grantor + `_supersede` per sibling.
 - Decline — `role_grant_offer_declined` → grantor.
-- Revoke (`role_grant_revoke`) — `role_grant_revoked` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers, each to its grantor).
+- Revoke (`role_grant_revoke`) — `role_grant_revoked` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers), each to its grantor and its recipient.
+- Delete / purge (`account_delete`, `account_purge`) — `_supersede` (`account_deleted`) per superseded offer to the live party: the recipient of each offer the account made, the grantor of each offer made to it. The removed account hears nothing (its sockets close).
+- Self-service disable — `_supersede` per incoming sibling, to its grantor and to the caller (its answer lists no offers).
+
+`queue_supersede_notifications(ctx, offers, reason, audience)` sends them —
+`SupersedeAudience` names a `cause_id` for the grantor and for the recipient, or
+none for a party not told, each a `SupersedeCause` (an id the cascade names, or
+`from_actor`, the offer's own grantor actor) — in the cascade's row order, grantor before recipient within an offer; twin of the Rust helper. A
+party who took the action still hears a frame for an offer it is party to —
+only a removed account and an accept's own caller are left out. On a removal,
+a recipient's `cause_id` is the offer's `from_actor_id`, never the removed
+grantor's account id (a recipient sees actors, not accounts); a grantor's is
+the removed recipient's account, which its offer already names.
 
 Spec module is `auth/role_grant_offer_notifications.ts` —
 `RemoteNotificationActionSpec`s with `@fuzdev/fuz_schema` params schemas and

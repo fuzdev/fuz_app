@@ -1935,9 +1935,11 @@ closes the revoke-bypass path:
 - On `account_delete` / `account_purge`, every pending offer any of the
   account's actors made is marked superseded (`reason: 'account_deleted'`,
   `cause_id: <account id>`; purge does it before its cascade deletes them).
-  `account_delete` supersedes the pending offers made TO the account the
-  same way, so an offer does not wait out a delete and come back with the
-  undelete; and an offer cannot be created to a deleted account or actor —
+  Both supersede the pending offers made TO the account the same way, so an
+  offer does not wait out a delete and come back with the undelete, and a
+  purge leaves an audit row for each; the live party to each offer — the
+  recipient of one the account made, the grantor of one made to it — is
+  notified; and an offer cannot be created to a deleted account or actor —
   the answer is the one a missing account gets, to a non-admin grantor too.
 - On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
   via `query_role_grant_revoke_for_scope`), every pending offer at the scope
@@ -1953,7 +1955,8 @@ requires the grantor to call `query_role_grant_offer_create` again, which is
 audited.
 
 **Post-commit WS fan-out**: the JSON-RPC notifications (`role_grant_offer_received`
-/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`)
+/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`;
+a supersede reaches both live parties to the offer, never a removed account)
 ship alongside the above via the action context's `notification_sender`, scheduled
 through `emit_after_commit` so sends are strictly post-commit **and discarded if
 the handler's transaction rolls back** — a rolled-back transaction cannot leak a

@@ -35,6 +35,11 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import {
+	create_capture_sender,
+	to_captured_supersedes,
+	type CapturedNotificationCall
+} from './notification_helpers.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
 const session_options = create_session_config('test_session');
@@ -223,12 +228,16 @@ describe_db('self_service_role_actions', (get_db) => {
 			assert.strictEqual(audit_rows[0]!.target_actor_id, caller.actor.id);
 		});
 
-		test('revoke supersedes a pending offer of the role and audits it', async () => {
+		test('revoke supersedes a pending offer of the role, audits it, and tells both parties', async () => {
 			// a role both offerable and self-service-eligible, so a pending offer
 			// to the caller's account is a sibling of the self-granted role
+			const calls: Array<CapturedNotificationCall> = [];
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs,
+				create_route_specs: (ctx) => {
+					ctx.deps.notification_sender.add(create_capture_sender(calls));
+					return create_route_specs(ctx);
+				},
 				db: get_db()
 			});
 			const caller = await test_app.create_account({ username: 'set_supersede_user' });
@@ -294,6 +303,18 @@ describe_db('self_service_role_actions', (get_db) => {
 				[offer.id]
 			);
 			assert.ok(after?.superseded_at, 'the offer is superseded');
+			// the grantor, then the caller: its answer lists no offers, so its other
+			// connections learn of the offer here
+			assert.strictEqual(calls.length, 2, JSON.stringify(calls));
+			const cause = {
+				offer_id: offer.id,
+				reason: 'role_grant_revoked',
+				cause_id: String(revoke.metadata?.role_grant_id)
+			};
+			assert.deepStrictEqual(to_captured_supersedes(calls), [
+				{ account_id: grantor.account.id, ...cause },
+				{ account_id: caller.account.id, ...cause }
+			]);
 		});
 
 		test('revoke without prior grant returns changed:false and writes no audit row', async () => {
