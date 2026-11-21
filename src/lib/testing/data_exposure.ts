@@ -28,7 +28,7 @@ import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import { format_route_key } from '../http/surface_query.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '../auth/role_schema.ts';
-import type { TestAccount } from './app_server.ts';
+import type { TestAccount } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
 	resolve_valid_path,

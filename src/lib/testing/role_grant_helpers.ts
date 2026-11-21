@@ -21,7 +21,7 @@ import {
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_create_action_spec
 } from '../auth/role_grant_offer_action_specs.ts';
-import type { TestAccount, TestApp } from './app_server.ts';
+import type { TestAccount, TestApp } from './test_app.ts';
 import type { TestFixture } from './cross_backend/setup.ts';
 import { rpc_call_for_spec, type RpcCallArgs } from './rpc_helpers.ts';
 

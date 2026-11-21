@@ -43,18 +43,16 @@ const HONO_SIDE: ReadonlySet<string> = new Set([
 	'testing/adversarial_404.ts',
 	'testing/adversarial_headers.ts',
 	'testing/adversarial_input.ts',
-	'testing/app_server.ts',
 	'testing/attack_surface.ts',
 	'testing/auth_apps.ts',
-	'testing/cross_backend/full_spine_mount.ts',
 	'testing/cross_backend/in_process_setup.ts',
-	'testing/cross_backend/testing_reset_actions.ts',
 	'testing/cross_backend/testing_server_bun.ts',
 	'testing/cross_backend/testing_server_node.ts',
 	'testing/middleware.ts',
 	'testing/rate_limiting.ts',
 	'testing/rpc_attack_surface.ts',
 	'testing/sse_round_trip.ts',
+	'testing/test_app.ts',
 	'testing/ws_round_trip.ts'
 ]);
 

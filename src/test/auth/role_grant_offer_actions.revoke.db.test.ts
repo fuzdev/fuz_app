@@ -15,7 +15,7 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	ERROR_CANNOT_REVOKE_KEEPER_ADMIN,

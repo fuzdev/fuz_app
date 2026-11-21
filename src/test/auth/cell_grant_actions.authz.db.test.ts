@@ -58,7 +58,7 @@ import {
 } from '#lib/auth/cell_grant_action_specs.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
+import type { TestApp, TestAccount } from '#lib/testing/test_app.ts';
 import type {
 	CellGrantCreateAuthorize,
 	CellGrantCreateAuthorizeInput,

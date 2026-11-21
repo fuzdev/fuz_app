@@ -36,14 +36,13 @@ import {
 } from '../../auth/api_token_queries.ts';
 import { token_scope_full } from '../../auth/token_scope.ts';
 import { create_test_extra_actor } from '../db_entities.ts';
+import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
 import {
 	create_test_app,
-	create_test_account_with_credentials,
-	mint_test_session,
 	type CreateTestAppOptions,
 	type SuiteAppOptions,
 	type TestAccount
-} from '../app_server.ts';
+} from '../test_app.ts';
 import { create_test_app_surface_spec } from '../stubs.ts';
 import {
 	announce_db_invariant_exclusions,

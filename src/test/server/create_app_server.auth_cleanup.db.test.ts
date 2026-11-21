@@ -40,11 +40,8 @@ import { hash_session_token, query_create_session } from '#lib/auth/session_quer
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { Db } from '#lib/db/db.ts';
-import {
-	create_test_app,
-	create_loopback_app_server_options,
-	stub_password_deps
-} from '#lib/testing/app_server.ts';
+import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import {
 	assert_close_call,
 	create_recording_closer,

@@ -96,7 +96,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';

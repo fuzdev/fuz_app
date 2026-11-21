@@ -17,7 +17,7 @@
 import { assert, test } from 'vitest';
 import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	ERROR_CANNOT_REVOKE_LAST_ADMIN,

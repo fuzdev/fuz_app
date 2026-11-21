@@ -22,7 +22,7 @@ import {
 } from '#lib/auth/actor_search_action_specs.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';

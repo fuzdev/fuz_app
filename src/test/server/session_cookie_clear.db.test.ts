@@ -26,7 +26,7 @@ import {
 	type RouteResult
 } from '#lib/http/route_result.ts';
 import { REST_TABLE_NOT_FOUND } from '#lib/http/error_schemas.ts';
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 
 const session_options = create_session_config('test_session');
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';

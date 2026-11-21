@@ -107,7 +107,7 @@ Use the in-memory database for tests (`database_url: 'memory://'`, pglet via
 `@fuzdev/pglet-wasm`):
 
 ```ts
-import { create_test_app } from '@fuzdev/fuz_app/testing/app_server.ts';
+import { create_test_app } from '@fuzdev/fuz_app/testing/test_app.ts';
 
 const { app, create_session_headers, create_account, cleanup } = await create_test_app({
 	session_options: create_session_config('test_session'),

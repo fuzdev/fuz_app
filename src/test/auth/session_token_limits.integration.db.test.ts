@@ -19,7 +19,7 @@ import {
 	account_token_create_action_spec
 } from '#lib/auth/account_action_specs.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { find_auth_route } from '#lib/testing/integration_helpers.ts';

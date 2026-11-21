@@ -14,10 +14,10 @@ import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
 import {
-	create_test_app,
 	create_test_app_server,
 	create_loopback_app_server_options
 } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { auth_truncate_tables } from '#lib/testing/db.ts';

@@ -25,7 +25,7 @@ import { describe, test, assert } from 'vitest';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	query_accept_offer,

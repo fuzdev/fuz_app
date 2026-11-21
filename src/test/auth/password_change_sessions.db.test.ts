@@ -10,7 +10,7 @@
 
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';

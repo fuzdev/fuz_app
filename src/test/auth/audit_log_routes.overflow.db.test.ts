@@ -23,7 +23,7 @@ import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 import { SSE_OUTBOUND_QUEUE_BYTES } from '#lib/realtime/sse_constants.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 
 import { describe_db } from '../db_fixture.ts';

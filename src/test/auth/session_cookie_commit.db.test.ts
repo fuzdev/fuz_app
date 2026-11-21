@@ -19,7 +19,7 @@ import { define_route, prefix_route_specs, type RouteSpec } from '#lib/http/rout
 import { route_ok } from '#lib/http/route_result.ts';
 import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import { reset_audit_write_failures } from '#lib/auth/audit_emitter.ts';

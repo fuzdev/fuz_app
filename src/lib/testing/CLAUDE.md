@@ -207,12 +207,16 @@ tests that write rows by hand without the cascade, or a gap an
 
 ## Test app assembly
 
-### `app_server.ts`
+### `app_server.ts` and `test_app.ts`
 
-`create_test_app_server(options)` bootstraps a minimal `AppBackend` with a
-keeper account, API token, session cookie, and signed `Keyring`.
+`app_server.ts` is vitest-free (the spawned spine binary, the reset actions
+and fuz_forge's server build import it): `create_test_app_server(options)`
+bootstraps a minimal `AppBackend` with a keeper account, API token, session
+cookie, and signed `Keyring`. `test_app.ts` holds the test-app layer:
 `create_test_app(options)` layers `create_app_server` on top, returning a
-fully assembled Hono app + the backend + helpers.
+fully assembled Hono app + the backend + helpers (and `TestApp`,
+`TestAccount`, `CreateTestAppOptions`, `CreateTestAppAccountArgs`,
+`SuiteAppOptions`, the session/bearer header builders).
 
 Key module-scope values:
 
@@ -237,7 +241,7 @@ Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
 - `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
-- `CreateTestAppOptions extends TestAppServerOptions` — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
+- `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
 

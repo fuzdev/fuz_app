@@ -25,7 +25,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
-import type { TestAccount } from '#lib/testing/app_server.ts';
+import type { TestAccount } from '#lib/testing/test_app.ts';
 import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import {
 	assert_rpc_authenticated,

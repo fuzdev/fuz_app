@@ -39,7 +39,7 @@ import type { RpcSuccessFixture, RpcSuccessFixtures } from '../rpc_round_trip.ts
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import type { Schema, InferInput, Infer } from '@fuzdev/fuz_schema/schema.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { TestFixture } from './setup.ts';
 
 /** Options for `create_spine_rpc_success_fixtures`. */

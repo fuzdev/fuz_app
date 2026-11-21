@@ -23,7 +23,7 @@
 
 import { assert, test } from 'vitest';
 
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';

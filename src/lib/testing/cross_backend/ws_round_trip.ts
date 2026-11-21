@@ -121,7 +121,7 @@ import { list_audit_events } from './audit_cross_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGOUT_PATH,

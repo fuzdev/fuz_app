@@ -19,7 +19,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
-import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/test_app.ts';
 import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';

@@ -21,7 +21,7 @@ import {
 	account_token_revoke_action_spec
 } from '#lib/auth/account_action_specs.ts';
 import { API_TOKEN_ID_REGEX } from '#lib/auth/api_token.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call, rpc_call_for_spec, rpc_call_raw } from '#lib/testing/rpc_helpers.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { WireIssue } from '#lib/schema_issues.ts';

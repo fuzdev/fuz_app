@@ -47,7 +47,7 @@ import {
 } from '#lib/realtime/audit_log_sse.ts';
 import { SSE_CONNECTED_COMMENT, SSE_KEEP_ALIVE_COMMENT } from '#lib/realtime/sse_constants.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
-import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/test_app.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_sse_frame_reader } from '#lib/testing/transports/sse_frame_reader.ts';
 

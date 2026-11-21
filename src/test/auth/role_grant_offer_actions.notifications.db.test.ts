@@ -16,7 +16,7 @@
 import { describe, test, assert } from 'vitest';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {

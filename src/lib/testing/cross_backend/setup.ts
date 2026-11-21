@@ -40,7 +40,7 @@ import { format_issues } from '../../schema_issues.ts';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { BackendCapabilities } from './capabilities.ts';
 import { create_fetch_transport, type FetchTransport } from '../transports/fetch_transport.ts';
 import { MigrationTracker, type SchemaSnapshot } from '../schema_introspect.ts';

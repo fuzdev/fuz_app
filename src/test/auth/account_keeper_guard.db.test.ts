@@ -22,7 +22,7 @@ import {
 } from '#lib/auth/admin_action_specs.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	create_test_extra_actor,

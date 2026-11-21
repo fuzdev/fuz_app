@@ -30,7 +30,7 @@ import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { format_route_key } from '../http/surface_query.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
 import { needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
-import type { TestAccount } from './app_server.ts';
+import type { TestAccount } from './test_app.ts';
 import {
 	assert_response_matches_spec,
 	is_credential_type_refusal,

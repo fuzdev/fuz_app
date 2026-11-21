@@ -20,7 +20,7 @@ import { define_route, prefix_route_specs, type RouteSpec } from '#lib/http/rout
 import { route_raw } from '#lib/http/route_result.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { create_rate_limiter } from '#lib/rate_limiter.ts';
 import {

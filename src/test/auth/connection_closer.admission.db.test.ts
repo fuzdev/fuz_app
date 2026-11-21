@@ -67,7 +67,7 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import type { AuditLogSse } from '#lib/realtime/audit_log_sse.ts';
 import { require_audit_sse } from '#lib/server/app_server.ts';
-import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { auth_integration_truncate_tables, create_describe_db } from '#lib/testing/db.ts';

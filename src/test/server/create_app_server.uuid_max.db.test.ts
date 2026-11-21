@@ -11,7 +11,7 @@ import { assert, describe, test } from 'vitest';
 import { literal, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import {
 	ERROR_ACTOR_NOT_ON_ACCOUNT,

@@ -107,7 +107,7 @@ import {
 	create_pending_role_grant_offer
 } from './role_grant_cross_helpers.ts';
 import { cross_account_purge } from './revocation_drivers.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, type WsEndpointTarget, type WsSessionAccount } from './ws_endpoint.ts';

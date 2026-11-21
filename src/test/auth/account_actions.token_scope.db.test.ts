@@ -31,7 +31,7 @@ import {
 import { token_scope_methods_at_bytes } from '#lib/testing/token_scope_fixtures.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';

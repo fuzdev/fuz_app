@@ -32,7 +32,7 @@ import {
 	type SuiteAppOptions,
 	type TestApp,
 	type TestAccount
-} from './app_server.ts';
+} from './test_app.ts';
 import { create_default_db_factory, type DbFactory } from './db.ts';
 import { find_route_spec, pick_auth_headers } from './integration_helpers.ts';
 import {

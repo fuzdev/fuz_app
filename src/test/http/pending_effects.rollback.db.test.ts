@@ -25,7 +25,7 @@ import { test, assert } from 'vitest';
 import { boolean, literal, object, one_of, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import {
 	create_default_db_factory,
 	create_describe_db,

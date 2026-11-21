@@ -951,7 +951,7 @@ impls actually boot.
 
 ### Standalone Helpers
 
-- `create_test_app` (`testing/app_server.ts`) — Full Hono app with test defaults
+- `create_test_app` (`testing/test_app.ts`) — Full Hono app with test defaults
 - `create_test_app_server` (`testing/app_server.ts`) — DB + deps only (no Hono app)
 - `create_test_app_surface_spec` (`testing/stubs.ts`) — Attack surface spec mirroring `create_app_server`
 - `create_stub_app_deps` (`testing/stubs.ts`) — No-op `AppDeps` (safe to call through)

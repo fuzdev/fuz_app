@@ -30,7 +30,7 @@ import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_INVALID_REQUEST_BODY } from '#lib/http/error_schemas.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';

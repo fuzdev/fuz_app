@@ -35,7 +35,7 @@ import {
 import { cell_grant_create_action_spec } from '#lib/auth/cell_grant_action_specs.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
-import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
+import type { TestApp, TestAccount } from '#lib/testing/test_app.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';

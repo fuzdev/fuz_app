@@ -27,7 +27,7 @@ import {
 } from '../../auth/credential_type_schema.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '../../auth/role_schema.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import {
 	raw_http_exchange,
 	raw_http_parse_json,

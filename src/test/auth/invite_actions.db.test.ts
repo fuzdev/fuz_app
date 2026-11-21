@@ -26,7 +26,7 @@ import {
 	ERROR_INVITE_NOT_FOUND
 } from '#lib/http/error_schemas.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';

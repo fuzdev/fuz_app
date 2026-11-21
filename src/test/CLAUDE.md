@@ -117,7 +117,7 @@ created, children first.
 ### Integration Tests
 
 Named `.integration.test.ts`. Use `create_test_app()` from
-`#lib/testing/app_server.ts` to spin up a full Hono app:
+`#lib/testing/test_app.ts` to spin up a full Hono app:
 
 ```ts
 const { app, create_session_headers, create_bearer_headers, create_account, cleanup } =

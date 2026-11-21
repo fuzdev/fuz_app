@@ -57,7 +57,7 @@ import { create_sse_transport } from '../transports/sse_transport.ts';
 import type { WsClient } from '../transports/ws_client.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
 import { open_session_ws, to_session_cookie, type WsEndpointTarget } from './ws_endpoint.ts';

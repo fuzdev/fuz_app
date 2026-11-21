@@ -13,7 +13,7 @@
 import { describe, test, assert } from 'vitest';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_role_grant_offer_actions } from '#lib/auth/role_grant_offer_actions.ts';

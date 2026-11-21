@@ -22,7 +22,7 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
-import type { TestAccount } from '#lib/testing/app_server.ts';
+import type { TestAccount } from '#lib/testing/test_app.ts';
 import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import {
 	assert_route_authenticated,

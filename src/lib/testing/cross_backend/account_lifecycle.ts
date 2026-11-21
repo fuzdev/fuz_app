@@ -77,7 +77,7 @@ import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cross_rpc.ts';
 import { assert_iso8601_seconds } from './wire_shapes.ts';
 import { create_test_request_headers } from '../test_origin.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,

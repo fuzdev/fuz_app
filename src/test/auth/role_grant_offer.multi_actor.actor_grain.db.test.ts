@@ -13,7 +13,7 @@
 import { assert, describe, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,

@@ -40,7 +40,7 @@ import {
 } from '../http/jsonrpc.ts';
 import { jsonrpc_error_code_to_http_status } from '../http/jsonrpc_errors.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
-import type { TestAccount } from './app_server.ts';
+import type { TestAccount } from './test_app.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
 import {

@@ -37,7 +37,8 @@
 import { assert, test } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
-import { create_test_app, stub_password_deps, type TestApp } from '#lib/testing/app_server.ts';
+import { stub_password_deps } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';

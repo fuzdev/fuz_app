@@ -21,7 +21,7 @@ import {
 	NOT_FOUND_TEXT
 } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import type { TestAccount } from './app_server.ts';
+import type { TestAccount } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
 	find_mounted_route,

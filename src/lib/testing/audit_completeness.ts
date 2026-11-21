@@ -33,7 +33,7 @@ import {
 	type AuditEventType,
 	type AuditLogEventWithUsernamesJson
 } from '../auth/audit_log_schema.ts';
-import type { TestAccount } from './app_server.ts';
+import type { TestAccount } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { find_auth_route } from './integration_helpers.ts';

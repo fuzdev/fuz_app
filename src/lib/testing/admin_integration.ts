@@ -33,7 +33,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN, type RoleRegistry } from '../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../auth/grant_path_schema.ts';
-import type { TestAccount, TestApp } from './app_server.ts';
+import type { TestAccount, TestApp } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { role_grant_offer_and_accept } from './role_grant_helpers.ts';

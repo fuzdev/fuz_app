@@ -44,7 +44,7 @@ import {
 	type CellItemPosition
 } from '#lib/auth/cell_item_action_specs.ts';
 import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec, type RpcCallResultForSpec } from '#lib/testing/rpc_helpers.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';

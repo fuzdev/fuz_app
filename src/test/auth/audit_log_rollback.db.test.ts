@@ -13,7 +13,7 @@
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';

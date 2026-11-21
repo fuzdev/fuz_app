@@ -16,7 +16,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { query_account_by_id, query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';

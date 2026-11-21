@@ -15,7 +15,7 @@
  * @module
  */
 
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';

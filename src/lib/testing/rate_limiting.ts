@@ -31,7 +31,7 @@ import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
 import { REST_RATE_LIMIT_EXCEEDED } from '../http/error_schemas.ts';
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
-import { create_test_app, type SuiteAppOptions } from './app_server.ts';
+import { create_test_app, type SuiteAppOptions } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
 	create_default_db_factory,

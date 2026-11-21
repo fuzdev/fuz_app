@@ -18,7 +18,7 @@ import { assert } from 'vitest';
 import { rpc_call } from '../rpc_helpers.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { TestAccount } from '../app_server.ts';
+import type { TestAccount } from '../test_app.ts';
 import type { TestFixture } from './setup.ts';
 
 /** Options for the role-grant fixtures. */

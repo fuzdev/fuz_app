@@ -21,7 +21,7 @@ import {
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { credential_type_required_error } from '#lib/actions/perform_action.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
-import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { query_account_by_id } from '#lib/auth/account_queries.ts';
