@@ -20,7 +20,7 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import type { SetupTest } from '#lib/testing/cross_backend/setup.ts';
-import type { DbInvariantExclusions } from '#lib/testing/db_invariants.ts';
+import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 
 /** A setup over the spine's surface, handing back the app's database too. */
 const create_setup = (

@@ -7,13 +7,13 @@ import '../assert_dev_env.ts';
  * `TESTING_BACKDOOR_METHODS` (`_testing_reset`, `_testing_drain_effects`,
  * `_testing_mint_session`, `_testing_put_fact`,
  * `_testing_flood_notifications`, `_testing_schema_snapshot`,
- * `_testing_migration_tracker`, `_testing_action_manifest`,
+ * `_testing_migration_tracker`, `_testing_db_invariants`, `_testing_action_manifest`,
  * `_testing_origin_check`, `_testing_credential_read`,
  * `_testing_shorten_credential_expiry`, `_testing_room_evict`) are privileged test-binary actions the production
  * wire never exposes — direct DB writes (full auth wipe, forged session row,
  * raw fact insert), the audit barrier, a flood of the caller's own connection,
  * introspection reads (the live schema, the `schema_version` migration
- * tracker, and the live RPC registry — the highest info-leak of the set were
+ * tracker, the database invariant rows, and the live RPC registry — the highest info-leak of the set were
  * the gate to break), a probe of the origin allowlist parser, a rewrite of
  * an account's credential expiries, and an eviction from the room registry. Their only structural fence
  * is the **daemon-token** credential gate on
@@ -121,6 +121,8 @@ const BACKDOOR_PARAMS: Readonly<Record<TestingBackdoorMethod, unknown>> = {
 	_testing_schema_snapshot: {},
 	// The migration-tracker-dump read — its input is void, so the call carries no params.
 	_testing_migration_tracker: undefined,
+	// The database-invariants read — its input is void, so the call carries no params.
+	_testing_db_invariants: undefined,
 	// The RPC-registry-dump read — its input is void, so the call carries no params.
 	_testing_action_manifest: undefined,
 	// The origin conformance probe — a valid `{patterns, origin}` pair, so it

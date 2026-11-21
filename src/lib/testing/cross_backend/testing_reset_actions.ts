@@ -12,7 +12,9 @@ import '../assert_dev_env.ts';
  * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot),
  * **`_testing_migration_tracker`** (dump the `schema_version` tracker rows for
  * cross-impl migration-identity parity — the provenance half the snapshot gate
- * excludes by design), and **`_testing_flood_notifications`** (queue a burst
+ * excludes by design), **`_testing_db_invariants`** (run the database
+ * invariant statement for the per-test check), and
+ * **`_testing_flood_notifications`** (queue a burst
  * of notifications onto the caller's own WebSocket connection, to push its
  * outbound queue past its byte budget).
  *
@@ -122,6 +124,7 @@ import {
 	MigrationTracker
 } from '../schema_introspect.ts';
 import { ActionManifest, build_action_manifest } from './action_manifest.ts';
+import { DbInvariantRows, query_db_invariant_rows } from '../db_invariant_queries.ts';
 import { create_test_extra_actor } from '../db_entities.ts';
 import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
@@ -595,6 +598,44 @@ export const create_testing_migration_tracker_action = (): RpcAction =>
 		query_migration_tracker(ctx.db)
 	);
 
+/**
+ * `_testing_db_invariants` — run the database invariant statement
+ * (`DB_INVARIANTS_SQL`, the one `db_invariants.sql` holds) and answer every
+ * violating row, `{rows: [{invariant, row}]}`, unfiltered: the harness drops
+ * the invariants its setup excludes. The per-test check of a cross-process
+ * setup reads it, so a backend whose database the test process can't reach
+ * (`memory://`) is checked like one it can. Read-only, writing no audit row.
+ * A row's key order is not part of the contract (the spines' JSON maps order
+ * keys differently); compare rows as objects.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`. The
+ * Rust mirror is `fuz_testing::create_testing_db_invariants_action_spec`,
+ * running the same statement from its byte-identical copy of the file.
+ */
+export const testing_db_invariants_action_spec = {
+	method: '_testing_db_invariants',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: false,
+	input: fuz_void,
+	output: DbInvariantRows,
+	async: true,
+	description:
+		'Test-binary only — run the database invariant statement and answer every violating row ' +
+		'for the per-test invariant check.'
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the standalone `_testing_db_invariants` action. No deps — reads
+ * `ctx.db` via `query_db_invariant_rows`. Bundled by
+ * `create_testing_actions`; mount directly for in-process use.
+ */
+export const create_testing_db_invariants_action = (): RpcAction =>
+	rpc_action(testing_db_invariants_action_spec, async (_input, ctx) => ({
+		rows: await query_db_invariant_rows({ db: ctx.db })
+	}));
+
 /** The shortest expiry `_testing_shorten_credential_expiry` sets, in seconds from now. */
 export const TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS = 1;
 
@@ -999,6 +1040,7 @@ export const create_testing_actions = (
 		create_testing_drain_effects_action(deps.audit),
 		create_testing_flood_notifications_action(),
 		create_testing_schema_snapshot_action(),
-		create_testing_migration_tracker_action()
+		create_testing_migration_tracker_action(),
+		create_testing_db_invariants_action()
 	];
 };

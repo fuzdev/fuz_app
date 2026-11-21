@@ -21,7 +21,7 @@ import {
 	query_db_invariant_violations,
 	validate_db_invariant_exclusions,
 	type DbInvariantName
-} from '#lib/testing/db_invariants.ts';
+} from '#lib/testing/db_invariant_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

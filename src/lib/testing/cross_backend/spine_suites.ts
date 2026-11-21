@@ -54,7 +54,9 @@ import '../assert_dev_env.ts';
  *
  * **Backdoors.** The backend's `capabilities.testing_backdoors` must declare
  * `SPINE_SUITES_REQUIRED_BACKDOORS` (the per-test reset and the audit
- * barrier), `_testing_put_fact` when it declares `fact_serving`, and
+ * barrier), `_testing_db_invariants` (the per-test invariant check) unless
+ * `setup.exclude_db_invariants` turns the check off with `all`,
+ * `_testing_put_fact` when it declares `fact_serving`, and
  * `_testing_room_evict` when it declares `rooms`; the call throws otherwise. A
  * suite every case of which drives another backdoor (`credential_conformance`,
  * `credential_deadline`, `origin_conformance`, `ws_outbound_overflow`) skips
@@ -274,6 +276,7 @@ import {
 	describe_cross_process_ws_tests,
 	type CrossProcessWsTestOptions
 } from './ws_round_trip.ts';
+import { DB_INVARIANTS_EXCLUDE_ALL, type DbInvariantExclusions } from '../db_invariant_queries.ts';
 
 /**
  * Every shipped suite `describe_spine_cross_suites` runs, each named by its
@@ -1091,9 +1094,19 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	}
 };
 
+/** Merge two setups' invariant exclusions by name, to `all` alone when either excludes `all`. */
+const merge_db_invariant_exclusions = (
+	base: DbInvariantExclusions | undefined,
+	seed: DbInvariantExclusions | undefined
+): DbInvariantExclusions => {
+	const all = base?.[DB_INVARIANTS_EXCLUDE_ALL] ?? seed?.[DB_INVARIANTS_EXCLUDE_ALL];
+	return all !== undefined ? { [DB_INVARIANTS_EXCLUDE_ALL]: all } : { ...base, ...seed };
+};
+
 /**
  * Concatenate a suite's seeding onto the base setup options, and merge their
- * database invariant exclusions by name.
+ * database invariant exclusions by name — to `all` alone when either side
+ * excludes `all`, which a named entry beside it would make redundant.
  */
 const merge_setup_options = (
 	base: CrossProcessSetupOptions | undefined,
@@ -1104,7 +1117,10 @@ const merge_setup_options = (
 	extra_keeper_roles: [...(base?.extra_keeper_roles ?? []), ...(seed?.extra_keeper_roles ?? [])],
 	extra_accounts: [...(base?.extra_accounts ?? []), ...(seed?.extra_accounts ?? [])],
 	extra_actors: [...(base?.extra_actors ?? []), ...(seed?.extra_actors ?? [])],
-	exclude_db_invariants: { ...base?.exclude_db_invariants, ...seed?.exclude_db_invariants }
+	exclude_db_invariants: merge_db_invariant_exclusions(
+		base?.exclude_db_invariants,
+		seed?.exclude_db_invariants
+	)
 });
 
 /**
@@ -1252,6 +1268,16 @@ const validate_spine_cross_suites_options = (
 		throw new Error(
 			`describe_spine_cross_suites: capabilities.testing_backdoors must declare ${missing.join(', ')} ` +
 				'— every suite resets through _testing_reset and reads audit rows behind _testing_drain_effects'
+		);
+	}
+	if (
+		!declared.includes('_testing_db_invariants') &&
+		options.setup?.exclude_db_invariants?.[DB_INVARIANTS_EXCLUDE_ALL] === undefined
+	) {
+		throw new Error(
+			'describe_spine_cross_suites: capabilities.testing_backdoors must declare ' +
+				'_testing_db_invariants — every setup checks the database invariants through it after ' +
+				`each test — or turn the check off with setup: {exclude_db_invariants: {${DB_INVARIANTS_EXCLUDE_ALL}: '<reason>'}}`
 		);
 	}
 	if (capabilities.fact_serving && !declared.includes('_testing_put_fact')) {
@@ -1437,6 +1463,7 @@ export const register_spine_case_exclusions = (
  *   its cases, or an override changing its `capabilities.testing_backdoors`), an exclude,
  *   override or `exclude_cases` entry for a suite that skips itself or isn't
  *   run, a backend not declaring `SPINE_SUITES_REQUIRED_BACKDOORS` (or
+ *   `_testing_db_invariants` without `setup.exclude_db_invariants.all`, or
  *   `_testing_put_fact` with `fact_serving`, or `_testing_room_evict` with
  *   `rooms`), or a suite missing an input the
  *   handle doesn't carry

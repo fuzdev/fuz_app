@@ -3,7 +3,10 @@
  * read them, and in the Rust spine's crates, which embed their copy with
  * `include_str!` for their own unit tests. This holds each pair
  * byte-identical, so a row added on one side fails here until it reaches the
- * other.
+ * other. The database invariant statement rides along: `db_invariants.sql` is
+ * generated here (`db_invariants.gen.sql.ts`) and embedded by the Rust
+ * spine's `_testing_db_invariants`, so an invariant added here fails until
+ * the regenerated file is copied over.
  *
  * It reads the Cargo workspace the Rust stub is built from
  * (`resolve_rust_spine_stub_workspace_dir`), so it runs under the dual-spawn
@@ -45,6 +48,11 @@ const TWIN_TABLES: ReadonlyArray<TwinTable> = [
 		name: 'request_target_conformance.json',
 		ts_url: REQUEST_TARGET_CONFORMANCE_URL,
 		rust_path: 'crates/fuz_http/src/request_target_conformance.json'
+	},
+	{
+		name: 'db_invariants.sql',
+		ts_url: new URL('../../lib/testing/db_invariants.sql', import.meta.url),
+		rust_path: 'crates/fuz_testing/src/db_invariants.sql'
 	}
 ];
 

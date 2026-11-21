@@ -224,7 +224,8 @@ const handle_declaring = (
 /** The backdoors every one-call backend must declare, and nothing else. */
 const HARNESS_ONLY: ReadonlyArray<TestingBackdoorMethod> = [
 	'_testing_reset',
-	'_testing_drain_effects'
+	'_testing_drain_effects',
+	'_testing_db_invariants'
 ];
 
 describe('describe_spine_cross_suites backdoor declaration', () => {
@@ -243,6 +244,24 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 			call(handle_declaring([]), {}),
 			/must declare _testing_reset, _testing_drain_effects/
 		);
+	});
+
+	test('a backend not declaring the invariants backdoor throws unless the setup turns the check off', () => {
+		const harness = HARNESS_ONLY.filter((m) => m !== '_testing_db_invariants');
+		assert.throws(
+			call(handle_declaring(harness), {}),
+			/must declare _testing_db_invariants.*setup: \{exclude_db_invariants: \{all: '<reason>'\}\}/
+		);
+		let refusal = '';
+		try {
+			call(handle_declaring(harness), {
+				setup: { exclude_db_invariants: { all: 'not under test' } }
+			})();
+		} catch (error) {
+			// past the check, registration refuses a call made inside a test
+			refusal = String(error);
+		}
+		assert.notMatch(refusal, /_testing_db_invariants/);
 	});
 
 	test('fact_serving needs the fact seeder declared', () => {
@@ -310,7 +329,8 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 		const declared: ReadonlyArray<TestingBackdoorMethod> = [
 			'_testing_reset',
 			'_testing_drain_effects',
-			'_testing_mint_session'
+			'_testing_mint_session',
+			'_testing_db_invariants'
 		];
 		const with_backdoors = (testing_backdoors: ReadonlyArray<TestingBackdoorMethod>) =>
 			call(handle_declaring(declared), {
@@ -337,7 +357,12 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 		// the same list in another order passes the check
 		let refusal = '';
 		try {
-			with_backdoors(['_testing_mint_session', '_testing_reset', '_testing_drain_effects'])();
+			with_backdoors([
+				'_testing_db_invariants',
+				'_testing_mint_session',
+				'_testing_reset',
+				'_testing_drain_effects'
+			])();
 		} catch (error) {
 			// past the check, registration refuses a call made inside a test
 			refusal = String(error);

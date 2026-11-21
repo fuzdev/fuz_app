@@ -347,7 +347,9 @@ export interface BackendCapabilities {
 	 * (`_testing_origin_check`), `ws_outbound_overflow`
 	 * (`_testing_flood_notifications`) — and requires `_testing_put_fact` of a
 	 * backend declaring `fact_serving` and `_testing_room_evict` of one
-	 * declaring `rooms`.
+	 * declaring `rooms`. `default_cross_process_setup` requires
+	 * `_testing_db_invariants`, its per-test invariant check, unless the setup
+	 * turns the check off (`exclude_db_invariants: {all: reason}`).
 	 *
 	 * fuz_app's spine presets declare every one; the in-process transport none
 	 * (the backdoor suites are cross-process only).

@@ -172,26 +172,38 @@ with `isolate: false` + `fileParallelism: false` to amortize WASM boot across
 every DB test file — which also makes that one instance the whole run's; a
 project that isolates its files gets one per worker instead.
 
-### `db_invariants.ts` — auth-schema invariants after every test
+### `db_invariant_queries.ts` + `db_invariants.ts` — auth-schema invariants after every test
 
-`DB_INVARIANTS` — named SQL checks over the auth tables and `audit_log`, one
-set for both spines and run as one statement; the list, what each holds and
-how a creation is ordered against a removal are the module's TSDoc.
-`query_db_invariant_violations` / `assert_db_invariants` /
-`format_db_invariant_violations`.
+`db_invariant_queries.ts` (vitest-free, so a test binary mounts it) —
+`DB_INVARIANTS`, named SQL checks over the auth tables and `audit_log`, one
+set for both spines; the list, what each holds and how a creation is ordered
+against a removal are the module's TSDoc. `DB_INVARIANTS_SQL` is the whole
+set as one statement (`$1` keeper role, `$2` admin role, each row's columns
+as JSON text); `db_invariants.gen.sql.ts` writes it to `db_invariants.sql`,
+which the Rust `fuz_testing` embeds byte for byte
+(`conformance_table_copies.cross.test.ts` holds the pair).
+`query_db_invariant_rows` / `DbInvariantRows` (the backdoor's answer) /
+`to_db_invariant_violations` / `query_db_invariant_violations` /
+`format_db_invariant_violations`. `db_invariants.ts` holds the hooks:
+`assert_db_invariants` (over a `Db`), `assert_db_invariant_rows` (over
+rows a backend answered), `register_db_invariants_check`,
+`check_db_invariants_after_all`.
 
 Both cross-backend setups build the fixture, then register
 `fixture.assert_db_invariants` to run when the test finishes
 (`register_db_invariants_check` — only inside a running test; skipped when
-the test already failed). Cross-process it reads a PostgreSQL `DATABASE_URL`
-the test process reaches (one pool per database, closed in an `afterAll`), so
-`memory://` spawns go unchecked. A fixture built in `beforeAll` is checked
-once its describe's tests are done, by the shipped suites that build one
-(`check_db_invariants_after_all`). Opt out per invariant with
+the test already failed). In-process it queries the fixture's own database;
+cross-process it calls the backend's `_testing_db_invariants` on the keeper's
+daemon-token channel (unrecorded by a transcript), so `memory://` spawns are
+checked too. A backend not declaring `_testing_db_invariants` in
+`capabilities.testing_backdoors` throws at setup unless the setup passes
+`exclude_db_invariants: {all: reason}`. A fixture built in `beforeAll` is
+checked once its describe's tests are done, by the shipped suites that build
+one (`check_db_invariants_after_all`). Opt out per invariant with
 `exclude_db_invariants: {[name]: reason}` on the setup — reason required,
 logged once per setup, merged by name in `describe_spine_cross_suites` — for
 tests that write rows by hand without the cascade, or a gap an
-`xfail_until` marker tracks.
+`xfail_until` marker tracks; `all` excludes every one.
 
 ## Test app assembly
 
@@ -2119,6 +2131,13 @@ Conventions that hold across them:
   `account_lifecycle_parity.db.test.ts`) add it directly, over a tracked
   emitter, so the shared suite body can call the barrier on every backend
   uniformly.
+
+  Also bundled: `_testing_db_invariants` (`create_testing_db_invariants_action()`,
+  void input, read-only, no audit row) — every row breaking a database
+  invariant, `{rows: [{invariant, row}]}`, what `default_cross_process_setup`
+  checks after each test (§`db_invariant_queries.ts`); the Rust
+  `testing_reset_specs` bundles its twin beside reset and drain, so every
+  `testing_*` server on the spine serves it.
 
   Also bundled: `_testing_flood_notifications`
   (`create_testing_flood_notifications_action()`) — queues `count`

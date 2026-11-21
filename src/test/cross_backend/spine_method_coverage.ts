@@ -242,6 +242,11 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 		suite: 'describe_testing_backdoor_cross_tests'
 	},
 	{
+		method: '_testing_db_invariants',
+		tier: 'backdoor',
+		suite: 'describe_testing_backdoor_cross_tests'
+	},
+	{
 		method: '_testing_action_manifest',
 		tier: 'backdoor',
 		suite: 'describe_testing_backdoor_cross_tests'

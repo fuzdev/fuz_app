@@ -39,7 +39,7 @@ const SELF_SKIPPING = [
 
 const capabilities = {
 	ws: false,
-	testing_backdoors: ['_testing_reset', '_testing_drain_effects']
+	testing_backdoors: ['_testing_reset', '_testing_drain_effects', '_testing_db_invariants']
 } as unknown as BackendCapabilities;
 
 const handle = {

@@ -321,8 +321,8 @@ nothing — with a floor behind it: no response outside 2xx mints a session
 cookie, and a row expecting one is refused when the table is described.
 
 The dual-spawn files — `schema_parity.cross.test.ts`,
-`action_manifest_parity.cross.test.ts`, `differential.cross.test.ts` and
-`lock_pins.cross.test.ts` — are
+`action_manifest_parity.cross.test.ts`, `differential.cross.test.ts`,
+`lock_pins.cross.test.ts` and `db_invariants_twin.cross.test.ts` — are
 **not** among the single-backend files above: they run under the shared
 dual-spawn `cross_backend_parity` project (`global_setup_schema_parity.ts`
 brings up the TS spine + `testing_spine_stub` together and provides
@@ -358,9 +358,12 @@ tracking id and the paths it differs at, and the ledger's closing test fails
 on an entry that no longer differs; and
 `conformance_table_copies.cross.test.ts` holds each twin table
 (`credential_conformance.json`, `request_header_conformance.json`,
-`request_target_conformance.json`) byte-equal
-to the copy the Rust spine embeds, failing when the checkout the stub builds
-from lacks one
+`request_target_conformance.json`) and the generated `db_invariants.sql`
+byte-equal to the copy the Rust spine embeds, failing when the checkout the
+stub builds from lacks one; and `db_invariants_twin.cross.test.ts` leaves
+each spine's database breaking several invariants and holds the spine's
+`_testing_db_invariants` answer equal to `query_db_invariant_rows` read
+directly — on the stub, the Rust handler against the TS reader over one state
 — all under `npm run test:cross:parity`.
 `lock_pins.cross.test.ts` is the local gate for the row locks, on both spines
 at once: each case plays the other transaction over a raw `pg` connection,

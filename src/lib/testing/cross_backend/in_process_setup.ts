@@ -48,9 +48,9 @@ import { create_test_app_surface_spec } from '../stubs.ts';
 import {
 	announce_db_invariant_exclusions,
 	assert_db_invariants,
-	register_db_invariants_check,
-	type DbInvariantExclusions
+	register_db_invariants_check
 } from '../db_invariants.ts';
+import type { DbInvariantExclusions } from '../db_invariant_queries.ts';
 import {
 	find_rpc_action,
 	http_transport,

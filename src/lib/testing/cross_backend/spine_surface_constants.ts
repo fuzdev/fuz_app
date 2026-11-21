@@ -61,6 +61,7 @@ export const TESTING_BACKDOOR_METHODS = [
 	'_testing_flood_notifications',
 	'_testing_schema_snapshot',
 	'_testing_migration_tracker',
+	'_testing_db_invariants',
 	'_testing_action_manifest',
 	'_testing_origin_check',
 	'_testing_credential_read',

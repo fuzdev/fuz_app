@@ -583,7 +583,7 @@ live as `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
 `_testing_drain_effects`, `_testing_flood_notifications`,
 `_testing_schema_snapshot`, `_testing_migration_tracker`,
-`_testing_action_manifest`, `_testing_origin_check`,
+`_testing_db_invariants`, `_testing_action_manifest`, `_testing_origin_check`,
 `_testing_credential_read`, `_testing_shorten_credential_expiry`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time (fuz_app's own spine

@@ -315,15 +315,18 @@ describe_standard_admin_integration_tests({
 Both setups — `default_in_process_setup` (and so
 `default_in_process_suite_options`) and `default_cross_process_setup` — check
 the auth schema's invariants (`DB_INVARIANTS` in
-`@fuzdev/fuz_app/testing/db_invariants.ts`) when each test that called
+`@fuzdev/fuz_app/testing/db_invariant_queries.ts`) when each test that called
 `setup_test()` finishes: no credential, pending offer or unclaimed invite
 outliving its account, a bootstrapped database keeping a live keeper and a
 live admin, and the like, read from the rows and from `audit_log` so an
 undelete hides nothing. A test that already failed is not checked again. A
 fixture built in `beforeAll` is checked once after its describe's tests, by
-the shipped suites that build one. Cross-process, only a backend whose
-`DATABASE_URL` is a PostgreSQL URL the test process can reach is checked; a
-`memory://` spawn is skipped.
+the shipped suites that build one. Cross-process, the check calls the
+backend's `_testing_db_invariants` backdoor (bundled by
+`create_testing_actions` and by the Rust `fuz_testing::testing_reset_specs`),
+whatever its database. A backend must declare it in
+`capabilities.testing_backdoors`; one that doesn't throws at setup unless the
+check is turned off with its reason, `exclude_db_invariants: {all: '…'}`.
 
 A test that writes rows by hand without the cascade the spine runs (a
 tombstone set in SQL, a lock-ordering test playing half a delete) leaves a

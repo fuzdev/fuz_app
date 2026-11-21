@@ -18,6 +18,7 @@ import {
 	TESTING_FLOOD_MAX_SIZE,
 	TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS,
 	TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS,
+	testing_db_invariants_action_spec,
 	testing_drain_effects_action_spec,
 	testing_flood_notifications_action_spec,
 	testing_migration_tracker_action_spec,
@@ -73,6 +74,7 @@ const SPECS = [
 	testing_flood_notifications_action_spec,
 	testing_schema_snapshot_action_spec,
 	testing_migration_tracker_action_spec,
+	testing_db_invariants_action_spec,
 	testing_shorten_credential_expiry_action_spec,
 	testing_action_manifest_action_spec
 ];
@@ -94,6 +96,7 @@ const first_issue = (schema: AnySchema, input: unknown) => {
 const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<unknown>]> = [
 	['_testing_drain_effects input', testing_drain_effects_action_spec.input, [undefined]],
 	['_testing_migration_tracker input', testing_migration_tracker_action_spec.input, [undefined]],
+	['_testing_db_invariants input', testing_db_invariants_action_spec.input, [undefined]],
 	['_testing_action_manifest input', testing_action_manifest_action_spec.input, [undefined]],
 	[
 		'_testing_reset input',
@@ -210,6 +213,7 @@ describe('the testing seams', () => {
 		for (const spec of [
 			testing_drain_effects_action_spec,
 			testing_migration_tracker_action_spec,
+			testing_db_invariants_action_spec,
 			testing_action_manifest_action_spec
 		]) {
 			assert.ok(!parse(fuz_slot(spec.input), {}).ok, spec.method);
