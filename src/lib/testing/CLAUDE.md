@@ -591,7 +591,9 @@ rather than `ERROR_INVALID_JSON_BODY`.
 
 `describe_adversarial_404({build, roles})` — for every route with `params` and
 a 404 definition of its own in `errors`, replaces the handler with a stub
-returning `{error: <code>}` (the first 404 definition's code), fires with
+returning the first 404 definition's code with its fields generated from its
+schema (`generate_valid_object`; fields it can't generate throw at collection,
+naming the route), fires with
 nil-UUID params, asserts 404, a code the route error map declares at 404, and a body its 404
 accepts (`assert_error_schema_valid`, `AppSurfaceSpec.route_error_maps`). No DB needed.
 
@@ -1049,7 +1051,7 @@ Registry lookups:
    - wrong role → `forbidden` (-32002)
    - authenticated without role → `forbidden`
    - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §Keeper auth shape).
-   - correct auth passes (not 401/403)
+   - correct auth passes — valid params (`input_overrides` or generated) reach the method's handler, a recording stub, at 200
    - GET unauthenticated for `side_effects: false` reads
 2. **RPC adversarial envelopes** — the fixed set `create_rpc_envelope_cases(endpoint, {skip_methods?})` builds, exercising the envelope parse, method lookup, and GET read restriction: non-JSON body → `parse_error`, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, a response-shaped body (`{jsonrpc, id, result}`) → `invalid_request` on `id: null`, batch array, non-object POST `params` → `invalid_request`, unknown method → `method_not_found`, GET missing `method`/`id` → `invalid_request`, a GET query holding an escape that doesn't decode → `invalid_request` on `id: null`, GET invalid-JSON params → `invalid_params`, GET non-object params on **every** read (each of `RPC_NON_OBJECT_PARAMS`: a number, an array, a string, a boolean) → `invalid_params`, GET mutation method → `invalid_request`, plus three ordering cases sent with no credential (an anonymous GET mutation and an anonymous batch, both `invalid_request`, never 401; an anonymous GET with non-object params on a read requiring an identity, the 401 — params validation runs after authorization). Each case is sent by the app its method's auth admits (`select_auth_app`) and pins status, code, echoed `id`, and `data.reason` (exact where the dispatcher sets one, absent otherwise) via `assert_rpc_envelope_refusal`. The cases are data (`RpcEnvelopeCase`) in the hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`; `to_rpc_envelope_request` builds a case's request, and `rpc_get_side_effects_reason(method)` is the GET read restriction's reason.
 3. **RPC adversarial params** — `generate_rpc_params_test_cases(input, options?)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation), taking the same `{base?, label?}`. Every case expects 400 `invalid_params` with `data.reason` the broken field's declared `invalid_reason` (`expected_invalid_reason`), absent for an undeclared field. Shared with the cross-process suite. `input_overrides` (method name → valid params) seeds a method's cases from that base; an override its schema refuses throws at collection, naming the method.

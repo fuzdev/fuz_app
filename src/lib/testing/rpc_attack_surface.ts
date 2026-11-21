@@ -15,6 +15,7 @@ import './assert_dev_env.ts';
  */
 
 import { test, assert, describe } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type {
 	AppSurfaceRpcEndpoint,
@@ -36,6 +37,10 @@ import {
 } from './auth_apps.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { RpcAction } from '../actions/action_types.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { create_rpc_endpoint } from '../actions/action_rpc.ts';
+import { format_route_key } from '../http/surface_query.ts';
+import { noop_notification_sender } from '../actions/notification_sender.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -58,12 +63,14 @@ export interface RpcAttackSurfaceOptions {
 	/** All roles in the app (e.g. `['admin', 'keeper']`). */
 	roles: Array<string>;
 	/**
-	 * Valid params per method (method name → params) to build its adversarial
-	 * params cases from, in place of the generated base — for an input whose
-	 * valid shape the generator can't reach. Each must pass the method's input
-	 * schema; one that doesn't throws at collection, naming the method. The
-	 * cases are sent as a single-actor principal, so an override omits
-	 * `acting`. The cross-process twin is
+	 * Valid params per method (method name → params), in place of the
+	 * generated base — for an input whose valid shape the generator can't
+	 * reach. They seed the adversarial params cases and the "correct auth
+	 * passes" request. Each must pass the method's input schema: in the params
+	 * group one that doesn't throws at collection, naming the method; in
+	 * "correct auth passes" its 400 fails the method's test, the handler
+	 * unreached. The params cases are sent as a single-actor principal, so an
+	 * override omits `acting`. The cross-process twin is
 	 * `RpcAdversarialCrossTestOptions.input_overrides`.
 	 */
 	input_overrides?: ReadonlyMap<string, Record<string, unknown>>;
@@ -97,6 +104,61 @@ const find_rpc_action = (
 	return ep?.actions.find((a) => a.spec.method === method_name);
 };
 
+/** The key a recording stub notes its call under: the endpoint path and method. */
+const to_reached_key = (endpoint_path: string, method_name: string): string =>
+	`${endpoint_path} ${method_name}`;
+
+/**
+ * The route specs with every RPC endpoint's routes rebuilt over its actions,
+ * each handler swapped for a stub that records its call in `reached` and
+ * answers `null`, so a test that the handler is reached never depends on
+ * what the handler would do over stub deps (a live re-read's 401). Each
+ * endpoint's routes take the place of its first route in the list, matched
+ * on method and path, so another route at the endpoint's path stays; the
+ * rest of the list is kept in order. The endpoints mount with no rate limiters,
+ * a silent logger (a stub's `null` fails a non-null output schema, which DEV
+ * validation only logs), and the no-op notification sender.
+ *
+ * @param route_specs - the app's route specs, the endpoints' routes among them
+ * @param rpc_endpoint_specs - the endpoints whose handlers are stubbed
+ * @param reached - where each stub records its call (`to_reached_key`)
+ * @returns the route specs with the endpoints rebuilt
+ */
+const stub_rpc_endpoint_handlers = (
+	route_specs: Array<RouteSpec>,
+	rpc_endpoint_specs: AppSurfaceSpec['rpc_endpoints'],
+	reached: Set<string>
+): Array<RouteSpec> => {
+	const log = new Logger('test:rpc_attack_surface', { level: 'off' });
+	// each endpoint's rebuilt routes, keyed by every `METHOD path` they serve
+	const rebuilt_by_key: Map<string, Array<RouteSpec>> = new Map();
+	for (const endpoint of rpc_endpoint_specs) {
+		const rebuilt = create_rpc_endpoint({
+			path: endpoint.path,
+			actions: endpoint.actions.map((action): RpcAction => ({
+				spec: action.spec,
+				handler: () => {
+					reached.add(to_reached_key(endpoint.path, action.spec.method));
+					return null;
+				}
+			})),
+			log,
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
+			notification_sender: noop_notification_sender
+		});
+		for (const spec of rebuilt) rebuilt_by_key.set(format_route_key(spec), rebuilt);
+	}
+	const mounted: Set<Array<RouteSpec>> = new Set();
+	return route_specs.flatMap((spec): Array<RouteSpec> => {
+		const rebuilt = rebuilt_by_key.get(format_route_key(spec));
+		if (!rebuilt) return [spec];
+		if (mounted.has(rebuilt)) return [];
+		mounted.add(rebuilt);
+		return rebuilt;
+	});
+};
+
 // --- Auth enforcement ---
 
 /**
@@ -111,7 +173,9 @@ const find_rpc_action = (
  * - wrong role → error code -32002 — every role method with non-matching roles
  * - authenticated without role → -32002 — every role method, no-role context
  * - keeper rejects non-daemon credentials → -32002 — session and api_token rejected
- * - correct auth passes — every protected method, assert not 401/403
+ * - correct auth passes — every protected method, sent valid params by the
+ *   app its auth admits, reaches its handler, a recording stub
+ *   (`stub_rpc_endpoint_handlers`), at 200
  */
 const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 	const { build, roles } = options;
@@ -120,6 +184,11 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 	if (surface.rpc_endpoints.length === 0) return;
 
 	const apps = create_auth_test_apps(route_specs, roles);
+	const reached: Set<string> = new Set();
+	const stubbed_apps = create_auth_test_apps(
+		stub_rpc_endpoint_handlers(route_specs, rpc_endpoint_specs, reached),
+		roles
+	);
 
 	describe('RPC auth enforcement', () => {
 		for (const endpoint of surface.rpc_endpoints) {
@@ -242,11 +311,25 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 				describe('correct auth passes', () => {
 					for (const method of protected_methods) {
 						test(method.name, async () => {
-							const app = select_auth_app(apps, method.auth);
-							const res = await app.request(endpoint.path, create_rpc_post_init(method.name));
-							// handler may error (500, 404 from stub deps) — that's fine
-							assert.notStrictEqual(res.status, 401, 'should not be 401');
-							assert.notStrictEqual(res.status, 403, 'should not be 403');
+							const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
+							assert.ok(
+								action,
+								`surface has method '${method.name}' but no matching RpcAction in rpc_endpoints`
+							);
+							const params =
+								options.input_overrides?.get(method.name) ?? generate_valid_body(action.spec.input);
+							const key = to_reached_key(endpoint.path, method.name);
+							reached.delete(key);
+							const app = select_auth_app(stubbed_apps, method.auth);
+							const res = await app.request(
+								endpoint.path,
+								create_rpc_post_init(method.name, params)
+							);
+							assert.ok(
+								reached.has(key),
+								`${method.name} should reach its handler, got ${res.status}: ${await res.text()}`
+							);
+							assert.strictEqual(res.status, 200, `${method.name} should answer 200`);
 						});
 					}
 				});
