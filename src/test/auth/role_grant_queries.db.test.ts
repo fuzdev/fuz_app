@@ -17,7 +17,7 @@ import {
 	query_role_grant_find_account_id_for_role,
 	query_role_grant_revoke_for_scope,
 	query_account_has_active_global_role,
-	query_count_active_accounts_with_global_role_for_update,
+	query_count_active_accounts_with_global_role_locked,
 	query_account_has_global_role
 } from '#lib/auth/role_grant_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
@@ -1010,7 +1010,7 @@ describe_db('RoleGrantQueries', (get_db) => {
 
 		// Only account 1 counts; account 2's admin grant is on a tombstone.
 		assert.strictEqual(
-			await query_count_active_accounts_with_global_role_for_update(deps, ROLE_ADMIN),
+			await query_count_active_accounts_with_global_role_locked(deps, ROLE_ADMIN),
 			1
 		);
 		assert.strictEqual(
@@ -1029,7 +1029,7 @@ describe_db('RoleGrantQueries', (get_db) => {
 			granted_by: null
 		});
 		assert.strictEqual(
-			await query_count_active_accounts_with_global_role_for_update(deps, ROLE_ADMIN),
+			await query_count_active_accounts_with_global_role_locked(deps, ROLE_ADMIN),
 			2
 		);
 	});

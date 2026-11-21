@@ -345,7 +345,7 @@ export const query_account_has_global_role = async (
  * Like `query_account_has_global_role`, but only counts the grant when the
  * **account and the granting actor are both active** (`deleted_at IS NULL`).
  * Used by the last-admin branch of the removability guard: a soft-deleted admin
- * can't log in and is excluded from `query_count_active_accounts_with_global_role_for_update`,
+ * can't log in and is excluded from `query_count_active_accounts_with_global_role_locked`,
  * so the guard must use the same active predicate when testing whether the
  * *target* is an admin — otherwise removing an already-tombstoned admin is
  * falsely blocked as `cannot_delete_last_admin`. Soft-delete does **not** revoke
@@ -433,11 +433,24 @@ export const query_actor_has_active_global_role = async (
  * guard could fail-open and let the last usable admin be removed).
  *
  * **Locks** every counted `role_grant`, `actor`, and `account` row
- * (`FOR UPDATE`) until the caller's transaction ends, so two guards racing to
- * remove the last two admins serialize: the second waits for the first to
- * commit, re-reads the rows it changed, and counts one. Run it inside the
- * transaction that does the removal. Twin of the Rust
- * `query_count_active_accounts_with_global_role_for_update`.
+ * `FOR NO KEY UPDATE` until the caller's transaction ends. That conflicts with
+ * another guard, so two guards racing to remove the last two admins serialize:
+ * the second waits for the first to commit, re-reads the rows it changed, and
+ * counts one. It conflicts with every write that lowers the count — a revoke's
+ * or a soft delete's `UPDATE` of a counted row, a purge's `DELETE` — with the
+ * `FOR SHARE OF rg` an admin-offer accept takes on its grantor's grant, and
+ * with the locks a credential mint, an offer and an invite take on the account
+ * row. Run it inside the transaction that does the removal.
+ *
+ * It does not conflict with a foreign key's `FOR KEY SHARE` — the lock an
+ * insert or update naming a counted row takes (an accept's new grant naming its
+ * grantor, a cell's `created_by`), and the lock that deadlocked an accept
+ * holding its grantor's grant against a guard holding the grantor's actor. Such
+ * a write only adds a reference: it never lowers the count, so the guard fails
+ * closed — what it counted is at most what will stand, and a removal it allows
+ * leaves an admin. A purge that deletes a row such a write names still takes
+ * `FOR UPDATE` and waits for it.
+ * Twin of the Rust `query_count_active_accounts_with_global_role_locked`.
  *
  * The rows are locked in id order — account, then actor, then grant — as the
  * sort returns them: each account's row, its actors' and its grants' before
@@ -458,13 +471,13 @@ export const query_actor_has_active_global_role = async (
  * @returns the number of distinct active accounts with an active global `role` grant
  * @mutates `role_grant` / `actor` / `account` rows - row-locks the counted rows for the transaction
  */
-export const query_count_active_accounts_with_global_role_for_update = async (
+export const query_count_active_accounts_with_global_role_locked = async (
 	deps: QueryDeps,
 	role: string,
 	exclude_role_grant_id: Uuid | null = null
 ): Promise<number> => {
-	// `FOR UPDATE` refuses an aggregate, so the rows come back and are counted
-	// here. The excluded grant is dropped in code, not SQL: filtering it in the
+	// A locking clause refuses an aggregate, so the rows come back and are
+	// counted here. The excluded grant is dropped in code, not SQL: filtering it in the
 	// WHERE would leave it unlocked, and two cross-revokes (each locking only the
 	// other's grant, then updating it) would deadlock instead of serializing
 	const rows = await deps.db.query<{ account_id: Uuid; role_grant_id: Uuid }>(
@@ -478,7 +491,7 @@ export const query_count_active_accounts_with_global_role_for_update = async (
 		   AND rg.scope_id IS NULL
 		   AND ${role_grant_active_sql('rg')}
 		 ORDER BY a.id, act.id, rg.id
-		 FOR UPDATE`,
+		 FOR NO KEY UPDATE`,
 		[role]
 	);
 	const account_ids: Set<Uuid> = new Set();

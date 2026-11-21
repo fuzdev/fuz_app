@@ -44,7 +44,7 @@ import { has_scoped_role } from './request_context.ts';
 import {
 	query_account_has_global_role,
 	query_account_has_active_global_role,
-	query_count_active_accounts_with_global_role_for_update
+	query_count_active_accounts_with_global_role_locked
 } from './role_grant_queries.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
@@ -432,7 +432,7 @@ export const create_admin_actions = (
 		// unconditional; the last-admin branch fires only for an *active* target.
 		if (
 			(await query_account_has_active_global_role(ctx, target_account_id, ROLE_ADMIN)) &&
-			(await query_count_active_accounts_with_global_role_for_update(ctx, ROLE_ADMIN)) <= 1
+			(await query_count_active_accounts_with_global_role_locked(ctx, ROLE_ADMIN)) <= 1
 		) {
 			await deny(ERROR_CANNOT_DELETE_LAST_ADMIN, `cannot ${verb} the last admin account`);
 		}

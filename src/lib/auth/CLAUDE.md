@@ -795,8 +795,11 @@ the list and history inputs read an omitted input as a fresh `{}`
   A global `admin` grant is guarded: the keeper account's is refused
   (`ERROR_CANNOT_REVOKE_KEEPER_ADMIN`, 403) and so is one whose revoke would
   leave no active admin account (`ERROR_CANNOT_REVOKE_LAST_ADMIN`, 403, under
-  the locked count `query_count_active_accounts_with_global_role_for_update`,
-  which leaves the revoked grant out). Besides the
+  the locked count `query_count_active_accounts_with_global_role_locked`,
+  which leaves the revoked grant out; it takes the counted account, actor
+  and grant rows `FOR NO KEY UPDATE` in id order — conflicting with another
+  guard and every write that lowers the count, and not with the foreign-key
+  key shares of inserts naming those rows, which only add). Besides the
   revokee's incoming sibling offers, the revoke supersedes every pending offer
   the revokee's actor made (`query_role_grant_offer_supersede_outgoing`) —
   `account_delete` / `account_purge` do the same for every actor of the account
@@ -857,7 +860,9 @@ becomes a grant) refuses a `keeper` offer (`ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRAN
 a scoped `admin` offer (`invalid_request` + `ERROR_ROLE_GRANT_BUILTIN_SCOPED`), and a
 builtin offer whose grantor no longer holds an active global `admin` on an
 active actor of an active account (`ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
-re-checked under `FOR SHARE` so a racing revoke is ordered against it) — via
+re-checked under `FOR SHARE` on the grantor's grant, taken before the offer
+row is claimed — the order a removal takes them, guard first — so a racing
+revoke or removal is ordered against it) — via
 `RoleGrantOfferBuiltinRefusedError` (`refusal: BuiltinOfferRefusal`). Each
 refusal leaves the offer pending and is audited as a failed
 `role_grant_offer_accept` with `{offer_id, role, scope_id, reason}`. The

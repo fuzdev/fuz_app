@@ -1,5 +1,5 @@
 /**
- * `query_count_active_accounts_with_global_role_for_update` locks what it
+ * `query_count_active_accounts_with_global_role_locked` locks what it
  * counted.
  *
  * A second last-admin guard counting while the first's transaction removes an
@@ -18,7 +18,7 @@ import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
-	query_count_active_accounts_with_global_role_for_update,
+	query_count_active_accounts_with_global_role_locked,
 	query_create_role_grant
 } from '#lib/auth/role_grant_queries.ts';
 import { query_account_soft_delete } from '#lib/auth/account_queries.ts';
@@ -29,7 +29,7 @@ import { make_account } from './role_grant_offer_queries.fixtures.ts';
 
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
-describe_pg('query_count_active_accounts_with_global_role_for_update', (get_db) => {
+describe_pg('query_count_active_accounts_with_global_role_locked', (get_db) => {
 	test('a second count waits on the rows the first locked, then counts one', async () => {
 		const db = get_db();
 		const one = await make_account(db, 'racing_admin_one');
@@ -45,7 +45,7 @@ describe_pg('query_count_active_accounts_with_global_role_for_update', (get_db) 
 		const release_first = create_deferred<void>();
 		const first = db.transaction(async (tx) => {
 			assert.strictEqual(
-				await query_count_active_accounts_with_global_role_for_update({ db: tx }, ROLE_ADMIN),
+				await query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN),
 				2
 			);
 			assert.ok(await query_account_soft_delete({ db: tx }, two.account_id, null));
@@ -57,7 +57,7 @@ describe_pg('query_count_active_accounts_with_global_role_for_update', (get_db) 
 		let second_done = false;
 		const second = db
 			.transaction((tx) =>
-				query_count_active_accounts_with_global_role_for_update({ db: tx }, ROLE_ADMIN)
+				query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN)
 			)
 			.finally(() => {
 				second_done = true;

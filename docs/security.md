@@ -1642,8 +1642,8 @@ purge itself requires keeper auth); keeper removal stays out-of-band.
 the admin count and the target's own admin check both filter `deleted_at IS NULL`,
 so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
 can itself be removed once another active admin exists. The count locks the rows
-it counted (`FOR UPDATE`), so two removals racing for the last two admins
-serialize and the second is refused.
+it counted (`FOR NO KEY UPDATE`), so two removals racing for the last two admins
+serialize and the second is refused (§Last-Admin Guard Locks Its Count).
 
 **An undelete restores the account, never a credential.** `account_undelete`
 clears the tombstones of the account and its actors; the sessions and API
@@ -1885,7 +1885,9 @@ Admin surface hardening on the offer flow:
   whatever the consumer `authorize` callback says (403
   `role_grant_offer_not_authorized`), and accept refuses a `keeper` offer, a
   scoped `admin` offer, or a builtin offer whose grantor no longer holds an
-  active global `admin` — re-checked under `FOR SHARE` at mint time, the
+  active global `admin` — re-checked under `FOR SHARE` on the grantor's grant
+  at mint time, taken before the offer row is claimed (the order a removal
+  takes them), the
   refusal audited as a failed `role_grant_offer_accept` and the offer left
   pending. `role_grant_assign` also re-checks the global admin grant in-handler
   behind the dispatcher gate, so a scoped `admin` can't assign itself a global
@@ -2779,10 +2781,18 @@ protection independent of the application.
 
 The last-admin guards (`ERROR_CANNOT_DELETE_LAST_ADMIN` on `account_delete` /
 `account_purge`, `ERROR_CANNOT_REVOKE_LAST_ADMIN` on `role_grant_revoke`) count
-the active admins with `SELECT … FOR UPDATE` inside the removal's transaction,
-locking every counted `role_grant`, `actor`, and `account` row. Two concurrent
-removals targeting the last two active admins serialize: the second waits for
-the first to commit, re-reads the rows it changed, counts one, and is refused.
+the active admins with `SELECT … FOR NO KEY UPDATE` inside the removal's
+transaction, locking every counted `role_grant`, `actor`, and `account` row.
+Two concurrent removals targeting the last two active admins serialize: the
+second waits for the first to commit, re-reads the rows it changed, counts
+one, and is refused. The strength is the weakest that conflicts with every
+write that can lower the count — another guard, a revoke's or a soft delete's
+`UPDATE`, a purge's `DELETE`, an accept's `FOR SHARE` on its grantor's grant.
+What it does not block is the foreign-key key share an insert takes on a row
+it names (a session, a grant, an offer, a `*_by` column): such a write can only
+add an admin, so a count that misses one refuses a removal it could have
+allowed — it fails closed — and a guard that blocked those inserts deadlocked
+an admin-offer accept against a removal of its grantor.
 The count locks its rows in id order — account, then actor, then grant — the
 order every multi-account locker takes account rows in
 (`query_account_lock_live_many`, offer-create's lock on its grantor and

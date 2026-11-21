@@ -20,6 +20,14 @@
  * The in-memory drivers have one connection, so the second transaction would
  * queue behind the held one whatever it locks.
  *
+ * And the last-admin guard against an admin-offer accept: the accept holds
+ * its grantor's grant and key-shares the grantor's actor, the guard locks the
+ * actor and then the grant, and neither may deadlock the other — real `pg`
+ * only, its two stalls set by a holder of the recipient's actor. The other
+ * interleaving, the removal ahead of the accept, takes the grantor's grant
+ * before the offer row on both sides, so the accept waits holding nothing and
+ * is refused.
+ *
  * Twin of the Rust `fuz_auth` `tests/account_delete_races.rs`.
  *
  * @module
@@ -39,6 +47,8 @@ import { create_role_registry, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_sc
 import { ERROR_AUTHENTICATION_REQUIRED } from '#lib/http/error_schemas.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
+import { query_count_active_accounts_with_global_role_locked } from '#lib/auth/role_grant_queries.ts';
+import { query_role_grant_offer_supersede_outgoing } from '#lib/auth/role_grant_offer_queries.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
@@ -52,10 +62,9 @@ const HOLD_MS = 300;
 /**
  * An app role any caller may offer. The grantor's authority comes from this
  * `authorize`, not from an `admin` grant in the database: an admin target's
- * delete runs the last-admin guard, whose `FOR UPDATE` on the grantor's actor
- * row would collide with the offer insert's foreign-key key-share and make the
- * delete wait on the offer whether or not the offer locks the grantor's
- * account — so a pin of that lock must not lean on it.
+ * delete runs the last-admin guard, which locks the grantor's account row
+ * itself and would order the delete against the offer whether or not the
+ * offer locks it — so a pin of that lock must not lean on it.
  */
 const OFFERED_ROLE = 'race_role';
 
@@ -112,8 +121,8 @@ const setup = async (gated: GatedDb) => {
 	const invites = () =>
 		count(`SELECT COUNT(*) AS n FROM invite WHERE created_by = $1`, [issuer.actor.id]);
 	// Once the issuer's request is authorized, its `admin` grant can go: the
-	// delete then runs no last-admin guard, whose `FOR UPDATE` on the issuer's
-	// actor row would collide with the invite insert's foreign-key key-share.
+	// delete then runs no last-admin guard, so the issuer's own account lock is
+	// the one ordering the invite against the delete.
 	const revoke_issuer_admin = () =>
 		test_app.backend.deps.db.query(
 			`UPDATE role_grant SET revoked_at = NOW() WHERE actor_id = $1 AND revoked_at IS NULL`,
@@ -435,7 +444,237 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 		}
 		// two holds past `deadlock_timeout` alone take three seconds
 	}, 30_000);
+
+	// The accept share-locks its grantor's admin grant, then inserts a grant
+	// naming the grantor's actor — a foreign-key key share on it. The removal's
+	// last-admin guard locks the grantor's actor, then its grant. A holder of
+	// the recipient's actor stalls the accept's insert after its share lock, and
+	// the guard then stalls on the grant holding the actor; released, the
+	// accept's key share on the actor must not wait on the guard — a
+	// `FOR UPDATE` guard deadlocks there, `FOR NO KEY UPDATE` does not. One
+	// delete, one revoke of the grantor's grant, one purge.
+	for (const removal of ['delete', 'revoke', 'purge'] as const) {
+		test(`an admin-offer accept and a removal (${removal}) of its grantor never deadlock`, async () => {
+			const gated = create_gated_db(get_db());
+			const s = await setup(gated);
+			try {
+				const db = s.test_app.backend.deps.db;
+				const grantor = await s.test_app.create_account({
+					username: `accept_grantor_${removal}`,
+					roles: [ROLE_ADMIN]
+				});
+				const recipient = await s.test_app.create_account({
+					username: `accept_recipient_${removal}`
+				});
+				const call = (
+					method: string,
+					params: unknown,
+					headers: Record<string, string>,
+					suppress_default_origin = false
+				) =>
+					rpc_call({
+						app: s.test_app.app,
+						path: RPC_PATH,
+						method,
+						params,
+						headers,
+						suppress_default_origin
+					});
+				const offered = await call(
+					'role_grant_offer_create',
+					{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+					grantor.create_session_headers()
+				);
+				assert.ok(offered.ok, `the admin offer: ${JSON.stringify(offered)}`);
+				const offer_id = (offered.result as { offer: { id: string } }).offer.id;
+				const grant_id = (
+					await db.query<{ id: string }>(
+						`SELECT id FROM role_grant WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
+						[grantor.actor.id, ROLE_ADMIN]
+					)
+				)[0]!.id;
+				const until_waiters = async (n: number, what: string): Promise<void> => {
+					const deadline = Date.now() + 2000;
+					while ((await lock_waiters(db)) < n) {
+						assert.ok(Date.now() < deadline, what);
+						await wait(5);
+					}
+				};
+
+				const release = Promise.withResolvers<void>();
+				const locked = Promise.withResolvers<void>();
+				const holder = db.transaction(async (tx) => {
+					await tx.query(`SELECT id FROM actor WHERE id = $1 FOR UPDATE`, [recipient.actor.id]);
+					locked.resolve();
+					await release.promise;
+				});
+				await locked.promise;
+				const accepted = call(
+					'role_grant_offer_accept',
+					{ offer_id },
+					recipient.create_session_headers()
+				);
+				await until_waiters(1, "the accept holds the grantor's grant and waits at its insert");
+				const removed =
+					removal === 'delete'
+						? s.del(grantor.account.id)
+						: removal === 'revoke'
+							? call(
+									'role_grant_revoke',
+									{ actor_id: grantor.actor.id, role_grant_id: grant_id },
+									s.test_app.create_session_headers()
+								)
+							: call(
+									'account_purge',
+									{ account_id: grantor.account.id, confirm: true },
+									s.test_app.create_daemon_token_headers(),
+									true
+								);
+				await until_waiters(2, "the guard holds the grantor's actor and waits on the grant");
+				release.resolve();
+				await holder;
+				assert_ok(await accepted, `the accept (${removal})`);
+				assert_ok(await removed, `the ${removal}`);
+				// the recipient holds the admin grant the offer conferred
+				const conferred = await db.query<{ id: string }>(
+					`SELECT rg.id FROM role_grant rg JOIN actor act ON act.id = rg.actor_id
+					 WHERE act.account_id = $1 AND rg.role = $2 AND rg.revoked_at IS NULL`,
+					[recipient.account.id, ROLE_ADMIN]
+				);
+				assert.strictEqual(conferred.length, 1, `the recipient is an admin (${removal})`);
+				// and the grantor is removed as asked
+				const grantor_left = await db.query<{ deleted: boolean; revoked: boolean }>(
+					`SELECT a.deleted_at IS NOT NULL AS deleted,
+					        (SELECT revoked_at IS NOT NULL FROM role_grant WHERE id = $2) AS revoked
+					 FROM account a WHERE a.id = $1`,
+					[grantor.account.id, grant_id]
+				);
+				if (removal === 'purge') {
+					assert.strictEqual(grantor_left.length, 0, 'the grantor is purged');
+				} else if (removal === 'delete') {
+					assert.ok(grantor_left[0]?.deleted, 'the grantor is deleted');
+				} else {
+					assert.ok(grantor_left[0]?.revoked, "the grantor's grant is revoked");
+				}
+			} finally {
+				await s.test_app.cleanup();
+			}
+		}, 30_000);
+	}
+
+	// The other interleaving: the removal ahead. Its guard locks the grantor's
+	// grant and its write runs; the accept is sent and waits; the removal then
+	// ends the grantor's pending offers (a delete or revoke supersedes them, a
+	// purge's cascade deletes them) and commits. The accept takes the grantor's
+	// grant before it claims the offer, so it waits there holding nothing and
+	// is refused once the removal commits; one that claimed the offer first
+	// would hold the row the removal's supersede needs, and the two deadlock.
+	for (const removal of ['delete', 'revoke', 'purge'] as const) {
+		test(`an admin-offer accept sent across a removal (${removal}) of its grantor is refused`, async () => {
+			const gated = create_gated_db(get_db());
+			const s = await setup(gated);
+			try {
+				const db = s.test_app.backend.deps.db;
+				const grantor = await s.test_app.create_account({
+					username: `ahead_grantor_${removal}`,
+					roles: [ROLE_ADMIN]
+				});
+				const recipient = await s.test_app.create_account({
+					username: `ahead_recipient_${removal}`
+				});
+				const offered = await rpc_call({
+					app: s.test_app.app,
+					path: RPC_PATH,
+					method: 'role_grant_offer_create',
+					params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+					headers: grantor.create_session_headers()
+				});
+				assert.ok(offered.ok, `the admin offer: ${JSON.stringify(offered)}`);
+				const offer_id = (offered.result as { offer: { id: string } }).offer.id;
+				const grant_id = (
+					await db.query<{ id: string }>(
+						`SELECT id FROM role_grant WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
+						[grantor.actor.id, ROLE_ADMIN]
+					)
+				)[0]!.id;
+
+				const release = Promise.withResolvers<void>();
+				const written = Promise.withResolvers<void>();
+				const removed = db.transaction(async (tx) => {
+					await query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN);
+					if (removal === 'delete') {
+						await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [
+							grantor.account.id
+						]);
+						await tx.query(`UPDATE actor SET deleted_at = NOW() WHERE account_id = $1`, [
+							grantor.account.id
+						]);
+					} else if (removal === 'revoke') {
+						await tx.query(`UPDATE role_grant SET revoked_at = NOW() WHERE id = $1`, [grant_id]);
+					}
+					written.resolve();
+					await release.promise;
+					if (removal === 'purge') {
+						await tx.query(`DELETE FROM account WHERE id = $1`, [grantor.account.id]);
+					} else {
+						await query_role_grant_offer_supersede_outgoing({ db: tx }, [grantor.actor.id]);
+					}
+				});
+				await written.promise;
+				const accepted = rpc_call({
+					app: s.test_app.app,
+					path: RPC_PATH,
+					method: 'role_grant_offer_accept',
+					params: { offer_id },
+					headers: recipient.create_session_headers()
+				});
+				await until_lock_waiters(db, 1, 'the accept waits on the removal');
+				release.resolve();
+				await removed;
+				const answer = await accepted;
+				assert.ok(!answer.ok, `the accept went through: ${JSON.stringify(answer)}`);
+				assert.ok(
+					answer.status >= 400 && answer.status < 500,
+					`the accept is refused, not failed: ${JSON.stringify(answer)}`
+				);
+				const conferred = await db.query<{ id: string }>(
+					`SELECT rg.id FROM role_grant rg JOIN actor act ON act.id = rg.actor_id
+					 WHERE act.account_id = $1 AND rg.role = $2`,
+					[recipient.account.id, ROLE_ADMIN]
+				);
+				assert.strictEqual(conferred.length, 0, 'no admin grant conferred');
+			} finally {
+				await s.test_app.cleanup();
+			}
+		}, 30_000);
+	}
 });
+
+const lock_waiters = async (db: GatedDb['db']): Promise<number> =>
+	Number(
+		(
+			await db.query<{ n: string }>(
+				`SELECT COUNT(*) AS n FROM pg_stat_activity
+				 WHERE wait_event_type = 'Lock' AND datname = current_database()`
+			)
+		)[0]!.n
+	);
+
+/**
+ * Wait until `n` sessions of the database wait on a lock. The deadline fails a
+ * wait that never comes; it is no timing assertion, so it is set far past any
+ * scheduling delay.
+ */
+const until_lock_waiters = async (db: GatedDb['db'], n: number, what: string): Promise<void> => {
+	const deadline = Date.now() + LOCK_WAIT_DEADLINE_MS;
+	while ((await lock_waiters(db)) < n) {
+		assert.ok(Date.now() < deadline, what);
+		await wait(5);
+	}
+};
+
+/** How long a lock wait a test arranged may take to show, a bound on a hang only. */
+const LOCK_WAIT_DEADLINE_MS = 20_000;
 
 const count_pending_from = async (
 	db: GatedDb['db'],

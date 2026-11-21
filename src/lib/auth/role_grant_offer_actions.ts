@@ -103,7 +103,7 @@ import {
 import {
 	query_account_has_active_global_role,
 	query_account_has_global_role,
-	query_count_active_accounts_with_global_role_for_update,
+	query_count_active_accounts_with_global_role_locked,
 	query_create_role_grant,
 	query_role_grant_find_active_role_for_actor,
 	query_revoke_role_grant
@@ -810,7 +810,7 @@ export const create_role_grant_offer_actions = (
 			}
 			if (
 				(await query_account_has_active_global_role(ctx, target_account_id, ROLE_ADMIN)) &&
-				(await query_count_active_accounts_with_global_role_for_update(
+				(await query_count_active_accounts_with_global_role_locked(
 					ctx,
 					ROLE_ADMIN,
 					input.role_grant_id

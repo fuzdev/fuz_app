@@ -504,7 +504,10 @@ export const query_role_grant_offer_sweep_expired = async (
  * to commit the grant it authorized. A plain `EXISTS` could read the grant as
  * active while a revoke commits in between. The actor and account tombstones
  * are read but not locked — ordering a delete racing an accept isn't worth
- * locking two more tables. Twin of the Rust `grantor_holds_global_admin`.
+ * locking two more tables; a delete supersedes the grantor's pending offers,
+ * which the accept's claim then refuses. Taken before the accept claims its
+ * offer, as a removal of the grantor takes the grant before the offers. Twin
+ * of the Rust `grantor_holds_global_admin`.
  */
 const query_grantor_holds_global_admin = async (
 	deps: QueryDeps,
@@ -612,6 +615,26 @@ export const query_accept_offer = async (
 ): Promise<AcceptOfferResult> => {
 	const { offer_id, to_account_id, actor_id, ip } = input;
 
+	// An unscoped `admin` offer's grantor must still hold a global `admin` when
+	// the grant is minted, read under a share lock on that grant — taken before
+	// the offer is claimed, the order a removal of the grantor takes the two:
+	// its last-admin guard locks the grant, its supersede then the grantor's
+	// offers. Claiming the offer first held the row that supersede needs while
+	// waiting on the grant the guard held. The grantor, role and scope are
+	// written once with the offer and never updated, so they are read without
+	// a lock; everything the claim checks is checked on the claimed row.
+	const head = await deps.db.query_one<Pick<RoleGrantOffer, 'from_actor_id' | 'role' | 'scope_id'>>(
+		`SELECT from_actor_id, role, scope_id FROM role_grant_offer WHERE id = $1 AND to_account_id = $2`,
+		[offer_id, to_account_id]
+	);
+	if (!head) {
+		throw new RoleGrantOfferNotFoundError(offer_id);
+	}
+	const grantor_holds_admin =
+		head.role === ROLE_ADMIN && head.scope_id === null
+			? await query_grantor_holds_global_admin(deps, head.from_actor_id)
+			: null;
+
 	// Claim the offer with a row-level lock. Subsequent concurrent callers
 	// block on the lock until this transaction commits/rolls back; after commit
 	// they see the new state (accepted or terminal) and branch idempotently.
@@ -714,7 +737,9 @@ export const query_accept_offer = async (
 		} else if (locked.scope_id !== null) {
 			// Builtin roles are global-only.
 			refusal = 'scoped';
-		} else if (!(await query_grantor_holds_global_admin(deps, locked.from_actor_id))) {
+		} else if (grantor_holds_admin !== true) {
+			// read under its share lock before the claim, on the same immutable
+			// grantor the claimed row carries
 			refusal = 'grantor_not_authorized';
 		}
 		if (refusal !== null) {
