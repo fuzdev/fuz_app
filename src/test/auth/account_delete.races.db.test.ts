@@ -21,12 +21,13 @@
  * queue behind the held one whatever it locks.
  *
  * And the last-admin guard against an admin-offer accept: the accept holds
- * its grantor's grant and key-shares the grantor's actor, the guard locks the
- * actor and then the grant, and neither may deadlock the other — real `pg`
- * only, its two stalls set by a holder of the recipient's actor. The other
- * interleaving, the removal ahead of the accept, takes the grantor's grant
- * before the offer row on both sides, so the accept waits holding nothing and
- * is refused.
+ * its grantor's account row shared and key-shares the grantor's actor, the
+ * guard takes the grantor's account first, and neither may deadlock the other
+ * — real `pg` only, its two stalls set by a holder of the recipient's actor.
+ * The other interleaving, the removal ahead of the accept, takes the
+ * grantor's account before the offer row on both sides, so the accept waits
+ * holding nothing the removal needs and is refused. The accept's own locks
+ * are pinned in `role_grant_offer.lock_order.db.test.ts`.
  *
  * Twin of the Rust `fuz_auth` `tests/account_delete_races.rs`.
  *
@@ -365,6 +366,8 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 	test("an offer between two admins and a third admin's delete never deadlock", async () => {
 		const gated = create_gated_db(get_db());
 		const s = await setup(gated);
+		// resolved in `finally` too, so a failed wait never leaves the holder open
+		let release = Promise.withResolvers<void>();
 		try {
 			const db = s.test_app.backend.deps.db;
 			// Two admins written in the reverse of their id order: an unordered
@@ -402,7 +405,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				// first. The offer then runs into the guard. Locked in the guard's order,
 				// it waits holding nothing the guard needs; locked one account at a time,
 				// it held the recipient while waiting on the grantor — a deadlock.
-				const release = Promise.withResolvers<void>();
+				release = Promise.withResolvers<void>();
 				const locked = Promise.withResolvers<void>();
 				const holder = db.transaction(async (tx) => {
 					await tx.query(`SELECT id FROM account WHERE id = $1 FOR SHARE`, [recipient.account.id]);
@@ -441,23 +444,24 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				);
 			}
 		} finally {
+			release.resolve();
 			await s.test_app.cleanup();
 		}
 		// two holds past `deadlock_timeout` alone take three seconds
 	}, 30_000);
 
-	// The accept share-locks its grantor's admin grant, then inserts a grant
-	// naming the grantor's actor — a foreign-key key share on it. The removal's
-	// last-admin guard locks the grantor's actor, then its grant. A holder of
-	// the recipient's actor stalls the accept's insert after its share lock, and
-	// the guard then stalls on the grant holding the actor; released, the
-	// accept's key share on the actor must not wait on the guard — a
-	// `FOR UPDATE` guard deadlocks there, `FOR NO KEY UPDATE` does not. One
-	// delete, one revoke of the grantor's grant, one purge.
+	// The accept share-locks its grantor's account row, then inserts a grant
+	// naming the grantor's actor — a foreign-key key share on it. A holder of
+	// the recipient's actor stalls the accept's insert after its locks, and the
+	// removal's last-admin guard then stalls at the grantor's account; released,
+	// the accept commits and the removal goes on. One delete, one revoke of the
+	// grantor's grant, one purge.
 	for (const removal of ['delete', 'revoke', 'purge'] as const) {
 		test(`an admin-offer accept and a removal (${removal}) of its grantor never deadlock`, async () => {
 			const gated = create_gated_db(get_db());
 			const s = await setup(gated);
+			// resolved in `finally` too, so a failed wait never leaves the holder open
+			const release = Promise.withResolvers<void>();
 			try {
 				const db = s.test_app.backend.deps.db;
 				const grantor = await s.test_app.create_account({
@@ -496,7 +500,6 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				)[0]!.id;
 				const until_waiters = (n: number, what: string) => until_lock_waiters(db, n, what);
 
-				const release = Promise.withResolvers<void>();
 				const locked = Promise.withResolvers<void>();
 				const holder = db.transaction(async (tx) => {
 					await tx.query(`SELECT id FROM actor WHERE id = $1 FOR UPDATE`, [recipient.actor.id]);
@@ -509,7 +512,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 					{ offer_id },
 					recipient.create_session_headers()
 				);
-				await until_waiters(1, "the accept holds the grantor's grant and waits at its insert");
+				await until_waiters(1, "the accept holds the grantor's account and waits at its insert");
 				const removed =
 					removal === 'delete'
 						? s.del(grantor.account.id)
@@ -525,7 +528,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 									s.test_app.create_daemon_token_headers(),
 									true
 								);
-				await until_waiters(2, "the guard holds the grantor's actor and waits on the grant");
+				await until_waiters(2, "the guard waits on the grantor's account");
 				release.resolve();
 				await holder;
 				assert_ok(await accepted, `the accept (${removal})`);
@@ -552,22 +555,27 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 					assert.ok(grantor_left[0]?.revoked, "the grantor's grant is revoked");
 				}
 			} finally {
+				release.resolve();
 				await s.test_app.cleanup();
 			}
 		}, 30_000);
 	}
 
 	// The other interleaving: the removal ahead. Its guard locks the grantor's
-	// grant and its write runs; the accept is sent and waits; the removal then
-	// ends the grantor's pending offers (a delete or revoke supersedes them, a
-	// purge's cascade deletes them) and commits. The accept takes the grantor's
-	// grant before it claims the offer, so it waits there holding nothing and
-	// is refused once the removal commits; one that claimed the offer first
-	// would hold the row the removal's supersede needs, and the two deadlock.
+	// account, actor and grant, and its write runs; the accept is sent and
+	// waits; the removal then ends the grantor's pending offers (a delete or
+	// revoke supersedes them, a purge's cascade deletes them) and commits. The
+	// accept takes the grantor's account before it reads the grantor's
+	// authority or claims the offer, so it waits there holding nothing the
+	// removal needs and is refused once the removal commits; one that claimed
+	// the offer first would hold the row the removal's supersede needs, and the
+	// two deadlock.
 	for (const removal of ['delete', 'revoke', 'purge'] as const) {
 		test(`an admin-offer accept sent across a removal (${removal}) of its grantor is refused`, async () => {
 			const gated = create_gated_db(get_db());
 			const s = await setup(gated);
+			// resolved in `finally` too, so a failed wait never leaves the holder open
+			const release = Promise.withResolvers<void>();
 			try {
 				const db = s.test_app.backend.deps.db;
 				const grantor = await s.test_app.create_account({
@@ -593,7 +601,6 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 					)
 				)[0]!.id;
 
-				const release = Promise.withResolvers<void>();
 				const written = Promise.withResolvers<void>();
 				const removed = db.transaction(async (tx) => {
 					await query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN);
@@ -639,6 +646,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				);
 				assert.strictEqual(conferred.length, 0, 'no admin grant conferred');
 			} finally {
+				release.resolve();
 				await s.test_app.cleanup();
 			}
 		}, 30_000);

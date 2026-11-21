@@ -1885,9 +1885,10 @@ Admin surface hardening on the offer flow:
   whatever the consumer `authorize` callback says (403
   `role_grant_offer_not_authorized`), and accept refuses a `keeper` offer, a
   scoped `admin` offer, or a builtin offer whose grantor no longer holds an
-  active global `admin` — re-checked under `FOR SHARE` on the grantor's grant
-  at mint time, taken before the offer row is claimed (the order a removal
-  takes them), the
+  active global `admin` — re-checked at mint time under the grantor's
+  account lock (`FOR SHARE`), which every removal of a global admin takes
+  first (a revoke locks its revokee's account, a delete writes it, a purge
+  locks every admin's), the
   refusal audited as a failed `role_grant_offer_accept` and the offer left
   pending. `role_grant_assign` also re-checks the global admin grant in-handler
   behind the dispatcher gate, so a scoped `admin` can't assign itself a global
@@ -2790,7 +2791,7 @@ Two concurrent removals targeting the last two active admins serialize: the
 second waits for the first to commit, re-reads the rows it changed, counts
 one, and is refused. The strength is the weakest that conflicts with every
 write that can lower the count — another guard, a revoke's or a soft delete's
-`UPDATE`, a purge's `DELETE`, an accept's `FOR SHARE` on its grantor's grant.
+`UPDATE`, a purge's `DELETE`, an accept's `FOR SHARE` on its grantor's account row.
 What it does not block is the foreign-key key share an insert takes on a row
 it names (a session, a grant, an offer, a `*_by` column): such a write can only
 add an admin, so a count that misses one refuses a removal it could have
@@ -2799,15 +2800,31 @@ an admin-offer accept against a removal of its grantor.
 The count locks its rows in id order — account, then actor, then grant — the
 order every multi-account locker takes account rows in
 (`query_account_lock_live_many`, offer-create's lock on its grantor and
-recipient), so an offer between two admins and an admin's removal never wait
-on each other in opposite orders.
+recipient, an accept's lock on both parties), so an offer between two admins
+and an admin's removal never wait on each other in opposite orders.
+
+Every transaction takes rows in one class order — accounts, then offers, then
+grants and actors — and within a class in id order: an accept locks its two
+parties' accounts lower id first, then claims its offer and its pending
+siblings in one id-ordered statement; a delete, a purge, a revoke, a scope
+teardown and the expiry sweep lock every offer row they will write in one
+id-ordered statement before writing any. Two sibling accepts take turns on the
+recipient's account, and a removal of either party waits at its first
+statement, and so does a revoke: it locks its revokee's account before the
+offers it supersedes, so no offer is made in the window between that lock
+and its supersede. A scope teardown supersedes only the offers it locked;
+one made at the scope after that stays pending.
 No web path grants admin back once the last active admin is gone, so the guard
 holds as an invariant rather than a recoverable foot-gun stop.
 
 Every writer of an account takes the account row before the rows that hang
 off it — a mint, a password change and a delete through their first write
-or lock, a purge through `query_account_lock_for_purge` (`FOR UPDATE`,
-tombstoned or not) right after its guard. A purge then revokes the
+or lock, a purge through `query_account_lock_admins_for_purge` (every
+account holding an unrevoked global admin, and its target, in one id-ordered
+statement — its cascade writes other admins' grant rows, so it takes their
+accounts first) and then, after its guard (an admin target's only),
+`query_account_lock_for_purge`
+(`FOR UPDATE`, tombstoned or not). A purge then revokes the
 account's sessions and tokens in id order before its `DELETE`, so the
 cascade, which deletes in whatever order the plan walks, finds no
 credential row to lock.

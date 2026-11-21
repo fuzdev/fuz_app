@@ -25,9 +25,9 @@
  * - **The caps** — a login and a token create at the cap wait on another mint
  *   of the account (one holding even a share lock on the account row) and
  *   evict counting its row, so the account ends at the cap.
- * - **An admin-offer accept against the guard** — the accept's share lock on
- *   its grantor's grant, then its key share on the grantor's actor, played
- *   around a removal of the grantor whose guard locks the actor then the grant:
+ * - **A key-share writer against the guard** — a share lock on an admin's
+ *   grant, then a key share on its actor (a row inserted naming it), played
+ *   around a removal of that admin whose guard locks the actor then the grant:
  *   both commit.
  * - **A purge against the account's writers** — a purge of an account at its
  *   session or token cap across a login or token create, and across a
@@ -42,8 +42,29 @@
  * - **An admin-offer accept against a removal of its grantor** — the removal
  *   played (its guard, its write, then the end of the grantor's offers once
  *   the accept waits) and the accept sent: the accept takes the grantor's
- *   grant before it claims the offer, so it waits holding nothing and is
- *   refused.
+ *   account row before it reads the grantor's authority or claims the offer,
+ *   so it waits holding nothing it needs and is refused.
+ * - **An accept's account locks** — two sibling accepts take turns at the
+ *   recipient's row (the second refused, its offer superseded); an accept by a
+ *   recipient deleted or purged in flight waits on that removal and answers
+ *   the dead credential; an accept by an admin recipient whose account sorts
+ *   below its grantor's waits on a guard holding the recipient's row without
+ *   holding the grantor's; an accept whose grantor's grant names the
+ *   recipient's actor (`granted_by`) holds the grantor's account, not that
+ *   grant, so the purge's cascade setting it null never waits on the accept.
+ * - **A revoke and a purge against what they reach** — a revoke across a
+ *   re-offer to its revokee takes the revokee's row first, waits, and
+ *   supersedes the refreshed offer; a purge takes every admin's row and its
+ *   own in one id-ordered statement, so it waits on another removal's guard
+ *   over the admins its account granted, on an offer create holding its own
+ *   row, and on another purge, rather than meeting them in its cascade. A
+ *   scope teardown has no wire route; its pin is in-process.
+ * - **Multi-row offer writes in id order** — a purge's and a delete's two
+ *   supersedes, a revoke's, and an accept's claim of its offer and siblings,
+ *   against a transaction holding the lowest of their rows and then taking
+ *   the rest: none deadlocks. The expiry sweep and a scope teardown take
+ *   their rows the same way; no spine serves them over the wire, so their pins
+ *   are in-process (`auth/role_grant_offer.lock_order.db.test.ts`).
  *
  * Runs in `cross_backend_parity` alone, where both spines are on PostgreSQL
  * (`cross_backend_projects.ts` lists it there, which keeps it out of every
@@ -69,7 +90,11 @@ import { SPINE_ACCOUNT_LOGIN_PATH } from '#lib/testing/cross_backend/spine_surfa
 import { DEFAULT_MAX_SESSIONS, DEFAULT_MAX_TOKENS } from '#lib/auth/account_route_schema.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { ERROR_CANNOT_DELETE_LAST_ADMIN } from '#lib/auth/admin_action_specs.ts';
-import { ERROR_CANNOT_REVOKE_LAST_ADMIN } from '#lib/auth/role_grant_offer_action_specs.ts';
+import {
+	ERROR_CANNOT_REVOKE_LAST_ADMIN,
+	ERROR_ROLE_GRANT_OFFER_TERMINAL
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '#lib/http/error_schemas.ts';
 
 const PASSWORD = 'lock-pin-password-1';
 
@@ -459,9 +484,9 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			);
 		});
 
-		// -- an admin-offer accept against the guard -----------------------------
+		// -- a key-share writer against the guard -------------------------------
 
-		test("an admin-offer accept's key share and a removal of its grantor both commit", async () => {
+		test("a key-share writer on an admin's actor and a removal of that admin both commit", async () => {
 			const f = await setup_test();
 			const grantor = await f.create_account({
 				username: 'pin_accept_grantor',
@@ -469,9 +494,9 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			});
 			const recipient = await f.create_account({ username: 'pin_accept_recipient' });
 			const grant = await admin_grant_of(grantor.actor.id);
-			// the accept's two locks: its grantor's grant shared before the removal
-			// is sent, then — once the removal's guard waits on that grant, holding
-			// the grantor's actor — a grant naming the grantor, a key share on it
+			// a writer's two locks: the admin's grant shared before the removal is
+			// sent, then — once the removal's guard waits on that grant, holding the
+			// admin's actor — a grant naming the admin, a key share on it
 			const answer = await against_held(
 				async (tx) => {
 					await tx.query(`SELECT id FROM role_grant WHERE id = $1 FOR SHARE`, [grant]);
@@ -806,15 +831,309 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			assert.strictEqual(await remaining('api_token', TOKEN_IDS), 0, 'the eviction took them');
 		});
 
+		// -- an accept's account locks -------------------------------------------
+
+		const offer_columns = `(id, from_actor_id, to_account_id, role, expires_at)`;
+		const insert_offer = (id: string, from_actor_id: string, to_account_id: string, role: string) =>
+			write(
+				`INSERT INTO role_grant_offer ${offer_columns}
+				 VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 day')`,
+				[id, from_actor_id, to_account_id, role]
+			);
+		/** `n` fresh ids, ascending — the order every multi-row offer write takes. */
+		const ascending_ids = (n: number): Array<string> =>
+			Array.from({ length: n }, () => crypto.randomUUID()).sort();
+		const offer_state = async (id: string) =>
+			read<{ accepted: boolean; superseded: boolean } | undefined>(
+				`SELECT accepted_at IS NOT NULL AS accepted, superseded_at IS NOT NULL AS superseded
+				 FROM role_grant_offer WHERE id = $1`,
+				[id]
+			);
+		const active_grants = (actor_id: string, role: string) =>
+			count(
+				`SELECT COUNT(*) AS n FROM role_grant WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
+				[actor_id, role]
+			);
+		const accept = (
+			f: TestFixture,
+			recipient: { create_session_headers: () => Record<string, string> },
+			offer_id: string
+		) => rpc(f, 'role_grant_offer_accept', { offer_id }, recipient.create_session_headers());
+		const reason_of = (answer: RpcResult): unknown =>
+			(answer.error?.data as { reason?: unknown } | undefined)?.reason;
+
+		// A sibling accept played: the recipient's row shared (the weakest lock
+		// an account's writer takes — its own accept takes it harder), its offer
+		// claimed, its grant written; once the sent accept waits, it supersedes
+		// the sent one's offer. The sent offer sorts first, so an accept that
+		// passes the recipient's row claims it and then waits on the played offer
+		// while holding the row the played supersede needs.
+		test('two sibling accepts take turns at the recipient: the second is refused', async () => {
+			const f = await setup_test();
+			const g1 = await f.create_account({ username: 'pin_sib_g1' });
+			const g2 = await f.create_account({ username: 'pin_sib_g2' });
+			const r = await f.create_account({ username: 'pin_sib_r' });
+			const [sent, played] = ascending_ids(2) as [string, string];
+			await insert_offer(played, g1.actor.id, r.account.id, 'participant');
+			await insert_offer(sent, g2.actor.id, r.account.id, 'participant');
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR SHARE`, [r.account.id]);
+					await tx.query(`SELECT id FROM role_grant_offer WHERE id = $1 FOR UPDATE`, [played]);
+					const grant = (
+						await tx.query<{ id: string }>(
+							`INSERT INTO role_grant (actor_id, role, granted_by, source_offer_id)
+							 VALUES ($1, 'participant', $2, $3) RETURNING id`,
+							[r.actor.id, g1.actor.id, played]
+						)
+					).rows[0]!.id;
+					await tx.query(
+						`UPDATE role_grant_offer SET accepted_at = NOW(), resulting_role_grant_id = $2 WHERE id = $1`,
+						[played, grant]
+					);
+				},
+				() => accept(f, r, sent),
+				async (tx) => {
+					await tx.query(`UPDATE role_grant_offer SET superseded_at = NOW() WHERE id = $1`, [sent]);
+				}
+			);
+			assert.ok(!answer.ok, `the second accept went through: ${JSON.stringify(answer)}`);
+			assert.strictEqual(
+				reason_of(answer),
+				ERROR_ROLE_GRANT_OFFER_TERMINAL,
+				JSON.stringify(answer)
+			);
+			assert.strictEqual(await active_grants(r.actor.id, 'participant'), 1);
+			assert.deepStrictEqual(await offer_state(sent), { accepted: false, superseded: true });
+		});
+
+		// A removal of the recipient played, its account written first as every
+		// removal does, its offers superseded; the accept sent waits at the
+		// recipient's row and then answers the dead credential. One that reaches
+		// the offer first meets the supersede (or the purge's cascade) instead
+		// and answers the offer's state.
+		for (const removal of ['delete', 'purge'] as const) {
+			test(`an accept by a recipient ${removal}d in flight answers the dead credential`, async () => {
+				const f = await setup_test();
+				const g = await f.create_account({ username: `pin_gone_g_${removal}` });
+				const r = await f.create_account({ username: `pin_gone_r_${removal}` });
+				const [offer] = ascending_ids(1) as [string];
+				await insert_offer(offer, g.actor.id, r.account.id, 'participant');
+				const answer = await against_held(
+					async (tx) => {
+						if (removal === 'delete') {
+							await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [r.account.id]);
+						} else {
+							await tx.query(`SELECT id FROM account WHERE id = $1 FOR UPDATE`, [r.account.id]);
+						}
+						await tx.query(
+							`UPDATE role_grant_offer SET superseded_at = NOW() WHERE to_account_id = $1`,
+							[r.account.id]
+						);
+					},
+					() => accept(f, r, offer),
+					async (tx) => {
+						if (removal === 'purge') {
+							await tx.query(`DELETE FROM account WHERE id = $1`, [r.account.id]);
+						}
+					}
+				);
+				assert.ok(!answer.ok, JSON.stringify(answer));
+				assert.strictEqual(answer.status, 401, JSON.stringify(answer));
+				assert.strictEqual(reason_of(answer), ERROR_AUTHENTICATION_REQUIRED);
+			});
+		}
+
+		// An admin recipient whose account sorts below its grantor's, and a
+		// removal of a third admin: its guard takes account rows in id order, so
+		// it holds the recipient's before the grantor's. Played: the guard's first
+		// row, the recipient's; the accept is sent; then the rest of the guard and
+		// the write. An accept taking the two accounts in id order waits at the
+		// recipient's holding nothing; one taking the grantor's first holds it
+		// while waiting on the recipient's, and the guard reaching it deadlocks.
+		test("an accept by an admin recipient sorting below its grantor waits on an admin's removal", async () => {
+			const f = await setup_test();
+			const a = await f.create_account({ username: 'pin_cyc_a', roles: [ROLE_ADMIN] });
+			const b = await f.create_account({ username: 'pin_cyc_b', roles: [ROLE_ADMIN] });
+			const third = await f.create_account({ username: 'pin_cyc_c', roles: [ROLE_ADMIN] });
+			const [r, g] = a.account.id < b.account.id ? [a, b] : [b, a];
+			const offered = await rpc(
+				f,
+				'role_grant_offer_create',
+				{ to_account_id: r.account.id, role: ROLE_ADMIN },
+				g.create_session_headers()
+			);
+			assert.ok(offered.ok, `the offer: ${JSON.stringify(offered)}`);
+			const offer_id = (offered.result as { offer: { id: string } }).offer.id;
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR NO KEY UPDATE`, [r.account.id]);
+				},
+				() => accept(f, r, offer_id),
+				async (tx) => {
+					await tx.query(GUARD_SQL, [ROLE_ADMIN]);
+					await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [third.account.id]);
+				}
+			);
+			assert.ok(answer.ok, `the accept: ${JSON.stringify(answer)}`);
+			assert.deepStrictEqual(await offer_state(offer_id), { accepted: true, superseded: false });
+			assert.strictEqual(
+				await count(`SELECT COUNT(*) AS n FROM account WHERE id = $1 AND deleted_at IS NOT NULL`, [
+					third.account.id
+				]),
+				1,
+				'the third admin is deleted'
+			);
+		});
+
+		// The grantor's admin grant names one of the recipient's actors
+		// (`granted_by`), and the grantor's account sorts below the recipient's.
+		// A purge of the recipient played (its account row first, its offers
+		// superseded); the accept is sent, takes the grantor's row and waits at
+		// the recipient's; then the purge's delete, whose cascade sets that
+		// `granted_by` null. An accept holding the grantor's account waits it out
+		// and answers the dead credential; one holding the grantor's grant meets
+		// the cascade, and the two deadlock.
+		test("an accept across a purge of its recipient whose actor granted the grantor's admin", async () => {
+			const f = await setup_test();
+			const a = await f.create_account({ username: 'pin_gb_a' });
+			const b = await f.create_account({ username: 'pin_gb_b' });
+			const [g, r] = a.account.id < b.account.id ? [a, b] : [b, a];
+			const grant = (
+				await read<{ id: string }>(
+					`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, $2, $3) RETURNING id`,
+					[g.actor.id, ROLE_ADMIN, r.actor.id]
+				)
+			).id;
+			const [offer] = ascending_ids(1) as [string];
+			await insert_offer(offer, g.actor.id, r.account.id, ROLE_ADMIN);
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR UPDATE`, [r.account.id]);
+					await tx.query(
+						`UPDATE role_grant_offer SET superseded_at = NOW() WHERE to_account_id = $1`,
+						[r.account.id]
+					);
+				},
+				() => accept(f, r, offer),
+				async (tx) => {
+					await tx.query(`DELETE FROM account WHERE id = $1`, [r.account.id]);
+				}
+			);
+			assert.strictEqual(answer.status, 401, JSON.stringify(answer));
+			assert.strictEqual(reason_of(answer), ERROR_AUTHENTICATION_REQUIRED);
+			assert.deepStrictEqual(
+				await read<{ granted_by: string | null; revoked: boolean }>(
+					`SELECT granted_by, revoked_at IS NOT NULL AS revoked FROM role_grant WHERE id = $1`,
+					[grant]
+				),
+				{ granted_by: null, revoked: false },
+				"the purge's cascade set the grant's granted_by null"
+			);
+		});
+
+		// -- multi-row offer writes take their rows in id order ------------------
+
+		// Two offers each: the held transaction locks the lower id, the request is
+		// sent, then the held one locks the higher. A write that takes them in id
+		// order, in one statement, waits on the lower holding neither; one that
+		// takes the higher first holds it while waiting on the lower, and the two
+		// deadlock.
+		const lock_offer = (id: string) => async (tx: pg.Client) => {
+			await tx.query(`SELECT id FROM role_grant_offer WHERE id = $1 FOR UPDATE`, [id]);
+		};
+
+		for (const removal of ['purge', 'delete'] as const) {
+			test(`a ${removal} locks its offers made and received in id order`, async () => {
+				const f = await setup_test();
+				const g = await f.create_account({ username: `pin_ord_g_${removal}` });
+				const x = await f.create_account({ username: `pin_ord_x_${removal}` });
+				const y = await f.create_account({ username: `pin_ord_y_${removal}` });
+				// the one it received sorts first; it supersedes the one it made first
+				const [incoming, outgoing] = ascending_ids(2) as [string, string];
+				await insert_offer(incoming, g.actor.id, x.account.id, 'participant');
+				await insert_offer(outgoing, x.actor.id, y.account.id, 'participant');
+				const answer = await against_held(
+					lock_offer(incoming),
+					() =>
+						removal === 'purge'
+							? daemon_rpc(f, 'account_purge', { account_id: x.account.id, confirm: true })
+							: rpc(f, 'account_delete', { account_id: x.account.id }, f.create_session_headers()),
+					lock_offer(outgoing)
+				);
+				assert.ok(answer.ok, `the ${removal}: ${JSON.stringify(answer)}`);
+				if (removal === 'delete') {
+					assert.deepStrictEqual(await offer_state(incoming), {
+						accepted: false,
+						superseded: true
+					});
+					assert.deepStrictEqual(await offer_state(outgoing), {
+						accepted: false,
+						superseded: true
+					});
+				}
+			});
+		}
+
+		test('a revoke locks the offers it supersedes in id order, before its grant', async () => {
+			const f = await setup_test();
+			const g = await f.create_account({ username: 'pin_ord_rv_g' });
+			const x = await f.create_account({ username: 'pin_ord_rv_x', roles: ['participant'] });
+			const y = await f.create_account({ username: 'pin_ord_rv_y' });
+			const grant = (
+				await read<{ id: string }>(
+					`SELECT id FROM role_grant WHERE actor_id = $1 AND role = 'participant'`,
+					[x.actor.id]
+				)
+			).id;
+			// the one it made sorts first; it supersedes the received ones first
+			const [outgoing, incoming] = ascending_ids(2) as [string, string];
+			await insert_offer(outgoing, x.actor.id, y.account.id, 'participant');
+			await insert_offer(incoming, g.actor.id, x.account.id, 'participant');
+			const answer = await against_held(
+				lock_offer(outgoing),
+				() =>
+					rpc(
+						f,
+						'role_grant_revoke',
+						{ actor_id: x.actor.id, role_grant_id: grant },
+						f.create_session_headers()
+					),
+				lock_offer(incoming)
+			);
+			assert.ok(answer.ok, `the revoke: ${JSON.stringify(answer)}`);
+			assert.deepStrictEqual(await offer_state(incoming), { accepted: false, superseded: true });
+			assert.deepStrictEqual(await offer_state(outgoing), { accepted: false, superseded: true });
+		});
+
+		test('an accept claims its offer and the siblings it supersedes in id order', async () => {
+			const f = await setup_test();
+			const g1 = await f.create_account({ username: 'pin_ord_ac_g1' });
+			const g2 = await f.create_account({ username: 'pin_ord_ac_g2' });
+			const r = await f.create_account({ username: 'pin_ord_ac_r' });
+			const [sibling, own] = ascending_ids(2) as [string, string];
+			await insert_offer(sibling, g2.actor.id, r.account.id, 'participant');
+			await insert_offer(own, g1.actor.id, r.account.id, 'participant');
+			const answer = await against_held(
+				lock_offer(sibling),
+				() => accept(f, r, own),
+				lock_offer(own)
+			);
+			assert.ok(answer.ok, `the accept: ${JSON.stringify(answer)}`);
+			assert.deepStrictEqual(await offer_state(own), { accepted: true, superseded: false });
+			assert.deepStrictEqual(await offer_state(sibling), { accepted: false, superseded: true });
+		});
+
 		// -- an admin-offer accept against a removal of its grantor --------------
 
-		// The removal played: its guard locks the grantor's admin grant and its
-		// write runs; the accept is sent; once the accept waits, the removal
-		// ends the grantor's pending offers (a delete or revoke supersedes them,
-		// a purge's cascade deletes them) and commits. An accept that takes the
-		// grantor's grant before claiming its offer waits there holding nothing
-		// and is then refused; one that claims the offer first holds the row
-		// the removal's supersede needs, and the two deadlock.
+		// The removal played: its guard locks the grantor's account, actor and
+		// admin grant, and its write runs; the accept is sent; once the accept
+		// waits, the removal ends the grantor's pending offers (a delete or revoke
+		// supersedes them, a purge's cascade deletes them) and commits. An accept
+		// that takes the grantor's account row before reading the grantor's
+		// authority waits there and then reads the removal; one that reads it
+		// unlocked confers the role, and one that claims the offer first holds the
+		// row the removal's supersede needs, and the two deadlock.
 		const GUARD_SQL = PLAYED_GUARD_SQL.replace('FOR SHARE', 'FOR NO KEY UPDATE');
 		for (const removal of ['delete', 'revoke', 'purge'] as const) {
 			test(`an admin-offer accept sent across an uncommitted removal (${removal}) of its grantor is refused`, async () => {
@@ -876,6 +1195,191 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 				);
 			});
 		}
+
+		// -- a revoke and a purge against what their cascades reach -------------
+
+		// A re-offer to the revokee played: both parties' rows shared, as an offer
+		// create takes them; once the revoke waits, the upsert of the pending offer
+		// it refreshes. A revoke that takes the revokee's row first waits there,
+		// then locks and supersedes the refreshed offer; one that locks the offers
+		// first holds the one the upsert needs while waiting on the row, and the
+		// two deadlock; one that takes no account row supersedes it before the
+		// upsert commits, and the upsert writes a fresh pending offer after it.
+		test('a revoke across an uncommitted re-offer to its revokee waits and supersedes it', async () => {
+			const f = await setup_test();
+			const g = await f.create_account({ username: 'pin_rv_reoffer_g' });
+			const x = await f.create_account({ username: 'pin_rv_reoffer_x', roles: ['participant'] });
+			const grant = (
+				await read<{ id: string }>(
+					`SELECT id FROM role_grant WHERE actor_id = $1 AND role = 'participant'`,
+					[x.actor.id]
+				)
+			).id;
+			const [offer] = ascending_ids(1) as [string];
+			await insert_offer(offer, g.actor.id, x.account.id, 'participant');
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(
+						`SELECT id FROM account WHERE id = ANY($1::uuid[]) ORDER BY id FOR SHARE`,
+						[[g.account.id, x.account.id]]
+					);
+				},
+				() =>
+					rpc(
+						f,
+						'role_grant_revoke',
+						{ actor_id: x.actor.id, role_grant_id: grant },
+						f.create_session_headers()
+					),
+				async (tx) => {
+					await tx.query(
+						`INSERT INTO role_grant_offer (from_actor_id, to_account_id, role, expires_at)
+						 VALUES ($1, $2, 'participant', NOW() + INTERVAL '2 days')
+						 ON CONFLICT (to_account_id, role, COALESCE(scope_kind, 'GLOBAL'),
+						   COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid), from_actor_id)
+						   WHERE accepted_at IS NULL AND declined_at IS NULL
+						     AND retracted_at IS NULL AND superseded_at IS NULL
+						 DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+						[g.actor.id, x.account.id]
+					);
+				}
+			);
+			assert.ok(answer.ok, `the revoke: ${JSON.stringify(answer)}`);
+			assert.strictEqual(
+				await count(
+					`SELECT COUNT(*) AS n FROM role_grant_offer
+					 WHERE to_account_id = $1 AND accepted_at IS NULL AND declined_at IS NULL
+					   AND retracted_at IS NULL AND superseded_at IS NULL`,
+					[x.account.id]
+				),
+				0,
+				'no offer to the revokee left pending'
+			);
+		});
+
+		// Two admins whose grants the purged account's actor granted, the higher
+		// stored first so a cascade walking the heap reaches it first. A guard of a
+		// third admin's delete played: its rows up to the lower admin's; once the
+		// purge waits, the rest of it and the delete. A purge that takes every
+		// admin's account first waits at the guard's first row; one that reaches
+		// the grants only in its cascade sets the higher one null and then waits
+		// on the lower one the guard holds, while the guard reaches for the higher.
+		test("a purge across another removal's guard over the admins its account granted: both commit", async () => {
+			const f = await setup_test();
+			const x = await f.create_account({ username: 'pin_pg_x' });
+			const p = await f.create_account({ username: 'pin_pg_p' });
+			const q = await f.create_account({ username: 'pin_pg_q' });
+			const third = await f.create_account({ username: 'pin_pg_t', roles: [ROLE_ADMIN] });
+			const [lo, hi] = p.account.id < q.account.id ? [p, q] : [q, p];
+			for (const admin of [hi, lo]) {
+				await write(`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, $2, $3)`, [
+					admin.actor.id,
+					ROLE_ADMIN,
+					x.actor.id
+				]);
+			}
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(GUARD_SQL.replace('ORDER BY', 'AND a.id <= $2 ORDER BY'), [
+						ROLE_ADMIN,
+						lo.account.id
+					]);
+				},
+				() => daemon_rpc(f, 'account_purge', { account_id: x.account.id, confirm: true }),
+				async (tx) => {
+					await tx.query(GUARD_SQL, [ROLE_ADMIN]);
+					await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [third.account.id]);
+				}
+			);
+			assert.ok(answer.ok, `the purge: ${JSON.stringify(answer)}`);
+			assert.strictEqual(
+				await count(
+					`SELECT COUNT(*) AS n FROM role_grant WHERE actor_id = ANY($1::uuid[]) AND granted_by IS NULL`,
+					[[lo.actor.id, hi.actor.id]]
+				),
+				2,
+				"the purge's cascade set both grants' granted_by null"
+			);
+		});
+
+		// The purged account sorting below an admin, and an offer create between
+		// the two played: the purged account's row shared, then — once the purge
+		// waits — the admin's. A purge taking the admins' rows and its own in one
+		// id-ordered statement waits at its own holding nothing above it; one
+		// taking the admins' first (a guard ahead of its own row) holds the
+		// admin's the create reaches for while waiting on its own row.
+		test('a purge across an offer create holding its account, then an admin: both commit', async () => {
+			const f = await setup_test();
+			const a = await f.create_account({ username: 'pin_po_a' });
+			const b = await f.create_account({ username: 'pin_po_b' });
+			const [x, admin] = a.account.id < b.account.id ? [a, b] : [b, a];
+			await write(`INSERT INTO role_grant (actor_id, role) VALUES ($1, $2)`, [
+				admin.actor.id,
+				ROLE_ADMIN
+			]);
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR SHARE`, [x.account.id]);
+				},
+				() => daemon_rpc(f, 'account_purge', { account_id: x.account.id, confirm: true }),
+				async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR SHARE`, [admin.account.id]);
+				}
+			);
+			assert.ok(answer.ok, `the purge: ${JSON.stringify(answer)}`);
+			assert.strictEqual(
+				await count(`SELECT COUNT(*) AS n FROM account WHERE id = $1`, [x.account.id]),
+				0
+			);
+		});
+
+		// Two accounts each holding a grant the other's actor granted. A purge of
+		// one played: every admin's row and its own, then its cascade's first
+		// write, the delete of its own grant; once the other purge waits, its
+		// account's delete, whose cascade sets the other's grant's granted_by
+		// null. A purge that takes the admins' rows first waits on the played one
+		// there; one that reaches the grants only in its cascade deletes its own
+		// grant and waits on the played one's, which then waits on it.
+		test('two purges of accounts that granted each other: both commit', async () => {
+			const f = await setup_test();
+			const x = await f.create_account({ username: 'pin_pp_x' });
+			const y = await f.create_account({ username: 'pin_pp_y' });
+			const gx = (
+				await read<{ id: string }>(
+					`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, 'participant', $2) RETURNING id`,
+					[x.actor.id, y.actor.id]
+				)
+			).id;
+			await write(
+				`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, 'participant', $2)`,
+				[y.actor.id, x.actor.id]
+			);
+			const answer = await against_held(
+				async (tx) => {
+					await tx.query(
+						`SELECT a.id FROM account a
+						 WHERE a.id = $1 OR a.id IN (
+						   SELECT act.account_id FROM actor act JOIN role_grant rg ON rg.actor_id = act.id
+						   WHERE rg.role = $2 AND rg.scope_id IS NULL AND rg.revoked_at IS NULL)
+						 ORDER BY a.id FOR NO KEY UPDATE`,
+						[x.account.id, ROLE_ADMIN]
+					);
+					await tx.query(`DELETE FROM role_grant WHERE id = $1`, [gx]);
+				},
+				() => daemon_rpc(f, 'account_purge', { account_id: y.account.id, confirm: true }),
+				async (tx) => {
+					await tx.query(`DELETE FROM account WHERE id = $1`, [x.account.id]);
+				}
+			);
+			assert.ok(answer.ok, `the purge: ${JSON.stringify(answer)}`);
+			assert.strictEqual(
+				await count(`SELECT COUNT(*) AS n FROM account WHERE id = ANY($1::uuid[])`, [
+					[x.account.id, y.account.id]
+				]),
+				0,
+				'both purged'
+			);
+		});
 	});
 };
 

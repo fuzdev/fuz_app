@@ -97,6 +97,7 @@ import {
 	RoleGrantOfferExpiredError,
 	RoleGrantOfferNotFoundError,
 	RoleGrantOfferSelfTargetError,
+	query_role_grant_offer_lock_for_revoke,
 	query_role_grant_offer_supersede_outgoing
 } from './role_grant_offer_queries.ts';
 import {
@@ -107,7 +108,10 @@ import {
 	query_role_grant_find_active_role_for_actor,
 	query_revoke_role_grant
 } from './role_grant_queries.ts';
-import { query_actor_by_id, query_active_actors_by_account } from './account_queries.ts';
+import {
+	query_account_lock_for_revoke,
+	query_active_actors_by_account
+} from './account_queries.ts';
 import type { Actor } from './account_schema.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import {
@@ -540,18 +544,16 @@ export const create_role_grant_offer_actions = (
 			if (err instanceof RoleGrantOfferBuiltinRefusedError) {
 				throw await refuse_builtin_accept(ctx, auth, err);
 			}
+			// The caller's own account was deleted while the request was in flight:
+			// refused as the dead credential it now is, as offer-create refuses a
+			// grantor deleted in flight, with no audit row from an account that is gone.
+			if (err instanceof RoleGrantOfferRecipientNotActiveError) {
+				throw jsonrpc_errors.unauthenticated('unauthenticated', {
+					reason: ERROR_AUTHENTICATION_REQUIRED
+				});
+			}
 			throw err;
 		}
-
-		// Look up the grantor's account_id inside the transaction so the
-		// post-commit notification has a valid target. One cheap SELECT by
-		// PK — the alternative (widening `query_accept_offer` again) would
-		// bleed transport concerns into the query layer. A replay
-		// (`created: false`) notifies nothing, so it skips the lookup.
-		const grantor_actor = result.created
-			? await query_actor_by_id(ctx, result.offer.from_actor_id)
-			: null;
-		const grantor_account_id = grantor_actor?.account_id ?? null;
 
 		const offer_json = to_role_grant_offer_json(result.offer);
 
@@ -570,13 +572,11 @@ export const create_role_grant_offer_actions = (
 			emit_after_commit(ctx, () => {
 				fan_out_audit_events(result.audit_events, audit);
 			});
-			if (grantor_account_id) {
-				queue_offer_notification(
-					ctx,
-					grantor_account_id,
-					build_role_grant_offer_accepted_notification({ offer: offer_json })
-				);
-			}
+			queue_offer_notification(
+				ctx,
+				result.from_account_id,
+				build_role_grant_offer_accepted_notification({ offer: offer_json })
+			);
 			queue_supersede_notifications(ctx, result.superseded_offers, 'sibling_accepted', {
 				grantor: { kind: 'id', id: result.offer.id },
 				recipient: null
@@ -794,6 +794,18 @@ export const create_role_grant_offer_actions = (
 			}
 		}
 
+		// The revokee's account row, then every offer the revoke supersedes — the
+		// revokee's incoming siblings and its outgoing offers — in one statement in
+		// id order, before the grant is touched (`query_account_lock_for_revoke`
+		// and `query_role_grant_offer_lock_for_revoke` have why). After the guard,
+		// which holds an admin revokee's row already.
+		await query_account_lock_for_revoke(ctx, input.actor_id);
+		await query_role_grant_offer_lock_for_revoke(
+			ctx,
+			input.actor_id,
+			role_grant_row.role,
+			role_grant_row.scope_id
+		);
 		const result = await query_revoke_role_grant(
 			ctx,
 			input.role_grant_id,

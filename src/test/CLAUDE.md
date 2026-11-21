@@ -51,7 +51,9 @@ delete wait on each other's account-row lock),
 delete, the last-admin guard's order), `auth/password_change.race.db.test.ts`,
 `auth/connection_closer.admission.db.test.ts`,
 `auth/cleanup.sessions.refused_commit.db.test.ts`,
-`auth/session_sweep.order.db.test.ts` (the expiry sweep's id order). Each
+`auth/session_sweep.order.db.test.ts` (the expiry sweep's id order),
+`auth/role_grant_offer.lock_order.db.test.ts` (the accept's account locks and
+the offer-row id order of every bulk offer write). Each
 module doc names its Postgres-only half. A change to a row lock, a locking
 read or a `RETURNING` order runs them locally first — and
 `npm run test:cross:parity`, whose `lock_pins.cross.test.ts` holds the same
@@ -368,8 +370,12 @@ duration. Its groups: a credential mint across a password change and a delete;
 an offer and an invite across a delete of a party; the last-admin guard per
 pair of removals and an admin-offer accept against a removal of its grantor,
 in both orders; the session and token caps; a purge across each writer of the
-account; and each multi-row credential delete's id order, its rows seeded
-against id order. It runs only here, where both spines are on Postgres — the
+account; each multi-row credential delete's id order, its rows seeded
+against id order; and the offer accept — sibling accepts, an admin recipient
+sorting either side of its grantor, a removal of either party, the granted-by
+edge — every bulk offer write's id order; a revoke across a re-offer to its revokee;
+and a purge across another removal's guard, an offer create, and another
+purge. It runs only here, where both spines are on Postgres — the
 single-backend projects exclude it, and each case asserts its backend's
 database URL is Postgres.
 The differential's suite composition is `spine_differential.ts`

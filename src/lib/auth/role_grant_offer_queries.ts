@@ -26,14 +26,21 @@ import {
 	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
 import { query_create_role_grant, query_role_grant_by_id } from './role_grant_queries.ts';
-import { offer_pending_predicate, role_grant_active_sql } from './role_grant_sql.ts';
+import {
+	offer_pending_predicate,
+	offer_rows_locked_in_id_order,
+	role_grant_active_sql
+} from './role_grant_sql.ts';
 import type {
 	CreateRoleGrantOfferInput,
 	RoleGrantOffer,
 	SupersededOffer
 } from './role_grant_offer_schema.ts';
 import { query_audit_log } from './audit_log_queries.ts';
-import { query_account_lock_live_many } from './account_queries.ts';
+import {
+	query_account_lock_for_offer_accept,
+	query_account_lock_live_many
+} from './account_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import { is_builtin_role, ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
 
@@ -158,12 +165,16 @@ export class RoleGrantOfferActorAccountMismatchError extends Error {
 }
 
 /**
- * Error thrown by `query_role_grant_offer_create` when the recipient is not an
- * active account: `to_account_id` names no account, a soft-deleted one, or one
- * with no active actor. A deleted recipient and one that never existed are the
- * one refusal, so a caller learns nothing from it that a missing id wouldn't
- * tell; the handler answers it as `role_grant_assign` answers the same
- * recipient. Twin of the Rust `RoleGrantOfferError::RecipientNotActive`.
+ * Error thrown when the recipient is not an active account.
+ *
+ * By `query_role_grant_offer_create`: `to_account_id` names no account, a
+ * soft-deleted one, or one with no active actor. A deleted recipient and one
+ * that never existed are the one refusal, so a caller learns nothing from it
+ * that a missing id wouldn't tell; the handler answers it as
+ * `role_grant_assign` answers the same recipient. By `query_accept_offer`: the
+ * accepting account — the caller — was deleted or purged after its credential
+ * was read, and its handler answers the dead credential. Twin of the Rust
+ * `RoleGrantOfferError::RecipientNotActive`.
  */
 export class RoleGrantOfferRecipientNotActiveError extends Error {
 	constructor() {
@@ -468,8 +479,11 @@ export const query_role_grant_offer_history_for_account = async (
  * caller's `role_grant_offer_expire` audit inserts — committed together, or
  * rolled back together so the next sweep retries. Concurrent sweeps claim
  * disjoint rows: a row another sweep has stamped but not committed blocks on
- * its row lock, then fails the re-checked `expire_audited_at IS NULL`.
- * `cleanup_expired_role_grant_offers` is the caller.
+ * its row lock, then fails the re-checked `expire_audited_at IS NULL`. The
+ * rows are locked in id order (`offer_rows_locked_in_id_order`), as every
+ * multi-row offer write takes them, so a sweep and a delete, purge, revoke or
+ * accept over the same expired offers never wait on each other in opposite
+ * orders. `cleanup_expired_role_grant_offers` is the caller.
  *
  * @mutates `role_grant_offer` rows - stamps `expire_audited_at` on each claimed row
  */
@@ -480,9 +494,10 @@ export const query_role_grant_offer_sweep_expired = async (
 		`WITH claimed AS (
 			UPDATE role_grant_offer
 			SET expire_audited_at = NOW()
-			WHERE ${offer_pending_predicate('')}
-			  AND expires_at <= NOW()
-			  AND expire_audited_at IS NULL
+			WHERE ${offer_rows_locked_in_id_order(
+				'',
+				`${offer_pending_predicate('')} AND expires_at <= NOW() AND expire_audited_at IS NULL`
+			)}
 			-- raw columns; the outer select formats them
 			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
@@ -497,17 +512,14 @@ export const query_role_grant_offer_sweep_expired = async (
  * actor of an active account — the authority a builtin-role offer needs at the
  * moment its grant is minted.
  *
- * A locking read: `FOR SHARE OF rg` takes a share lock on the grant row that
- * admits, so a concurrent revoke (an `UPDATE` of that row) is strictly ordered
- * against this accept — it either commits first, and the recheck of the locked
- * row sees `revoked_at` set and excludes it, or it waits for this transaction
- * to commit the grant it authorized. A plain `EXISTS` could read the grant as
- * active while a revoke commits in between. The actor and account tombstones
- * are read but not locked — ordering a delete racing an accept isn't worth
- * locking two more tables; a delete supersedes the grantor's pending offers,
- * which the accept's claim then refuses. Taken before the accept claims its
- * offer, as a removal of the grantor takes the grant before the offers. Twin
- * of the Rust `grantor_holds_global_admin`.
+ * An unlocked read, run after `query_account_lock_for_offer_accept` has taken
+ * the grantor's account row `FOR SHARE` in the accept's transaction: every
+ * write that ends a grantor's global `admin` takes that row first — a revoke of
+ * the grant through `query_account_lock_for_revoke`, a delete through its write
+ * of the row, a purge through `query_account_lock_admins_for_purge` and
+ * `query_account_lock_for_purge` — so one that committed first is
+ * seen here (each statement reads afresh), and one that came later waits for
+ * the accept to commit. Twin of the Rust `grantor_holds_global_admin`.
  */
 const query_grantor_holds_global_admin = async (
 	deps: QueryDeps,
@@ -523,8 +535,7 @@ const query_grantor_holds_global_admin = async (
 		   AND ${role_grant_active_sql('rg')}
 		   AND act.deleted_at IS NULL
 		   AND a.deleted_at IS NULL
-		 LIMIT 1
-		 FOR SHARE OF rg`,
+		 LIMIT 1`,
 		[grantor_actor_id, ROLE_ADMIN]
 	);
 	return row != null;
@@ -555,6 +566,12 @@ export interface AcceptOfferInput {
 export interface AcceptOfferResult {
 	role_grant: RoleGrant;
 	offer: RoleGrantOffer;
+	/**
+	 * The grantor's account (the offer's `from_actor_id` → account), read on the
+	 * claimed row, so the caller can tell the grantor without a second read.
+	 * Twin of the Rust `AcceptOfferResult::from_account_id`.
+	 */
+	from_account_id: Uuid;
 	/** `true` if this call is the one that accepted the offer (new role_grant inserted); `false` on a replay (or a race loser) returning the already-created, still-held role_grant — the caller then audits and notifies nothing. */
 	created: boolean;
 	/**
@@ -581,9 +598,29 @@ export interface AcceptOfferResult {
  * creating a duplicate or throwing — while that grant is still held. A grant
  * revoked since the accept, or gone, makes the offer terminal.
  *
+ * Lock order — accounts, then offers, then the grant: the recipient's account
+ * row (and, for an unscoped `admin` offer, the grantor's) in id order
+ * (`query_account_lock_for_offer_accept`), then the offer and the pending
+ * siblings it supersedes in one id-ordered claim, then the grant insert. The
+ * accounts first, as every removal of either account takes them first, so a
+ * removal and an accept never meet at the offers, the actor, or a grant a
+ * purge's cascade reaches; two accepts by one recipient take turns. The
+ * offers in id order, as every transaction that writes several offer rows
+ * locks them all first in one id-ordered statement (a delete, a purge, a
+ * revoke, the expiry sweep). The grantor's authority is read unlocked after
+ * the grantor's account lock — the invariant it rests on: every write that
+ * ends a grantor's global `admin` takes the grantor's account row first (a
+ * revoke of the grant through `query_account_lock_for_revoke`, whether or not
+ * its last-admin guard ran; a delete through its write of the row; a purge
+ * through `query_account_lock_admins_for_purge` and
+ * `query_account_lock_for_purge`; the DB browser's delete, which takes none of
+ * them, excepted).
+ *
  * Error map:
  * - `RoleGrantOfferNotFoundError` — offer does not exist, or belongs to a
  *   different recipient (IDOR guard). The offer row is untouched.
+ * - `RoleGrantOfferRecipientNotActiveError` — the recipient's account was
+ *   deleted or purged since the caller's credential was read.
  * - `RoleGrantOfferAlreadyTerminalError` — offer is declined, retracted, or
  *   superseded; or accepted, and its grant revoked, gone, or bound to another
  *   actor.
@@ -591,8 +628,8 @@ export interface AcceptOfferResult {
  * - `RoleGrantOfferActorMismatchError` — actor-targeted offer, different actor.
  * - `RoleGrantOfferBuiltinRefusedError` — a builtin-role offer that must not
  *   mint: `keeper` at all, a builtin bound to a scope, or one whose grantor no
- *   longer holds an active global `admin` (read under `FOR SHARE`). The offer
- *   stays pending.
+ *   longer holds an active global `admin` (read under the grantor's account
+ *   lock). The offer stays pending.
  *
  * Sibling supersede is what closes the "accept a pre-revoke sibling offer
  * to bypass a revoke" path: once A is accepted, B/C/... can no longer be
@@ -603,6 +640,7 @@ export interface AcceptOfferResult {
  * @mutates `role_grant_offer` siblings - stamps `superseded_at` on every other pending offer for the tuple
  * @mutates `audit_log` table - emits `role_grant_offer_accept` + `role_grant_create` + one `role_grant_offer_supersede` per sibling
  * @throws RoleGrantOfferNotFoundError if the offer is missing or belongs to another recipient
+ * @throws RoleGrantOfferRecipientNotActiveError if the recipient's account is deleted or gone
  * @throws RoleGrantOfferAlreadyTerminalError if the offer is declined, retracted, or superseded, or accepted with its grant revoked, gone, or bound to another actor
  * @throws RoleGrantOfferExpiredError if the offer is pending but past `expires_at`
  * @throws RoleGrantOfferActorMismatchError if the offer is actor-targeted to a different actor
@@ -615,54 +653,76 @@ export const query_accept_offer = async (
 ): Promise<AcceptOfferResult> => {
 	const { offer_id, to_account_id, actor_id, ip } = input;
 
-	// An unscoped `admin` offer's grantor must still hold a global `admin` when
-	// the grant is minted, read under a share lock on that grant — taken before
-	// the offer is claimed, the order a removal of the grantor takes the two:
-	// its last-admin guard locks the grant, its supersede then the grantor's
-	// offers. Claiming the offer first held the row that supersede needs while
-	// waiting on the grant the guard held. The grantor, role and scope are
-	// written once with the offer and never updated, so they are read without
-	// a lock; everything the claim checks is checked on the claimed row.
-	const head = await deps.db.query_one<Pick<RoleGrantOffer, 'from_actor_id' | 'role' | 'scope_id'>>(
-		`SELECT from_actor_id, role, scope_id FROM role_grant_offer WHERE id = $1 AND to_account_id = $2`,
+	// The grantor, role and scope are written once with the offer and never
+	// updated, so they are read without a lock: they name the rows to lock.
+	// Everything the claim checks is checked on the claimed row.
+	const head = await deps.db.query_one<
+		Pick<RoleGrantOffer, 'from_actor_id' | 'role' | 'scope_id'> & { from_account_id: Uuid }
+	>(
+		`SELECT o.from_actor_id, o.role, o.scope_id, grantor.account_id AS from_account_id
+		 FROM role_grant_offer o
+		 JOIN actor grantor ON grantor.id = o.from_actor_id
+		 WHERE o.id = $1 AND o.to_account_id = $2`,
 		[offer_id, to_account_id]
 	);
 	if (!head) {
 		throw new RoleGrantOfferNotFoundError(offer_id);
 	}
-	const grantor_holds_admin =
-		head.role === ROLE_ADMIN && head.scope_id === null
-			? await query_grantor_holds_global_admin(deps, head.from_actor_id)
-			: null;
+	// An unscoped `admin` offer's grantor must still hold a global `admin` when
+	// the grant is minted.
+	const needs_grantor_admin = head.role === ROLE_ADMIN && head.scope_id === null;
+	if (
+		!(await query_account_lock_for_offer_accept(
+			deps,
+			to_account_id,
+			needs_grantor_admin ? head.from_account_id : null
+		))
+	) {
+		throw new RoleGrantOfferRecipientNotActiveError();
+	}
+	const grantor_holds_admin = needs_grantor_admin
+		? await query_grantor_holds_global_admin(deps, head.from_actor_id)
+		: null;
 
-	// Claim the offer with a row-level lock. Subsequent concurrent callers
-	// block on the lock until this transaction commits/rolls back; after commit
-	// they see the new state (accepted or terminal) and branch idempotently.
-	// We defer writing `accepted_at` until the role_grant row exists — the
-	// `role_grant_offer_role_grant_iff_accepted` CHECK constraint demands both be set
-	// (or neither) at row-visibility time.
+	// Claim the offer and every pending sibling it may supersede — one
+	// statement, in id order. A concurrent caller on any of these rows blocks
+	// until this transaction ends, then sees the new state. No sibling can be
+	// added meanwhile: an offer to the recipient takes its account row, which
+	// this transaction holds. We defer writing `accepted_at` until the
+	// role_grant row exists — the `role_grant_offer_role_grant_iff_accepted`
+	// CHECK constraint demands both be set (or neither) at row-visibility time.
 	//
-	// Trailing `expires_at > NOW() AS still_valid` rides on the FOR UPDATE row
-	// so the expiry branch below compares the **raw** column on Postgres' clock
-	// — the projected `expires_at` is floored to the second, so comparing it in
+	// Trailing `expires_at > NOW() AS still_valid` rides on the locked row so
+	// the expiry branch below compares the **raw** column on Postgres' clock —
+	// the projected `expires_at` is floored to the second, so comparing it in
 	// JS would report expiry up to a second early. Twin of the Rust
 	// `query_accept_offer`'s `o.expires_at > NOW() AS still_valid`.
-	const locked_row = await deps.db.query_one<RoleGrantOffer & { still_valid: boolean }>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))},
-		        role_grant_offer.expires_at > NOW() AS still_valid
-		 FROM role_grant_offer
-		 WHERE id = $1 AND to_account_id = $2
-		 FOR UPDATE`,
-		[offer_id, to_account_id]
+	const claimed = await deps.db.query<
+		RoleGrantOffer & { still_valid: boolean; from_account_id: Uuid }
+	>(
+		`SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o', role_grant_offer_expr('o'))},
+		        o.expires_at > NOW() AS still_valid,
+		        grantor.account_id AS from_account_id
+		 FROM role_grant_offer o
+		 JOIN actor grantor ON grantor.id = o.from_actor_id
+		 WHERE o.to_account_id = $2
+		   AND (o.id = $1
+		        OR (o.role = $3 AND o.scope_id IS NOT DISTINCT FROM $4
+		            AND ${offer_pending_predicate('o')}))
+		 ORDER BY o.id
+		 FOR UPDATE OF o`,
+		[offer_id, to_account_id, head.role, head.scope_id]
 	);
+	const locked_row = claimed.find((row) => row.id === offer_id);
 
 	if (!locked_row) {
 		throw new RoleGrantOfferNotFoundError(offer_id);
 	}
+	const sibling_ids = claimed.filter((row) => row.id !== offer_id).map((row) => row.id);
 
-	// `still_valid` is the comparison result, not a column of the offer — split
-	// it off so `locked` stays exactly `ROLE_GRANT_OFFER_COLUMNS`.
-	const { still_valid, ...locked } = locked_row;
+	// `still_valid` and `from_account_id` are not columns of the offer — split
+	// them off so `locked` stays exactly `ROLE_GRANT_OFFER_COLUMNS`.
+	const { still_valid, from_account_id, ...locked } = locked_row;
 
 	if (locked.accepted_at) {
 		// Already accepted (a replay, or a race winner already committed);
@@ -685,6 +745,7 @@ export const query_accept_offer = async (
 		return {
 			role_grant,
 			offer: locked,
+			from_account_id,
 			created: false,
 			superseded_offers: [],
 			audit_events: []
@@ -697,7 +758,7 @@ export const query_accept_offer = async (
 
 	// Expiry check AFTER the accepted-path: a validly-accepted offer past its
 	// expires_at still returns the role_grant idempotently. Only pending offers
-	// past expiry reach this branch. `still_valid` rode on the FOR UPDATE row
+	// past expiry reach this branch. `still_valid` rode on the claimed row
 	// above, so the comparison stays on the raw column and Postgres' clock.
 	if (!still_valid) {
 		throw new RoleGrantOfferExpiredError(offer_id);
@@ -738,8 +799,8 @@ export const query_accept_offer = async (
 			// Builtin roles are global-only.
 			refusal = 'scoped';
 		} else if (grantor_holds_admin !== true) {
-			// read under its share lock before the claim, on the same immutable
-			// grantor the claimed row carries
+			// read under the grantor's account lock before the claim, on the same
+			// immutable grantor the claimed row carries
 			refusal = 'grantor_not_authorized';
 		}
 		if (refusal !== null) {
@@ -784,26 +845,26 @@ export const query_accept_offer = async (
 	);
 	const offer = assert_row(offer_accepted, 'mark offer accepted');
 
-	// Supersede sibling pending offers for the same (to_account, role, scope).
-	// Forecloses the "accept this other sibling later to get the role back
-	// after a revoke" path — any pending offer for this tuple at accept time
-	// is obsoleted by the accept. CTE joins `actor` to surface each sibling's
-	// grantor `account_id` for the caller's notification fan-out.
-	const superseded = await deps.db.query<SupersededOffer>(
-		`WITH updated AS (
-			UPDATE role_grant_offer
-			SET superseded_at = NOW()
-			WHERE to_account_id = $1
-			  AND role = $2
-			  AND scope_id IS NOT DISTINCT FROM $3
-			  AND id <> $4
-			  AND ${offer_pending_predicate('')}
-			-- raw columns; the outer grantor select formats them
-			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
-		)
-		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
-		[to_account_id, offer.role, offer.scope_id, offer.id]
-	);
+	// Supersede the sibling pending offers for the same (to_account, role,
+	// scope), the rows the claim locked. Forecloses the "accept this other
+	// sibling later to get the role back after a revoke" path — any pending
+	// offer for this tuple at accept time is obsoleted by the accept. CTE joins
+	// `actor` to surface each sibling's grantor `account_id` for the caller's
+	// notification fan-out.
+	const superseded =
+		sibling_ids.length === 0
+			? []
+			: await deps.db.query<SupersededOffer>(
+					`WITH updated AS (
+						UPDATE role_grant_offer
+						SET superseded_at = NOW()
+						WHERE id = ANY($1) AND ${offer_pending_predicate('')}
+						-- raw columns; the outer grantor select formats them
+						RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
+					)
+					${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
+					[sibling_ids]
+				);
 
 	// Emit audit events in-transaction (atomic with the role_grant insert).
 	// The `RETURNING` after the SET guarantees `offer.resulting_role_grant_id === role_grant.id`.
@@ -870,6 +931,7 @@ export const query_accept_offer = async (
 	return {
 		role_grant,
 		offer,
+		from_account_id,
 		created: true,
 		superseded_offers: superseded,
 		audit_events: [offer_accept_event, role_grant_create_event, ...supersede_events]
@@ -887,7 +949,10 @@ export const query_accept_offer = async (
  * grantor's outgoing pending offers in the same transaction. Each row carries
  * the grantor's `from_account_id`, as every supersede cascade's does; the
  * caller emits a `role_grant_offer_supersede` audit event per entry and
- * queues its notifications (`queue_supersede_notifications`). Twin of the Rust
+ * queues its notifications (`queue_supersede_notifications`). The rows are
+ * taken in id order; a caller that writes other offers too locks them all
+ * first (`query_role_grant_offer_lock_for_account_removal`,
+ * `query_role_grant_offer_lock_for_revoke`). Twin of the Rust
  * `query_role_grant_offer_supersede_outgoing`.
  *
  * @param deps - query dependencies
@@ -904,8 +969,10 @@ export const query_role_grant_offer_supersede_outgoing = async (
 		`WITH updated AS (
 			UPDATE role_grant_offer
 			SET superseded_at = NOW()
-			WHERE from_actor_id = ANY($1)
-			  AND ${offer_pending_predicate('')}
+			WHERE ${offer_rows_locked_in_id_order(
+				'',
+				`from_actor_id = ANY($1) AND ${offer_pending_predicate('')}`
+			)}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
@@ -925,7 +992,9 @@ export const query_role_grant_offer_supersede_outgoing = async (
  * `to_actor_id` is bound to its `to_account_id` at create. Each row carries
  * the grantor's `from_account_id`, as every supersede cascade's does; the
  * caller emits a `role_grant_offer_supersede` audit event per entry and
- * queues its notifications (`queue_supersede_notifications`). Twin of the Rust
+ * queues its notifications (`queue_supersede_notifications`). The rows are
+ * taken in id order, after the caller's
+ * `query_role_grant_offer_lock_for_account_removal`. Twin of the Rust
  * `query_role_grant_offer_supersede_incoming`.
  *
  * @param deps - query dependencies
@@ -941,12 +1010,86 @@ export const query_role_grant_offer_supersede_incoming = async (
 		`WITH updated AS (
 			UPDATE role_grant_offer
 			SET superseded_at = NOW()
-			WHERE to_account_id = $1
-			  AND ${offer_pending_predicate('')}
+			WHERE ${offer_rows_locked_in_id_order(
+				'',
+				`to_account_id = $1 AND ${offer_pending_predicate('')}`
+			)}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[to_account_id]
+	);
+};
+
+/**
+ * Lock every pending offer an account removal supersedes — the ones its actors
+ * made and the ones made to it — in one statement, in id order.
+ *
+ * A delete or a purge writes those offers in two statements, the outgoing
+ * then the incoming; taken that way, each could hold rows another writer of
+ * both sets (a revoke of the account's grant, the expiry sweep) waits on while
+ * waiting on rows that writer holds. Locked together first, in the order every
+ * multi-row offer write takes its rows, the two supersedes then write rows
+ * this transaction already holds. No offer to or from the account can be made
+ * meanwhile: an offer create takes both parties' account rows, which the
+ * removal has written or locked. Twin of the Rust
+ * `query_role_grant_offer_lock_for_account_removal`.
+ *
+ * @param deps - query dependencies (must be the removal's transaction)
+ * @param to_account_id - the removed account
+ * @param from_actor_ids - the removed account's actors
+ * @mutates `role_grant_offer` rows - row-locks every pending offer to the account or from its actors
+ */
+export const query_role_grant_offer_lock_for_account_removal = async (
+	deps: QueryDeps,
+	to_account_id: Uuid,
+	from_actor_ids: ReadonlyArray<Uuid>
+): Promise<void> => {
+	await deps.db.query(
+		`SELECT id FROM role_grant_offer
+		 WHERE (to_account_id = $1 OR from_actor_id = ANY($2))
+		   AND ${offer_pending_predicate('')}
+		 ORDER BY id
+		 FOR UPDATE`,
+		[to_account_id, from_actor_ids]
+	);
+};
+
+/**
+ * Lock every pending offer `role_grant_revoke` supersedes — the revokee
+ * account's incoming offers of the revoked grant's role and scope, and every
+ * offer the revokee's actor made — in one statement, in id order.
+ *
+ * Taken after the revokee's account row (`query_account_lock_for_revoke`),
+ * which keeps any new offer to or from the account out, and before the grant's
+ * update: an accept claims its offers before it inserts its grant (whose unique
+ * slot waits on a revoke's uncommitted update of the same grant), so a revoke
+ * updating the grant first and then reaching the offers the accept holds would
+ * close a cycle. Then the revoke's two supersedes write rows it already holds,
+ * in the order every multi-row offer write takes its rows. Twin of the Rust
+ * `query_role_grant_offer_lock_for_revoke`.
+ *
+ * @param deps - query dependencies (must be the revoke's transaction)
+ * @param actor_id - the revokee actor
+ * @param role - the revoked grant's role
+ * @param scope_id - the revoked grant's scope, `null` for global
+ * @mutates `role_grant_offer` rows - row-locks the pending offers the revoke supersedes
+ */
+export const query_role_grant_offer_lock_for_revoke = async (
+	deps: QueryDeps,
+	actor_id: Uuid,
+	role: string,
+	scope_id: Uuid | null
+): Promise<void> => {
+	await deps.db.query(
+		`SELECT id FROM role_grant_offer
+		 WHERE ((to_account_id = (SELECT account_id FROM actor WHERE id = $1)
+		         AND role = $2 AND scope_id IS NOT DISTINCT FROM $3)
+		        OR from_actor_id = $1)
+		   AND ${offer_pending_predicate('')}
+		 ORDER BY id
+		 FOR UPDATE`,
+		[actor_id, role, scope_id]
 	);
 };

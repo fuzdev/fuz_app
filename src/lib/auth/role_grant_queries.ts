@@ -20,7 +20,11 @@ import {
 	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
 import type { SupersededOffer } from './role_grant_offer_schema.ts';
-import { offer_pending_predicate, role_grant_active_sql } from './role_grant_sql.ts';
+import {
+	offer_pending_predicate,
+	offer_rows_locked_in_id_order,
+	role_grant_active_sql
+} from './role_grant_sql.ts';
 
 /**
  * The full `role_grant` column set, named explicitly so a row read fails loud
@@ -222,6 +226,18 @@ export interface RevokeRoleGrantResult {
  * offer becomes terminal at revoke time. A fresh post-revoke grant
  * requires the grantor to call `query_role_grant_offer_create` again.
  *
+ * The revokee's account row is locked first (`FOR NO KEY UPDATE`, the lock
+ * `query_account_lock_for_revoke` takes), so no offer to or from the account is
+ * made, and none accepted, while the revoke runs: the offers it locks are the
+ * offers it writes. Then those offers, in id order, before the grant is
+ * updated: an accept claims its offers before it inserts its grant, and that
+ * insert waits on an uncommitted update of the same grant, so the grant first
+ * and the offers second would close a cycle with it. A caller that supersedes
+ * the revokee's outgoing offers too (`role_grant_revoke`) takes the account row
+ * and then every offer it writes in one statement first
+ * (`query_role_grant_offer_lock_for_revoke`); the locks here then find rows
+ * the transaction already holds.
+ *
  * @param deps - query dependencies
  * @param role_grant_id - the role_grant to revoke
  * @param actor_id - the actor that must own the role_grant
@@ -237,6 +253,26 @@ export const query_revoke_role_grant = async (
 	revoked_by: Uuid | null,
 	reason?: string | null
 ): Promise<RevokeRoleGrantResult | null> => {
+	// the revokee's account row first, as `query_account_lock_for_revoke` takes it
+	await deps.db.query(
+		`SELECT a.id FROM actor act JOIN account a ON a.id = act.account_id
+		 WHERE act.id = $1
+		 FOR NO KEY UPDATE OF a`,
+		[actor_id]
+	);
+	// the role and scope name the offers to lock; written once with the grant
+	const target = await deps.db.query_one<{ role: string; scope_id: Uuid | null }>(
+		`SELECT role, scope_id FROM role_grant WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL`,
+		[role_grant_id, actor_id]
+	);
+	if (!target) return null;
+	const incoming = `to_account_id = (SELECT account_id FROM actor WHERE id = $1)
+		  AND role = $2 AND scope_id IS NOT DISTINCT FROM $3 AND ${offer_pending_predicate('')}`;
+	await deps.db.query(`SELECT id FROM role_grant_offer WHERE ${incoming} ORDER BY id FOR UPDATE`, [
+		actor_id,
+		target.role,
+		target.scope_id
+	]);
 	const rows = await deps.db.query<{
 		id: Uuid;
 		role: string;
@@ -260,12 +296,7 @@ export const query_revoke_role_grant = async (
 		`WITH updated AS (
 			UPDATE role_grant_offer o
 			SET superseded_at = NOW()
-			FROM actor a
-			WHERE a.id = $1
-			  AND o.to_account_id = a.account_id
-			  AND o.role = $2
-			  AND o.scope_id IS NOT DISTINCT FROM $3
-			  AND ${offer_pending_predicate('o')}
+			WHERE ${offer_rows_locked_in_id_order('o', incoming)}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
@@ -437,25 +468,33 @@ export const query_actor_has_active_global_role = async (
  * another guard, so two guards racing to remove the last two admins serialize:
  * the second waits for the first to commit, re-reads the rows it changed, and
  * counts one. It conflicts with every write that lowers the count — a revoke's
- * or a soft delete's `UPDATE` of a counted row, a purge's `DELETE` — with the
- * `FOR SHARE OF rg` an admin-offer accept takes on its grantor's grant, and
- * with the locks a credential mint, an offer and an invite take on the account
- * row. Run it inside the transaction that does the removal.
+ * or a soft delete's `UPDATE` of a counted row, a purge's `DELETE` — and with
+ * the locks a credential mint, an offer, an invite and an offer accept (its
+ * recipient's row and its grantor's, `query_account_lock_for_offer_accept`)
+ * take on the account row. Run it inside the transaction that does the
+ * removal.
  *
  * It does not conflict with a foreign key's `FOR KEY SHARE` — the lock an
  * insert or update naming a counted row takes (an accept's new grant naming its
- * grantor, a cell's `created_by`), and the lock that deadlocked an accept
- * holding its grantor's grant against a guard holding the grantor's actor. Such
- * a write only adds a reference: it never lowers the count, so the guard fails
- * closed — what it counted is at most what will stand, and a removal it allows
- * leaves an admin. A purge that deletes a row such a write names still takes
- * `FOR UPDATE` and waits for it.
+ * grantor, a cell's `created_by`). Such a write only adds a reference: it never
+ * lowers the count, so the guard fails closed — what it counted is at most what
+ * will stand, and a removal it allows leaves an admin. A purge that deletes a
+ * row such a write names still takes `FOR UPDATE` and waits for it.
+ *
+ * A purge's cascade writes admin rows too — it sets null the `granted_by` of
+ * every grant the purged account's actors granted, admins' grants among them,
+ * in the order its plan walks them — so a purge takes every admin's account
+ * row first, with its own, in one id-ordered statement
+ * (`query_account_lock_admins_for_purge`), and runs this count after it only
+ * when its target is an admin: another guard then waits at its first account
+ * holding nothing.
  * Twin of the Rust `query_count_active_accounts_with_global_role_locked`.
  *
  * The rows are locked in id order — account, then actor, then grant — as the
  * sort returns them: each account's row, its actors' and its grants' before
- * the next account's. `query_account_lock_live_many` takes account rows in the
- * same order, so an offer between two admins and an admin's removal never
+ * the next account's. `query_account_lock_live_many` and
+ * `query_account_lock_for_offer_accept` take account rows in the same order,
+ * so an offer or an accept between two admins and an admin's removal never
  * wait on each other's rows in opposite orders. Ids never change, so no
  * concurrent update can move a row the sort has placed.
  *
@@ -587,7 +626,12 @@ export interface RevokeForScopeResult {
  * attached to the destroyed scope is cleaned up.
  *
  * Both updates run as separate statements inside the caller's transaction,
- * the `role_grant` revoke first. The two halves are
+ * the scope's pending offers locked in id order first, then the `role_grant`
+ * revoke, then the supersede of the offers that lock returned — offers before
+ * grants, as `query_revoke_role_grant` takes them. No account row keeps a new
+ * offer at the scope out (the scope's offers span accounts), so the supersede
+ * writes only the rows it locked: an offer made at the scope after the lock is
+ * left pending rather than taken out of order. The two halves are
  * independent — orphan pending offers can exist at a scope with no active
  * role_grants, so the supersede half always runs even when no role_grant was
  * revoked.
@@ -598,7 +642,7 @@ export interface RevokeForScopeResult {
  * @param reason - optional free-form reason, stamped on `role_grant.revoked_reason`.
  * @returns the revoked role_grants (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)
  * @mutates `role_grant` table - sets `revoked_at`/`revoked_by`/`revoked_reason` on every active row at `scope_id`
- * @mutates `role_grant_offer` table - stamps `superseded_at` on every pending row at `scope_id`
+ * @mutates `role_grant_offer` table - stamps `superseded_at` on every pending row at `scope_id` its lock took
  */
 export const query_role_grant_revoke_for_scope = async (
 	deps: QueryDeps,
@@ -610,6 +654,15 @@ export const query_role_grant_revoke_for_scope = async (
 	// from the role_grant row (drives `target_actor_id` audit envelopes); a join
 	// against `actor` resolves `account_id` for `target_account_id`
 	// + WS/SSE socket-close fan-out, all in one round-trip.
+	// The scope's pending offers first, in id order — before the grants, for
+	// the reason `query_revoke_role_grant` locks its offers before its grant
+	const at_scope = `scope_id = $1 AND ${offer_pending_predicate('')}`;
+	const locked_ids = (
+		await deps.db.query<{ id: Uuid }>(
+			`SELECT id FROM role_grant_offer WHERE ${at_scope} ORDER BY id FOR UPDATE`,
+			[scope_id]
+		)
+	).map((row) => row.id);
 	const revoked = await deps.db.query<{
 		role_grant_id: Uuid;
 		role: string;
@@ -638,13 +691,12 @@ export const query_role_grant_revoke_for_scope = async (
 		`WITH updated AS (
 			UPDATE role_grant_offer o
 			SET superseded_at = NOW()
-			WHERE o.scope_id = $1
-			  AND ${offer_pending_predicate('o')}
+			WHERE o.id = ANY($2) AND o.scope_id = $1 AND ${offer_pending_predicate('o')}
 			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
-		[scope_id]
+		[scope_id, locked_ids]
 	);
 	return { revoked, superseded_offers };
 };

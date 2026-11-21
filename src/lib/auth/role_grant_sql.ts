@@ -58,3 +58,26 @@ export const OFFER_TERMINAL_COLUMNS = [
  */
 export const offer_pending_predicate = (alias: string): string =>
 	OFFER_TERMINAL_COLUMNS.map((column) => `${qualify(alias, column)} IS NULL`).join(' AND ');
+
+/**
+ * The predicate a multi-row write of `role_grant_offer` takes its rows
+ * through: `id` in an id-ordered locking subselect over `where`.
+ *
+ * Every transaction that writes several offer rows locks them in id order —
+ * in one statement like this, or, when it writes them across statements or
+ * after another table's row, all of them first in one id-ordered lock, and
+ * then writes only rows that lock took: it either holds the account rows that
+ * keep a new offer out (an offer create takes both parties' rows — a removal
+ * holds its account's, a revoke its revokee's, an accept its recipient's), or
+ * names the locked ids (a scope teardown) — so two such transactions never
+ * hold rows the other waits on, whatever plan the database picks. A row
+ * changed by a transaction it waited on is re-checked against `where` and
+ * drops out when it no longer matches. Twin of the Rust
+ * `offer_rows_locked_in_id_order`.
+ *
+ * @param alias - the alias qualifying the written table's `id`, or `''`
+ * @param where - the rows' condition, over unqualified `role_grant_offer` columns
+ * @returns the predicate, with no surrounding parentheses
+ */
+export const offer_rows_locked_in_id_order = (alias: string, where: string): string =>
+	`${qualify(alias, 'id')} IN (SELECT id FROM role_grant_offer WHERE ${where} ORDER BY id FOR UPDATE)`;

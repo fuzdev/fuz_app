@@ -50,6 +50,7 @@ import type { Uuid } from '../primitive_schemas.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
+	query_role_grant_offer_lock_for_account_removal,
 	query_role_grant_offer_supersede_incoming,
 	query_role_grant_offer_supersede_outgoing
 } from './role_grant_offer_queries.ts';
@@ -62,6 +63,7 @@ import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
+	query_account_lock_admins_for_purge,
 	query_account_lock_for_purge,
 	query_account_lock_live_many,
 	query_account_soft_delete,
@@ -470,6 +472,21 @@ export const create_admin_actions = (
 		queue_supersede_notifications(ctx, superseded, 'account_deleted', audience);
 	};
 
+	// Lock every pending offer the removal supersedes, both directions, in one
+	// id-ordered statement before either supersede writes — the order every
+	// multi-row offer write takes its rows in
+	// (`query_role_grant_offer_lock_for_account_removal` has why).
+	const lock_removed_account_offers = (
+		ctx: ActionActorContext,
+		target_account_id: Uuid,
+		actors: ReadonlyArray<{ id: Uuid }>
+	): Promise<void> =>
+		query_role_grant_offer_lock_for_account_removal(
+			ctx,
+			target_account_id,
+			actors.map((a) => a.id)
+		);
+
 	// Supersede every pending offer the removed account's actors made, audited
 	// — the cascade a revoke runs on the revokee's offers. An offer records no
 	// authority, so one outliving its grantor's account would still confer on
@@ -580,6 +597,7 @@ export const create_admin_actions = (
 			});
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
+		await lock_removed_account_offers(ctx, target_account_id, actors);
 		await cancel_outgoing_offers(ctx, target_account_id, actors);
 		await cancel_incoming_offers(ctx, target_account_id);
 		const soft_deleted_actors = [];
@@ -637,6 +655,14 @@ export const create_admin_actions = (
 				reason: ERROR_PURGE_NOT_CONFIRMED
 			});
 		}
+		// Every admin's account row and the target's, in one id-ordered statement:
+		// the cascade writes admin rows (the grants the target's actors granted).
+		// Every other removal's guard and every other purge take those accounts
+		// first, and no other writer of an admin's grant waits on an account row
+		// while holding one, so holding the accounts orders the purge before any of
+		// them (`query_account_lock_admins_for_purge` has why). The last-admin guard
+		// then runs only for an admin target, in `assert_account_removable`.
+		await query_account_lock_admins_for_purge(ctx, input.account_id);
 		// Keeper + last-admin guards (fail-loud, before the cascade).
 		await assert_account_removable(ctx, input.account_id, 'account_purge');
 		const refuse_not_found = async (): Promise<never> => {
@@ -659,6 +685,7 @@ export const create_admin_actions = (
 		// with no audit row and no notification, the ones the account made and
 		// the ones made to it. After the account row: an offer create from or to
 		// the account takes that row first, so it has committed or waits.
+		await lock_removed_account_offers(ctx, input.account_id, actors);
 		await cancel_outgoing_offers(ctx, input.account_id, actors);
 		await cancel_incoming_offers(ctx, input.account_id);
 		// Before the cascade too: `invite.created_by` is `ON DELETE SET NULL`, so
