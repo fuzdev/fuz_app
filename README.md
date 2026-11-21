@@ -21,6 +21,8 @@ For more see the <a href="https://github.com/fuzdev/fuz_app/discussions">discuss
 fuz_app is part of the Fuz stack
 ([fuz.dev](https://www.fuz.dev/), [@fuzdev](https://github.com/fuzdev)).
 
+AI disclosure: this codebase is LLM-generated with uneven human review.
+
 > ⚠️ This is a pre-alpha release, not ready for production.
 > There are no known security vulnerabilities,
 > and security has been \_the\_ primary focus for the initial release,
