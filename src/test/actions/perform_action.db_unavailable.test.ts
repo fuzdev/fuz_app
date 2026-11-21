@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
@@ -69,6 +70,7 @@ const create_app = (db: Db): Hono => {
 		await next();
 	});
 	const route_specs = create_rpc_endpoint({
+		notification_sender: noop_notification_sender,
 		path: '/api/rpc',
 		actions: [
 			{

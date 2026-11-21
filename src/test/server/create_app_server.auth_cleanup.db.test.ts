@@ -38,6 +38,7 @@ import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
 import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { Db } from '#lib/db/db.ts';
 import {
 	create_test_app,
@@ -102,7 +103,8 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 			password: stub_password_deps,
 			db,
 			audit: create_audit_emitter({ db, log, on_audit_event: (e) => audit_events.push(e) }),
-			connection_closer
+			connection_closer,
+			notification_sender: create_realtime_notification_sender()
 		}
 	};
 	return {

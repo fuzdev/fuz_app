@@ -90,6 +90,7 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { all_standard_action_specs } from '#lib/auth/standard_action_specs.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
@@ -138,7 +139,8 @@ const create_test_setup = async (): Promise<{
 			password: stub_password_deps,
 			db,
 			audit,
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		}
 	};
 	return { config: { backend, ...base_config }, audit };

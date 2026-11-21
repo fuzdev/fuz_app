@@ -311,12 +311,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		log
 	);
 
-	// Created up front so the role-grant-offer `notification_sender` binds to the
-	// SAME registry the WS endpoint registers connections against — a separate
-	// instance would fan out to an empty registry and reach nobody. Threaded into
-	// `build_full_spine_mount({notification_sender})` and the `ws_endpoints` spec
-	// below; `create_app_server` adds it to the backend's connection closer and
-	// wires its audit-revocation guard.
+	// Created up front so the room registry below seats the connections the WS
+	// endpoints admit — both endpoints take it as their `registry`.
+	// `create_app_server` adds it to the backend's connection closer and
+	// notification sender (once, though both endpoints share it) and wires its
+	// audit-revocation guard.
 	const connection_registry = new ConnectionRegistry();
 
 	// The room registry over that same connection registry, so the room verbs
@@ -397,11 +396,10 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// `build_full_spine_mount`). Single-sourced in `full_spine_mount.ts` so the
 	// binary, the in-process parity setup, and the `spine_method_coverage`
 	// reconciliation test all build the same list — a method can't be mounted
-	// here and forgotten elsewhere. The shared `connection_registry` is threaded as the
-	// role-grant-offer `notification_sender` so the spine emits the WS
-	// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
+	// here and forgotten elsewhere. Its handlers notify through the backend's
+	// sender, which reaches `connection_registry` once `create_app_server`
+	// mounts it — driving `describe_role_grant_offer_notification_ws_tests`.
 	const full_mount = build_full_spine_mount(app_backend.deps, {
-		notification_sender: connection_registry,
 		daemon_token_state: daemon_token_rotation.state,
 		room_registry
 	});

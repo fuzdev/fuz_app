@@ -179,13 +179,14 @@ and `FrontendActionHandlers`.
 
 ## Single JSON-RPC 2.0 endpoint (`actions/action_rpc.ts`)
 
-`create_rpc_endpoint({path, actions, log, action_ip_rate_limiter, action_account_rate_limiter}): RouteSpec[]`
+`create_rpc_endpoint({path, actions, log, action_ip_rate_limiter, action_account_rate_limiter, notification_sender}): RouteSpec[]`
 produces **two** route specs on the same path (GET + POST) that share one
 internal dispatcher. The two limiters are required `RateLimiter | null` with
 no default — `null` is the explicit off switch — and the same holds on
 `register_action_ws`, so a hand mount can't run
 unthrottled by omission. `create_app_server` passes its own to every endpoint
-it mounts (../../../docs/usage.md §Rate limiters). Per-action auth lives inside the dispatcher; the outer routes
+it mounts (../../../docs/usage.md §Rate limiters). `notification_sender` is
+required on both the same way (§Notification sender). Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 The HTTP RPC dispatcher is a thin shim around `perform_action`
@@ -247,6 +248,7 @@ interface ActionContext {
 	credential_type: BuiltinCredentialType | null; // same value the credential_types gate consumed
 	log: Logger;
 	notify: (method, params) => void; // HTTP: DEV-mode warn + drop; WS: socket-scoped
+	notification_sender: NotificationSender; // every socket of an account, on every mounted registry; never null
 	signal: AbortSignal; // HTTP: client-disconnect; WS: AbortSignal.any([socket_close, request_cancel])
 }
 
@@ -300,7 +302,8 @@ anonymous — the authorization phase reads its account, the post-authorization
 gates its type and scope, `ActionContext` its type and session hash),
 `client_ip`, `signal`, `notify`, optional `connection_id`, optional `preset`.
 `PerformActionDeps` carries `db` (pool-level), `pending_effects`, `log`,
-the two rate limiters. Audit writes are out-of-band: factories close over
+the two rate limiters, and `notification_sender` — put on the context, wrapped
+under DEV in `create_validated_notification_sender` once per dispatch. Audit writes are out-of-band: factories close over
 `AppDeps.audit` independently.
 
 Authorization-phase resolution failures from the auth domain come back as
@@ -594,8 +597,8 @@ Fan-out, to admitted connections only, each returning how many connections
 accepted the message: `broadcast(notification)` to every connection;
 `broadcast_filtered(message, predicate)` runs per-connection ACL predicate over
 `ConnectionIdentity`; `send_to_account` wraps `broadcast_filtered` and
-structurally satisfies `NotificationSender` (see `auth/CLAUDE.md` §WS
-notifications). A server→client request has no broadcast form; it targets one
+structurally satisfies `NotificationSender` (§Notification sender; the
+role-grant-offer sends: `auth/CLAUDE.md` §WS notifications). A server→client request has no broadcast form; it targets one
 connection (`request_connection`, below).
 
 Server→client request/response (ActionPeer): `request_connection(connection_id,
@@ -759,6 +762,30 @@ identifiers, and an outcome outside the enum is no revocation. Reacting to them 
 another user's connection by guessing a session hash or token id. Twin of the
 Rust spine's `register_revocation_guard`.
 
+## Notification sender (`actions/notification_sender.ts`)
+
+`NotificationSender` is the narrow capability a handler sends through —
+`send_to_account(account_id, message): number`, which a `ConnectionRegistry`
+satisfies. `AppDeps.notification_sender` is a `RealtimeNotificationSender`
+(`create_realtime_notification_sender`), the backend's one fan-out over every
+WebSocket registry it serves — twin of the Rust `backend.notification_sender()`.
+`create_app_backend` builds it empty; `create_app_server` adds every registry
+it mounts (`ws_endpoints`) and records each remover with its other releases,
+so a failed assembly or `close` leaves the fan-out where it started. Membership
+is by reference: two endpoints sharing one registry are one member, and a
+socket hears a notification once. A member that throws doesn't stop the
+others; the first error is rethrown after all are tried.
+
+Both dispatchers take it as a required option (`create_rpc_endpoint`,
+`register_action_ws`) and `perform_action` puts it on every `ActionContext`, so
+an action sends to an account's sockets whichever transport it ran on, and no
+factory takes a sender. With no WS endpoint mounted the fan-out is empty and a
+send reaches no one. A hand mount passes `backend.deps.notification_sender`
+(or `noop_notification_sender`) and adds its own registry to it —
+`register_action_ws` doesn't. Sends are post-commit (`emit_after_commit`);
+the role-grant-offer ones go through `queue_offer_notification` /
+`queue_supersede_notifications` (`auth/role_grant_offer_notifications.ts`).
+
 ## WebSocket endpoints
 
 ### `create_app_server.ws_endpoints` — canonical mount surface
@@ -768,7 +795,8 @@ of `WsEndpointSpec` or a factory
 `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`; factory form
 runs after server context is assembled so action lists can depend on
 `ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is auto-mounted via
-`register_action_ws` against the assembled Hono app.
+`register_action_ws` against the assembled Hono app, and its registry added to
+`deps.notification_sender` and `deps.connection_closer`.
 
 `upgrade_websocket: UpgradeWebSocket` is the Hono runtime adapter's
 module-level helper — `upgradeWebSocket` from `@hono/bun`, or from

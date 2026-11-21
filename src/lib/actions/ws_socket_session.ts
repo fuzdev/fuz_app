@@ -126,6 +126,7 @@ import {
 import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
 import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
+import type { NotificationSender } from './notification_sender.ts';
 import type { JsonrpcErrorResponse, JsonrpcRequestId } from '../http/jsonrpc.ts';
 import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
 import {
@@ -344,6 +345,8 @@ export interface WsSocketEndpoint {
 	action_ip_rate_limiter: RateLimiter | null;
 	/** Per-account action rate limiter; `null` turns the account check off. */
 	action_account_rate_limiter: RateLimiter | null;
+	/** What every handler's `ctx.notification_sender` sends through. */
+	notification_sender: NotificationSender;
 	/** Called when an eager pending effect of a frame's action rejects; `undefined` for none. */
 	on_effect_error: ((error: unknown, context: EffectErrorContext) => void) | undefined;
 	/** Roles the endpoint's upgrade is gated on; empty for an ungated endpoint. */
@@ -400,6 +403,7 @@ export const create_ws_socket_events = (
 		on_socket_close,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
+		notification_sender,
 		on_effect_error,
 		required_roles
 	} = endpoint;
@@ -922,6 +926,7 @@ export const create_ws_socket_events = (
 					pending_effects,
 					post_commit_effects,
 					log,
+					notification_sender,
 					action_ip_rate_limiter,
 					action_account_rate_limiter
 				}

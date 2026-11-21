@@ -44,6 +44,7 @@ const test_roles = create_role_registry([{ name: 'teacher', grant_paths: ['self_
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
+		notification_sender: ctx.deps.notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: RPC_PATH,

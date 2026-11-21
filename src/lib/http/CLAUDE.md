@@ -718,10 +718,11 @@ two-sided contract + Rust-twin parity note live on the helper's TSDoc in
 `http/pending_effects.ts`.
 
 ```typescript
-emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg));
+emit_after_commit(ctx, () => ctx.notification_sender.send_to_account(account_id, msg));
 ```
 
-Used for WS sends (`NotificationSender.send_to_account` for
+Used for WS sends (`ctx.notification_sender`, through
+`queue_offer_notification` / `queue_supersede_notifications` for the
 role-grant-offer notifications — see `auth/CLAUDE.md` §WS notifications),
 a revocation's connection closes (`queue_connection_close` — see
 `actions/CLAUDE.md` §Connection closer), the audit emitter's listener fan-out

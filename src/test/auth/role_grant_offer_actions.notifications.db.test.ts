@@ -38,7 +38,7 @@ import { describe_db } from '../auth_db_default.ts';
 import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
-	create_notification_route_specs_factory,
+	create_notification_app_options,
 	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
@@ -71,7 +71,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -103,7 +103,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -144,7 +144,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -186,7 +186,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -222,7 +222,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -287,7 +287,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -327,7 +327,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db()
 			});
 			const recipient = await test_app.create_account({ username: 'notif_fail_recipient' });
@@ -349,7 +349,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});
@@ -384,7 +384,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
 				session_options,
-				create_route_specs: create_notification_route_specs_factory(sender),
+				...create_notification_app_options(sender),
 				db: get_db(),
 				roles: [ROLE_ADMIN]
 			});

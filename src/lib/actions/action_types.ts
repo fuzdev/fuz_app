@@ -33,6 +33,7 @@ import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import type { Db } from '../db/db.ts';
 import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
 import type { RequestClient } from './peer_request.ts';
+import type { NotificationSender } from './notification_sender.ts';
 
 /**
  * A spec paired with its optional handler — the composable unit passed to
@@ -141,6 +142,20 @@ export interface ActionContext {
 	 * the notification method this handler is expected to emit.
 	 */
 	notify: (method: string, params: unknown) => void;
+	/**
+	 * Sends a server-initiated notification to every live WebSocket connection
+	 * of any account, from a handler on either transport — unlike `notify`,
+	 * which reaches only the originating connection. The dispatcher supplies
+	 * the backend's sender (`AppDeps.notification_sender`), which reaches
+	 * every WebSocket registry the server mounts, so a send from an HTTP RPC
+	 * handler reaches the account's sockets; with no WebSocket endpoint
+	 * mounted it reaches no one. Queue sends after the commit
+	 * (`emit_after_commit`, or `queue_offer_notification` for the role-grant
+	 * notifications), never inline. Under DEV each role_grant_offer
+	 * notification's params are checked against its spec
+	 * (`create_validated_notification_sender`).
+	 */
+	notification_sender: NotificationSender;
 	/**
 	 * AbortSignal that fires when the originating request is cancelled
 	 * (client disconnect on HTTP, socket close or per-request cancel
@@ -266,7 +281,7 @@ export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = HandlerFor
  * runtime guarantee without a manual narrowing call.
  *
  * Fits fuz_app's factory-closure pattern (handlers close over
- * `grantable_roles`, `app_settings` ref, `notification_sender`, etc.).
+ * `grantable_roles`, `connection_closer`, etc.).
  * zzz uses a different shape — a codegen-keyed `Record<Method, Handler>`
  * map typed via generated `ActionInputs`/`ActionOutputs` — which works when
  * handlers are pure (no closure state) and specs are codegen-enumerated.

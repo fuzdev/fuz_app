@@ -21,6 +21,7 @@ import { query_account_by_id, query_create_actor } from '#lib/auth/account_queri
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
@@ -55,6 +56,7 @@ const build_ws_app = (db: Db, account_id: string) => {
 	const parsed = parse_allowed_origins(ALLOWED_ORIGIN);
 	if (!parsed.ok) throw new Error('invalid allowlist');
 	register_action_ws({
+		notification_sender: noop_notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/api/ws',

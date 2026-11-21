@@ -1954,7 +1954,7 @@ audited.
 
 **Post-commit WS fan-out**: the JSON-RPC notifications (`role_grant_offer_received`
 / `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`)
-ship alongside the above via `NotificationSender.send_to_account`, scheduled
+ship alongside the above via the action context's `notification_sender`, scheduled
 through `emit_after_commit` so sends are strictly post-commit **and discarded if
 the handler's transaction rolls back** — a rolled-back transaction cannot leak a
 notification for state that never committed (distinct from the eager

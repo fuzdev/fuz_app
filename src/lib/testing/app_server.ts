@@ -39,6 +39,7 @@ import { create_session_cookie_value, type SessionOptions } from '../auth/sessio
 import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '../actions/notification_sender.ts';
 import {
 	default_audit_factory,
 	type AppBackend,
@@ -440,7 +441,8 @@ const _build_test_backend = async (
 			db,
 			log: test_log,
 			audit: audit_factory({ db, log: test_log }),
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		}
 	};
 	return { backend, keyring: keyring_result.keyring };

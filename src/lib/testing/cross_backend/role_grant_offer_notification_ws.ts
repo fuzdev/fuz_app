@@ -19,8 +19,8 @@ import '../assert_dev_env.ts';
  *
  * These exercise only spine primitives (accounts, role-grants, offers, WS
  * notifications) — zero consumer domain — so the suite lives here and runs
- * against any backend that wires the standard RPC actions' `notification_sender`
- * and mounts a registered WS socket: fuz_app's own spine self-tests
+ * against any backend that mounts the standard RPC actions and a WS endpoint
+ * their notifications reach: fuz_app's own spine self-tests
  * (`testing_spine_server` + the Rust `testing_spine_stub`) and downstream
  * twin-impl consumers (the fuz_forge Deno/Hono + Rust `fuz_forge_server`
  * backends) alike.
@@ -36,7 +36,10 @@ import '../assert_dev_env.ts';
  * but the answers to its own requests, behind a `heartbeat` barrier on its
  * socket (`assert_bystander_heard_nothing` says why the barrier makes the
  * silence meaningful). A fan-out that reached past its target account fails
- * there.
+ * there. The target is held the same way, behind a barrier of its own: its
+ * socket heard exactly the notifications the case addressed to it, each once,
+ * in order — so a backend delivering one twice (a registry reached through
+ * two paths) fails, which the frame's own `wait_for` can't see.
  *
  * Sends are queued on the post-commit drain (handler-emit, not audit-derived),
  * so a frame may land a beat after the RPC resolves — `WsClient.wait_for` polls
@@ -52,7 +55,8 @@ import '../assert_dev_env.ts';
  * gated on that role (`ws_required_roles`) the revokee's socket loses its
  * access by the same revoke: it is closed with `WS_CLOSE_PERMISSION_REVOKED`,
  * and the notification may or may not reach it first (nothing orders the two),
- * so the case asserts the close there and the frame on an ungated endpoint.
+ * so the case asserts the close there — and at most that one notification
+ * ahead of it — and the frame on an ungated endpoint.
  *
  * Cross-process only: `create_admitted_ws_transport` needs a real bound socket, so wire
  * it from a `*.cross.test.ts` file, never an in-process setup. Authed cookies
@@ -98,6 +102,25 @@ import { open_session_ws, type WsEndpointTarget, type WsSessionAccount } from '.
 
 /** The request id the bystander's barrier `heartbeat` goes out under. */
 const BYSTANDER_BARRIER_ID = 'bystander_barrier';
+
+/** The request id the target's barrier `heartbeat` goes out under. */
+const TARGET_BARRIER_ID = 'target_barrier';
+
+/**
+ * Name each frame a socket received but the answers to its admission probe and
+ * its barrier: a notification by its method, anything else as its JSON, so an
+ * unexpected response shows in the assertion's diff.
+ */
+const to_heard_frames = (ws: WsClient): Array<string> =>
+	ws.messages
+		.filter(
+			(msg) =>
+				!is_response_for(WS_ADMISSION_PROBE_ID)(msg) && !is_response_for(TARGET_BARRIER_ID)(msg)
+		)
+		.map((msg) => {
+			const method = (msg as { method?: unknown } | null)?.method;
+			return typeof method === 'string' ? method : JSON.stringify(msg);
+		});
 
 /** Configuration for `describe_role_grant_offer_notification_ws_tests`. */
 export interface RoleGrantOfferNotificationWsTestOptions extends WsEndpointTarget {
@@ -192,7 +215,8 @@ export const describe_role_grant_offer_notification_ws_tests = (
 	 * frame can be written while the pass is still pushing — a window the
 	 * barrier's round trip outlasts in practice. Either way the check covers
 	 * every pass of the drain, not just the one that reached the target: TS
-	 * runs them in one closure, and `PostCommitEffects::drain_all` joins
+	 * calls every queued send in one synchronous loop
+	 * (`flush_post_commit_effects`), and `PostCommitEffects::drain_all` joins
 	 * effects whose notify futures push synchronously, so every pass
 	 * completes in the drain's first poll.
 	 */
@@ -203,6 +227,27 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				!is_response_for(WS_ADMISSION_PROBE_ID)(msg) && !is_response_for(BYSTANDER_BARRIER_ID)(msg)
 		);
 		assert.deepStrictEqual(strays, [], 'a bystander socket received frames addressed to others');
+	};
+
+	/**
+	 * Assert the targeted socket heard exactly `expected` — the notifications
+	 * the case addressed to it, in order, each once — and nothing else but the
+	 * answers to its own requests. Called once the targeted frame has landed,
+	 * behind a `heartbeat` barrier on the target's own socket, which makes the
+	 * absence of a second copy a finding for the reason
+	 * `assert_bystander_heard_nothing` gives: a fan-out queues every copy it
+	 * sends in the pass that sent the first, ahead of the barrier's response.
+	 */
+	const assert_target_heard_exactly = async (
+		target_ws: WsClient,
+		expected: ReadonlyArray<string>
+	): Promise<void> => {
+		await target_ws.request(TARGET_BARRIER_ID, 'heartbeat', {}, 5000);
+		assert.deepStrictEqual(
+			to_heard_frames(target_ws),
+			expected,
+			'the target socket did not hear exactly the notifications addressed to it, each once'
+		);
 	};
 
 	/** Drive a JSON-RPC call over the fixture's HTTP transport. */
@@ -267,6 +312,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						const params = parse_or_throw(RoleGrantOfferReceivedParams, frame.params);
 						assert.strictEqual(params.offer.to_account_id, recipient.account.id);
 						assert.strictEqual(params.offer.role, ROLE_ADMIN);
+						await assert_target_heard_exactly(recipient_ws, [
+							ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await recipient_ws.close();
@@ -308,6 +356,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						const params = parse_or_throw(RoleGrantOfferAcceptedParams, frame.params);
 						assert.strictEqual(params.offer.id, offer.id);
 						assert.isNotNull(params.offer.accepted_at);
+						await assert_target_heard_exactly(grantor, [
+							ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await grantor.close();
@@ -349,6 +400,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						assert.strictEqual(params.offer.id, offer.id);
 						// Decline reason rides inside the offer row, not a sibling field.
 						assert.strictEqual(params.offer.decline_reason, 'no thanks');
+						await assert_target_heard_exactly(grantor, [
+							ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await grantor.close();
@@ -391,6 +445,11 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						assert.strictEqual(params.offer.id, offer.id);
 						assert.strictEqual(params.offer.to_account_id, recipient.account.id);
 						assert.isNotNull(params.offer.retracted_at);
+						// the offer's create, made with the socket open, notified it first
+						await assert_target_heard_exactly(recipient_ws, [
+							ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
+							ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await recipient_ws.close();
@@ -452,11 +511,19 @@ export const describe_role_grant_offer_notification_ws_tests = (
 							assert.strictEqual(revokee_ws.close_reason, WS_CLOSE_PERMISSION_REVOKED_REASON);
 							const early = revokee_ws.messages.find(is_revoke_frame);
 							if (early) assert_flat_revoke(early);
+							// a closed socket takes no barrier: what reached it ahead of the
+							// close is the notification once, or nothing
+							assert.deepStrictEqual(
+								to_heard_frames(revokee_ws),
+								early ? [ROLE_GRANT_REVOKED_NOTIFICATION_METHOD] : [],
+								'the gated socket heard more than the one notification before its close'
+							);
 							await assert_bystander_heard_nothing(bystander_ws);
 							return;
 						}
 
 						assert_flat_revoke(await revokee_ws.wait_for(is_revoke_frame, 5000));
+						await assert_target_heard_exactly(revokee_ws, [ROLE_GRANT_REVOKED_NOTIFICATION_METHOD]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await revokee_ws.close();
@@ -509,6 +576,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						assert.strictEqual(params.scope_kind, scope_kind);
 						assert.strictEqual(params.scope_id, scope_id);
 						assert.strictEqual(params.reason, null);
+						await assert_target_heard_exactly(revokee_ws, [ROLE_GRANT_REVOKED_NOTIFICATION_METHOD]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await revokee_ws.close();
@@ -565,6 +633,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						// cause_id points at the accepted sibling (grantor 2's offer).
 						assert.strictEqual(params.cause_id, grantor2_offer.id);
 						assert.isNotNull(params.offer.superseded_at);
+						await assert_target_heard_exactly(grantor1_ws, [
+							ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await grantor1_ws.close();
@@ -621,6 +692,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 						// cause_id points at the revoked role_grant.
 						assert.strictEqual(params.cause_id, role_grant_id);
 						assert.isNotNull(params.offer.superseded_at);
+						await assert_target_heard_exactly(grantor_ws, [
+							ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
+						]);
 						await assert_bystander_heard_nothing(bystander_ws);
 					} finally {
 						await grantor_ws.close();

@@ -25,6 +25,7 @@ import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 import { REST_FORBIDDEN_ORIGIN } from '#lib/http/error_schemas.ts';
 import { create_serve_cell_fact_route_spec } from '#lib/server/serve_fact_route.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
@@ -352,6 +353,7 @@ describe('assert_credential_routes_in_auth_scope', () => {
 	test('the JSON-RPC endpoint pair is marked as reading, and refused off /api', () => {
 		const log = new Logger('test', { level: 'off' });
 		const in_scope = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/api/rpc',
 			actions: [],
 			log,
@@ -366,6 +368,7 @@ describe('assert_credential_routes_in_auth_scope', () => {
 		assert_credential_routes_in_auth_scope(in_scope);
 		// a consumer mounting the pair through `create_route_specs` at a bare path
 		const off_api = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/rpc',
 			actions: [],
 			log,

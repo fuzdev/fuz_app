@@ -489,7 +489,10 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		// the harness drives per-message dispatch, not throttling — the
 		// assembled-app tests cover the limiters `create_app_server` threads
 		action_ip_rate_limiter: null,
-		action_account_rate_limiter: null
+		action_account_rate_limiter: null,
+		// the harness's one registry is every socket a handler's notification
+		// can reach
+		notification_sender: registry
 	});
 
 	const events_factory = stub.get_create_events();

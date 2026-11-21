@@ -16,6 +16,7 @@ import type { PasswordHashDeps } from './password.ts';
 import type { Db } from '../db/db.ts';
 import type { AuditEmitter } from './audit_emitter.ts';
 import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_closer.ts';
+import type { RealtimeNotificationSender } from '../actions/notification_sender.ts';
 
 /**
  * Stateless capabilities bundle for fuz_app backends.
@@ -51,6 +52,15 @@ export interface AppDeps {
 	 * option of `register_action_ws` / `create_audit_log_sse`.
 	 */
 	connection_closer: RealtimeCloser;
+	/**
+	 * Sends server-initiated notifications to an account's live WebSocket
+	 * connections. The action dispatchers put it on every handler context
+	 * (`ActionContext.notification_sender`), so it must reach every
+	 * WebSocket registry of the backend: `create_app_backend` creates it
+	 * empty, and `create_app_server` adds each registry it mounts. With no
+	 * WebSocket endpoint mounted it reaches no one.
+	 */
+	notification_sender: RealtimeNotificationSender;
 	/**
 	 * Optional content-addressed byte store. Present only on backends that
 	 * serve binary content (facts) — minimal consumers leave it unset. The

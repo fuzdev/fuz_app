@@ -80,6 +80,7 @@ import { ERROR_INVALID_QUERY_PARAMS } from '../http/error_schemas.ts';
 import { query_first, read_request_query_pairs } from '../http/request_target.ts';
 import type { EffectErrorContext } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
+import type { NotificationSender } from './notification_sender.ts';
 import { has_test_context_preset } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
@@ -280,6 +281,19 @@ export interface RegisterActionWsOptions {
 	 */
 	action_account_rate_limiter: RateLimiter | null;
 	/**
+	 * What every handler's `ctx.notification_sender` sends through — the
+	 * backend's (`AppDeps.notification_sender`), the one `create_app_server`
+	 * passes, so a frame's action notifies sockets on every registry the
+	 * backend mounts, not just this endpoint's. Required, with no default: a
+	 * sender left out would drop every notification silently. Unlike
+	 * `connection_closer`, it is only sent through: this endpoint's registry
+	 * joins the backend's sender when `create_app_server` adds it, so a hand
+	 * mount over that sender adds the returned registry itself
+	 * (`RealtimeNotificationSender.add`). A harness with one registry passes
+	 * that registry; `noop_notification_sender` sends nothing.
+	 */
+	notification_sender: NotificationSender;
+	/**
 	 * Called when an eager pending effect of a frame's action rejects, after
 	 * the rejection is logged — the WS half of `create_app_server`'s
 	 * `on_effect_error`, which threads it here for the endpoints it mounts.
@@ -376,6 +390,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		on_socket_close,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
+		notification_sender,
 		on_effect_error,
 		required_roles = []
 	} = options;
@@ -439,6 +454,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		on_socket_close,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
+		notification_sender,
 		on_effect_error,
 		required_roles
 	};

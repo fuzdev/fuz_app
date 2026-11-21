@@ -46,6 +46,7 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import {
 	create_test_limiter,
 	TEST_CONNECTION_IP,
@@ -117,7 +118,8 @@ const create_bootstrap_app = async (
 				verify_dummy: vi.fn().mockResolvedValue(false)
 			},
 			audit: extra?.create_audit?.(db) ?? create_test_audit_emitter(),
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		},
 		{
 			session_options,

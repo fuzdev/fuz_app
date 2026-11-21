@@ -21,6 +21,7 @@ import { host_gate_middleware_shape } from '../http/host.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '../actions/notification_sender.ts';
 import type { BootstrapServerOptions } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppBackend } from '../server/app_backend.ts';
@@ -220,7 +221,8 @@ export const create_stub_app_deps = (): AppDeps => ({
 	db: stub_db,
 	log: new Logger('test', { level: 'off' }),
 	audit: create_test_audit_emitter(),
-	connection_closer: create_realtime_closer()
+	connection_closer: create_realtime_closer(),
+	notification_sender: create_realtime_notification_sender()
 });
 
 /** Options for `create_stub_app_backend`. */
@@ -496,7 +498,8 @@ export const create_test_app_surface_spec = (
 				actions: endpoint.actions,
 				log: ctx.deps.log,
 				action_ip_rate_limiter: ctx.action_ip_rate_limiter,
-				action_account_rate_limiter: ctx.action_account_rate_limiter
+				action_account_rate_limiter: ctx.action_account_rate_limiter,
+				notification_sender: ctx.deps.notification_sender
 			});
 		}) ?? [];
 	// Resolve ws endpoints (mirrors create_app_server). Surface-only —

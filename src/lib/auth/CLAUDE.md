@@ -16,9 +16,9 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 ## AppDeps split
 
-- **Capabilities** — `AppDeps` — stateless, injectable per env: `keyring`, `password`, `db`, `log`, `audit`, `connection_closer` (the `RealtimeCloser` every revocation handler closes live connections through — `actions/CLAUDE.md` §Connection closer).
+- **Capabilities** — `AppDeps` — stateless, injectable per env: `keyring`, `password`, `db`, `log`, `audit`, `connection_closer` (the `RealtimeCloser` every revocation handler closes live connections through — `actions/CLAUDE.md` §Connection closer), `notification_sender` (the `RealtimeNotificationSender` the dispatchers put on every `ActionContext` — `actions/CLAUDE.md` §Notification sender).
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
-- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The factories whose handlers end credentials or revoke roles (`create_account_actions`, `create_admin_actions`, `create_role_grant_offer_actions`, `create_self_service_role_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer`. The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
+- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally. The factories whose handlers end credentials or revoke roles (`create_account_actions`, `create_admin_actions`, `create_role_grant_offer_actions`, `create_self_service_role_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer`. The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
 - **Parameters** — `*Options` — static startup values, per-factory.
 - **Runtime state** — inline ref — mutable values: `bootstrap_status`, `DaemonTokenState`. NOT in deps or options.
 
@@ -919,23 +919,29 @@ notification is `role_grant_revoked`, not the admin action's
 `role_grant_revoke`, so the two methods never collide. They never reach
 dispatch: an inbound frame for one is answered `method_not_found`. They are not SSE events; `role_grant_offer_notification_specs`
 holds them as `EventSpec`s for a consumer that broadcasts them on an SSE
-channel of its own. Under DEV, `create_role_grant_offer_actions` wraps the
-sender in `create_validated_notification_sender`, which checks each params
-object against its spec's `input` and logs a mismatch, sending it either way;
+channel of its own. A handler sends through `ctx.notification_sender` with
+`queue_offer_notification(ctx, account_id, message)` or
+`queue_supersede_notifications(ctx, offers, reason, cause_id)` (twins of the
+Rust helpers of the same names), each queued post-commit. Under DEV,
+`perform_action` wraps the sender once per dispatch in
+`create_validated_notification_sender`, which checks each params object
+against its spec's `input` and logs a mismatch, sending it either way;
 production sends unchecked.
 
-Deps: `RevokingActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
+Deps: `RevokingActionFactoryDeps` — the sender is the dispatcher's, not the
+factory's.
 `role_grant_revoke` of a global grant queues a close of the revokee account's
 connections gated on the role (`queue_connection_close`, `{kind: 'role'}`),
 run after the transaction commits and independent of the audit row's
 announcement; the revocation guard repeats it on the announced row. A scoped revoke
 closes nothing — a role gate admits on global grants alone.
-`NotificationSender` is the narrow structural capability
-(`send_to_account(account_id, message): number`); `ConnectionRegistry`
-satisfies it structurally. Target account travels via the send argument, not
-the payload — `revoked_by` is deliberately not in the `role_grant_revoked`
-payload (the revokee doesn't need to learn the admin's identity). When
-`notification_sender` is absent, WS fan-out is silently skipped.
+`NotificationSender` (`actions/notification_sender.ts`) is the narrow
+structural capability (`send_to_account(account_id, message): number`);
+`ConnectionRegistry` satisfies it structurally. Target account travels via the
+send argument, not the payload — `revoked_by` is deliberately not in the
+`role_grant_revoked` payload (the revokee doesn't need to learn the admin's
+identity). On a server that mounts no WS endpoint the sender holds no
+registry, and a send reaches no one.
 
 Options: `roles?: RoleRegistry` (drives admin-grant-path lookup),
 `default_ttl_ms?` (defaults to `ROLE_GRANT_OFFER_DEFAULT_TTL_MS` = 30 days),
@@ -989,9 +995,9 @@ app-settings methods are always wired). Frontend mirror is
 
 Option routing — `roles` is shared between admin + role-grant-offer;
 `default_ttl_ms` + `authorize` → role-grant-offer
-only; `max_tokens` → account only. On `deps`: `notification_sender` →
-role-grant-offer only; `connection_closer` (required) → admin, account, and
-role-grant-offer (the role revoke's close).
+only; `max_tokens` → account only. On `deps`: `connection_closer`
+(required) → admin, account, and role-grant-offer (the role revoke's close).
+The notification sender is on every action's context, not on `deps`.
 
 Pair with `create_app_server`'s `rpc_endpoints` factory form
 `(ctx) => Array<RpcEndpointSpec>` so the combined action list gets

@@ -26,6 +26,7 @@ import {
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import { to_invalid_params_error } from '#lib/actions/perform_action.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { create_action_event } from '#lib/actions/action_event.ts';
@@ -89,6 +90,7 @@ const create_app = (): Hono => {
 	apply_route_specs(
 		app,
 		create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/api/rpc',
 			actions: [{ spec: thing_spec, handler: () => ({ ok: true }) }],
 			log,

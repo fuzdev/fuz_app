@@ -34,6 +34,7 @@ import {
 } from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, serialize_action_result } from './perform_action.ts';
+import type { NotificationSender } from './notification_sender.ts';
 import { parse_json_text } from '../http/json_text.ts';
 import { query_first } from '../http/request_target.ts';
 
@@ -79,6 +80,15 @@ export interface CreateRpcEndpointOptions {
 	 * Share one instance with the WebSocket action dispatcher.
 	 */
 	action_account_rate_limiter: RateLimiter | null;
+	/**
+	 * What every handler's `ctx.notification_sender` sends through. Required,
+	 * with no default, like the limiters: a sender left out would drop every
+	 * notification silently. `create_app_server` passes the backend's
+	 * (`AppDeps.notification_sender`), which reaches the WebSocket registries
+	 * it mounts; a hand mount with no live connection to reach passes
+	 * `noop_notification_sender`.
+	 */
+	notification_sender: NotificationSender;
 }
 
 /** The `Content-Type` `c.json` writes, which every envelope answers with. */
@@ -131,7 +141,7 @@ const envelope_response = (envelope: unknown, status: number): RouteRaw =>
  * middleware's scope (`assert_credential_routes_in_auth_scope`) whether it
  * arrives as `rpc_endpoints` or through `create_route_specs`.
  *
- * @param options - endpoint path, actions, logger, and the two action rate limiters
+ * @param options - endpoint path, actions, logger, the two action rate limiters, and the notification sender
  * @returns route specs (GET + POST) ready for `apply_route_specs`
  * @throws Error if two actions share the same `spec.method` (registration-time
  *   duplicate detection); also throws if any action's `spec.input` is a null
@@ -145,7 +155,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		actions,
 		log,
 		action_ip_rate_limiter,
-		action_account_rate_limiter
+		action_account_rate_limiter,
+		notification_sender
 	} = options;
 
 	const { action_map } = compile_action_registry(actions, 'RPC action');
@@ -224,6 +235,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				pending_effects: route.pending_effects,
 				post_commit_effects: route.post_commit_effects,
 				log,
+				notification_sender,
 				action_ip_rate_limiter,
 				action_account_rate_limiter
 			}

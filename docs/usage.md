@@ -294,8 +294,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 			path: '/api/rpc',
 			actions: [
 				...my_app_rpc_actions(ctx.deps),
-				// `notification_sender` is an optional dep, for role-grant-offer WS fan-out
-				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: connection_registry })
+				...create_standard_rpc_actions(ctx.deps)
 			]
 		}
 	],
@@ -313,7 +312,7 @@ construction.
 To expose the same surface over WebSocket as well — so reactive frontends
 can call `account_*` / `admin_*` over the live connection and pick up
 revocation events without a polling delay — spread `protocol_actions`
-plus `create_standard_rpc_actions({...ctx.deps, notification_sender: connection_registry})`
+plus `create_standard_rpc_actions(ctx.deps)`
 into `create_app_server`'s
 `ws_endpoints` factory and supply `upgrade_websocket`, the runtime adapter's
 module-level `upgradeWebSocket` helper. On Bun:
@@ -328,10 +327,10 @@ const { app, ws_endpoints } = await create_app_server({
 	ws_endpoints: (ctx) => [
 		{
 			path: '/api/ws',
-			registry: connection_registry, // the one the RPC actions' notification_sender sends through
+			registry: connection_registry, // optional — omitted, the endpoint makes its own
 			actions: [
 				...protocol_actions,
-				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: connection_registry }),
+				...create_standard_rpc_actions(ctx.deps),
 				...my_app_ws_actions(ctx.deps)
 			]
 		}
@@ -922,7 +921,9 @@ const route_specs = [
 		log,
 		// required: the per-action `rate_limit` budgets, `null` to turn one off
 		action_ip_rate_limiter,
-		action_account_rate_limiter
+		action_account_rate_limiter,
+		// required: what handlers send notifications through (`noop_notification_sender` for none)
+		notification_sender: backend.deps.notification_sender
 	}),
 	...other_hand_written_specs
 ];
@@ -993,6 +994,7 @@ const { registry } = register_action_ws({
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
 	connection_closer: backend.deps.connection_closer, // required — revocations close this endpoint's sockets
+	notification_sender: backend.deps.notification_sender, // required — handlers send through it
 	// required — share the RPC endpoint's instances; `null` turns one off
 	action_ip_rate_limiter,
 	action_account_rate_limiter,
@@ -1002,12 +1004,14 @@ const { registry } = register_action_ws({
 
 Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`, `peer/ping`) that complete disconnect detection, per-request cancel, and the server→client `peer/ping` round-trip. The bundle is not auto-spread by `register_action_ws`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel / peer/ping can replace the default by omitting it from the spread.
 
-Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `request_client`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape (`connection_id` / `request_client` are populated on WS, `undefined` on HTTP). Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `request_client`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `notification_sender`, `signal`); HTTP RPC and WebSocket handlers see the same shape (`connection_id` / `request_client` are populated on WS, `undefined` on HTTP). Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
+
+`notification_sender` is required and only read: handlers send through it, and a hand mount adds the endpoint's registry to it itself (`backend.deps.notification_sender.add(registry)`, keeping the remover) — `create_app_server` does that for every registry it mounts, so a notification reaches the account's sockets on each.
 
 `connection_closer` is required: the endpoint adds its registry to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation), as does the revocation guard. Left out of the closer, a registry's sockets would outlive a revoked credential. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a registry no revocation has to reach, or to add the registry yourself and hold the remover `RealtimeCloser.add` returns.
 
@@ -1071,7 +1075,7 @@ What the server has waiting to be written to one socket is held to a byte budget
 
 `ConnectionRegistry` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every admitted connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every admitted socket bound to one account (session, bearer, and daemon-token alike, mirroring an `account` close target) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection. A connection still pending admission receives nothing — see ./security.md §Connection Admission.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `ConnectionRegistry` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle _and_ admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoked` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. The notifications reach the surface through the WS endpoint: when its RPC list holds the role_grant_offer actions, `to_ws_actions` appends the handler-less `role_grant_offer_notification_actions`, so the endpoint lists them as `remote_notification` methods (the revokee's `role_grant_revoked` beside the admin's `role_grant_revoke` action, whose method it doesn't share), and an inbound frame for one is answered `method_not_found`. They are not SSE events: `role_grant_offer_notification_specs` holds them as `EventSpec`s only for a consumer that broadcasts them on an SSE channel of its own. Under DEV, the factory wraps the sender (`create_validated_notification_sender`) so each params object is checked against its spec's `@fuzdev/fuz_schema` `input` before it is sent, a mismatch logged as DEV output validation logs one; production sends unchecked.
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/actions/notification_sender.ts`), on every action's context as `ctx.notification_sender` — the backend's `deps.notification_sender`, a `RealtimeNotificationSender` that `create_app_server` fills with every WS registry it mounts, so no factory takes a sender and a notification reaches every socket the account holds. Offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoked` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. The notifications reach the surface through the WS endpoint: when its RPC list holds the role_grant_offer actions, `to_ws_actions` appends the handler-less `role_grant_offer_notification_actions`, so the endpoint lists them as `remote_notification` methods (the revokee's `role_grant_revoked` beside the admin's `role_grant_revoke` action, whose method it doesn't share), and an inbound frame for one is answered `method_not_found`. They are not SSE events: `role_grant_offer_notification_specs` holds them as `EventSpec`s only for a consumer that broadcasts them on an SSE channel of its own. Under DEV, `perform_action` wraps the sender once per dispatch (`create_validated_notification_sender`) so each params object is checked against its spec's `@fuzdev/fuz_schema` `input` before it is sent, a mismatch logged as DEV output validation logs one; production sends unchecked.
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoked` carries `{role_grant_id, role, scope_kind, scope_id, reason}` — the grant's `scope_kind` and `scope_id`, both `null` for a global grant, and `reason` `null` when none was given — with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 

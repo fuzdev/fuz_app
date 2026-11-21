@@ -68,6 +68,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 		})
 	]),
 	...create_rpc_endpoint({
+		notification_sender: ctx.deps.notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: RPC_PATH,
@@ -1244,6 +1245,7 @@ describe_db('invite + signup integration', (get_db) => {
 				})
 			]),
 			...create_rpc_endpoint({
+				notification_sender: ctx.deps.notification_sender,
 				action_ip_rate_limiter: null,
 				action_account_rate_limiter: null,
 				path: RPC_PATH,

@@ -16,6 +16,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import { create_audit_emitter, type AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer, type RealtimeCloser } from '../actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '../actions/notification_sender.ts';
 import type { DbType, Db } from '../db/db.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
@@ -224,7 +225,8 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				db,
 				log,
 				audit,
-				connection_closer: options.connection_closer ?? create_realtime_closer()
+				connection_closer: options.connection_closer ?? create_realtime_closer(),
+				notification_sender: create_realtime_notification_sender()
 			}
 		};
 	} catch (err) {

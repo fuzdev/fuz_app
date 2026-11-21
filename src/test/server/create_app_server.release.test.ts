@@ -1,13 +1,14 @@
 /**
  * `create_app_server`'s releases — what assembly acquires that outlives it
  * (the rate limiters it builds, the listeners it registers on `deps.audit`,
- * the members it adds to `deps.connection_closer`) is released:
+ * the members it adds to `deps.connection_closer` and
+ * `deps.notification_sender`) is released:
  *
  * - when assembly throws, at any step — every acquisition made so far, last
  *   first, and the original error is the one rethrown; a release that throws
  *   is logged and spares the rest
- * - by `AppServer.close`, last first, so the backend's emitter and closer end
- *   where they started
+ * - by `AppServer.close`, last first, so the backend's emitter, closer and
+ *   notification sender end where they started
  *
  * The close order and the limiter-ownership rules are
  * `create_app_server.close.test.ts`.
@@ -51,17 +52,25 @@ const log = new Logger('test', { level: 'off' });
 /** How many limiters `rate_limiters: 'enforced'` builds when none is passed — one per option. */
 const BUILT_LIMITER_COUNT = APP_SERVER_RATE_LIMITER_KEYS.length;
 
+/** What assembly adds to the backend: emitter listeners, closer members, sender members. */
+interface Acquired {
+	listeners: number;
+	members: number;
+	senders: number;
+}
+
 interface Harness {
 	backend: AppBackend;
 	/** Errors the server logged. */
 	errors: Array<Array<unknown>>;
-	/** The listener count and closer member count before any assembly. */
-	baseline: { listeners: number; members: number };
+	/** The listener count and the closer's and sender's member counts before any assembly. */
+	baseline: Acquired;
 }
 
 /**
- * A stub backend whose emitter and closer already hold one entry each that
- * isn't the server's — a release must take out only what the server added.
+ * A stub backend whose emitter, closer and notification sender already hold
+ * one entry each that isn't the server's — a release must take out only what
+ * the server added.
  */
 const create_harness = (): Harness => {
 	const deps = create_stub_app_deps();
@@ -73,13 +82,15 @@ const create_harness = (): Harness => {
 	deps.audit = create_recording_audit_emitter().emitter;
 	deps.audit.add_listener(() => {});
 	deps.connection_closer.add(create_recording_closer().closer);
+	deps.notification_sender.add({ send_to_account: () => 0 });
 	const backend = create_stub_app_backend({ deps });
 	return {
 		backend,
 		errors,
 		baseline: {
 			listeners: deps.audit.listener_count(),
-			members: deps.connection_closer.member_count()
+			members: deps.connection_closer.member_count(),
+			senders: deps.notification_sender.member_count()
 		}
 	};
 };
@@ -103,9 +114,10 @@ const ws_endpoint = (path: string, overrides?: Partial<WsEndpointSpec>): WsEndpo
 	...overrides
 });
 
-const current = (harness: Harness): { listeners: number; members: number } => ({
+const current = (harness: Harness): Acquired => ({
 	listeners: harness.backend.deps.audit.listener_count(),
-	members: harness.backend.deps.connection_closer.member_count()
+	members: harness.backend.deps.connection_closer.member_count(),
+	senders: harness.backend.deps.notification_sender.member_count()
 });
 
 /** Assemble expecting a throw; return what was thrown. */
@@ -118,7 +130,7 @@ const assemble_rejects = async (options: AppServerOptions): Promise<unknown> => 
 	assert.fail('assembly should have thrown');
 };
 
-/** The listeners and closer members are back to the baseline, every built limiter disposed. */
+/** The listeners and closer and sender members are back to the baseline, every built limiter disposed. */
 const assert_released = (harness: Harness, dispose: { mock: { contexts: Array<unknown> } }) => {
 	assert.deepStrictEqual(current(harness), harness.baseline);
 	assert.strictEqual(new Set(dispose.mock.contexts).size, BUILT_LIMITER_COUNT);
@@ -390,14 +402,16 @@ describe('a failed assembly releases what it acquired', () => {
 });
 
 describe('AppServer.close releases what assembly acquired', () => {
-	test('the emitter and closer end where they started', async () => {
+	test('the emitter, closer and notification sender end where they started', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 		const server = await create_app_server(acquiring_options(harness.backend));
-		// the SSE listener, the revocation guard; the registry, the registry
+		// the SSE listener, the revocation guard; the SSE registry and the WS
+		// registry on the closer; the WS registry on the sender
 		assert.deepStrictEqual(current(harness), {
 			listeners: harness.baseline.listeners + 2,
-			members: harness.baseline.members + 2
+			members: harness.baseline.members + 2,
+			senders: harness.baseline.senders + 1
 		});
 
 		await server.close();
@@ -451,11 +465,12 @@ describe('AppServer.close releases what assembly acquired', () => {
 		assert.deepStrictEqual(current(harness), harness.baseline);
 	});
 
-	test('a registry the consumer also added stays on the closer', async () => {
+	test('a registry the consumer also added stays on the closer and the sender', async () => {
 		// the server's release takes out its own addition, not the consumer's
 		const harness = create_harness();
 		const supplied = new ConnectionRegistry({ log });
 		harness.backend.deps.connection_closer.add(supplied);
+		harness.backend.deps.notification_sender.add(supplied);
 		const server = await create_app_server({
 			...acquiring_options(harness.backend),
 			ws_endpoints: [ws_endpoint('/api/ws', { registry: supplied })]
@@ -465,6 +480,30 @@ describe('AppServer.close releases what assembly acquired', () => {
 			harness.backend.deps.connection_closer.member_count(),
 			harness.baseline.members + 1
 		);
+		assert.strictEqual(
+			harness.backend.deps.notification_sender.member_count(),
+			harness.baseline.senders + 1
+		);
+	});
+
+	test('two endpoints sharing a registry add it to the sender once', async () => {
+		// a registry reached through two members would send each notification
+		// to its sockets twice
+		const harness = create_harness();
+		const shared = new ConnectionRegistry({ log });
+		const server = await create_app_server({
+			...acquiring_options(harness.backend),
+			ws_endpoints: [
+				ws_endpoint('/api/ws', { registry: shared }),
+				ws_endpoint('/api/ws_two', { registry: shared })
+			]
+		});
+		assert.strictEqual(
+			harness.backend.deps.notification_sender.member_count(),
+			harness.baseline.senders + 1
+		);
+		await server.close();
+		assert.deepStrictEqual(current(harness), harness.baseline);
 	});
 });
 

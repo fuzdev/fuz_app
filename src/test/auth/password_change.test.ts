@@ -32,6 +32,7 @@ import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.t
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import {
@@ -185,7 +186,8 @@ const create_password_change_app = (
 				verify_dummy: vi.fn(() => Promise.resolve(false))
 			},
 			audit,
-			connection_closer: realtime_closer
+			connection_closer: realtime_closer,
+			notification_sender: create_realtime_notification_sender()
 		},
 		{
 			session_options,

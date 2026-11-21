@@ -29,6 +29,7 @@ import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
@@ -139,6 +140,7 @@ const start_server = async (
 	});
 	const recorded: Array<string> = [];
 	const { registry } = register_action_ws({
+		notification_sender: noop_notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',

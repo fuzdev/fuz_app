@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
@@ -83,6 +84,7 @@ const build_app = (opts: BuildOptions = {}) => {
 
 	const stub_db = create_stub_db();
 	register_action_ws({
+		notification_sender: noop_notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/api/ws',
@@ -209,6 +211,7 @@ describe('composition', () => {
 
 		const stub_db = create_stub_db();
 		const result = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/ws',

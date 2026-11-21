@@ -44,13 +44,11 @@
  * transaction, a failure row on the pool). `audit.notify` (SSE/WS broadcast)
  * fires post-commit in both paths.
  *
- * WS notifications fan out post-commit via `emit_after_commit` when a
- * `notification_sender` is wired: offer lifecycle transitions notify the
+ * WS notifications go through the handler context's sender
+ * (`ctx.notification_sender`), queued post-commit (`queue_offer_notification`,
+ * `queue_supersede_notifications`): offer lifecycle transitions notify the
  * counterparty, `role_grant_revoke` notifies the revokee (`role_grant_revoked`)
- * plus each superseded
- * pending offer's grantor. Under DEV each notification's params are checked
- * against its spec's schema before it is sent, a mismatch logged
- * (`create_validated_notification_sender`). `role_grant_revoke` of a global
+ * plus each superseded pending offer's grantor. `role_grant_revoke` of a global
  * grant also closes the revokee's connections gated on the role through
  * `deps.connection_closer`, after the commit.
  *
@@ -123,10 +121,9 @@ import {
 	build_role_grant_offer_declined_notification,
 	build_role_grant_offer_received_notification,
 	build_role_grant_offer_retracted_notification,
-	build_role_grant_offer_supersede_notification,
 	build_role_grant_revoked_notification,
-	create_validated_notification_sender,
-	type NotificationSender
+	queue_offer_notification,
+	queue_supersede_notifications
 } from './role_grant_offer_notifications.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -273,22 +270,15 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  * Create the role-grant-offer RPC actions: the offer-lifecycle methods plus
  * `role_grant_revoke` and the immediate `role_grant_assign`.
  *
- * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`, and the `connection_closer` a revoked global grant closes the revokee's role-gated connections through) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `ConnectionRegistry` assign its instance directly (the registry's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
+ * @param deps - `RevokingActionFactoryDeps`: `log`, `audit`, and the `connection_closer` a revoked global grant closes the revokee's role-gated connections through. WS notifications go through the handler context's `notification_sender`, not a dep
  * @param options - role registry, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
-	deps: RevokingActionFactoryDeps & {
-		notification_sender?: NotificationSender | null;
-	},
+	deps: RevokingActionFactoryDeps,
 	options: RoleGrantOfferActionOptions = {}
 ): Array<RpcAction> => {
 	const { log, audit, connection_closer } = deps;
-	// under DEV each notification sent is checked against its spec's params
-	// schema, a mismatch logged, as DEV output validation does
-	const notification_sender = deps.notification_sender
-		? create_validated_notification_sender(deps.notification_sender, log)
-		: null;
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -508,14 +498,11 @@ export const create_role_grant_offer_actions = (
 		});
 
 		const offer_json = to_role_grant_offer_json(offer);
-		if (notification_sender) {
-			emit_after_commit(ctx, () => {
-				notification_sender.send_to_account(
-					offer.to_account_id,
-					build_role_grant_offer_received_notification({ offer: offer_json })
-				);
-			});
-		}
+		queue_offer_notification(
+			ctx,
+			offer.to_account_id,
+			build_role_grant_offer_received_notification({ offer: offer_json })
+		);
 
 		return { offer: offer_json };
 	};
@@ -559,50 +546,40 @@ export const create_role_grant_offer_actions = (
 		// PK — the alternative (widening `query_accept_offer` again) would
 		// bleed transport concerns into the query layer. A replay
 		// (`created: false`) notifies nothing, so it skips the lookup.
-		const grantor_actor =
-			notification_sender && result.created
-				? await query_actor_by_id(ctx, result.offer.from_actor_id)
-				: null;
+		const grantor_actor = result.created
+			? await query_actor_by_id(ctx, result.offer.from_actor_id)
+			: null;
 		const grantor_account_id = grantor_actor?.account_id ?? null;
 
 		const offer_json = to_role_grant_offer_json(result.offer);
-		const supersede_payloads = result.superseded_offers.map((sib) => ({
-			offer: to_role_grant_offer_json(sib),
-			from_account_id: sib.from_account_id
-		}));
 
 		// Audit events are written in-transaction by query_accept_offer; wire
 		// them through `audit.notify` post-commit so SSE/WS broadcasts fire.
-		// WS notifications ride the same deferred post-commit thunk so the
-		// grantor sees "accepted" and each superseded grantor sees "supersede"
-		// only once the accept has durably committed — and never if it rolls
-		// back (the dispatch site discards `post_commit_effects` on rollback).
-		// A replay (or a race loser) wrote nothing — the accept that minted the
-		// grant already audited it and notified the grantor — so it queues
-		// nothing; repeating the notification would let any replay send them
-		// without bound.
+		// The WS notifications are queued behind them on the same post-commit
+		// queue, so the grantor sees "accepted" and each superseded grantor sees
+		// "supersede" only once the accept has durably committed — and never if
+		// it rolls back (the dispatch site discards `post_commit_effects` on
+		// rollback). A replay (or a race loser) wrote nothing — the accept that
+		// minted the grant already audited it and notified the grantor — so it
+		// queues nothing; repeating the notification would let any replay send
+		// them without bound.
 		if (result.created) {
 			emit_after_commit(ctx, () => {
 				fan_out_audit_events(result.audit_events, audit);
-				if (notification_sender && grantor_account_id) {
-					notification_sender.send_to_account(
-						grantor_account_id,
-						build_role_grant_offer_accepted_notification({ offer: offer_json })
-					);
-				}
-				if (notification_sender) {
-					for (const sib of supersede_payloads) {
-						notification_sender.send_to_account(
-							sib.from_account_id,
-							build_role_grant_offer_supersede_notification({
-								offer: sib.offer,
-								reason: 'sibling_accepted',
-								cause_id: result.offer.id
-							})
-						);
-					}
-				}
 			});
+			if (grantor_account_id) {
+				queue_offer_notification(
+					ctx,
+					grantor_account_id,
+					build_role_grant_offer_accepted_notification({ offer: offer_json })
+				);
+			}
+			queue_supersede_notifications(
+				ctx,
+				result.superseded_offers,
+				'sibling_accepted',
+				result.offer.id
+			);
 		}
 
 		return {
@@ -653,18 +630,14 @@ export const create_role_grant_offer_actions = (
 		});
 
 		const offer_json = to_role_grant_offer_json(declined);
-		if (notification_sender) {
-			// Grantor's account_id rides on `declined.from_account_id` from
-			// the decline RETURNING — no second SELECT needed. The decline
-			// reason rides along on `offer.decline_reason` — the DB set it
-			// in the RETURNING above.
-			emit_after_commit(ctx, () => {
-				notification_sender.send_to_account(
-					declined.from_account_id,
-					build_role_grant_offer_declined_notification({ offer: offer_json })
-				);
-			});
-		}
+		// Grantor's account_id rides on `declined.from_account_id` from the
+		// decline RETURNING — no second SELECT needed. The decline reason rides
+		// along on `offer.decline_reason` — the DB set it in the RETURNING above.
+		queue_offer_notification(
+			ctx,
+			declined.from_account_id,
+			build_role_grant_offer_declined_notification({ offer: offer_json })
+		);
 
 		// the terminal offer, as accept answers its own
 		return { offer: offer_json };
@@ -704,14 +677,11 @@ export const create_role_grant_offer_actions = (
 		});
 
 		const offer_json = to_role_grant_offer_json(retracted);
-		if (notification_sender) {
-			emit_after_commit(ctx, () => {
-				notification_sender.send_to_account(
-					retracted.to_account_id,
-					build_role_grant_offer_retracted_notification({ offer: offer_json })
-				);
-			});
-		}
+		queue_offer_notification(
+			ctx,
+			retracted.to_account_id,
+			build_role_grant_offer_retracted_notification({ offer: offer_json })
+		);
 
 		// the terminal offer, as accept answers its own
 		return { offer: offer_json };
@@ -885,36 +855,18 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
-		if (notification_sender) {
-			const superseded = result.superseded_offers.map((o) => ({
-				offer: to_role_grant_offer_json(o),
-				from_account_id: o.from_account_id
-			}));
-			const cause_id = result.id;
-			const reason = input.reason ?? null;
-			emit_after_commit(ctx, () => {
-				notification_sender.send_to_account(
-					target_account_id,
-					build_role_grant_revoked_notification({
-						role_grant_id: result.id,
-						role: result.role,
-						scope_kind: result.scope_kind,
-						scope_id: result.scope_id,
-						reason
-					})
-				);
-				for (const sib of superseded) {
-					notification_sender.send_to_account(
-						sib.from_account_id,
-						build_role_grant_offer_supersede_notification({
-							offer: sib.offer,
-							reason: 'role_grant_revoked',
-							cause_id
-						})
-					);
-				}
-			});
-		}
+		queue_offer_notification(
+			ctx,
+			target_account_id,
+			build_role_grant_revoked_notification({
+				role_grant_id: result.id,
+				role: result.role,
+				scope_kind: result.scope_kind,
+				scope_id: result.scope_id,
+				reason: input.reason ?? null
+			})
+		);
+		queue_supersede_notifications(ctx, result.superseded_offers, 'role_grant_revoked', result.id);
 
 		return { ok: true, revoked: true };
 	};

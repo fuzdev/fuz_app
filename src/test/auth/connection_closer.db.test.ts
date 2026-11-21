@@ -87,6 +87,7 @@ import {
 	type ConnectionCloseTarget
 } from '#lib/actions/connection_closer.ts';
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import {
 	WS_CLOSE_PERMISSION_REVOKED,
@@ -174,6 +175,7 @@ const make_create_route_specs =
 				})
 			),
 			...create_rpc_endpoint({
+				notification_sender: ctx.deps.notification_sender,
 				action_ip_rate_limiter: null,
 				action_account_rate_limiter: null,
 				path: RPC_PATH,
@@ -1000,6 +1002,7 @@ describe_db('connection_closer wiring', (get_db) => {
 							})
 						),
 						...create_rpc_endpoint({
+							notification_sender: ctx.deps.notification_sender,
 							action_ip_rate_limiter: null,
 							action_account_rate_limiter: null,
 							path: RPC_PATH,
@@ -1968,6 +1971,7 @@ describe_db('connection_closer wiring', (get_db) => {
 
 			const stub = create_stub_upgrade();
 			register_action_ws({
+				notification_sender: noop_notification_sender,
 				action_ip_rate_limiter: null,
 				action_account_rate_limiter: null,
 				path: '/ws',
@@ -2044,6 +2048,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: (ctx) => {
 					ctx.deps.connection_closer.add(closer);
 					return create_rpc_endpoint({
+						notification_sender: ctx.deps.notification_sender,
 						action_ip_rate_limiter: null,
 						action_account_rate_limiter: null,
 						path: RPC_PATH,

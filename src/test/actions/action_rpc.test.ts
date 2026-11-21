@@ -22,6 +22,15 @@ import {
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { create_rpc_endpoint, RPC_GET_CACHE_CONTROL } from '#lib/actions/action_rpc.ts';
+import {
+	noop_notification_sender,
+	type NotificationSender
+} from '#lib/actions/notification_sender.ts';
+import {
+	build_role_grant_revoked_notification,
+	ROLE_GRANT_REVOKED_NOTIFICATION_METHOD
+} from '#lib/auth/role_grant_offer_notifications.ts';
+import { create_jsonrpc_notification } from '#lib/http/jsonrpc_helpers.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
@@ -47,7 +56,7 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { ActingActor, type Uuid } from '#lib/primitive_schemas.ts';
+import { ActingActor, create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	ForeignRpcError,
@@ -120,13 +129,17 @@ const create_test_app = (
 		credential_type,
 		token_scope,
 		action_ip_rate_limiter,
-		action_account_rate_limiter
+		action_account_rate_limiter,
+		notification_sender,
+		endpoint_log
 	}: {
 		auth_context?: ReturnType<typeof create_test_request_context>;
 		credential_type?: BuiltinCredentialType;
 		token_scope?: TokenScope;
 		action_ip_rate_limiter?: RateLimiter;
 		action_account_rate_limiter?: RateLimiter;
+		notification_sender?: NotificationSender;
+		endpoint_log?: Logger;
 	} = {}
 ): Hono => {
 	const app = new Hono();
@@ -147,9 +160,10 @@ const create_test_app = (
 		});
 	}
 	const route_specs = create_rpc_endpoint({
+		notification_sender: notification_sender ?? noop_notification_sender,
 		path: '/api/rpc',
 		actions,
-		log,
+		log: endpoint_log ?? log,
 		action_ip_rate_limiter: action_ip_rate_limiter ?? null,
 		action_account_rate_limiter: action_account_rate_limiter ?? null
 	});
@@ -160,6 +174,7 @@ const create_test_app = (
 describe('create_rpc_endpoint', () => {
 	test('returns two route specs (POST + GET) on same path', () => {
 		const specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/rpc',
@@ -175,6 +190,7 @@ describe('create_rpc_endpoint', () => {
 
 	test('both specs have auth none and transaction false', () => {
 		const specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/rpc',
@@ -191,6 +207,7 @@ describe('create_rpc_endpoint', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/api/rpc',
@@ -220,6 +237,7 @@ describe('create_rpc_endpoint', () => {
 			assert.throws(
 				() =>
 					create_rpc_endpoint({
+						notification_sender: noop_notification_sender,
 						action_ip_rate_limiter: null,
 						action_account_rate_limiter: null,
 						path: '/api/rpc',
@@ -246,6 +264,7 @@ describe('create_rpc_endpoint', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/api/rpc',
@@ -269,6 +288,7 @@ describe('create_rpc_endpoint', () => {
 			description: 'Void-input action'
 		};
 		const specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/rpc',
@@ -280,6 +300,7 @@ describe('create_rpc_endpoint', () => {
 
 	test('description includes method count', () => {
 		const specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/rpc',
@@ -1191,6 +1212,7 @@ describe('GET dispatcher', () => {
 
 	test('the GET route declares no-store as its `response_headers`, the POST route none', () => {
 		const [post_spec, get_spec] = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/api/rpc',
 			actions: [],
 			log: new Logger('test', { level: 'off' }),
@@ -1455,6 +1477,7 @@ describe('GET dispatcher', () => {
 describe('RPC endpoint in app surface', () => {
 	test('endpoint route specs appear in surface.routes', () => {
 		const route_specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/api/rpc',
@@ -1481,6 +1504,7 @@ describe('RPC endpoint in app surface', () => {
 			{ spec: create_get_spec(), handler: () => ({}) }
 		];
 		const route_specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/api/rpc',
 			actions,
 			log,
@@ -1601,6 +1625,101 @@ describe('ActionContext notify + signal', () => {
 	});
 });
 
+describe('ActionContext.notification_sender', () => {
+	/** A sender that records each send's account and method. */
+	const create_capture = (): {
+		sender: NotificationSender;
+		sent: Array<{ account_id: string; method: string }>;
+	} => {
+		const sent: Array<{ account_id: string; method: string }> = [];
+		return {
+			sender: {
+				send_to_account: (account_id, message) => {
+					sent.push({ account_id, method: message.method });
+					return 1;
+				}
+			},
+			sent
+		};
+	};
+
+	test("a handler sends through the endpoint's sender", async () => {
+		// no factory hands the handler a sender: the dispatcher does
+		const { sender, sent } = create_capture();
+		const account_id = create_uuid();
+		let count: number | null = null;
+		const app = create_test_app(
+			[
+				{
+					spec: create_get_spec(),
+					handler: (_input, ctx) => {
+						count = ctx.notification_sender.send_to_account(
+							account_id,
+							create_jsonrpc_notification('poked', {})
+						);
+						return { items: [] };
+					}
+				}
+			],
+			{ notification_sender: sender }
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_list')
+		});
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(sent, [{ account_id, method: 'poked' }]);
+		assert.strictEqual(count, 1, "the endpoint's sender answered the send");
+	});
+
+	test('under DEV the sender checks a role_grant_offer notification against its spec', async () => {
+		// the check sits in the dispatcher, so it covers a send from any factory
+		const { sender, sent } = create_capture();
+		const errors: Array<Array<unknown>> = [];
+		const endpoint_log = new Logger('test', { level: 'off' });
+		endpoint_log.error = (...args: Array<unknown>) => {
+			errors.push(args);
+		};
+		const account_id = create_uuid();
+		const app = create_test_app(
+			[
+				{
+					spec: create_get_spec(),
+					handler: (_input, ctx) => {
+						// a `scope_kind` off the `ScopeKindName` grammar
+						ctx.notification_sender.send_to_account(
+							account_id,
+							build_role_grant_revoked_notification({
+								role_grant_id: create_uuid(),
+								role: 'admin',
+								scope_kind: 'GLOBAL',
+								scope_id: null,
+								reason: null
+							})
+						);
+						return { items: [] };
+					}
+				}
+			],
+			{ notification_sender: sender, endpoint_log }
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_list')
+		});
+		assert.strictEqual(res.status, 200);
+		assert.deepStrictEqual(sent, [{ account_id, method: ROLE_GRANT_REVOKED_NOTIFICATION_METHOD }]);
+		assert.deepStrictEqual(
+			errors.map(([message]) => message),
+			[`notification params schema mismatch: ${ROLE_GRANT_REVOKED_NOTIFICATION_METHOD}`]
+		);
+	});
+});
+
 describe('rate limit', () => {
 	const make_limiter = (max_attempts: number): RateLimiter =>
 		new RateLimiter({
@@ -1631,6 +1750,7 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/api/rpc',
@@ -1650,6 +1770,7 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/api/rpc',
@@ -1675,6 +1796,7 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/api/rpc',
@@ -1693,6 +1815,7 @@ describe('rate limit', () => {
 		};
 		assert.doesNotThrow(() =>
 			create_rpc_endpoint({
+				notification_sender: noop_notification_sender,
 				action_ip_rate_limiter: null,
 				action_account_rate_limiter: null,
 				path: '/api/rpc',
@@ -1939,6 +2062,7 @@ describe('rate limit', () => {
 	test('surface exposes rate_limit_key on RPC method', () => {
 		const actions = [{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }];
 		const route_specs = create_rpc_endpoint({
+			notification_sender: noop_notification_sender,
 			path: '/api/rpc',
 			actions,
 			log,

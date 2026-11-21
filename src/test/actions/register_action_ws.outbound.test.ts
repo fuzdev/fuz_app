@@ -16,6 +16,7 @@ import { is, object, string } from '@fuzdev/fuz_schema/schema.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { ActionContext } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';
@@ -149,6 +150,7 @@ describe('register_action_ws outbound overflow', () => {
 		const stub = create_stub_upgrade();
 		const size = 1000;
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -256,6 +258,7 @@ describe('register_action_ws closes', () => {
 		const revoke_spec = { ...echo_spec, method: 'revoke_self' } satisfies RequestResponseActionSpec;
 		const stub = create_stub_upgrade();
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -325,6 +328,7 @@ describe('register_action_ws closes', () => {
 		});
 		const stub = create_stub_upgrade();
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -373,6 +377,7 @@ describe('register_action_ws outbound_queue_bytes', () => {
 	): ReturnType<typeof register_action_ws> & { stub: ReturnType<typeof create_stub_upgrade> } => {
 		const stub = create_stub_upgrade();
 		const result = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',

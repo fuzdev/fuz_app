@@ -9,11 +9,11 @@
  * @module
  */
 
-import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_role_grant_offer_actions } from '#lib/auth/role_grant_offer_actions.ts';
-import { type NotificationSender } from '#lib/auth/role_grant_offer_notifications.ts';
+import type { NotificationSender } from '#lib/actions/notification_sender.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 
@@ -49,20 +49,25 @@ export const create_capture_sender = (
 });
 
 /**
- * Build a `create_route_specs` function that mounts the role-grant-offer RPC
- * endpoint with the given sender wired as `notification_sender`.
- *
- * Path defaults to `NOTIFICATION_TEST_RPC_PATH`; override per test if
- * needed.
+ * The `create_test_app` options that mount the role-grant-offer actions on
+ * `NOTIFICATION_TEST_RPC_PATH` the way a consumer does — through
+ * `rpc_endpoints`, with no sender handed to the factory — and add `sender` to
+ * the backend's notification sender, where `create_app_server` adds each
+ * WebSocket registry it mounts. So a capture here proves the whole thread: the
+ * dispatcher puts the backend's sender on the handler context, and the
+ * handler sends through it.
  */
-export const create_notification_route_specs_factory =
-	(sender: NotificationSender, rpc_path: string = NOTIFICATION_TEST_RPC_PATH) =>
-	(ctx: AppServerContext): Array<RouteSpec> => [
-		...create_rpc_endpoint({
-			action_ip_rate_limiter: null,
-			action_account_rate_limiter: null,
-			path: rpc_path,
-			actions: create_role_grant_offer_actions({ ...ctx.deps, notification_sender: sender }),
-			log: ctx.deps.log
-		})
-	];
+export const create_notification_app_options = (
+	sender: NotificationSender
+): {
+	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
+	rpc_endpoints: (ctx: AppServerContext) => Array<RpcEndpointSpec>;
+} => ({
+	create_route_specs: (ctx) => {
+		ctx.deps.notification_sender.add(sender);
+		return [];
+	},
+	rpc_endpoints: (ctx) => [
+		{ path: NOTIFICATION_TEST_RPC_PATH, actions: create_role_grant_offer_actions(ctx.deps) }
+	]
+});

@@ -708,11 +708,12 @@ failing send can't starve siblings or corrupt the committed response. `ctx` is
 any `{post_commit_effects}` shape — shared by `ActionContext` (RPC + WS)
 and `RouteContext` (HTTP) handlers. The Rust `fuz_actions` spine pins the same
 discard-on-rollback contract. Note that
-WS sends via `NotificationSender.send_to_account` are NOT
+WS sends via `ctx.notification_sender` are NOT
 wrapped by `create_validated_broadcaster` (which only guards SSE
 `broadcast(channel, data)`) — the `input` schemas on
-`RemoteNotificationActionSpec`s are contracts for consumers, not enforced at
-send time.
+`RemoteNotificationActionSpec`s are checked at send time in DEV only
+(`perform_action` wraps the sender in `create_validated_notification_sender`,
+which logs a mismatch and sends anyway), never in production.
 
 ## AsyncSlot
 

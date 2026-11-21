@@ -19,6 +19,9 @@
  *   re-read the shutdown lands in is closed going-away, never as revoked
  * - a WS reply arrives before its audit write lands, and
  *   `_testing_drain_effects` over a tracked emitter waits for it
+ * - an action's notification, sent over HTTP RPC or WS through the handler
+ *   context's sender, reaches the account's sockets on every mounted
+ *   registry — once per socket, a registry two endpoints share included
  *
  * Every server is closed after its test — that disposes the limiters it
  * built. The database is the shared instance the default factory hands out,
@@ -72,10 +75,14 @@ import { PEER_PING_METHOD } from '#lib/actions/peer_ping.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
-import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
+import { emit_after_commit, type EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_rate_limiter, type RateLimiter } from '#lib/rate_limiter.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
+import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
+import { create_jsonrpc_notification } from '#lib/http/jsonrpc_helpers.ts';
+import { Uuid as UuidSchema, type Uuid } from '#lib/primitive_schemas.ts';
 import { WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON } from '#lib/actions/transports.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
@@ -152,7 +159,8 @@ const create_test_server = async (
 			password: stub_password_deps,
 			db,
 			audit,
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		}
 	};
 	const stub = create_stub_upgrade();
@@ -210,6 +218,8 @@ interface TestSocket {
 	) => Promise<{ frame: any; dispatched: Promise<void> }>;
 	/** The close frames the server sent the socket. */
 	closes: Array<{ code?: number; reason?: string }>;
+	/** The methods of the notifications the server sent the socket, in order. */
+	notifications: () => Array<string>;
 }
 
 let next_request_id = 0;
@@ -220,10 +230,11 @@ let next_request_id = 0;
  */
 const open_socket = async (
 	{ server, stub }: TestServer,
-	headers: Record<string, string>
+	headers: Record<string, string>,
+	path = WS_PATH
 ): Promise<TestSocket> => {
 	const upgrades_before = stub.upgrades.length;
-	const res = await server.app.request(WS_PATH, {
+	const res = await server.app.request(path, {
 		headers: { host: 'localhost', upgrade: 'websocket', ...headers }
 	});
 	assert.strictEqual(res.status, 200, `upgrade refused: ${await res.text()}`);
@@ -236,6 +247,11 @@ const open_socket = async (
 	assert.deepStrictEqual(fake.closes, [], 'socket closed at admission');
 	return {
 		closes: fake.closes,
+		notifications: () =>
+			fake.sends
+				.map((s) => JSON.parse(s))
+				.filter((f) => typeof f.method === 'string')
+				.map((f) => f.method),
 		request: async (method, params) => {
 			const id = ++next_request_id;
 			await dispatch_ws_message(
@@ -665,6 +681,109 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			method: 'failing_effect',
 			path: WS_PATH
 		});
+	});
+});
+
+const POKED_METHOD = 'poked';
+
+/** Notifies the account it names, after the commit, through the handler context's sender. */
+const poke_action: RpcAction = {
+	spec: {
+		method: 'poke',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'required', actor: 'none' },
+		side_effects: true,
+		input: object({ account_id: UuidSchema }),
+		output: object({ ok: literal(true) }),
+		async: true,
+		description: 'notifies an account'
+	},
+	handler: (input: { account_id: Uuid }, ctx) => {
+		emit_after_commit(ctx, () => {
+			ctx.notification_sender.send_to_account(
+				input.account_id,
+				create_jsonrpc_notification(POKED_METHOD, {})
+			);
+		});
+		return { ok: true };
+	}
+};
+
+const poke_over_rpc = async (
+	server: AppServer,
+	headers: Record<string, string>,
+	account_id: string
+): Promise<void> => {
+	const res = await server.app.request(RPC_PATH, {
+		method: 'POST',
+		headers: { host: 'localhost', 'content-type': 'application/json', ...headers },
+		body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'poke', params: { account_id } })
+	});
+	assert.strictEqual(res.status, 200, await res.text());
+};
+
+const WS_TWO_PATH = '/api/ws_two';
+
+describe('notifications reach every mounted registry through the handler context', () => {
+	test("an HTTP RPC action's notification reaches the account's socket, once", async () => {
+		// no factory or endpoint was handed a sender: the server put the
+		// registry it mounted on the backend's, which the dispatcher hands over
+		const t = await create_test_server({
+			rpc_endpoints: [{ path: RPC_PATH, actions: [poke_action] }],
+			await_pending_effects: true
+		});
+		const alice = await t.create_account('alice_poked');
+		const bob = await t.create_account('bob_poker');
+		const alice_socket = await open_socket(t, alice.session_headers);
+		const bob_socket = await open_socket(t, bob.session_headers);
+
+		await poke_over_rpc(t.server, bob.session_headers, alice.account_id);
+		assert.deepStrictEqual(alice_socket.notifications(), [POKED_METHOD]);
+		assert.deepStrictEqual(bob_socket.notifications(), [], 'only the named account hears it');
+	});
+
+	test("a WS action's notification reaches the account's socket on another endpoint's registry", async () => {
+		// each endpoint mounts its own registry; the sender reaches both
+		const t = await create_test_server({
+			ws_endpoints: [
+				{ path: WS_PATH, actions: [...protocol_actions, counted_action], receive_timeout: null },
+				{ path: WS_TWO_PATH, actions: [...protocol_actions, poke_action], receive_timeout: null }
+			]
+		});
+		const alice = await t.create_account('alice_poked');
+		const bob = await t.create_account('bob_poker');
+		const alice_socket = await open_socket(t, alice.session_headers);
+		const bob_socket = await open_socket(t, bob.session_headers, WS_TWO_PATH);
+
+		assert_ok(await bob_socket.request('poke', { account_id: alice.account_id }));
+		assert.deepStrictEqual(alice_socket.notifications(), [POKED_METHOD]);
+		assert.deepStrictEqual(bob_socket.notifications(), []);
+	});
+
+	test('a registry two endpoints share delivers a notification to each socket once', async () => {
+		const shared = new ConnectionRegistry({ log });
+		const t = await create_test_server({
+			rpc_endpoints: [{ path: RPC_PATH, actions: [poke_action] }],
+			ws_endpoints: [
+				{ path: WS_PATH, actions: [...protocol_actions], registry: shared, receive_timeout: null },
+				{
+					path: WS_TWO_PATH,
+					actions: [...protocol_actions],
+					registry: shared,
+					receive_timeout: null
+				}
+			],
+			await_pending_effects: true
+		});
+		const alice = await t.create_account('alice_poked');
+		const bob = await t.create_account('bob_poker');
+		const first = await open_socket(t, alice.session_headers);
+		const second = await open_socket(t, alice.session_headers, WS_TWO_PATH);
+
+		await poke_over_rpc(t.server, bob.session_headers, alice.account_id);
+		assert.deepStrictEqual(first.notifications(), [POKED_METHOD]);
+		assert.deepStrictEqual(second.notifications(), [POKED_METHOD]);
 	});
 });
 

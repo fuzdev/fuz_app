@@ -19,6 +19,7 @@ import { create_app_server, type AppServerOptions } from '#lib/server/app_server
 import { Db } from '#lib/db/db.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
@@ -48,7 +49,8 @@ const boot = async (overrides: Partial<AppServerOptions>): Promise<unknown> => {
 				password: { hash_password: refuse, verify_password: refuse, verify_dummy: refuse },
 				db,
 				audit: create_audit_emitter({ db, log }),
-				connection_closer: create_realtime_closer()
+				connection_closer: create_realtime_closer(),
+				notification_sender: create_realtime_notification_sender()
 			}
 		},
 		session_options: create_session_config('test_session'),

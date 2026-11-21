@@ -447,7 +447,7 @@ export interface AppServerOptions {
 	 * `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`
 	 * (evaluated after the server context is assembled). Use the factory
 	 * form when action lists depend on `ctx.deps` — e.g. when spreading
-	 * `create_standard_rpc_actions({...ctx.deps, notification_sender})` over WS.
+	 * `create_standard_rpc_actions(ctx.deps)` over WS.
 	 *
 	 * When non-empty, `upgrade_websocket` must be supplied (throws
 	 * otherwise). A factory returning `[]` does NOT trip the check —
@@ -471,7 +471,11 @@ export interface AppServerOptions {
 	 * the revocation handlers' post-commit closes reach its sockets, and so
 	 * does the one revocation guard `create_app_server` registers on that
 	 * closer (`create_revocation_guard`) when it mounts a WS endpoint or the
-	 * audit stream. `AppServer.close` removes it again.
+	 * audit stream. Each is added to `deps.notification_sender` too, so a
+	 * notification any action handler sends — over HTTP RPC or a socket —
+	 * reaches the account's sockets on every mounted registry, once per
+	 * registry however many endpoints share it. `AppServer.close` removes
+	 * both memberships again.
 	 */
 	ws_endpoints?:
 		ReadonlyArray<WsEndpointSpec> | ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
@@ -564,14 +568,16 @@ export interface AppServer {
 	 *    a closed registry hosts no other server
 	 * 3. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
-	 *    revocation guard, the audit-log SSE listener) and the closer members it added to
-	 *    `deps.connection_closer` (each mounted connection registry, the audit stream
-	 *    registry), and `dispose` the rate limiters it built for omitted
-	 *    options — never one passed in, which its caller owns. A release that
-	 *    throws is logged and the rest still run. The backend's emitter and
-	 *    closer are left as they were before assembly, so a failed assembly
-	 *    can be retried on the same backend, and a backend whose `close` you
-	 *    own (a test harness) can host another server
+	 *    revocation guard, the audit-log SSE listener), the members it added
+	 *    to `deps.connection_closer` (each mounted connection registry, the
+	 *    audit stream registry) and to `deps.notification_sender` (each
+	 *    mounted connection registry), and `dispose` the rate limiters it
+	 *    built for omitted options — never one passed in, which its caller
+	 *    owns. A release that throws is logged and the rest still run. The
+	 *    backend's emitter, closer and notification sender are left as they
+	 *    were before assembly, so a failed assembly can be retried on the same
+	 *    backend, and a backend whose `close` you own (a test harness) can
+	 *    host another server
 	 * 4. close the database connection (`AppBackend.close`)
 	 *
 	 * Idempotent: a second call settles with the first one's outcome (a failed
@@ -790,7 +796,10 @@ export const collect_config_diagnostics = (
  * to `backend.deps.connection_closer`, so the revocation handlers built from
  * `ctx.deps` close their connections with no further wiring, and — when the
  * server mounts either — one `create_revocation_guard` listener on that closer
- * repeats each close on the audit row.
+ * repeats each close on the audit row. Each WebSocket connection registry is
+ * added to `backend.deps.notification_sender` as well, the sender every
+ * mounted RPC and WebSocket dispatcher puts on its handler contexts, so an
+ * action's notification reaches the account's sockets with no wiring either.
  * The
  * `audit_sse` field on the returned `AppServer` (and the
  * `AppServerContext` passed to `create_route_specs`) is non-null in that
@@ -799,11 +808,12 @@ export const collect_config_diagnostics = (
  *
  * Assembly acquires a few things that outlive it — the rate limiters it
  * builds, the listeners it registers on `deps.audit`, the members it adds to
- * `deps.connection_closer` — and records a release for each as it goes. When
- * assembly throws, every release recorded so far runs, last acquired first
- * (one that throws is logged and the rest still run), and the original error
- * is rethrown: a failed assembly leaves the backend's emitter and closer as
- * it found them and no limiter timer running. When `auth_cleanup` is set, the
+ * `deps.connection_closer` and `deps.notification_sender` — and records a
+ * release for each as it goes. When assembly throws, every release recorded
+ * so far runs, last acquired first (one that throws is logged and the rest
+ * still run), and the original error is rethrown: a failed assembly leaves
+ * the backend's emitter, closer and notification sender as it found them and
+ * no limiter timer running. When `auth_cleanup` is set, the
  * auth cleanup schedule starts as the last step of assembly — nothing after
  * it can throw, so an assembly that throws leaves no schedule running.
  *
@@ -1045,7 +1055,8 @@ const assemble_app_server = async (
 					actions: endpoint.actions,
 					log,
 					action_ip_rate_limiter,
-					action_account_rate_limiter
+					action_account_rate_limiter,
+					notification_sender: deps.notification_sender
 				})
 			);
 		}
@@ -1294,12 +1305,17 @@ const assemble_app_server = async (
 				required_roles: endpoint.required_roles,
 				action_ip_rate_limiter,
 				action_account_rate_limiter,
+				notification_sender: deps.notification_sender,
 				on_effect_error
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_registry;
 			// every revocation's close — the handlers' and the guard's — reaches
 			// this registry
 			releases.push(deps.connection_closer.add(endpoint_registry));
+			// and so does every action's notification, from either transport; a
+			// registry two endpoints share is one member, so no socket hears a
+			// notification twice
+			releases.push(deps.notification_sender.add(endpoint_registry));
 		}
 	}
 

@@ -31,6 +31,7 @@ import {
 } from '#lib/testing/audit_drift_guard.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { TEST_CONNECTION_IP, test_proxy_middleware } from '../rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './session_test_helpers.ts';
 
@@ -218,7 +219,8 @@ describe('account route audit logging', () => {
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
 				audit: audit_log_capture.emitter,
-				connection_closer: create_realtime_closer()
+				connection_closer: create_realtime_closer(),
+				notification_sender: create_realtime_notification_sender()
 			},
 			{
 				session_options,
@@ -399,7 +401,8 @@ describe('account route audit logging', () => {
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				},
 				audit: audit_log_capture.emitter,
-				connection_closer: create_realtime_closer()
+				connection_closer: create_realtime_closer(),
+				notification_sender: create_realtime_notification_sender()
 			},
 			{
 				session_options,

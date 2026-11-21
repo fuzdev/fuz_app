@@ -55,7 +55,6 @@ import {
 import { RoomRegistry } from '../../actions/room_registry.ts';
 import type { AppDeps } from '../../auth/deps.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
-import type { NotificationSender } from '../../auth/role_grant_offer_notifications.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
 import { create_all_cell_actions } from '../../auth/all_cell_actions.ts';
 import { create_actor_lookup_actions } from '../../auth/actor_lookup_actions.ts';
@@ -126,12 +125,6 @@ export interface FullSpineMountOptions {
 	 */
 	readonly daemon_token_state: DaemonTokenState;
 	/**
-	 * WS notification sender for the role-grant-offer fan-out. Pass the SAME
-	 * `ConnectionRegistry` the WS endpoint registers connections against
-	 * (the registry is the fan-out target). Omitted for enumeration.
-	 */
-	readonly notification_sender?: NotificationSender | null;
-	/**
 	 * The room registry the room verbs and `_testing_room_evict` run on — built
 	 * by `create_spine_room_registry` over the SAME `ConnectionRegistry` the WS
 	 * endpoints register connections against (a room registry over another
@@ -157,10 +150,10 @@ interface FullSpineActions {
  * Mirrors the previous inline assembly in `testing_spine_server.ts` exactly —
  * `session_options` is pinned to `spine_session_options` (the binary's cookie
  * config) and `roles` to `spine_roles` (carrying `cell_editor`), so the only
- * runtime-varying inputs are the daemon-token state + notification sender.
+ * runtime-varying inputs are the daemon-token state and the room registry.
  *
  * @param deps - the backend `AppDeps` (stub deps suffice for method enumeration)
- * @param options - daemon-token state + optional WS notification sender and room registry
+ * @param options - daemon-token state + optional room registry
  * @returns every `RpcAction` the binary exposes, in mount order
  */
 export const build_full_spine_rpc_actions = (
@@ -184,10 +177,7 @@ const build_full_spine_actions = (
 		limiter: new RoomRateLimiter(DEFAULT_ROOM_RATE_LIMIT)
 	});
 	const actions: Array<RpcAction> = [
-		...create_standard_rpc_actions(
-			{ ...deps, notification_sender: options.notification_sender ?? null },
-			{ roles: spine_roles }
-		),
+		...create_standard_rpc_actions(deps, { roles: spine_roles }),
 		...create_testing_actions(deps, {
 			session_options: spine_session_options,
 			daemon_token_state: options.daemon_token_state,
@@ -268,7 +258,7 @@ export interface FullSpineMount {
  * (never dispatched) on Rust.
  *
  * @param deps - the backend `AppDeps`
- * @param options - daemon-token state + optional WS notification sender and room registry
+ * @param options - daemon-token state + optional room registry
  * @returns the RPC and WS action lists, built once and sharing handler instances
  */
 export const build_full_spine_mount = (

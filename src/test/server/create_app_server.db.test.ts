@@ -48,6 +48,7 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { BaseServerEnv } from '#lib/server/env.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import {
@@ -98,7 +99,8 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 			password: stub_password_deps,
 			db,
 			audit: create_audit_emitter({ db, log }),
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		}
 	};
 	return { backend, ...base_config, ...overrides };

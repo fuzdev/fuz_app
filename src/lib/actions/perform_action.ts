@@ -111,6 +111,8 @@ import type { RateLimiter } from '../rate_limiter.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import type { ActionContext, ActionHandler, RpcAction } from './action_types.ts';
 import type { RequestClient } from './peer_request.ts';
+import type { NotificationSender } from './notification_sender.ts';
+import { create_validated_notification_sender } from '../auth/role_grant_offer_notifications.ts';
 import { token_scope_admits_method, token_scope_method_capability } from '../auth/token_scope.ts';
 
 /**
@@ -179,6 +181,14 @@ export interface PerformActionDeps {
 	post_commit_effects: Array<() => void | Promise<void>>;
 	/** Logger threaded into `ActionContext.log`. */
 	log: Logger;
+	/**
+	 * Threaded into `ActionContext.notification_sender` — the backend's one
+	 * sender on both transports, so a send from an HTTP handler reaches the
+	 * WebSocket registries. Under DEV the handler gets it wrapped in
+	 * `create_validated_notification_sender`, so every send site is checked
+	 * as DEV output validation checks every result.
+	 */
+	notification_sender: NotificationSender;
 	/** Per-IP limiter (shared across transports). `null` disables. */
 	action_ip_rate_limiter: RateLimiter | null;
 	/** Per-account limiter (shared across transports). `null` disables. */
@@ -225,6 +235,7 @@ export const perform_action = async (
 		pending_effects,
 		post_commit_effects,
 		log,
+		notification_sender,
 		action_ip_rate_limiter,
 		action_account_rate_limiter
 	} = deps;
@@ -368,6 +379,7 @@ export const perform_action = async (
 			session_hash: resolved_auth_session_hash(credential),
 			log,
 			notify,
+			notification_sender: create_validated_notification_sender(notification_sender, log),
 			signal
 		};
 

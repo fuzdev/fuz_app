@@ -1,7 +1,7 @@
 /**
- * Role grant offer WebSocket notification specs, builders, and the narrow
- * `NotificationSender` interface that decouples offer/revoke send sites
- * from `ConnectionRegistry`.
+ * Role grant offer WebSocket notification specs, builders, and the helpers
+ * the handlers queue them with (`queue_offer_notification`,
+ * `queue_supersede_notifications`).
  *
  * These `RemoteNotificationActionSpec`s cover the consentful-role-grants
  * lifecycle events the server pushes to affected accounts:
@@ -29,10 +29,9 @@
  * action set of an RPC list that carries the role_grant_offer actions, so the
  * surface lists them on the WS endpoint as `remote_notification` methods. An
  * inbound frame for one is still answered `method_not_found`, as no handler is
- * registered. Under DEV,
- * `create_role_grant_offer_actions` checks each params object it sends
- * against its spec's `input` (`create_validated_notification_sender`);
- * production sends unchecked.
+ * registered. Under DEV, `perform_action` hands every action handler a sender
+ * wrapped in `create_validated_notification_sender`, so each params object
+ * sent is checked against its spec's `input`; production sends unchecked.
  *
  * @module
  */
@@ -55,28 +54,16 @@ import { create_action_event_spec } from '../actions/action_bridge.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import type { JsonrpcNotification } from '../http/jsonrpc.ts';
 import { create_jsonrpc_notification } from '../http/jsonrpc_helpers.ts';
+import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
+import type { NotificationSender } from '../actions/notification_sender.ts';
 import { RoleName } from './role_schema.ts';
 import { ScopeKindName } from './scope_kind_schema.ts';
-import { RoleGrantOfferJson } from './role_grant_offer_schema.ts';
+import {
+	RoleGrantOfferJson,
+	to_role_grant_offer_json,
+	type SupersededOffer
+} from './role_grant_offer_schema.ts';
 import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
-
-/**
- * Narrow structural capability for sending a JSON-RPC notification to every
- * socket bound to an account.
- *
- * `ConnectionRegistry` satisfies this interface — its
- * `send_to_account(account_id, message)` signature accepts the broader
- * `JsonrpcMessageFromServerToClient` type, which is contravariantly
- * compatible with `JsonrpcNotification` here. The interface stays local so
- * handlers don't couple to the concrete registry, and tests can inject a
- * capturing stub with no WS machinery.
- *
- * Returns the number of sockets the notification was sent to — callers
- * typically ignore it (used by telemetry / tests).
- */
-export interface NotificationSender {
-	send_to_account: (account_id: Uuid, message: JsonrpcNotification) => number;
-}
 
 // -- Method constants -------------------------------------------------------
 
@@ -269,7 +256,8 @@ const notification_spec_by_method: ReadonlyMap<string, RemoteNotificationActionS
  * a mismatch logged as an error the way DEV output validation logs one; the
  * notification is sent either way, unchanged. A method that is no
  * role_grant_offer notification passes unchecked. In production the sender is
- * returned as it is.
+ * returned as it is. `perform_action` wraps the sender of every handler
+ * context, so every send site is checked whichever factory it sits in.
  *
  * @param sender - the sender to wrap
  * @param log - where a mismatch is logged
@@ -325,3 +313,66 @@ export const build_role_grant_revoked_notification = (
 	params: RoleGrantRevokedParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_REVOKED_NOTIFICATION_METHOD, params);
+
+// -- Queueing ---------------------------------------------------------------
+
+/**
+ * What the queue helpers read of a handler context; `ActionContext` satisfies
+ * it.
+ */
+export interface NotificationQueueContext extends EmitAfterCommitContext {
+	notification_sender: NotificationSender;
+}
+
+/**
+ * Queue `message` to every socket bound to `account_id`, sent once the
+ * handler's transaction commits and dropped when it rolls back, so a
+ * notification never announces state that never landed.
+ *
+ * Twin of the Rust spine's `queue_offer_notification`.
+ *
+ * @param ctx - the handler context, whose sender the send goes through
+ * @param account_id - the recipient account
+ * @param message - the notification, from one of the builders above
+ */
+export const queue_offer_notification = (
+	ctx: NotificationQueueContext,
+	account_id: Uuid,
+	message: JsonrpcNotification
+): void => {
+	const { notification_sender } = ctx;
+	emit_after_commit(ctx, () => {
+		notification_sender.send_to_account(account_id, message);
+	});
+};
+
+/**
+ * Queue a `role_grant_offer_supersede` notification to the grantor of each
+ * superseded offer — `from_account_id`, off the cascade's `RETURNING`, never
+ * the audit row's target, which is the recipient.
+ *
+ * Twin of the Rust spine's `queue_supersede_notifications`.
+ *
+ * @param ctx - the handler context, whose sender the sends go through
+ * @param superseded - the offers the cascade superseded
+ * @param reason - why they were superseded
+ * @param cause_id - the accepted offer or the revoked role_grant
+ */
+export const queue_supersede_notifications = (
+	ctx: NotificationQueueContext,
+	superseded: ReadonlyArray<SupersededOffer>,
+	reason: RoleGrantOfferSupersedeParams['reason'],
+	cause_id: Uuid
+): void => {
+	for (const offer of superseded) {
+		queue_offer_notification(
+			ctx,
+			offer.from_account_id,
+			build_role_grant_offer_supersede_notification({
+				offer: to_role_grant_offer_json(offer),
+				reason,
+				cause_id
+			})
+		);
+	}
+};

@@ -1389,7 +1389,9 @@ unexamined.
 The role-grant-offer notification suite
 (`describe_role_grant_offer_notification_ws_tests`) opens a third account's
 socket in every case and fails if it receives anything but the answers to its
-own requests, so a fan-out that reaches past its target account fails there.
+own requests, so a fan-out that reaches past its target account fails there;
+and the target socket must hear exactly the expected notifications, once each
+and in order, so a fan-out that reaches one socket twice fails too.
 
 ### TS spine binaries — two JS runtimes
 

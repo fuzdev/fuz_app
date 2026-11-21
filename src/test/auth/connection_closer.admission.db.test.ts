@@ -52,6 +52,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
 import { create_revocation_guard } from '#lib/actions/connection_closer.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
@@ -118,6 +119,7 @@ const create_ws_endpoint = (
 	const { deps } = h.test_app.backend;
 	const stub = create_stub_upgrade();
 	const { registry } = register_action_ws({
+		notification_sender: noop_notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',

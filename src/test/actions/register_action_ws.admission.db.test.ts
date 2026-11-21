@@ -28,6 +28,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import {
 	MAX_PRE_ADMISSION_FRAMES,
 	type SocketCloseContext,
@@ -240,6 +241,7 @@ const create_endpoint = (
 	const opened: Array<SocketOpenContext> = [];
 	const closed: Array<SocketCloseContext> = [];
 	const { registry } = register_action_ws({
+		notification_sender: noop_notification_sender,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		path: '/ws',

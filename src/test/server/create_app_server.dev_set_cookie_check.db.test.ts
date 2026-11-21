@@ -26,6 +26,7 @@ import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
@@ -58,7 +59,8 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 				password: stub_password_deps,
 				db,
 				audit: create_audit_emitter({ db, log }),
-				connection_closer: create_realtime_closer()
+				connection_closer: create_realtime_closer(),
+				notification_sender: create_realtime_notification_sender()
 			}
 		};
 		server = await create_app_server({

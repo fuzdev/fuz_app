@@ -44,7 +44,7 @@ import { describe_db } from '../auth_db_default.ts';
 import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
-	create_notification_route_specs_factory,
+	create_notification_app_options,
 	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
@@ -75,7 +75,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_ADMIN]
 		});
@@ -115,7 +115,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_ADMIN]
 		});
@@ -160,13 +160,16 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		log.error = (...args: Array<unknown>) => {
 			errors.push(args);
 		};
+		// mounted by hand so the dispatcher logs to `log`: it is the dispatcher
+		// that wraps the sender for the DEV check, whatever factory sends
 		const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 			create_rpc_endpoint({
 				action_ip_rate_limiter: null,
 				action_account_rate_limiter: null,
+				notification_sender: sender,
 				path: RPC_PATH,
-				actions: create_role_grant_offer_actions({ ...ctx.deps, log, notification_sender: sender }),
-				log: ctx.deps.log
+				actions: create_role_grant_offer_actions(ctx.deps),
+				log
 			});
 		const test_app = await create_test_app({
 			session_options,
@@ -210,7 +213,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_ADMIN]
 		});
@@ -239,7 +242,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_ADMIN]
 		});
@@ -315,7 +318,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_ADMIN]
 		});
@@ -344,7 +347,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_notification_route_specs_factory(sender),
+			...create_notification_app_options(sender),
 			db: get_db(),
 			roles: [ROLE_KEEPER, ROLE_ADMIN]
 		});

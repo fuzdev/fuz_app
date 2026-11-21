@@ -35,6 +35,11 @@ import {
 	WS_RECEIVE_TIMEOUT_MAX
 } from '#lib/actions/register_action_ws.ts';
 import {
+	noop_notification_sender,
+	type NotificationSender
+} from '#lib/actions/notification_sender.ts';
+import { create_jsonrpc_notification } from '#lib/http/jsonrpc_helpers.ts';
+import {
 	ERROR_DUPLICATE_REQUEST_ID,
 	MAX_INBOUND_DISPATCHES_PER_CONNECTION,
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
@@ -180,12 +185,14 @@ const build_harness = async (opts: {
 	action_account_rate_limiter?: RateLimiter | null;
 	max_message_bytes?: number;
 	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
+	notification_sender?: NotificationSender;
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
 	const actions =
 		opts.actions ?? specs.map((spec) => ({ spec, handler: opts.handlers[spec.method] }));
 	const stub_db = create_stub_db();
 	const { registry } = register_action_ws({
+		notification_sender: opts.notification_sender ?? noop_notification_sender,
 		path: '/ws',
 		connection_closer: null,
 		app: new Hono(),
@@ -355,6 +362,7 @@ describe('register_action_ws', () => {
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -871,6 +879,35 @@ describe('register_action_ws', () => {
 		assert.ok(captured.value.connection_id, 'connection_id should be set on WS handlers');
 	});
 
+	test("a handler sends through the endpoint's notification sender, not its own registry", async () => {
+		// the dispatcher hands every handler the sender it was given — the
+		// backend's, which reaches every registry — so a WS action notifies
+		// sockets beyond its endpoint's
+		const sent: Array<{ account_id: string; method: string }> = [];
+		const notification_sender: NotificationSender = {
+			send_to_account: (account_id, message) => {
+				sent.push({ account_id, method: message.method });
+				return 1;
+			}
+		};
+		const target = create_uuid();
+		const h = await build_harness({
+			notification_sender,
+			handlers: {
+				echo: (input, ctx) => {
+					ctx.notification_sender.send_to_account(target, create_jsonrpc_notification('poked', {}));
+					return { value: (input as { value: string }).value };
+				}
+			}
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 'r1', method: 'echo', params: { value: 'x' } });
+
+		assert.deepStrictEqual(sent, [{ account_id: target, method: 'poked' }]);
+		const pushed = h.fake.sends.map((frame) => JSON.parse(frame)).filter((f) => 'method' in f);
+		assert.deepStrictEqual(pushed, [], "nothing went to the socket's own registry");
+	});
+
 	test('registry tracks connections on open and removes on close', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		assert.strictEqual(h.registry.connection_count() > 0, false);
@@ -885,6 +922,7 @@ describe('register_action_ws', () => {
 		// not the one `onOpen` registered
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -912,6 +950,7 @@ describe('register_action_ws', () => {
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
 		const result = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1035,6 +1074,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const closed: Array<SocketCloseContext> = [];
 		const opened: Array<SocketOpenContext> = [];
 		const { registry } = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1091,6 +1131,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		};
 		const stub = create_stub_upgrade();
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1142,6 +1183,7 @@ describe('register_action_ws max_connections_per_account', () => {
 	test('null disables the cap on the created registry', async () => {
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1167,6 +1209,7 @@ describe('register_action_ws max_connections_per_account', () => {
 	test('defaults to DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT', async () => {
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1197,6 +1240,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			assert.throws(
 				() =>
 					register_action_ws({
+						notification_sender: noop_notification_sender,
 						action_ip_rate_limiter: null,
 						action_account_rate_limiter: null,
 						path: '/ws',
@@ -1223,6 +1267,7 @@ describe('register_action_ws connection_closer', () => {
 		connection_closer: ReturnType<typeof create_realtime_closer>
 	) =>
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1521,6 +1566,7 @@ describe('register_action_ws self-revocation', () => {
 	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -1690,6 +1736,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const stub = create_stub_upgrade();
 		const runs: Array<string> = [];
 		register_action_ws({
+			notification_sender: noop_notification_sender,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
 			path: '/ws',
@@ -2256,6 +2303,7 @@ describe('register_action_ws rate limit', () => {
 		assert.throws(
 			() =>
 				register_action_ws({
+					notification_sender: noop_notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: '/ws',

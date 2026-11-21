@@ -23,8 +23,7 @@ const stub_daemon_token_state: DaemonTokenState = {
 describe('spine method coverage', () => {
 	test('the live RPC mount reconciles with the coverage manifest', () => {
 		const live_methods = build_full_spine_rpc_actions(create_stub_app_deps(), {
-			daemon_token_state: stub_daemon_token_state,
-			notification_sender: null
+			daemon_token_state: stub_daemon_token_state
 		}).map((action) => action.spec.method);
 
 		const declared_methods = create_spine_surface_spec().surface.rpc_endpoints.flatMap((endpoint) =>

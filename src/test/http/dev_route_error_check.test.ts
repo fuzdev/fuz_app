@@ -495,6 +495,8 @@ describe('the DEV error check outside DEV', () => {
 		const { Db } = await import('#lib/db/db.ts');
 		const { create_audit_emitter } = await import('#lib/auth/audit_emitter.ts');
 		const { create_realtime_closer } = await import('#lib/actions/connection_closer.ts');
+		const { create_realtime_notification_sender } =
+			await import('#lib/actions/notification_sender.ts');
 		const { parse_allowed_origins } = await import('#lib/http/origin.ts');
 		const { create_session_config } = await import('#lib/auth/session_cookie.ts');
 		const origins = parse_allowed_origins(ORIGIN);
@@ -520,7 +522,8 @@ describe('the DEV error check outside DEV', () => {
 					password: { hash_password: refuse, verify_password: refuse, verify_dummy: refuse },
 					db,
 					audit: create_audit_emitter({ db, log }),
-					connection_closer: create_realtime_closer()
+					connection_closer: create_realtime_closer(),
+					notification_sender: create_realtime_notification_sender()
 				}
 			},
 			session_options: create_session_config('test_session'),

@@ -24,7 +24,6 @@ import {
 	role_grant_offer_notification_specs,
 	role_grant_offer_notification_actions,
 	create_validated_notification_sender,
-	type NotificationSender,
 	build_role_grant_offer_received_notification,
 	build_role_grant_offer_retracted_notification,
 	build_role_grant_offer_accepted_notification,
@@ -38,6 +37,7 @@ import {
 	role_grant_offer_supersede_notification_spec,
 	role_grant_revoked_notification_spec
 } from '#lib/auth/role_grant_offer_notifications.ts';
+import type { NotificationSender } from '#lib/actions/notification_sender.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { RoleGrantOfferJson } from '#lib/auth/role_grant_offer_schema.ts';

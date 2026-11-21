@@ -351,6 +351,8 @@ describe('an assembled app with a fuz_schema route', () => {
 		const { Db } = await import('#lib/db/db.ts');
 		const { create_audit_emitter } = await import('#lib/auth/audit_emitter.ts');
 		const { create_realtime_closer } = await import('#lib/actions/connection_closer.ts');
+		const { create_realtime_notification_sender } =
+			await import('#lib/actions/notification_sender.ts');
 		const { parse_allowed_origins } = await import('#lib/http/origin.ts');
 		const origins = parse_allowed_origins(ORIGIN);
 		assert.ok(origins.ok);
@@ -371,7 +373,8 @@ describe('an assembled app with a fuz_schema route', () => {
 					password: { hash_password: refuse, verify_password: refuse, verify_dummy: refuse },
 					db,
 					audit: create_audit_emitter({ db, log }),
-					connection_closer: create_realtime_closer()
+					connection_closer: create_realtime_closer(),
+					notification_sender: create_realtime_notification_sender()
 				}
 			},
 			session_options: create_session_config('test_session'),

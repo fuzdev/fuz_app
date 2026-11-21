@@ -11,6 +11,7 @@
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { ActionContext } from '#lib/actions/action_types.ts';
+import { noop_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { RequestContext } from '#lib/auth/request_context.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
@@ -42,5 +43,6 @@ export const create_test_action_context = (auth: RequestContext): ActionContext 
 	session_hash: null,
 	log,
 	notify: () => {},
+	notification_sender: noop_notification_sender,
 	signal: new AbortController().signal
 });

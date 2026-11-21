@@ -196,6 +196,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			// Custom authorize allows anyone holding admin to offer any role.
 			const custom_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 				...create_rpc_endpoint({
+					notification_sender: ctx.deps.notification_sender,
 					action_ip_rate_limiter: null,
 					action_account_rate_limiter: null,
 					path: RPC_PATH,

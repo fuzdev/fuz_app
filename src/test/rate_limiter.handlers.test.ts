@@ -35,6 +35,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { Db } from '#lib/db/db.ts';
 import { create_stub_db, create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import {
 	create_test_limiter,
 	TEST_CONNECTION_IP,
@@ -201,7 +202,8 @@ const create_login_app = (
 				verify_dummy: mock_verify_dummy
 			},
 			audit: create_test_audit_emitter(),
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		},
 		{
 			session_options,
@@ -1239,7 +1241,8 @@ const create_signup_app = (
 				verify_dummy: vi.fn()
 			},
 			audit: create_test_audit_emitter(),
-			connection_closer: create_realtime_closer()
+			connection_closer: create_realtime_closer(),
+			notification_sender: create_realtime_notification_sender()
 		},
 		{
 			session_options,
