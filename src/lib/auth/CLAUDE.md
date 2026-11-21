@@ -74,17 +74,17 @@ Convention — `*_schema.ts` holds a domain's `@fuzdev/fuz_schema` schemas; `*_d
 - `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson` (a `@fuzdev/fuz_schema` `object`: `role` a `RoleName`, `scope_kind` a `ScopeKindName` or `null`, so an offer row holding a name off either grammar fails it), `to_role_grant_offer_json`.
 - `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN` + `ROLE_GRANT_OFFER_COLUMNS` and the shared `ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT` CTE tail (homed here per the placement rule in `db/sql_columns.ts`).
 - `auth/role_grant_sql.ts` — the liveness predicates every grant and offer read shares: `role_grant_active_sql(alias)` (not revoked, not expired) and `offer_pending_predicate(alias)` (every `OFFER_TERMINAL_COLUMNS` entry null), twins of the Rust spine's. The frozen partial-index DDL keeps its literal text.
-- `auth/role_grant_offer_notifications.ts` — the WS notification specs for the consentful-grant lifecycle, their `@fuzdev/fuz_schema` params, builders, `role_grant_offer_notification_actions`, `role_grant_offer_notification_specs`, and `create_validated_notification_sender`.
+- `auth/role_grant_offer_notifications.ts` — the WS notification specs for the consentful-grant lifecycle, their `@fuzdev/fuz_schema` params, builders, `role_grant_offer_notification_actions`, `role_grant_offer_notification_specs`, the post-commit send helpers `queue_offer_notification` / `queue_supersede_notifications` (`SupersedeAudience`, `SupersedeCause`), and `create_validated_notification_sender`.
 
 ### Queries
 
 All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log` and returns a `ValidatedApiToken` — the row with `scope` parsed, refusing (returning `undefined` for) a row whose stored scope is unreadable.
 
-- `auth/account_queries.ts` — account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`. Also the two locked re-checks a credential mint runs first in its transaction: `query_account_lock_verified(id, password_hash)` (login: the account is live and still holds the hash that was verified) and `query_account_lock_live(id)` (token create), each `FOR NO KEY UPDATE` on the account row — the lock a password change's or a delete's write to that row waits on, and waits for, so a mint in flight across either is refused or revoked, never left standing; and the lock another mint of the same account waits on, so logins and token creates of one account take turns and a cap's eviction never overshoots or deadlocks. `query_account_lock_live_many(ids)` locks several live accounts `FOR SHARE` in one statement in id order — what `query_role_grant_offer_create` takes on its recipient and its grantor, and `invite_create` on its issuer (ordered against a delete, never queued behind a login). `query_account_lock_admins_for_purge(id)` takes every holder of an unrevoked global `admin` and the purged account `FOR NO KEY UPDATE` in one id-ordered statement, first in a purge, whose cascade writes admins' grants; `query_account_lock_for_purge(id)` then takes the row `FOR UPDATE`, tombstoned or not, after the last-admin guard (an admin target's only) and before any other write; `query_account_lock_for_revoke(actor_id)` takes a revokee's row `FOR NO KEY UPDATE` before any offer a revoke writes; `query_account_lock_for_offer_accept` takes an accept's two parties, lower id first: every writer of an account takes its row before the account's credential, offer or invite rows. Every multi-account locker takes account rows in id order (the last-admin guard too), so none waits on another in the opposite order. Every multi-row delete of `auth_session` or `api_token` rows (revoke-alls, the cap evictions, the expiry sweep) takes its rows through an id-ordered locking subselect, so two of them never lock in opposite orders whatever plan the database picks.
+- `auth/account_queries.ts` — account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`, and the account-row locks every writer of an account takes first (§Row locks): `query_account_lock_verified` (login) and `query_account_lock_live` (token create), `query_account_lock_live_many` (offer and invite create), `query_account_lock_for_offer_accept`, `query_account_lock_for_revoke`, and the purge's `query_account_lock_admins_for_purge` then `query_account_lock_for_purge`.
 - `auth/actor_lookup_queries.ts` — batched `actor` ⨝ `account` for the labels arc; active actors of active accounts only.
 - `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin; active actors of active accounts only.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
-- `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede — it locks both parties' accounts first, lower id first (the recipient's `FOR NO KEY UPDATE`, checked live — a recipient deleted in flight answers the dead credential's 401; the grantor's `FOR SHARE` for an unscoped `admin` offer, `query_account_lock_for_offer_accept`), reads the grantor's authority under that lock, then claims its own offer and its pending siblings in one id-ordered statement. It rests on every write that ends a grantor's global admin taking the grantor's account row first (a revoke through `query_account_lock_for_revoke`, whether or not its guard ran; a delete through its write of the row; a purge through `query_account_lock_admins_for_purge` and `query_account_lock_for_purge`; the DB browser's raw delete excepted). Every transaction writing more than one offer row locks them all first, in id order (`offer_rows_locked_in_id_order` in `role_grant_sql.ts`): delete and purge over both directions (`query_role_grant_offer_lock_for_account_removal`), a revoke before its grant update (`query_role_grant_offer_lock_for_revoke`, after the revokee's account, `query_account_lock_for_revoke` — so no offer is made in the window and the later supersedes write only held rows), scope teardown (which supersedes only the ids it locked; an offer made at the scope after that stays pending), the expiry sweep. One class order everywhere: accounts, then offers, then grants and actors; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
+- `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede (a recipient deleted in flight answers the dead credential's 401), and the offer-row lockers `query_role_grant_offer_lock_for_account_removal` / `_for_revoke` over `offer_rows_locked_in_id_order` (`role_grant_sql.ts`; §Row locks); error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
 - `auth/session_queries.ts` — server-side sessions (blake3-hashed), `create_capped_session` (the one session minter: the row, the cap's evictions, and the signed cookie value — Hono-free, so the bootstrap transaction mints through it; twin of the Rust `create_capped_session`), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required; returns the evicted sessions' ids — their token hashes — so the caller closes their connections after the commit), `query_session_cleanup_expired` (returns the swept sessions' ids for the same close — `cleanup_expired_sessions` is its caller). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`). `query_session_is_live(id, account_id)` is the re-read `account_token_create` runs after the account lock: the session that authorized the mint must still exist.
 - `auth/api_token_queries.ts` — token validation (`query_validate_api_token`, which records nothing) and the separate fire-and-forget usage record (`query_api_token_touch`, which the bearer leg runs only once the token's account is found live), `query_api_token_live_account` (the by-id, no-touch re-check read; shares the `API_TOKEN_IS_LIVE` predicate with the validate query so the two can't drift), IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required; returns the evicted tokens' ids for the same post-commit close).
 - `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
@@ -457,15 +457,14 @@ with `RequestContext.actor: null`.
 without touching the Hono context. Each transport binds the same failure to
 its wire shape: REST `c.json(body, status)`; HTTP RPC + WS fold into a
 JSON-RPC envelope where `error.message` is the reason string and
-`error.data: {reason, ...rest}` flattens diagnostic fields. The 500 reasons
-500 is `no_actors_on_account` (signup invariant violation: a live account
-with no active actor). The phase never reads the account again — it builds
-on the row the credential leg read — so an account deleted or purged after
-that read runs an account-grain handler on that row, as on the Rust spine.
-An actor-grain one finds no actor; the phase then reads the account once
-more, and a removed account answers the dead credential's 401
-(`authentication_required`), never the 500. `account_verify` re-reads the
-account live and answers the same 401 for one removed since.
+`error.data: {reason, ...rest}` flattens diagnostic fields. The one 500
+reason is `no_actors_on_account` (signup invariant violation: a live account
+with no active actor). The phase builds on the account row the credential leg
+read, so an account deleted or purged after that read runs an account-grain
+handler on that row, as on the Rust spine. An actor-grain one finds no actor,
+and the one read that tells the two cases apart answers a removed account
+with the dead credential's 401 (`authentication_required`). `account_verify`
+re-reads the account live and answers the same 401.
 
 **Production-middleware invariant.** No production middleware on the auth
 path populates `REQUEST_CONTEXT_KEY`; it sets only `RESOLVED_AUTH_KEY`. Test
@@ -479,6 +478,16 @@ reading test escape-hatch state.
 under `SESSION_TOKEN_KEY` (`hono_context.ts`, `'auth_session_id'`) and the
 session leg reads it there; `SessionOptions` carries no context key, so the two
 cannot disagree and the token cannot land on another spine key.
+
+### Row locks
+
+One class order in every transaction — accounts, then offers, then grants and
+actors — and id order within a class. Every writer of an account takes its row
+first (two mints of one account take turns there, so the caps hold); a
+multi-row write (credential deletes, offer cascades, the expiry sweeps) locks
+its rows in one id-ordered statement before writing. Each lock's strength and
+reason is on its query's TSDoc; the rule set: ../../../docs/security.md §Row
+Locks. `lock_pins.cross.test.ts` pins them on both spines (../../test/CLAUDE.md).
 
 ### Wire timestamp shape
 
@@ -715,7 +724,7 @@ authenticate.
 
 - `admin_account_list_action_spec` — read; input `{limit?, offset?, include_deleted?}`; output `{accounts, grantable_roles}`. On it and the other paged reads (`audit_log_list`, `audit_log_role_grant_history`, `role_grant_offer_history`) `limit` / `offset` declare `invalid_reason` `ERROR_LIMIT_INVALID` / `ERROR_OFFSET_INVALID` (`http/error_schemas.ts`), and `audit_log_list`'s `since_seq` / `outcome` `ERROR_SINCE_SEQ_INVALID` / `ERROR_OUTCOME_INVALID`: every refusal of the field carries it. `include_deleted` (default false) surfaces soft-deleted rows (with `account.deleted_at` set) for the admin UI's reactivation view.
 - `account_delete_action_spec` — mutation (soft delete); self-or-admin (`{account, actor}`, handler elevates to admin when `account_id` ≠ self); the self path is session-only, handler-enforced ahead of the target guards (an API or daemon token gets the dispatcher's `ERROR_CREDENTIAL_TYPE_REQUIRED` 403 via `credential_type_required_error`), while an admin deleting another account keeps any credential; input `{account_id?}`; output `{ok, deleted}`. Tombstones account + actor(s), supersedes every pending offer the account made and every pending offer made to it (`reason: 'account_deleted'`, an audit row each), revokes sessions/tokens, deletes the unclaimed invites the account issued (an `invite_delete` row each), emits `account_delete` + per-actor `actor_delete`. Role grants are kept — inert while the account is tombstoned. Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`) — both fail-loud with a failure-audit row.
-- `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. It first locks every account holding an unrevoked global admin plus its target, in one id-ordered statement (`query_account_lock_admins_for_purge` — its cascade writes other admins' grant rows, so it takes their accounts first, and purges take turns), then — for an admin target — the last-admin guard, then the account row (`query_account_lock_for_purge`), supersedes the offers the account made and those made to it (audited and notified, as `account_delete` does), deletes the unclaimed invites it issued, revokes its sessions and tokens (id-ordered, so the cascade deletes no credential row), then the cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
+- `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. Supersedes the offers the account made and those made to it (audited and notified, as `account_delete` does), deletes the unclaimed invites it issued, revokes its sessions and tokens, then the cascading delete (its locks: §Row locks); emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
 - `account_undelete_action_spec` — mutation (reactivation, inverse of soft delete); admin-only (`roles: ['admin']` — no self path, a tombstoned account can't authenticate); input `{account_id}`; output `{ok, undeleted}`. Clears the `deleted_at` tombstone on the account + its actor(s), emits `account_undelete` + per-actor `actor_undelete`. Restores the account, its actors and its role grants as they were; does not restore revoked sessions/tokens, superseded offers, or deleted invites.
 - `admin_session_list_action_spec` — read; input `{acting?}` (an omitted input reads as `{}`); output `{sessions}`.
 - `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
@@ -803,19 +812,13 @@ the list and history inputs read an omitted input as a fresh `{}`
   (`ERROR_CANNOT_REVOKE_KEEPER_ADMIN`, 403) and so is one whose revoke would
   leave no active admin account (`ERROR_CANNOT_REVOKE_LAST_ADMIN`, 403, under
   the locked count `query_count_active_accounts_with_global_role_locked`,
-  which leaves the revoked grant out; it takes the counted account, actor
-  and grant rows `FOR NO KEY UPDATE` in id order — conflicting with another
-  guard and every write that lowers the count, and not with the foreign-key
-  key shares of inserts naming those rows, which only add). Besides the
-  revokee's incoming sibling offers, the revoke supersedes every pending offer
-  the revokee's actor made (`query_role_grant_offer_supersede_outgoing`) —
-  `account_delete` / `account_purge` do the same for every actor of the account
-  (`reason: 'account_deleted'`, audited, each recipient notified), and both
-  also supersede every pending offer made TO the account
-  (`query_role_grant_offer_supersede_incoming`, same reason, each grantor
-  notified) — purge before its cascade, so those offers are audited, and then
-  gone from history with the account. Every supersede cascade returns — and
-  audits and notifies — its rows ordered by `created_at, id`.
+  which leaves the revoked grant out — §Row locks). Besides the revokee's
+  incoming sibling offers, the revoke supersedes every pending offer the
+  revokee's actor made (`query_role_grant_offer_supersede_outgoing`);
+  `account_delete` / `account_purge` supersede both directions for the whole
+  account (`reason: 'account_deleted'`). Every supersede cascade returns —
+  and audits and notifies — its rows ordered by `created_at, id`; who is
+  told: §WS notifications.
 - `role_grant_assign_action_spec` — global-admin-only immediate conferral (no
   consent step); input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?}`
   (the pair as on offer-create); output `{ok, role_grant_id}`. The handler:
@@ -905,21 +908,17 @@ Post-commit via `emit_after_commit` (see `http/CLAUDE.md` §Pending Effects):
 
 - Create — `role_grant_offer_received` → recipient.
 - Retract — `role_grant_offer_retracted` → recipient.
-- Accept — `role_grant_offer_accepted` → grantor + `_supersede` per sibling.
+- Accept — `role_grant_offer_accepted` → grantor; `_supersede` per sibling → its grantor (the caller's answer lists the siblings).
 - Decline — `role_grant_offer_declined` → grantor.
 - Revoke (`role_grant_revoke`) — `role_grant_revoked` → revokee + `_supersede` per superseded offer (the revokee's incoming siblings and its own outgoing offers), each to its grantor and its recipient.
 - Delete / purge (`account_delete`, `account_purge`) — `_supersede` (`account_deleted`) per superseded offer to the live party: the recipient of each offer the account made, the grantor of each offer made to it. The removed account hears nothing (its sockets close).
 - Self-service disable — `_supersede` per incoming sibling, to its grantor and to the caller (its answer lists no offers).
 
-`queue_supersede_notifications(ctx, offers, reason, audience)` sends them —
-`SupersedeAudience` names a `cause_id` for the grantor and for the recipient, or
-none for a party not told, each a `SupersedeCause` (an id the cascade names, or
-`from_actor`, the offer's own grantor actor) — in the cascade's row order, grantor before recipient within an offer; twin of the Rust helper. A
-party who took the action still hears a frame for an offer it is party to —
-only a removed account and an accept's own caller are left out. On a removal,
-a recipient's `cause_id` is the offer's `from_actor_id`, never the removed
-grantor's account id (a recipient sees actors, not accounts); a grantor's is
-the removed recipient's account, which its offer already names.
+`queue_supersede_notifications(ctx, offers, reason, audience)` sends them in
+the cascade's row order, grantor before recipient; the `SupersedeAudience`
+names the `cause_id` each told party gets (a recipient told of its grantor's
+removal gets the grantor's actor, never its account id — TSDoc on
+`SupersedeAudience`).
 
 Spec module is `auth/role_grant_offer_notifications.ts` —
 `RemoteNotificationActionSpec`s with `@fuzdev/fuz_schema` params schemas and
@@ -934,29 +933,19 @@ notification is `role_grant_revoked`, not the admin action's
 `role_grant_revoke`, so the two methods never collide. They never reach
 dispatch: an inbound frame for one is answered `method_not_found`. They are not SSE events; `role_grant_offer_notification_specs`
 holds them as `EventSpec`s for a consumer that broadcasts them on an SSE
-channel of its own. A handler sends through `ctx.notification_sender` with
-`queue_offer_notification(ctx, account_id, message)` or
-`queue_supersede_notifications(ctx, offers, reason, cause_id)` (twins of the
-Rust helpers of the same names), each queued post-commit. Under DEV,
-`perform_action` wraps the sender once per dispatch in
-`create_validated_notification_sender`, which checks each params object
-against its spec's `input` and logs a mismatch, sending it either way;
-production sends unchecked.
+channel of its own. Handlers send through `ctx.notification_sender`
+(`actions/CLAUDE.md` §Notification sender) with `queue_offer_notification` /
+`queue_supersede_notifications`, each queued post-commit.
 
-Deps: `RevokingActionFactoryDeps` — the sender is the dispatcher's, not the
-factory's.
+Deps: `RevokingActionFactoryDeps`.
 `role_grant_revoke` of a global grant queues a close of the revokee account's
 connections gated on the role (`queue_connection_close`, `{kind: 'role'}`),
 run after the transaction commits and independent of the audit row's
 announcement; the revocation guard repeats it on the announced row. A scoped revoke
 closes nothing — a role gate admits on global grants alone.
-`NotificationSender` (`actions/notification_sender.ts`) is the narrow
-structural capability (`send_to_account(account_id, message): number`);
-`ConnectionRegistry` satisfies it structurally. Target account travels via the
-send argument, not the payload — `revoked_by` is deliberately not in the
-`role_grant_revoked` payload (the revokee doesn't need to learn the admin's
-identity). On a server that mounts no WS endpoint the sender holds no
-registry, and a send reaches no one.
+Target account travels via the send argument, not the payload — `revoked_by`
+is deliberately not in the `role_grant_revoked` payload (the revokee doesn't
+need to learn the admin's identity).
 
 Options: `roles?: RoleRegistry` (drives admin-grant-path lookup),
 `default_ttl_ms?` (defaults to `ROLE_GRANT_OFFER_DEFAULT_TTL_MS` = 30 days),

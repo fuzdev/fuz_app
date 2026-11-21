@@ -764,27 +764,17 @@ Rust spine's `register_revocation_guard`.
 
 ## Notification sender (`actions/notification_sender.ts`)
 
-`NotificationSender` is the narrow capability a handler sends through —
-`send_to_account(account_id, message): number`, which a `ConnectionRegistry`
-satisfies. `AppDeps.notification_sender` is a `RealtimeNotificationSender`
-(`create_realtime_notification_sender`), the backend's one fan-out over every
-WebSocket registry it serves — twin of the Rust `backend.notification_sender()`.
-`create_app_backend` builds it empty; `create_app_server` adds every registry
-it mounts (`ws_endpoints`) and records each remover with its other releases,
-so a failed assembly or `close` leaves the fan-out where it started. Membership
-is by reference: two endpoints sharing one registry are one member, and a
-socket hears a notification once. A member that throws doesn't stop the
-others; the first error is rethrown after all are tried.
-
-Both dispatchers take it as a required option (`create_rpc_endpoint`,
-`register_action_ws`) and `perform_action` puts it on every `ActionContext`, so
-an action sends to an account's sockets whichever transport it ran on, and no
-factory takes a sender. With no WS endpoint mounted the fan-out is empty and a
-send reaches no one. A hand mount passes `backend.deps.notification_sender`
-(or `noop_notification_sender`) and adds its own registry to it —
-`register_action_ws` doesn't. Sends are post-commit (`emit_after_commit`);
-the role-grant-offer ones go through `queue_offer_notification` /
-`queue_supersede_notifications` (`auth/role_grant_offer_notifications.ts`).
+`NotificationSender` (`send_to_account(account_id, message): number`, which a
+`ConnectionRegistry` satisfies) is what a handler sends through, as
+`ctx.notification_sender` on every `ActionContext`, so no factory takes one.
+`AppDeps.notification_sender` is the backend's `RealtimeNotificationSender`,
+one fan-out over every WS registry (twin of the Rust
+`backend.notification_sender()`); `create_app_server` adds each registry it
+mounts and removes it on `close` or a failed assembly. Both dispatchers
+require it; a hand mount passes `backend.deps.notification_sender` (or
+`noop_notification_sender`) and adds its own registry
+(../../../docs/usage.md §WebSocket Endpoint). Membership and failure rules:
+TSDoc. The role-grant-offer sends: `auth/CLAUDE.md` §WS notifications.
 
 ## WebSocket endpoints
 

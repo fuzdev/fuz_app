@@ -363,21 +363,10 @@ to the copy the Rust spine embeds, failing when the checkout the stub builds
 from lacks one
 — all under `npm run test:cross:parity`.
 `lock_pins.cross.test.ts` is the local gate for the row locks, on both spines
-at once: each case plays the other transaction itself over a raw `pg`
-connection, leaves it open, sends the request, commits once the request waits
-on a lock or has answered, and asserts the final state — never a wait or a
-duration. Its groups: a credential mint across a password change and a delete;
-an offer and an invite across a delete of a party; the last-admin guard per
-pair of removals and an admin-offer accept against a removal of its grantor,
-in both orders; the session and token caps; a purge across each writer of the
-account; each multi-row credential delete's id order, its rows seeded
-against id order; and the offer accept — sibling accepts, an admin recipient
-sorting either side of its grantor, a removal of either party, the granted-by
-edge — every bulk offer write's id order; a revoke across a re-offer to its revokee;
-and a purge across another removal's guard, an offer create, and another
-purge. It runs only here, where both spines are on Postgres — the
-single-backend projects exclude it, and each case asserts its backend's
-database URL is Postgres.
+at once: each case plays the other transaction over a raw `pg` connection,
+sends the request, and asserts the final state — never a wait or a duration;
+its module doc lists the groups. It runs only here, where both spines are on
+Postgres; the single-backend projects exclude it.
 The differential's suite composition is `spine_differential.ts`
 (`describe_spine_differential_suites`), shared with a second dual-spawn
 project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`

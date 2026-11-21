@@ -304,9 +304,7 @@ legitimate operator.
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached, and the connections it opened are
   closed once the login commits. Logins of one account take turns on the
-  account row (`FOR NO KEY UPDATE`), so concurrent logins never overshoot the
-  cap, and every multi-row session delete — the eviction, the revoke-alls, the
-  expiry sweep — locks its rows in id order, so two never deadlock
+  account row, so concurrent logins never overshoot the cap (§Row Locks)
 - **Password change**: Revokes all sessions and API tokens — every session
   of the account, not only the one the change was made on — and clears the
   session cookie, so a compromised credential does not persist after
@@ -375,7 +373,7 @@ accepted spelling, on both spines.
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached, and the connections it opened
   are closed once the creation commits. Token creations take turns with each
-  other and with logins as above, and token deletes lock in id order
+  other and with logins (§Row Locks)
 
 ### Token scoping
 
@@ -1643,7 +1641,7 @@ the admin count and the target's own admin check both filter `deleted_at IS NULL
 so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
 can itself be removed once another active admin exists. The count locks the rows
 it counted (`FOR NO KEY UPDATE`), so two removals racing for the last two admins
-serialize and the second is refused (§Last-Admin Guard Locks Its Count).
+serialize and the second is refused (§Row Locks).
 
 **An undelete restores the account, never a credential.** `account_undelete`
 clears the tombstones of the account and its actors; the sessions and API
@@ -1886,9 +1884,7 @@ Admin surface hardening on the offer flow:
   `role_grant_offer_not_authorized`), and accept refuses a `keeper` offer, a
   scoped `admin` offer, or a builtin offer whose grantor no longer holds an
   active global `admin` — re-checked at mint time under the grantor's
-  account lock (`FOR SHARE`), which every removal of a global admin takes
-  first (a revoke locks its revokee's account, a delete writes it, a purge
-  locks every admin's), the
+  account lock (§Row Locks), the
   refusal audited as a failed `role_grant_offer_accept` and the offer left
   pending. `role_grant_assign` also re-checks the global admin grant in-handler
   behind the dispatcher gate, so a scoped `admin` can't assign itself a global
@@ -1936,11 +1932,10 @@ closes the revoke-bypass path:
 - On `account_delete` / `account_purge`, every pending offer any of the
   account's actors made is marked superseded (`reason: 'account_deleted'`,
   `cause_id: <account id>`; purge does it before its cascade deletes them).
-  Both supersede the pending offers made TO the account the same way, so an
-  offer does not wait out a delete and come back with the undelete, and a
-  purge leaves an audit row for each; the live party to each offer — the
-  recipient of one the account made, the grantor of one made to it — is
-  notified; and an offer cannot be created to a deleted account or actor —
+  Both supersede the pending offers made TO the account the same way —
+  purge before its cascade, so each leaves an audit row — so an offer does
+  not wait out a delete and come back with the undelete; and an offer cannot
+  be created to a deleted account or actor —
   the answer is the one a missing account gets, to a non-admin grantor too.
 - On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
   via `query_role_grant_revoke_for_scope`), every pending offer at the scope
@@ -1957,7 +1952,8 @@ audited.
 
 **Post-commit WS fan-out**: the JSON-RPC notifications (`role_grant_offer_received`
 / `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`;
-a supersede reaches both live parties to the offer, never a removed account)
+a supersede reaches each live party to the offer but the accepting caller,
+whose answer lists it, and never a removed account)
 ship alongside the above via the action context's `notification_sender`, scheduled
 through `emit_after_commit` so sends are strictly post-commit **and discarded if
 the handler's transaction rolls back** — a rolled-back transaction cannot leak a
@@ -2721,6 +2717,50 @@ action, `admin_session_list` RPC action (all active sessions with
 usernames), and the optional `GET /audit/stream` SSE endpoint for
 realtime feeds.
 
+## Row Locks
+
+Every transaction takes rows in one class order — accounts, then offers,
+then grants and actors — and within a class in id order, so no two
+transactions meet the same rows in opposite orders.
+
+- **Accounts first.** Every writer of an account takes its row before the
+  rows that hang off it: a login and a token creation through their
+  re-check (`FOR NO KEY UPDATE`, so two mints of one account take turns and
+  a cap never counts stale), a password change and a delete through their
+  write, a revoke through its revokee's row (`query_account_lock_for_revoke`),
+  an offer or invite create through `query_account_lock_live_many`
+  (`FOR SHARE`), an accept through both parties' rows, lower id first
+  (`query_account_lock_for_offer_accept`). A purge takes every admin's
+  account and its own in one id-ordered statement
+  (`query_account_lock_admins_for_purge` — its cascade writes other admins'
+  grant rows), then its own `FOR UPDATE` (`query_account_lock_for_purge`).
+- **Multi-row writes lock first, in id order.** Every multi-row delete of
+  `auth_session` or `api_token` rows (the revoke-alls, the cap evictions,
+  the expiry sweep) and every transaction writing more than one offer row
+  (an accept's claim, a delete, a purge, a revoke, a scope teardown, the
+  expiry sweep) locks those rows in one id-ordered statement first and
+  writes only rows it holds: a scope teardown supersedes only the offers it
+  locked, and a purge revokes the account's credentials before its
+  `DELETE`, so the cascade finds none to lock.
+- **A grantor's authority is read under its account row.** An accept of a
+  builtin offer reads the grantor's global `admin` under the grantor's
+  `FOR SHARE`, which every removal of a global admin takes first.
+
+### Last-admin guard
+
+The last-admin guards (`ERROR_CANNOT_DELETE_LAST_ADMIN` on `account_delete` /
+`account_purge`, `ERROR_CANNOT_REVOKE_LAST_ADMIN` on `role_grant_revoke`) count
+the active admins with `SELECT … FOR NO KEY UPDATE` inside the removal's
+transaction, locking the counted account, actor and grant rows, in that order
+and in id order. Two concurrent removals targeting the last two active admins
+serialize: the second waits for the first to commit, re-reads the rows it
+changed, counts one, and is refused. The lock conflicts with another guard and
+with every write that can lower the count (a revoke's or a soft delete's
+`UPDATE`, a purge's `DELETE`), and not with the foreign-key key share of an
+insert naming a counted row, which can only add an admin — the count fails
+closed. No web path grants admin back once the last active admin is gone, so
+the guard holds as an invariant rather than a recoverable foot-gun stop.
+
 ## Investigated and Ruled Out
 
 - **CSRF** — covered by `SameSite=Strict`, JSON-only `POST`s, and Origin
@@ -2780,54 +2820,6 @@ brute-forcing immediately after a restart without waiting for the previous
 window to expire. Use nginx-level `limit_req` as a complementary defense —
 nginx rate limit state persists across app restarts and provides IP-based
 protection independent of the application.
-
-### Last-Admin Guard Locks Its Count
-
-The last-admin guards (`ERROR_CANNOT_DELETE_LAST_ADMIN` on `account_delete` /
-`account_purge`, `ERROR_CANNOT_REVOKE_LAST_ADMIN` on `role_grant_revoke`) count
-the active admins with `SELECT … FOR NO KEY UPDATE` inside the removal's
-transaction, locking every counted `role_grant`, `actor`, and `account` row.
-Two concurrent removals targeting the last two active admins serialize: the
-second waits for the first to commit, re-reads the rows it changed, counts
-one, and is refused. The strength is the weakest that conflicts with every
-write that can lower the count — another guard, a revoke's or a soft delete's
-`UPDATE`, a purge's `DELETE`, an accept's `FOR SHARE` on its grantor's account row.
-What it does not block is the foreign-key key share an insert takes on a row
-it names (a session, a grant, an offer, a `*_by` column): such a write can only
-add an admin, so a count that misses one refuses a removal it could have
-allowed — it fails closed — and a guard that blocked those inserts deadlocked
-an admin-offer accept against a removal of its grantor.
-The count locks its rows in id order — account, then actor, then grant — the
-order every multi-account locker takes account rows in
-(`query_account_lock_live_many`, offer-create's lock on its grantor and
-recipient, an accept's lock on both parties), so an offer between two admins
-and an admin's removal never wait on each other in opposite orders.
-
-Every transaction takes rows in one class order — accounts, then offers, then
-grants and actors — and within a class in id order: an accept locks its two
-parties' accounts lower id first, then claims its offer and its pending
-siblings in one id-ordered statement; a delete, a purge, a revoke, a scope
-teardown and the expiry sweep lock every offer row they will write in one
-id-ordered statement before writing any. Two sibling accepts take turns on the
-recipient's account, and a removal of either party waits at its first
-statement, and so does a revoke: it locks its revokee's account before the
-offers it supersedes, so no offer is made in the window between that lock
-and its supersede. A scope teardown supersedes only the offers it locked;
-one made at the scope after that stays pending.
-No web path grants admin back once the last active admin is gone, so the guard
-holds as an invariant rather than a recoverable foot-gun stop.
-
-Every writer of an account takes the account row before the rows that hang
-off it — a mint, a password change and a delete through their first write
-or lock, a purge through `query_account_lock_admins_for_purge` (every
-account holding an unrevoked global admin, and its target, in one id-ordered
-statement — its cascade writes other admins' grant rows, so it takes their
-accounts first) and then, after its guard (an admin target's only),
-`query_account_lock_for_purge`
-(`FOR UPDATE`, tombstoned or not). A purge then revokes the
-account's sessions and tokens in id order before its `DELETE`, so the
-cascade, which deletes in whatever order the plan walks, finds no
-credential row to lock.
 
 ### PostgreSQL Error Code Detection
 

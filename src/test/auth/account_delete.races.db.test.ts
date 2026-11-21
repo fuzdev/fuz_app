@@ -399,7 +399,7 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				[b, a, 'guard_third_2']
 			] as const) {
 				const removed = await s.test_app.create_account({ username: third, roles: [ROLE_ADMIN] });
-				// Another holder of the recipient's row (a login's `FOR SHARE`) makes the
+				// Another holder of the recipient's row (an offer create's `FOR SHARE`) makes the
 				// guard of the third admin's delete stop at that row while holding the
 				// rows it locked before it — the grantor's, when it reaches the grantor
 				// first. The offer then runs into the guard. Locked in the guard's order,
