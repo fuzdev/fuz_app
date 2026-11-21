@@ -13,9 +13,9 @@
 import { assert, test } from 'vitest';
 
 import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	query_create_role_grant,
-	query_revoke_role_grant,
 	query_role_grant_find_active_for_actor
 } from '#lib/auth/role_grant_queries.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';

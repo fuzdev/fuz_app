@@ -118,6 +118,17 @@ describe_db('account removal deletes unclaimed invites', (get_db) => {
 						(e.metadata as { invite_id?: string }).invite_id === invite.id
 				);
 				assert.strictEqual(rows.length, 1, `${spec.method}: one invite_delete row`);
+				// the remover's row, as an `invite_delete` call writes it
+				assert.strictEqual(
+					rows[0]!.actor_id,
+					test_app.backend.actor.id,
+					`${spec.method}: actor_id`
+				);
+				assert.strictEqual(
+					rows[0]!.account_id,
+					test_app.backend.account.id,
+					`${spec.method}: account_id`
+				);
 			}
 			assert.isTrue(await exists(claimed.id), `${spec.method}: the claimed invite stays`);
 		}

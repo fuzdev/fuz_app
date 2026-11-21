@@ -79,7 +79,8 @@ import {
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
 	ROLE_GRANT_OFFER_DEFAULT_TTL_MS,
-	to_role_grant_offer_json
+	to_role_grant_offer_json,
+	type SupersededOffer
 } from './role_grant_offer_schema.ts';
 import {
 	query_role_grant_offer_create,
@@ -97,21 +98,16 @@ import {
 	RoleGrantOfferExpiredError,
 	RoleGrantOfferNotFoundError,
 	RoleGrantOfferSelfTargetError,
-	query_role_grant_offer_lock_for_revoke,
-	query_role_grant_offer_supersede_outgoing
+	query_revoke_role_grant
 } from './role_grant_offer_queries.ts';
 import {
 	query_account_has_active_global_role,
 	query_account_has_global_role,
 	query_count_active_accounts_with_global_role_locked,
 	query_create_role_grant,
-	query_role_grant_find_active_role_for_actor,
-	query_revoke_role_grant
+	query_role_grant_find_active_role_for_actor
 } from './role_grant_queries.ts';
-import {
-	query_account_lock_for_revoke,
-	query_active_actors_by_account
-} from './account_queries.ts';
+import { query_active_actors_by_account } from './account_queries.ts';
 import type { Actor } from './account_schema.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import {
@@ -129,6 +125,7 @@ import {
 	build_role_grant_revoked_notification,
 	queue_offer_notification,
 	queue_supersede_notifications,
+	type RoleGrantOfferSupersedeParams,
 	type SupersedeCause
 } from './role_grant_offer_notifications.ts';
 import {
@@ -176,6 +173,44 @@ import {
 } from './role_grant_offer_action_specs.ts';
 
 /**
+ * Emit one `role_grant_offer_supersede` audit row per offer a cascade ended —
+ * the revokes (`role_grant_revoke` and the self-service disable, both
+ * `'role_grant_revoked'` with the revoked grant as `cause_id`) and account
+ * removal (`'account_deleted'`, the removed account). The acting pair is the
+ * caller's; the target pair is the offer's recipient (`to_account_id`, and
+ * `to_actor_id` when the offer named an actor). Twin of the Rust
+ * `emit_supersede_audits`.
+ *
+ * @param ctx - the handler context; the rows are the caller's
+ * @param audit - the emitter
+ * @param superseded - the offers the cascade ended
+ * @param reason - why they were superseded
+ * @param cause_id - the row that caused it
+ */
+export const emit_supersede_audits = async (
+	ctx: ActionActorContext,
+	audit: AuditEmitter,
+	superseded: ReadonlyArray<SupersededOffer>,
+	reason: RoleGrantOfferSupersedeParams['reason'],
+	cause_id: Uuid
+): Promise<void> => {
+	for (const offer of superseded) {
+		await audit.emit_role_grant_target(ctx, ctx.auth, {
+			event_type: 'role_grant_offer_supersede',
+			target_account_id: offer.to_account_id,
+			target_actor_id: offer.to_actor_id,
+			metadata: {
+				offer_id: offer.id,
+				role: offer.role,
+				scope_id: offer.scope_id,
+				reason,
+				cause_id
+			}
+		});
+	}
+};
+
+/**
  * Authorization callback for `role_grant_offer_create` and `role_grant_assign`.
  * Returns `true` to allow, `false` to reject (handler converts to `forbidden`
  * with `role_grant_offer_not_authorized`).
@@ -187,6 +222,10 @@ import {
  * with no offer — runs it too, so a policy over which grants may exist (a
  * role that must be scoped, a scope that must be real) holds on both paths.
  * Twin of the Rust `OfferCreateAuthorize`.
+ *
+ * An offer authorized by a scoped grant must stay at that grant's scope: a
+ * scope teardown (`query_role_grant_revoke_for_scope`) supersedes only that
+ * scope's offers, so a revokee's offers elsewhere survive it.
  *
  * `ctx` is the request's: both verbs have side effects, so `ctx.db` is the
  * request transaction, and a callback needing the database (a scope-existence
@@ -794,18 +833,10 @@ export const create_role_grant_offer_actions = (
 			}
 		}
 
-		// The revokee's account row, then every offer the revoke supersedes — the
-		// revokee's incoming siblings and its outgoing offers — in one statement in
-		// id order, before the grant is touched (`query_account_lock_for_revoke`
-		// and `query_role_grant_offer_lock_for_revoke` have why). After the guard,
-		// which holds an admin revokee's row already.
-		await query_account_lock_for_revoke(ctx, input.actor_id);
-		await query_role_grant_offer_lock_for_revoke(
-			ctx,
-			input.actor_id,
-			role_grant_row.role,
-			role_grant_row.scope_id
-		);
+		// The revoke ends the revokee's incoming siblings and every offer its
+		// actor made, taking the revokee's account row and then those offers
+		// before the grant (`query_revoke_role_grant` has the order). After the
+		// guard, which holds an admin revokee's row already.
 		const result = await query_revoke_role_grant(
 			ctx,
 			input.role_grant_id,
@@ -818,13 +849,6 @@ export const create_role_grant_offer_actions = (
 			// the IDOR check and the UPDATE.
 			throw jsonrpc_errors.not_found('role_grant', { reason: ERROR_ROLE_GRANT_NOT_FOUND });
 		}
-		// The revokee's own pending offers end with the grant: an offer records
-		// no authority, so one made under this grant would still confer on
-		// accept. Every outgoing offer of the actor goes, superseded like the
-		// revokee's incoming siblings (same reason, same cause, same fan-out).
-		result.superseded_offers.push(
-			...(await query_role_grant_offer_supersede_outgoing(ctx, [input.actor_id]))
-		);
 		// Close the revokee's connections gated on the role once the revoke has
 		// committed — queued, so never before the commit or on rollback, and not
 		// riding on the audit row's announcement below (the revocation guard
@@ -849,24 +873,14 @@ export const create_role_grant_offer_actions = (
 				reason: input.reason ?? undefined
 			}
 		});
-		// Supersede cascade — the recipient is known (`offer.to_account_id`),
-		// so populate `target_account_id` rather than leaving it null;
-		// `target_actor_id` inherits the offer's `to_actor_id` (actor-grain
-		// when the superseded offer was actor-targeted, null otherwise).
-		for (const offer of result.superseded_offers) {
-			await audit.emit_role_grant_target(ctx, auth, {
-				event_type: 'role_grant_offer_supersede',
-				target_account_id: offer.to_account_id,
-				target_actor_id: offer.to_actor_id,
-				metadata: {
-					offer_id: offer.id,
-					role: offer.role,
-					scope_id: offer.scope_id,
-					reason: 'role_grant_revoked',
-					cause_id: result.id
-				}
-			});
-		}
+		// Supersede cascade — one row per offer the revoke ended.
+		await emit_supersede_audits(
+			ctx,
+			audit,
+			result.superseded_offers,
+			'role_grant_revoked',
+			result.id
+		);
 
 		queue_offer_notification(
 			ctx,

@@ -39,6 +39,7 @@ import type {
 import { query_audit_log } from './audit_log_queries.ts';
 import {
 	query_account_lock_for_offer_accept,
+	query_account_lock_for_revoke,
 	query_account_lock_live_many
 } from './account_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
@@ -944,9 +945,9 @@ export const query_accept_offer = async (
  *
  * An offer carries no record of the authority it was made under, so one
  * outliving that authority would still confer its role on accept. Revoking a
- * grant (`role_grant_revoke`, the revokee's actor) and removing an account
- * (`account_delete` / `account_purge`, every actor of the account) end the
- * grantor's outgoing pending offers in the same transaction. Each row carries
+ * grant (`query_revoke_role_grant`, the revokee's actor) and removing an
+ * account (`account_delete` / `account_purge`, every actor of the account) end
+ * the grantor's outgoing pending offers in the same transaction. Each row carries
  * the grantor's `from_account_id`, as every supersede cascade's does; the
  * caller emits a `role_grant_offer_supersede` audit event per entry and
  * queues its notifications (`queue_supersede_notifications`). The rows are
@@ -1057,7 +1058,7 @@ export const query_role_grant_offer_lock_for_account_removal = async (
 };
 
 /**
- * Lock every pending offer `role_grant_revoke` supersedes — the revokee
+ * Lock every pending offer a revoke supersedes (`query_revoke_role_grant`) — the revokee
  * account's incoming offers of the revoked grant's role and scope, and every
  * offer the revokee's actor made — in one statement, in id order.
  *
@@ -1092,4 +1093,119 @@ export const query_role_grant_offer_lock_for_revoke = async (
 		 FOR UPDATE`,
 		[actor_id, role, scope_id]
 	);
+};
+
+/** Result of `query_revoke_role_grant` — the revoked role_grant plus every pending offer the revoke superseded. */
+export interface RevokeRoleGrantResult {
+	id: Uuid;
+	role: string;
+	scope_kind: string | null;
+	scope_id: Uuid | null;
+	/**
+	 * The pending offers the revoke ended: the revokee account's incoming
+	 * offers of the revoked grant's `(role, scope)`, then every offer the
+	 * revokee's actor made. Each entry carries its grantor's `from_account_id`
+	 * so callers can fan out `role_grant_offer_supersede` notifications without
+	 * a second round-trip. The caller emits a `role_grant_offer_supersede`
+	 * audit event per entry (with `reason: 'role_grant_revoked'` and
+	 * `cause_id: <revoked role_grant id>`) and queues its notifications
+	 * (`queue_supersede_notifications`).
+	 */
+	superseded_offers: Array<SupersededOffer>;
+}
+
+/**
+ * Revoke a role_grant by id, constrained to a specific actor, and end the
+ * pending offers the grant stood behind — the one supersede rule every revoke
+ * follows, the admin `role_grant_revoke`, a self-service disable, and a
+ * consumer's direct call alike.
+ *
+ * Requires `actor_id` to prevent cross-account revocation (IDOR guard).
+ * Returns `null` if the role_grant is not found, already revoked, or belongs
+ * to a different actor.
+ *
+ * Two sets of offers end with the grant, in the same transaction:
+ *
+ * - the revokee account's pending offers of the grant's `(role, scope)` — an
+ *   offer accepted after the revoke would hand the role straight back;
+ * - every pending offer the revokee's actor made, whatever its role — an
+ *   offer records no authority, so one made under this grant would still
+ *   confer on accept.
+ *
+ * Locks follow the class order (accounts, then offers, then grants): the
+ * revokee's account row (`query_account_lock_for_revoke`), which keeps any new
+ * offer to or from the account out and any accept by it waiting, then both
+ * sets of offers in one id-ordered statement
+ * (`query_role_grant_offer_lock_for_revoke`), then the grant's update — an
+ * accept claims its offers before it inserts its grant, and that insert waits
+ * on an uncommitted update of the same grant, so the grant first and the
+ * offers second would close a cycle. The two supersedes then write only rows
+ * the transaction holds. Twin of the Rust
+ * `fuz_auth::role_grant_offer_queries::query_revoke_role_grant`.
+ *
+ * @param deps - query dependencies (must be the revoke's transaction)
+ * @param role_grant_id - the role_grant to revoke
+ * @param actor_id - the actor that must own the role_grant
+ * @param revoked_by - the actor who revoked it (for audit trail)
+ * @param reason - optional free-form reason, stamped on `role_grant.revoked_reason` and surfaced to the revokee notification.
+ * @mutates `role_grant` row - sets `revoked_at`, `revoked_by`, and `revoked_reason`
+ * @mutates `role_grant_offer` rows - stamps `superseded_at` on every pending incoming sibling for the same `(account, role, scope)` and every pending offer from `actor_id`
+ */
+export const query_revoke_role_grant = async (
+	deps: QueryDeps,
+	role_grant_id: Uuid,
+	actor_id: Uuid,
+	revoked_by: Uuid | null,
+	reason?: string | null
+): Promise<RevokeRoleGrantResult | null> => {
+	await query_account_lock_for_revoke(deps, actor_id);
+	// the role and scope name the offers to lock; written once with the grant
+	const target = await deps.db.query_one<{ role: string; scope_id: Uuid | null }>(
+		`SELECT role, scope_id FROM role_grant WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL`,
+		[role_grant_id, actor_id]
+	);
+	if (!target) return null;
+	await query_role_grant_offer_lock_for_revoke(deps, actor_id, target.role, target.scope_id);
+	const rows = await deps.db.query<{
+		id: Uuid;
+		role: string;
+		scope_kind: string | null;
+		scope_id: Uuid | null;
+	}>(
+		`UPDATE role_grant SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
+		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL
+		 RETURNING id, role, scope_kind, scope_id`,
+		[role_grant_id, actor_id, revoked_by ?? null, reason ?? null]
+	);
+	const revoked = rows[0];
+	if (!revoked) return null;
+	// CTE joins `actor` after the UPDATE so each superseded row carries the
+	// grantor's `account_id` — callers fan out `role_grant_offer_supersede`
+	// notifications to that account without a second round-trip. The match
+	// keys on `scope_id` only because the (scope_kind, scope_id) pair-CHECK
+	// makes scope_kind a function of scope_id; matching on both adds no
+	// new selectivity in v1.
+	const incoming = await deps.db.query<SupersededOffer>(
+		`WITH updated AS (
+			UPDATE role_grant_offer o
+			SET superseded_at = NOW()
+			WHERE ${offer_rows_locked_in_id_order(
+				'o',
+				`to_account_id = (SELECT account_id FROM actor WHERE id = $1)
+				  AND role = $2 AND scope_id IS NOT DISTINCT FROM $3 AND ${offer_pending_predicate('')}`
+			)}
+			-- raw columns; the outer grantor select formats them
+			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
+		)
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
+		[actor_id, revoked.role, revoked.scope_id]
+	);
+	const outgoing = await query_role_grant_offer_supersede_outgoing(deps, [actor_id]);
+	return {
+		id: revoked.id,
+		role: revoked.role,
+		scope_kind: revoked.scope_kind,
+		scope_id: revoked.scope_id,
+		superseded_offers: [...incoming, ...outgoing]
+	};
 };

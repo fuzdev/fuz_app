@@ -317,6 +317,108 @@ describe_db('self_service_role_actions', (get_db) => {
 			]);
 		});
 
+		test("revoke supersedes the caller's outgoing pending offers, whatever their role, as the admin revoke does", async () => {
+			// an offer records no authority, so one the caller made outlives the
+			// grant it was made under unless the revoke ends it — every revoke ends
+			// its revokee's outgoing offers, the self-service one included
+			const calls: Array<CapturedNotificationCall> = [];
+			const test_app = await create_test_app({
+				session_options,
+				create_route_specs: (ctx) => {
+					ctx.deps.notification_sender.add(create_capture_sender(calls));
+					return create_route_specs(ctx);
+				},
+				db: get_db()
+			});
+			const caller = await test_app.create_account({ username: 'set_outgoing_user' });
+			const recipient = await test_app.create_account({ username: 'set_outgoing_to' });
+			const set = (enabled: boolean) =>
+				rpc_call_for_spec({
+					app: test_app.app,
+					path: RPC_PATH,
+					spec: self_service_role_set_action_spec,
+					params: { role: 'teacher', enabled },
+					headers: caller.create_session_headers()
+				});
+			assert.ok((await set(true)).ok);
+			// another role than the revoked one: the rule is every outgoing offer
+			const outgoing = await query_role_grant_offer_create(
+				{ db: get_db() },
+				{
+					from_actor_id: caller.actor.id,
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() + 60_000)
+				}
+			);
+			// another grantor's offer to the same recipient is the control
+			const control = await query_role_grant_offer_create(
+				{ db: get_db() },
+				{
+					from_actor_id: test_app.backend.actor.id,
+					to_account_id: recipient.account.id,
+					role: ROLE_ADMIN,
+					expires_at: new Date(Date.now() + 60_000)
+				}
+			);
+
+			const res = await set(false);
+			assert.ok(res.ok, JSON.stringify(res));
+			assert.strictEqual(res.result.changed, true);
+
+			const revoke = await get_db().query_one<{ metadata: Record<string, unknown> | null }>(
+				`SELECT metadata FROM audit_log
+				 WHERE event_type = 'role_grant_revoke' AND account_id = $1
+				 ORDER BY seq DESC LIMIT 1`,
+				[caller.account.id]
+			);
+			const cause_id = revoke?.metadata?.role_grant_id;
+			assert.ok(typeof cause_id === 'string');
+			const rows = await get_db().query<{
+				outcome: string;
+				actor_id: string | null;
+				account_id: string | null;
+				target_account_id: string | null;
+				target_actor_id: string | null;
+				metadata: Record<string, unknown> | null;
+			}>(
+				`SELECT outcome, actor_id, account_id, target_account_id, target_actor_id, metadata
+				 FROM audit_log WHERE event_type = 'role_grant_offer_supersede'`
+			);
+			assert.deepStrictEqual(rows, [
+				{
+					outcome: 'success',
+					actor_id: caller.actor.id,
+					account_id: caller.account.id,
+					target_account_id: recipient.account.id,
+					target_actor_id: null,
+					metadata: {
+						offer_id: outgoing.id,
+						role: ROLE_ADMIN,
+						scope_id: null,
+						reason: 'role_grant_revoked',
+						cause_id
+					}
+				}
+			]);
+			const state = await get_db().query<{ id: string; superseded: boolean }>(
+				`SELECT id, superseded_at IS NOT NULL AS superseded FROM role_grant_offer
+				 WHERE id = ANY($1) ORDER BY id`,
+				[[outgoing.id, control.id]]
+			);
+			assert.deepStrictEqual(
+				Object.fromEntries(state.map((r) => [r.id, r.superseded])),
+				{ [outgoing.id]: true, [control.id]: false },
+				'the outgoing offer ends; the control stays pending'
+			);
+			// both parties, the grantor (the caller) first
+			const cause = { offer_id: outgoing.id, reason: 'role_grant_revoked', cause_id };
+			assert.deepStrictEqual(to_captured_supersedes(calls), [
+				{ account_id: caller.account.id, ...cause },
+				{ account_id: recipient.account.id, ...cause }
+			]);
+		});
+
 		test('revoke without prior grant returns changed:false and writes no audit row', async () => {
 			const test_app = await create_test_app({
 				session_options,

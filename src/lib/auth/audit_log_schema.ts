@@ -467,8 +467,20 @@ export const audit_metadata_schemas = Object.freeze({
 		email: meta(nullable(string), { description: 'Invited email address; null when not set.' }),
 		username: meta(nullable(string), { description: 'Invited username; null when not set.' })
 	}),
+	// A delete of an id naming no unclaimed invite writes an `outcome=failure`
+	// row with no `invite_id`: `reason` carries the failure category and
+	// `attempted_invite_id` the probed id.
 	invite_delete: loose_object({
-		invite_id: meta(Uuid, { description: 'Id of the deleted invite.' })
+		invite_id: meta(optional(Uuid), {
+			description: 'Id of the deleted invite. Omitted on `outcome=failure`.'
+		}),
+		reason: meta(optional(string), {
+			description: 'Failure category. Set only on `outcome=failure`.'
+		}),
+		attempted_invite_id: meta(optional(Uuid), {
+			description:
+				'Probed invite id when no unclaimed invite matched. Set only on `outcome=failure`.'
+		})
 	}),
 	// Account/actor deletion snapshots identity into metadata so the
 	// identity behind a now-orphaned audit id survives a purge (the

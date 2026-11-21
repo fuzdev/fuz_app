@@ -1922,8 +1922,9 @@ closes the revoke-bypass path:
   `(to_account, role, scope)` are marked superseded in the same
   transaction, with a `role_grant_offer_supersede` audit event
   (`reason: 'sibling_accepted'`, `cause_id: A.id`).
-- On revoke of a role_grant, every pending offer for the revoked
-  `(actor's account, role, scope)` is marked superseded in the same
+- On revoke of a role_grant — by an admin (`role_grant_revoke`) or by its
+  holder (`self_service_role_set` disabling a role) — every pending offer for
+  the revoked `(actor's account, role, scope)` is marked superseded in the same
   transaction (`reason: 'role_grant_revoked'`, `cause_id: <revoked role_grant id>`)
   — and so is every pending offer the revokee's actor **made**. An offer
   records no authority, so one made under the revoked grant would still confer

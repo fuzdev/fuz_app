@@ -12,8 +12,8 @@
 
 import { assert, test } from 'vitest';
 
-import { query_accept_offer } from '#lib/auth/role_grant_offer_queries.ts';
-import { query_create_role_grant, query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { query_accept_offer, query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import type { Db } from '#lib/db/db.ts';
 import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { create_describe_db } from '#lib/testing/describe_db.ts';

@@ -55,6 +55,7 @@ import {
 	query_role_grant_offer_supersede_outgoing
 } from './role_grant_offer_queries.ts';
 import type { SupersededOffer } from './role_grant_offer_schema.ts';
+import { emit_supersede_audits } from './role_grant_offer_actions.ts';
 import {
 	queue_supersede_notifications,
 	type SupersedeAudience
@@ -357,6 +358,7 @@ export const create_admin_actions = (
 
 		await deps.audit.emit(ctx, {
 			event_type: 'invite_create',
+			actor_id: auth.actor.id,
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
 			metadata: { invite_id: invite.id, email, username }
@@ -379,10 +381,24 @@ export const create_admin_actions = (
 		const auth = ctx.auth;
 		const deleted = await query_invite_delete_unclaimed(ctx, input.invite_id);
 		if (!deleted) {
+			// The probe key is a UUID, so a failure row leaks nothing an admin's
+			// typo would (unlike `invite_create`'s email and username refusals,
+			// which write none), and a real admin aiming at a missing invite is
+			// forensic signal. Written through the pool, so it outlives the
+			// rollback this refusal causes. Twin of the Rust handler's row.
+			await deps.audit.emit(ctx, {
+				event_type: 'invite_delete',
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: { reason: ERROR_INVITE_NOT_FOUND, attempted_invite_id: input.invite_id }
+			});
 			throw jsonrpc_errors.not_found('invite', { reason: ERROR_INVITE_NOT_FOUND });
 		}
 		await deps.audit.emit(ctx, {
 			event_type: 'invite_delete',
+			actor_id: auth.actor.id,
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
 			metadata: { invite_id: input.invite_id }
@@ -455,20 +471,7 @@ export const create_admin_actions = (
 		superseded: ReadonlyArray<SupersededOffer>,
 		audience: SupersedeAudience
 	): Promise<void> => {
-		for (const offer of superseded) {
-			await deps.audit.emit_role_grant_target(ctx, ctx.auth, {
-				event_type: 'role_grant_offer_supersede',
-				target_account_id: offer.to_account_id,
-				target_actor_id: offer.to_actor_id,
-				metadata: {
-					offer_id: offer.id,
-					role: offer.role,
-					scope_id: offer.scope_id,
-					reason: 'account_deleted',
-					cause_id: target_account_id
-				}
-			});
-		}
+		await emit_supersede_audits(ctx, deps.audit, superseded, 'account_deleted', target_account_id);
 		queue_supersede_notifications(ctx, superseded, 'account_deleted', audience);
 	};
 
@@ -526,9 +529,10 @@ export const create_admin_actions = (
 	};
 
 	// Delete the unclaimed invites the removed account's actors issued, each
-	// audited as an `invite_delete` is. An invite records no authority, so one
-	// outliving its issuer's account would still admit a signup; deleted, it
-	// answers a signup as a revoked one does, and an undelete can't revive it.
+	// audited as an `invite_delete` call is — the remover's actor and account.
+	// An invite records no authority, so one outliving its issuer's account
+	// would still admit a signup; deleted, it answers a signup as a revoked one
+	// does, and an undelete can't revive it.
 	// A claimed invite is untouched.
 	const void_unclaimed_invites = async (
 		ctx: ActionActorContext,
@@ -541,6 +545,7 @@ export const create_admin_actions = (
 		for (const invite_id of invite_ids) {
 			await deps.audit.emit(ctx, {
 				event_type: 'invite_delete',
+				actor_id: ctx.auth.actor.id,
 				account_id: ctx.auth.account.id,
 				ip: ctx.client_ip,
 				metadata: { invite_id }

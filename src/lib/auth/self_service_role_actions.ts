@@ -51,7 +51,9 @@ import {
 } from './role_schema.ts';
 import { GRANT_PATH_SELF_SERVICE } from './grant_path_schema.ts';
 import type { RevokingActionFactoryDeps } from './deps.ts';
-import { query_create_role_grant, query_revoke_role_grant } from './role_grant_queries.ts';
+import { query_create_role_grant } from './role_grant_queries.ts';
+import { query_revoke_role_grant } from './role_grant_offer_queries.ts';
+import { emit_supersede_audits } from './role_grant_offer_actions.ts';
 import { is_role_grant_active } from './account_schema.ts';
 import { has_scoped_role } from './request_context.ts';
 import {
@@ -257,27 +259,20 @@ export const create_self_service_role_actions = (
 				self_service: true
 			}
 		});
-		// Supersede cascade — `query_revoke_role_grant` marks any pending offers
-		// for the same `(account, role, scope)` superseded as a side effect, and
-		// each gets its forensic row like the admin revoke's (empty in practice:
-		// offer creation gates on the role's `grant_paths`, so only a role that is
-		// both offerable and self-service-eligible has siblings). Both parties are
-		// told, as the admin revoke tells them: the recipient is the caller, but
-		// its answer lists no offers, so its other connections learn of them here.
-		for (const offer of result.superseded_offers) {
-			await deps.audit.emit_role_grant_target(ctx, auth, {
-				event_type: 'role_grant_offer_supersede',
-				target_account_id: offer.to_account_id,
-				target_actor_id: offer.to_actor_id,
-				metadata: {
-					offer_id: offer.id,
-					role: offer.role,
-					scope_id: offer.scope_id,
-					reason: 'role_grant_revoked',
-					cause_id: result.id
-				}
-			});
-		}
+		// Supersede cascade — the revoke ended the caller's pending offers of the
+		// role (only a role both offerable and self-service-eligible has any) and
+		// every offer the caller's actor made, whatever its role, as the admin
+		// revoke ends them (`query_revoke_role_grant`). Each gets its forensic row
+		// like the admin revoke's, and both parties of each are told: the caller
+		// is one party of every offer, but its answer lists none, so its other
+		// connections learn of them here.
+		await emit_supersede_audits(
+			ctx,
+			deps.audit,
+			result.superseded_offers,
+			'role_grant_revoked',
+			result.id
+		);
 		const revoked_grant: SupersedeCause = { kind: 'id', id: result.id };
 		queue_supersede_notifications(ctx, result.superseded_offers, 'role_grant_revoked', {
 			grantor: revoked_grant,

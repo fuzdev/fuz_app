@@ -45,6 +45,7 @@ import { conformance_actor_cases } from './conformance_actor_cases.ts';
 import { conformance_cell_cases } from './conformance_cell_cases.ts';
 import { ACTING_EXTRA_ACTOR_NAME, conformance_acting_cases } from './conformance_acting_cases.ts';
 import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
+import { describe_invite_audit_tests } from './invite_audit.ts';
 import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
 
 const handle = inject_backend_handle();
@@ -125,4 +126,5 @@ if (ws) {
 }
 
 describe_invite_duplicate_tests({ setup_test });
+describe_invite_audit_tests({ setup_test });
 describe_offer_cross_account_tests({ setup_test });

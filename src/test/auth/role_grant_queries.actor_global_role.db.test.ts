@@ -10,9 +10,9 @@ import { assert, test } from 'vitest';
 
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_account_soft_delete } from '#lib/auth/account_queries.ts';
+import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	query_create_role_grant,
-	query_revoke_role_grant,
 	query_actor_has_active_global_role
 } from '#lib/auth/role_grant_queries.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';

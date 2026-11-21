@@ -18,9 +18,9 @@
  *   on it.
  * - **Multi-row offer writes in id order** — the expiry sweep (no spine serves
  *   it over the wire) against a holder of the lowest of its rows.
- * - **Offers before grants** — `query_revoke_role_grant` (the revoke a
- *   self-service disable and a consumer call directly, without the handler's
- *   lock) and `query_role_grant_revoke_for_scope` lock the offers they
+ * - **Offers before grants** — `query_revoke_role_grant` (every revoke: the
+ *   admin handler's, a self-service disable's, a consumer's direct call) and
+ *   `query_role_grant_revoke_for_scope` lock the offers they
  *   supersede before they update a grant, so an accept holding its offer and
  *   then inserting the grant's successor never waits on their update.
  * - **The rows a revoke and a teardown write** — `query_revoke_role_grant`
@@ -44,11 +44,11 @@ import {
 	query_accept_offer,
 	query_role_grant_offer_sweep_expired,
 	RoleGrantOfferAlreadyTerminalError,
-	RoleGrantOfferRecipientNotActiveError
+	RoleGrantOfferRecipientNotActiveError,
+	query_revoke_role_grant
 } from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	query_count_active_accounts_with_global_role_locked,
-	query_revoke_role_grant,
 	query_role_grant_revoke_for_scope
 } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
@@ -381,11 +381,11 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 	});
 	// A re-offer to the revokee played: both parties' rows shared, as an offer
 	// create takes them; once the revoke waits, the upsert of the pending offer
-	// it refreshes. The query takes the revokee's row first (its callers but
-	// the spine's handler take no lock of their own), so it waits there and
-	// then supersedes the refreshed offer; one that takes no account row
-	// supersedes it before the upsert commits, which then writes a fresh pending
-	// offer after the revoke.
+	// it refreshes. The query takes the revokee's row first itself (an admin
+	// revoke's last-admin guard may already hold it), so it waits there and then
+	// supersedes the refreshed offer; one that takes no account row supersedes
+	// it before the upsert commits, which then writes a fresh pending offer
+	// after the revoke.
 	test("a revoke takes its revokee's account before its offers", async () => {
 		const db = get_db();
 		const g = await account(db, 'lo_rva_g');

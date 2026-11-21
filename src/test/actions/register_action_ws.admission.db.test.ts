@@ -51,7 +51,8 @@ import {
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { query_create_role_grant, query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import {
 	query_account_by_id,
 	query_account_soft_delete,

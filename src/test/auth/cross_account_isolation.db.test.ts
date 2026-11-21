@@ -27,9 +27,9 @@ import {
 	query_validate_api_token
 } from '#lib/auth/api_token_queries.ts';
 import { generate_api_token } from '#lib/auth/api_token.ts';
+import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	query_create_role_grant,
-	query_revoke_role_grant,
 	query_role_grant_find_active_for_actor
 } from '#lib/auth/role_grant_queries.ts';
 import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';

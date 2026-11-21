@@ -11,7 +11,6 @@ import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_purge_account } from '#lib/auth/account_queries.ts';
 import {
 	query_create_role_grant,
-	query_revoke_role_grant,
 	query_role_grant_by_id,
 	query_role_grant_find_active_for_actor,
 	query_role_grant_find_account_id_for_role,
@@ -20,7 +19,10 @@ import {
 	query_count_active_accounts_with_global_role_locked,
 	query_account_has_global_role
 } from '#lib/auth/role_grant_queries.ts';
-import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
+import {
+	query_role_grant_offer_create,
+	query_revoke_role_grant
+} from '#lib/auth/role_grant_offer_queries.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
 import {
