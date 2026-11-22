@@ -56,6 +56,7 @@ import {
 	assert_origin_carve_outs_valid,
 	freeze_origin_carve_outs
 } from '../auth/middleware.ts';
+import { create_request_tracker } from '../http/pending_effects.ts';
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.
@@ -230,7 +231,8 @@ export const create_stub_app_deps = (): AppDeps => ({
 	log: new Logger('test', { level: 'off' }),
 	audit: create_test_audit_emitter(),
 	connection_closer: create_realtime_closer(),
-	notification_sender: create_realtime_notification_sender()
+	notification_sender: create_realtime_notification_sender(),
+	request_tracker: create_request_tracker()
 });
 
 /** Options for `create_stub_app_backend`. */

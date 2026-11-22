@@ -51,6 +51,7 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const db = create_stub_db();
 
@@ -523,7 +524,8 @@ describe('the DEV error check outside DEV', () => {
 					db,
 					audit: create_audit_emitter({ db, log }),
 					connection_closer: create_realtime_closer(),
-					notification_sender: create_realtime_notification_sender()
+					notification_sender: create_realtime_notification_sender(),
+					request_tracker: create_request_tracker()
 				}
 			},
 			session_options: create_session_config('test_session'),

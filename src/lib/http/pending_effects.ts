@@ -265,8 +265,9 @@ export const flush_post_commit_effects = async (
  * that needs a write awaits it itself. Eager rejections are logged and passed
  * to `on_rejection` (the server's `on_effect_error`). The caller picks whether
  * to await the returned promise — HTTP awaits it in test mode only, WS awaits
- * it per frame after the reply is sent — and `create_app_server` tracks it
- * either way, so `AppServer.close` waits for it. Never rejects.
+ * it per frame after the reply is sent — and hands it to its request's
+ * `AcceptedRequest.finish` either way, so `AppServer.close` waits for it.
+ * Never rejects.
  *
  * @param pending_effects - the eager queue of in-flight pool writes
  * @param post_commit_effects - the deferred thunks queued by `emit_after_commit`
@@ -286,48 +287,138 @@ export const flush_request_effects = async (
 };
 
 /**
- * Every request's effect flush — an HTTP request's, whether or not its
- * response awaits it, and a WS message's, which runs after its reply is
- * sent — kept so `AppServer.close` can wait for them before the database
- * closes. One tracker per server, shared by every transport, so
- * a flush is tracked the same way whichever request started it. Its method
- * names match `AuditEmitter`'s, the other set the shutdown drain waits on.
+ * Every request the server accepted — an HTTP request, a WS message accepted
+ * for dispatch — held from acceptance until its handler has returned and its
+ * effect flush has settled, so `AppServer.close` can wait for both before the
+ * database closes. One tracker per backend (`AppDeps.request_tracker`), shared
+ * by every transport, so a request is held the same way whichever transport
+ * accepted it. Its `drain_inflight` / `inflight_count` match `AuditEmitter`'s,
+ * the other set the shutdown drain waits on.
+ *
+ * The flushes are held apart as well, for a drain that must not wait on a
+ * running handler — `_testing_drain_effects`, whose own request is one: a
+ * flush is tracked only once its handler has returned, so a drain waiting on
+ * flushes never waits on itself.
  */
-export interface RequestFlushTracker {
+export interface RequestTracker {
 	/**
-	 * Hold `flush` until it settles. `flush` must never reject —
-	 * `flush_request_effects` doesn't.
+	 * Hold a request from the moment it is accepted, before its handler runs.
+	 * Call before any work that can throw, and end it with
+	 * `AcceptedRequest.finish` on every path. Answers `null` once the tracker
+	 * is closed: the request is refused, never run.
 	 *
-	 * @mutates the tracker - adds `flush`, removed again as it settles
+	 * @mutates the tracker - adds the request, removed once it finishes and its flush settles
 	 */
-	track: (flush: Promise<void>) => void;
+	accept: () => AcceptedRequest | null;
 	/**
-	 * Wait until no tracked flush is left — not for a snapshot: a flush
-	 * tracked while waiting is awaited too. Never rejects.
+	 * Refuse every later `accept`, so nothing new starts against a database
+	 * about to close. Requests already held are kept and still drained.
+	 * Idempotent.
+	 */
+	close: () => void;
+	/**
+	 * Wait until no request is held — handler or flush — not for a snapshot:
+	 * a request accepted while waiting is awaited too. Never rejects.
+	 *
+	 * Never call it from inside a request: the caller is held, so it waits on
+	 * itself forever. A request awaits `drain_flushes` instead.
 	 */
 	drain_inflight: () => Promise<void>;
-	/** How many tracked flushes are still running. */
+	/** How many requests are held: a handler still running, or a flush. */
 	inflight_count: () => number;
+	/**
+	 * Wait until no flush is running — not for a snapshot, and never for a
+	 * handler still running. Never rejects. The one drain a request may await:
+	 * its own flush starts only after its handler returns.
+	 */
+	drain_flushes: () => Promise<void>;
+	/** How many flushes are running — of requests whose handler has returned. */
+	flush_count: () => number;
 }
 
-/** Create an empty `RequestFlushTracker`. */
-export const create_request_flush_tracker = (): RequestFlushTracker => {
-	const inflight: Set<Promise<void>> = new Set();
+/** A request `RequestTracker.accept` holds. */
+export interface AcceptedRequest {
+	/**
+	 * End the request once its handler has returned: it is released when
+	 * `flush` settles, at once with no flush. `flush` must never reject —
+	 * `flush_request_effects` doesn't. A second call does nothing.
+	 */
+	finish: (flush: Promise<void> | null) => void;
+}
+
+/** Create an empty, open `RequestTracker`. */
+export const create_request_tracker = (): RequestTracker => {
+	const requests: Set<Promise<void>> = new Set();
+	const flushes: Set<Promise<void>> = new Set();
+	// removed on either outcome, so a flush that rejects despite the contract
+	// can't wedge shutdown or surface as an unhandled rejection
+	const hold = (set: Set<Promise<void>>, promise: Promise<void>): void => {
+		set.add(promise);
+		const remove = (): void => {
+			set.delete(promise);
+		};
+		void promise.then(remove, remove);
+	};
+	// the removal reaction is registered first, so a settled promise is gone
+	// from its set by the time a pass resumes
+	const drain = async (set: Set<Promise<void>>): Promise<void> => {
+		while (set.size > 0) await Promise.allSettled(set);
+	};
+	let closed = false;
 	return {
-		track: (flush) => {
-			inflight.add(flush);
-			// removed on either outcome, so a flush that rejects despite the
-			// contract can't wedge shutdown or surface as an unhandled rejection
-			const remove = (): void => {
-				inflight.delete(flush);
+		accept: () => {
+			if (closed) return null;
+			let release!: () => void;
+			hold(
+				requests,
+				new Promise<void>((resolve) => {
+					release = resolve;
+				})
+			);
+			let finished = false;
+			return {
+				finish: (flush) => {
+					if (finished) return;
+					finished = true;
+					if (!flush) {
+						release();
+						return;
+					}
+					hold(flushes, flush);
+					void flush.then(release, release);
+				}
 			};
-			void flush.then(remove, remove);
 		},
-		drain_inflight: async () => {
-			// the removal reaction was registered first, so a settled flush is gone
-			// from the set by the time a pass resumes
-			while (inflight.size > 0) await Promise.allSettled(inflight);
+		close: () => {
+			closed = true;
 		},
-		inflight_count: () => inflight.size
+		drain_inflight: () => drain(requests),
+		inflight_count: () => requests.size,
+		drain_flushes: () => drain(flushes),
+		flush_count: () => flushes.size
+	};
+};
+
+/**
+ * A view of `parent` with its own `close`: `accept` refuses once the view is
+ * closed and otherwise holds the request on `parent`; the drains and counts
+ * are `parent`'s, so they cover every server on the backend, not only the
+ * requests this view accepted. One server's admission over its backend's tracker —
+ * `AppServer.close` closes its view, so the backend's tracker stays open for
+ * a server assembled on it later.
+ *
+ * @param parent - the tracker requests are held on
+ */
+export const create_request_tracker_view = (parent: RequestTracker): RequestTracker => {
+	let closed = false;
+	return {
+		accept: () => (closed ? null : parent.accept()),
+		close: () => {
+			closed = true;
+		},
+		drain_inflight: () => parent.drain_inflight(),
+		inflight_count: () => parent.inflight_count(),
+		drain_flushes: () => parent.drain_flushes(),
+		flush_count: () => parent.flush_count()
 	};
 };

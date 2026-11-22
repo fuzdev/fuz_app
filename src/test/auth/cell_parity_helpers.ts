@@ -50,7 +50,7 @@ export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpo
 			...create_all_cell_actions(ctx.deps, { roles: spine_roles }),
 			// `_testing_drain_effects` so the shared suite can call the audit
 			// barrier in-process too — over the tracked emitter below
-			create_testing_drain_effects_action(ctx.deps.audit)
+			create_testing_drain_effects_action(ctx.deps)
 		]
 	}
 ];

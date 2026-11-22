@@ -24,6 +24,7 @@ import { run_migrations, type MigrationNamespace, type MigrationResult } from '.
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_db, is_pg_database_url } from '../db/create_db.ts';
 import { DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS } from '../db/db_pg.ts';
+import { create_request_tracker } from '../http/pending_effects.ts';
 
 /**
  * Result of `create_app_backend()` — database metadata + deps bundle.
@@ -225,7 +226,8 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				log,
 				audit,
 				connection_closer: options.connection_closer ?? create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			}
 		};
 	} catch (err) {

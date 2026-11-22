@@ -34,6 +34,7 @@ import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { TEST_CONNECTION_IP, test_proxy_middleware } from '../rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './session_test_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -220,7 +221,8 @@ describe('account route audit logging', () => {
 				} as any,
 				audit: audit_log_capture.emitter,
 				connection_closer: create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			},
 			{
 				session_options,
@@ -402,7 +404,8 @@ describe('account route audit logging', () => {
 				},
 				audit: audit_log_capture.emitter,
 				connection_closer: create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			},
 			{
 				session_options,

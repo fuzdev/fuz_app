@@ -27,6 +27,7 @@ import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -50,7 +51,8 @@ const boot = async (overrides: Partial<AppServerOptions>): Promise<unknown> => {
 				db,
 				audit: create_audit_emitter({ db, log }),
 				connection_closer: create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			}
 		},
 		session_options: create_session_config('test_session'),

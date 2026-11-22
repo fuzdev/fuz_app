@@ -44,6 +44,7 @@ import {
 	MAX_INBOUND_DISPATCHES_PER_CONNECTION,
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
 	WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
+	WS_SHUTTING_DOWN_MESSAGE,
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '#lib/actions/ws_socket_session.ts';
@@ -73,7 +74,11 @@ import { all_role_grant_offer_action_specs } from '#lib/auth/role_grant_offer_ac
 import { role_grant_offer_notification_actions } from '#lib/auth/role_grant_offer_notifications.ts';
 import { ERROR_INSUFFICIENT_PERMISSIONS, ERROR_PARAMS_PROTO_KEY } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
+import {
+	create_request_tracker,
+	type EffectErrorContext,
+	type RequestTracker
+} from '#lib/http/pending_effects.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
@@ -187,6 +192,7 @@ const build_harness = async (opts: {
 	max_message_bytes?: number;
 	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 	notification_sender?: NotificationSender;
+	request_tracker?: RequestTracker | null;
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
 	const actions =
@@ -196,7 +202,7 @@ const build_harness = async (opts: {
 		notification_sender: opts.notification_sender ?? noop_notification_sender,
 		path: '/ws',
 		connection_closer: null,
-		request_flushes: null,
+		request_tracker: opts.request_tracker ?? null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		allowed_origins: [],
@@ -242,6 +248,33 @@ const parse_json = (s: string): any => JSON.parse(s);
 // --- tests ---------------------------------------------------------------
 
 describe('register_action_ws', () => {
+	test('a message arriving once its request tracker is closed is refused, never dispatched', async () => {
+		let calls = 0;
+		const request_tracker = create_request_tracker();
+		const h = await build_harness({
+			handlers: {
+				echo: (input) => {
+					calls++;
+					return { value: (input as { value: string }).value };
+				}
+			},
+			request_tracker
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'a' } });
+		assert.strictEqual(calls, 1);
+
+		request_tracker.close();
+		await h.on_message({ jsonrpc: '2.0', id: 2, method: 'echo', params: { value: 'b' } });
+		assert.strictEqual(calls, 1, 'dispatched after the tracker closed');
+		assert.deepStrictEqual(parse_json(h.fake.sends.at(-1)!), {
+			jsonrpc: '2.0',
+			id: 2,
+			error: { code: JSONRPC_ERROR_CODES.service_unavailable, message: WS_SHUTTING_DOWN_MESSAGE }
+		});
+		assert.strictEqual(request_tracker.inflight_count(), 0);
+	});
+
 	test('dispatches a valid request and returns the handler output', async () => {
 		const h = await build_harness({
 			handlers: {
@@ -369,7 +402,7 @@ describe('register_action_ws', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -930,7 +963,7 @@ describe('register_action_ws', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -959,7 +992,7 @@ describe('register_action_ws', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1084,7 +1117,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1142,7 +1175,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1195,7 +1228,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1222,7 +1255,7 @@ describe('register_action_ws max_connections_per_account', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1254,7 +1287,7 @@ describe('register_action_ws max_connections_per_account', () => {
 						action_account_rate_limiter: null,
 						path: '/ws',
 						connection_closer: null,
-						request_flushes: null,
+						request_tracker: null,
 						app: new Hono(),
 						upgradeWebSocket: stub.upgradeWebSocket,
 						allowed_origins: [],
@@ -1282,7 +1315,7 @@ describe('register_action_ws connection_closer', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: create_stub_upgrade().upgradeWebSocket,
 			allowed_origins: [],
@@ -1583,7 +1616,7 @@ describe('register_action_ws self-revocation', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -1759,7 +1792,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
-			request_flushes: null,
+			request_tracker: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			allowed_origins: [],
@@ -2327,7 +2360,7 @@ describe('register_action_ws rate limit', () => {
 					action_account_rate_limiter: null,
 					path: '/ws',
 					connection_closer: null,
-					request_flushes: null,
+					request_tracker: null,
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
 					allowed_origins: [],

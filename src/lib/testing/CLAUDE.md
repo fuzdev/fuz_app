@@ -1684,7 +1684,7 @@ Conventions that hold across them:
   | action | bundled | does |
   | --- | --- | --- |
   | `_testing_reset` | yes | the consumer's `reset_state(db)` first, on the same transaction (domain rows depend on auth rows); then every auth row wiped, `app_settings` and `bootstrap_lock` reset, a fresh keeper and any `extra_accounts` seeded through the in-process primitives |
-  | `_testing_drain_effects` | yes | answers `{ok: true}` once no audit pool write is in flight, writes started while it waits included — the barrier before an audit read (WS replies before its effects flush) |
+  | `_testing_drain_effects` | yes | answers `{ok: true}` once no request's effect flush (`deps.request_tracker`) and no audit pool write is in flight, those started while it waits included — never a handler still running, its own among them; the barrier before an audit or effect read (WS replies before its effects flush) |
   | `_testing_db_invariants` | yes | every row breaking a `DB_INVARIANTS` check, read after each test |
   | `_testing_mint_session` | yes | a backdated session row behind a valid cookie (the `expired_session` principal) |
   | `_testing_put_fact` | yes | seeds a fact, with an optional holder or external URL |

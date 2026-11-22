@@ -44,6 +44,7 @@ import {
 	test_proxy_middleware
 } from './rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './auth/session_test_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -203,7 +204,8 @@ const create_login_app = (
 			},
 			audit: create_test_audit_emitter(),
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		},
 		{
 			session_options,
@@ -1242,7 +1244,8 @@ const create_signup_app = (
 			},
 			audit: create_test_audit_emitter(),
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		},
 		{
 			session_options,

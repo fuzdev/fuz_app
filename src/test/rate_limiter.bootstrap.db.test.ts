@@ -36,7 +36,7 @@ import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import { Db } from '#lib/db/db.ts';
-import { flush_request_effects } from '#lib/http/pending_effects.ts';
+import { flush_request_effects, create_request_tracker } from '#lib/http/pending_effects.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -123,7 +123,8 @@ const create_bootstrap_app = async (
 			},
 			audit: extra?.create_audit?.(db) ?? create_test_audit_emitter(),
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		},
 		{
 			session_options,

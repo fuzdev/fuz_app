@@ -61,7 +61,7 @@ const build_ws_app = (db: Db, account_id: string) => {
 		action_account_rate_limiter: null,
 		path: '/api/ws',
 		connection_closer: null,
-		request_flushes: null,
+		request_tracker: null,
 		app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions: [heartbeat_action],

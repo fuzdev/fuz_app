@@ -56,6 +56,7 @@ import {
 	type BootstrapTokenStore
 } from '#lib/auth/bootstrap_token_store.ts';
 import { create_mock_runtime } from '#lib/runtime/mock.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -100,7 +101,8 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 			db,
 			audit: create_audit_emitter({ db, log }),
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		}
 	};
 	return { backend, ...base_config, ...overrides };

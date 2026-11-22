@@ -26,6 +26,7 @@ import {
 	type SessionOptions
 } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { HEALTH_PATH } from '#lib/http/health_schema.ts';
 import {
 	APP_SERVER_RATE_LIMITER_KEYS,
 	create_app_server,
@@ -461,6 +462,12 @@ describe('AppServer.close releases what assembly acquired', () => {
 
 		const second = await create_app_server(acquiring_options(harness.backend));
 		assert.deepStrictEqual(current(harness), assembled);
+		// the first server's close refused through its own view of the backend's
+		// request tracker, which the second server finds open
+		const health = (server: AppServer) =>
+			server.app.request(HEALTH_PATH, { headers: { host: 'localhost' } });
+		assert.strictEqual((await health(first)).status, 503);
+		assert.strictEqual((await health(second)).status, 200);
 		await second.close();
 		assert.deepStrictEqual(current(harness), harness.baseline);
 	});

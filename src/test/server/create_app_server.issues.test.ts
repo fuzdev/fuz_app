@@ -49,6 +49,7 @@ import { define_route } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -132,7 +133,8 @@ const create_app = async (dev: boolean) => {
 				db,
 				audit: create_audit_emitter({ db, log }),
 				connection_closer: create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			}
 		},
 		session_options: create_session_config('test_session'),

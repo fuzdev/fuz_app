@@ -94,6 +94,7 @@ import { create_realtime_notification_sender } from '#lib/actions/notification_s
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 /** Parse an allowlist the test knows is valid. */
 const parse_origins = (raw: string): Array<RegExp> => {
@@ -140,7 +141,8 @@ const create_test_setup = async (): Promise<{
 			db,
 			audit,
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		}
 	};
 	return { config: { backend, ...base_config }, audit };

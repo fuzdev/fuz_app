@@ -484,7 +484,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		connection_closer: null,
 		// the harness has no shutdown to drain a frame's flush for — each
 		// message's flush is awaited before its dispatch settles
-		request_flushes: null,
+		request_tracker: null,
 		receive_timeout,
 		log,
 		on_socket_open,

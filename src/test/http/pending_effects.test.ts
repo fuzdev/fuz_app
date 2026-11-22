@@ -20,11 +20,15 @@
  *    the flush), and the undefined-queue bare-harness guard. The
  *    integration coupling across both real dispatch sites lives in
  *    `pending_effects.rollback.db.test.ts`.
+ * 5. `create_request_tracker` — a request is held from `accept` until its
+ *    handler finishes and its flush settles; `drain_flushes` waits on the
+ *    flushes alone, never on a handler still running.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
+import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
@@ -32,7 +36,9 @@ import {
 	emit_after_commit,
 	dispatch_with_post_commit_rollback,
 	flush_pending_effects,
-	flush_post_commit_effects
+	flush_post_commit_effects,
+	create_request_tracker,
+	create_request_tracker_view
 } from '#lib/http/pending_effects.ts';
 
 const create_recording_logger = (): { log: Logger; errors: Array<Array<unknown>> } => {
@@ -308,5 +314,98 @@ describe('flush_pending_effects', () => {
 			errors.some((args) => args.includes(callback_error)),
 			'error log must include the callback error'
 		);
+	});
+});
+
+describe('create_request_tracker', () => {
+	test('holds a request from accept until its handler finishes and its flush settles', async () => {
+		const tracker = create_request_tracker();
+		const accepted = tracker.accept()!;
+		assert.strictEqual(tracker.inflight_count(), 1, 'held while the handler runs');
+		assert.strictEqual(tracker.flush_count(), 0, 'no flush before the handler returns');
+
+		let drained = false;
+		const draining = tracker.drain_inflight().then(() => {
+			drained = true;
+		});
+		await wait();
+		assert.ok(!drained, 'drained with a handler still running');
+
+		const flush = create_deferred<void>();
+		accepted.finish(flush.promise);
+		assert.strictEqual(tracker.flush_count(), 1);
+		await wait();
+		assert.ok(!drained, 'drained with the flush still running');
+
+		flush.resolve();
+		await draining;
+		assert.strictEqual(tracker.inflight_count(), 0);
+		assert.strictEqual(tracker.flush_count(), 0);
+	});
+
+	test('a request with no flush is released when it finishes', async () => {
+		const tracker = create_request_tracker();
+		tracker.accept()!.finish(null);
+		await tracker.drain_inflight();
+		assert.strictEqual(tracker.inflight_count(), 0);
+	});
+
+	test('a closed tracker refuses new requests and keeps draining the held ones', async () => {
+		const tracker = create_request_tracker();
+		const held = tracker.accept()!;
+		tracker.close();
+		assert.strictEqual(tracker.accept(), null);
+		assert.strictEqual(tracker.inflight_count(), 1);
+		held.finish(null);
+		await tracker.drain_inflight();
+		assert.strictEqual(tracker.inflight_count(), 0);
+	});
+
+	test('a view closes on its own, its parent still open', async () => {
+		const parent = create_request_tracker();
+		const view = create_request_tracker_view(parent);
+		const held = view.accept()!;
+		assert.strictEqual(parent.inflight_count(), 1, 'held on the parent');
+		view.close();
+		assert.strictEqual(view.accept(), null);
+		const other = parent.accept();
+		assert.ok(other, 'the parent still accepts');
+		held.finish(null);
+		other.finish(null);
+		await view.drain_inflight();
+		assert.strictEqual(parent.inflight_count(), 0);
+	});
+
+	test('drain_flushes waits on the flushes, never on a handler still running', async () => {
+		const tracker = create_request_tracker();
+		// the drain's own request, its handler running
+		const own = tracker.accept()!;
+		const flush = create_deferred<void>();
+		tracker.accept()!.finish(flush.promise);
+
+		let drained = false;
+		const draining = tracker.drain_flushes().then(() => {
+			drained = true;
+		});
+		await wait();
+		assert.ok(!drained, 'drained with a flush still running');
+		flush.resolve();
+		await draining;
+		assert.strictEqual(tracker.inflight_count(), 1, 'the running handler is still held');
+		own.finish(null);
+		await tracker.drain_inflight();
+		assert.strictEqual(tracker.inflight_count(), 0);
+	});
+
+	test('a second finish does nothing', async () => {
+		const tracker = create_request_tracker();
+		const accepted = tracker.accept()!;
+		const flush = create_deferred<void>();
+		accepted.finish(flush.promise);
+		accepted.finish(null);
+		assert.strictEqual(tracker.inflight_count(), 1, 'still held on the first flush');
+		flush.resolve();
+		await tracker.drain_inflight();
+		assert.strictEqual(tracker.inflight_count(), 0);
 	});
 });

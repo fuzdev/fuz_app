@@ -52,6 +52,7 @@ import {
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
 const log = new Logger('test', { level: 'off' });
@@ -102,7 +103,8 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 			db,
 			audit: create_audit_emitter({ db, log, on_audit_event: (e) => audit_events.push(e) }),
 			connection_closer,
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		}
 	};
 	return {

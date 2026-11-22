@@ -5,7 +5,7 @@ import '../assert_dev_env.ts';
  *
  * The daemon-token-authed actions bundled by `create_testing_actions`:
  * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
- * (audit barrier), **`_testing_mint_session`** (forge an
+ * (effects barrier), **`_testing_mint_session`** (forge an
  * expired-by-construction server-side session for the expiry conformance
  * cases), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
  * suite), **`_testing_schema_snapshot`** (introspect the live schema for
@@ -104,7 +104,7 @@ import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
-import { emit_after_commit } from '../../http/pending_effects.ts';
+import { emit_after_commit, type RequestTracker } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
 import { RoomEvictReason, RoomId } from '../../actions/room_action_specs.ts';
 import type { RoomRegistry } from '../../actions/room_registry.ts';
@@ -206,27 +206,30 @@ export const testing_reset_action_spec = {
 } as const satisfies RequestResponseActionSpec;
 
 /**
- * `_testing_drain_effects` — await in-flight fire-and-forget writes so a
+ * `_testing_drain_effects` — await in-flight fire-and-forget work so a
  * following `audit_log_list` or database read is authoritative. The
  * deterministic barrier the cross-backend conformance suite uses in place of
  * a poll/sleep before asserting on audit rows.
  *
- * The handler awaits `AuditEmitter.drain_inflight`, which waits until no
- * pool write of the emitter's is outstanding — every emitter counts them, so
- * the drain is always a barrier. It matters whatever the transport: both
- * test binaries settle an **HTTP** answer's writes before it responds (the
- * TS binary through `await_pending_effects: true`, the Rust stub through its
+ * The handler waits, repeating until both are empty, for the effect flushes
+ * on `AppDeps.request_tracker` (`RequestTracker.drain_flushes`: each
+ * request's eager `pending_effects` — the bearer leg's token touch among
+ * them — and its post-commit thunks) and for the pool writes of
+ * `AppDeps.audit` (`AuditEmitter.drain_inflight`) — a thunk can start an
+ * audit write, and a write's listener fan-out runs in a thunk. It matters
+ * whatever the transport: both test binaries settle an **HTTP** answer's
+ * effects before it responds (the TS binary through
+ * `await_pending_effects: true`, the Rust stub through its
  * `await_background_writes_layer`), but a **WS** mutation is answered
  * before its effects flush (reply-then-close for a self-revocation), so its
- * audit write can still be in flight when the caller reads the reply. The
- * Rust spine does the same await in `AuditEmitter::drain_inflight`.
+ * audit write or post-commit effect can still be running when the caller
+ * reads the reply. The Rust spine awaits the same work on its one tracker,
+ * `BackgroundWrites`.
  *
- * Covered: every `emit` that ran before the drain was dispatched, and any
- * started while it waits. A write that starts after the drain resolves is
- * not — nor, on TS, the bearer leg's token touch, which rides its request's
- * `pending_effects`, nor a message's post-commit effects. The Rust spine
- * spawns its touch and every dispatch's post-commit fan-out on the same
- * tracker as its audit writes, so its drain awaits those too.
+ * Covered: every flush and `emit` that started before the drain was
+ * dispatched, and any started while it waits. Not a handler still running —
+ * the drain's own request is one, and its flush starts only after it answers
+ * — nor work that starts after the drain resolves.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
@@ -295,18 +298,32 @@ export const testing_mint_session_action_spec = {
 		'signed cookie value (exercises the authoritative server-side DB-row expiry gate).'
 } as const satisfies RequestResponseActionSpec;
 
+/** What `_testing_drain_effects` waits on — `AppDeps` satisfies it. */
+export interface TestingDrainEffectsDeps {
+	/** The backend's request tracker, whose effect flushes the action awaits. */
+	request_tracker: Pick<RequestTracker, 'drain_flushes' | 'flush_count'>;
+	/** The backend's emitter, whose in-flight pool writes the action awaits. */
+	audit: Pick<AuditEmitter, 'drain_inflight' | 'inflight_count'>;
+}
+
 /**
- * Build the standalone `_testing_drain_effects` action over `audit` — the
- * emitter the backend's handlers emit through (`deps.audit`). Mount it on any test endpoint
- * whose suite asserts on audit rows (the spine binary bundles it via
- * `create_testing_actions`; in-process suites mount it directly). Answers
- * `{ok: true}`.
+ * Build the standalone `_testing_drain_effects` action over the backend's
+ * deps — the tracker its requests are held on and the emitter its handlers
+ * emit through. Mount it on any test endpoint whose suite asserts on audit
+ * rows or effects (the spine binary bundles it via `create_testing_actions`;
+ * in-process suites mount it directly). Answers `{ok: true}`.
  *
- * @param audit - the backend's emitter, whose in-flight writes the action awaits
+ * @param deps - the backend's `request_tracker` and `audit`
  */
-export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAction =>
+export const create_testing_drain_effects_action = (deps: TestingDrainEffectsDeps): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => {
-		await audit.drain_inflight();
+		const { request_tracker, audit } = deps;
+		// until both are empty: a flush's post-commit thunk can start an audit
+		// write, and a flush that starts meanwhile is waited for too
+		do {
+			await request_tracker.drain_flushes();
+			await audit.drain_inflight();
+		} while (request_tracker.flush_count() > 0 || audit.inflight_count() > 0);
 		return { ok: true };
 	});
 
@@ -868,7 +885,8 @@ export interface CreateTestingActionsOptions {
  *
  * Returns the bundled `_testing_*` actions (module doc). The test binary
  * calls this at server-assembly time and registers the result on its
- * dispatcher. `_testing_drain_effects` drains `deps.audit`.
+ * dispatcher. `_testing_drain_effects` drains `deps.request_tracker` and
+ * `deps.audit`.
  *
  * The reset action's table-wipe list mirrors
  * `auth_integration_truncate_tables` from `testing/db.ts` — the
@@ -1027,7 +1045,7 @@ export const create_testing_actions = (
 			}
 			return { hash };
 		}),
-		create_testing_drain_effects_action(deps.audit),
+		create_testing_drain_effects_action(deps),
 		create_testing_flood_notifications_action(),
 		create_testing_schema_snapshot_action(),
 		create_testing_migration_tracker_action(),

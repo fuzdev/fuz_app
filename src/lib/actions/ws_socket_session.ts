@@ -127,7 +127,7 @@ import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
 import {
 	flush_request_effects,
 	type EffectErrorContext,
-	type RequestFlushTracker
+	type RequestTracker
 } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import type { NotificationSender } from './notification_sender.ts';
@@ -223,6 +223,13 @@ export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
  * replies to server-initiated requests, and refused frames never count.
  */
 export const MAX_INBOUND_DISPATCHES_PER_CONNECTION = 128;
+
+/**
+ * The `service_unavailable` message a request gets once the server's shutdown
+ * drain has started — its `RequestTracker` closed. TS only: the Rust spine
+ * drops a WS message's dispatch with its socket loop at shutdown.
+ */
+export const WS_SHUTTING_DOWN_MESSAGE = 'server shutting down';
 
 /**
  * The `queue_overflow` message a request gets past
@@ -353,8 +360,8 @@ export interface WsSocketEndpoint {
 	notification_sender: NotificationSender;
 	/** Called when an eager pending effect of a frame's action rejects; `undefined` for none. */
 	on_effect_error: ((error: unknown, context: EffectErrorContext) => void) | undefined;
-	/** Where each frame's effect flush is tracked for shutdown; `null` for nowhere. */
-	request_flushes: RequestFlushTracker | null;
+	/** Where each message accepted for dispatch is held until its flush settles; `null` for nowhere. */
+	request_tracker: RequestTracker | null;
 	/** Roles the endpoint's upgrade is gated on; empty for an ungated endpoint. */
 	required_roles: ReadonlyArray<RoleName>;
 }
@@ -411,7 +418,7 @@ export const create_ws_socket_events = (
 		action_account_rate_limiter,
 		notification_sender,
 		on_effect_error,
-		request_flushes,
+		request_tracker,
 		required_roles
 	} = endpoint;
 	const { client_ip, upgrade_preset, resolved, upgrade_context } = upgrade;
@@ -867,17 +874,6 @@ export const create_ws_socket_events = (
 			return;
 		}
 
-		// Per-request controller — fires on explicit `cancel` or when the
-		// socket ends (via the socket_abort_controller chain below).
-		// Registered before dispatch, so the request is live (counted, and
-		// its id taken) from the moment it is accepted — so a cancel
-		// arriving mid-handler finds it;
-		// cleared in `finally` so late cancels for a completed id (or a
-		// future request that reuses the id) can't null-abort the wrong
-		// handler.
-		const request_controller = new AbortController();
-		pending_controllers.set(id, request_controller);
-
 		// Per-message side-effect queues. `pending_effects` collects
 		// eager fire-and-forget pool writes (audit emits, etc.);
 		// `post_commit_effects` collects deferred thunks pushed
@@ -906,15 +902,41 @@ export const create_ws_socket_events = (
 		const pending_effects: Array<Promise<void>> = [];
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 
-		const notify = notify_socket(connection_id);
-		// Server→client request seam (ActionPeer) — closes over this
-		// socket's connection_id so a handler can initiate a request to
-		// the originating client and await the reply.
-		const request_client: RequestClient = (request_method, request_params, request_options) =>
-			registry.request_connection(connection_id, request_method, request_params, request_options);
-		const signal = AbortSignal.any([socket_abort_controller.signal, request_controller.signal]);
+		// Accepted for dispatch: held from here until the handler has returned
+		// and the flush below has settled, so a shutdown that starts while the
+		// handler runs waits for both. The `try` opens at once, so nothing can
+		// throw between and leak a held request. A shutdown closes the socket, which
+		// aborts `signal`; a handler that runs on regardless is still waited
+		// for, and its reply is refused by the closed connection. Once the
+		// shutdown drains, the tracker refuses — shed like the in-flight
+		// ceiling, never dispatched against a closing database. Reachable only
+		// on a socket the close-all didn't end (a hand mount).
+		const accepted = request_tracker ? request_tracker.accept() : undefined;
+		if (accepted === null) {
+			send_error(id, jsonrpc_error_messages.service_unavailable(WS_SHUTTING_DOWN_MESSAGE));
+			return;
+		}
 
 		try {
+			// Per-request controller — fires on explicit `cancel` or when the
+			// socket ends (via the socket_abort_controller chain below).
+			// Registered before dispatch, so the request is live (counted, and
+			// its id taken) from the moment it is accepted — so a cancel
+			// arriving mid-handler finds it;
+			// cleared in `finally` so late cancels for a completed id (or a
+			// future request that reuses the id) can't null-abort the wrong
+			// handler.
+			const request_controller = new AbortController();
+			pending_controllers.set(id, request_controller);
+
+			const notify = notify_socket(connection_id);
+			// Server→client request seam (ActionPeer) — closes over this
+			// socket's connection_id so a handler can initiate a request to
+			// the originating client and await the reply.
+			const request_client: RequestClient = (request_method, request_params, request_options) =>
+				registry.request_connection(connection_id, request_method, request_params, request_options);
+			const signal = AbortSignal.any([socket_abort_controller.signal, request_controller.signal]);
+
 			const result = await perform_action(
 				{
 					action,
@@ -945,9 +967,9 @@ export const create_ws_socket_events = (
 			registry.send_to(connection_id, frame);
 		} finally {
 			pending_controllers.delete(id);
-			// deferred first — see the ordering invariant above. Tracked, since
-			// the reply is already sent: a shutdown now waits for the flush, as it
-			// does an HTTP request's.
+			// deferred first — see the ordering invariant above. Held on the
+			// tracker, since the reply is already sent: a shutdown waits for the
+			// flush, as it does an HTTP request's.
 			const flushed = flush_request_effects(
 				pending_effects,
 				post_commit_effects,
@@ -956,7 +978,7 @@ export const create_ws_socket_events = (
 					? (reason) => on_effect_error(reason, { transport: 'ws', method, path })
 					: undefined
 			);
-			request_flushes?.track(flushed);
+			accepted?.finish(flushed);
 			await flushed;
 		}
 	};

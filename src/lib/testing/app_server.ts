@@ -52,6 +52,7 @@ import { create_default_db_factory, type DbFactory } from './db.ts';
 import { token_scope_full } from '../auth/token_scope.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
+import { create_request_tracker } from '../http/pending_effects.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -444,7 +445,8 @@ const _build_test_backend = async (
 			log: test_log,
 			audit: audit_factory({ db, log: test_log }),
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		}
 	};
 	return { backend, keyring: keyring_result.keyring };

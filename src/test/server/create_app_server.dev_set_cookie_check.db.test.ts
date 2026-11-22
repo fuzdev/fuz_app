@@ -28,6 +28,7 @@ import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
 const session_options = create_session_config('test_session');
@@ -60,7 +61,8 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 				db,
 				audit: create_audit_emitter({ db, log }),
 				connection_closer: create_realtime_closer(),
-				notification_sender: create_realtime_notification_sender()
+				notification_sender: create_realtime_notification_sender(),
+				request_tracker: create_request_tracker()
 			}
 		};
 		server = await create_app_server({

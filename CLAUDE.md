@@ -135,7 +135,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 Keep these categories separate:
 
-- Capabilities (`AppDeps`) — injectable, swappable per env: `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` the consumer's `audit_factory` builds), `connection_closer` and `notification_sender` (the realtime fan-outs `create_app_server` fills), and the optional `fact_store`
+- Capabilities (`AppDeps`) — injectable, swappable per env: `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` the consumer's `audit_factory` builds), `connection_closer` and `notification_sender` (the realtime fan-outs `create_app_server` fills), `request_tracker` (every request and WS message accepted, held until its effects flush — what `AppServer.close` and `_testing_drain_effects` wait on), and the optional `fact_store`
 - Route caps (`RouteFactoryDeps`) — `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)
 - Parameters (`*Options`) — Static startup values, per-factory: `session_options`, `login_ip_rate_limiter`, `login_account_rate_limiter`, `rate_limiters` (the `RateLimiterMode` for omitted limiters), `token_store` (the live bootstrap's `BootstrapTokenStore`)
 - Runtime state (inline ref) — Mutable values: `bootstrap_status` — NOT in deps or options
@@ -151,7 +151,7 @@ Individual factories take narrower deps: `create_account_route_specs(deps: Route
 `create_app_server` assembles middleware in order:
 
 1. **Hono context augmentation** — side-effect import of `hono_context.ts`
-2. **Pending effects** (`*`) — per-request array; flushed via `try/finally` + `Promise.allSettled`
+2. **Pending effects** (`*`) — per-request array; flushed via `try/finally` + `Promise.allSettled`; the request is held on `deps.request_tracker` from here (503 `service_unavailable` once `AppServer.close` starts draining)
 3. **Logging** — controlled by `deps.log` level
 4. **Body size limit** — default 1 MiB (`DEFAULT_BODY_LIMIT_BYTES`); `max_body_size` to override, `null` to disable
 5. **Host gate** (`*`, `http/host.ts`) — a `Host` that is neither loopback nor named by `allowed_origins` → 403 `forbidden_host` (DNS rebinding; ./docs/security.md §DNS Rebinding (Host Gate)); on by default, `host_gate: false` to turn off

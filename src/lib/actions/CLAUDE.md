@@ -465,10 +465,13 @@ mount would have to remember: the RPC endpoints' action limiters (one budget
 per action across transports), the server's `allowed_origins` when the spec
 sets none, the surface entry, the revocation guard, its registry on
 `deps.notification_sender` and `deps.connection_closer`, reachable at
-`app_server.ws_endpoints[path]`, and the request-flush tracker its HTTP
-requests share (`request_flushes`), so `AppServer.close` waits for each
-message's effects. Assembly throws on an endpoint path outside
-`AUTH_MIDDLEWARE_PATH` (no credential is parsed there), duplicate paths, a
+`app_server.ws_endpoints[path]`, and its view of `deps.request_tracker`
+(`create_request_tracker_view`), which its HTTP requests share
+(`request_tracker`), so `AppServer.close` waits for each message accepted,
+its handler and then its effects; a message the closed tracker refuses is
+answered `service_unavailable` (`WS_SHUTTING_DOWN_MESSAGE`), never
+dispatched. Assembly throws on an
+endpoint path outside `AUTH_MIDDLEWARE_PATH` (no credential is parsed there), duplicate paths, a
 `GET` route at the same path, a non-empty `ws_endpoints` with no
 `upgrade_websocket` (the runtime adapter's helper; on Node, `serve` needs a
 `noServer` `ws` server), and a registry option (`max_connections_per_account`,
@@ -542,9 +545,9 @@ The rules a caller would miss:
   on a socket are not serialized, so a message's effects can still be in
   flight when its reply is read: a test reading the audit log after a WS
   reply awaits `_testing_drain_effects` first (`src/lib/testing/CLAUDE.md`).
-  Shutdown waits for the flush all the same — it goes on the server's
-  request-flush tracker. The queues and the tracker: `http/CLAUDE.md`
-  §Pending Effects.
+  Shutdown waits for the message all the same — it is held on
+  `deps.request_tracker` from acceptance. The queues and the tracker:
+  `http/CLAUDE.md` §Pending Effects.
 - **Hooks.** `on_socket_open` runs once admitted, before the first dispatch,
   awaited; a throw closes 1011. `on_socket_close` runs only for an admitted
   socket, after `remove_connection`, with the `connection_id` and identity

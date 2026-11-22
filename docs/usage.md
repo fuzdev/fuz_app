@@ -404,10 +404,13 @@ await server.close();
 
 It stops the auth cleanup schedule, closes every live connection (each
 WebSocket with `WS_CLOSE_GOING_AWAY`, so clients reconnect rather than treat
-their session as revoked), waits for the effects still in flight — bounded by
+their session as revoked), waits for the work still in flight — every request
+and WS message accepted, until its handler has returned and its effects have
+flushed, and the audit emitter's writes — bounded by
 `shutdown_drain_timeout_ms` (`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), logging what
 it gives up on — then releases what assembly acquired and closes the
-database. The release leaves the backend's emitter, closer and sender as they
+database. From the drain on, an arriving HTTP request is refused with 503
+`{"error": "service_unavailable"}`. The release leaves the backend's emitter, closer and sender as they
 were before assembly, so a backend whose `close` you own (a test harness) can
 host another server; a closed connection registry hosts nothing more. `close`
 is idempotent. Each step is in the `AppServer.close` TSDoc

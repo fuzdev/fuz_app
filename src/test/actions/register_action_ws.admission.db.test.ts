@@ -247,7 +247,7 @@ const create_endpoint = (
 		action_account_rate_limiter: null,
 		path: '/ws',
 		connection_closer: null,
-		request_flushes: null,
+		request_tracker: null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		allowed_origins: [],

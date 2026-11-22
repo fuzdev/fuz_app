@@ -223,9 +223,8 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 			// don't await the drain yet: live WebSockets hold it open until
 			// `built.close()` ends them (`AppServer.close`), so awaiting it
 			// first would wait on sockets nothing is closing. A request already
-			// in flight when the signal lands may still see the backend close
-			// under it — acceptable for a test binary, where shutdown follows
-			// the suite.
+			// in flight when the signal lands is waited for by `AppServer.close`
+			// (behind `built.close()`), within its drain bound.
 			const drained = server.shutdown();
 			await built.close();
 			await drained;

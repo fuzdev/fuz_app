@@ -12,9 +12,10 @@
  * (`create_gated_db` — the second `auth_session` read of the request, the
  * first being the session middleware's) so something can happen in the
  * window. The control case stalls the same way and touches nothing. Two cases
- * close the server (`AppServer.close`): a stream requested after it is born
- * closed and skips the re-read, and a shutdown landing in the re-read ends the
- * stream after its connect comment even when the re-read then fails.
+ * close the server (`AppServer.close`): a stream that registers after the
+ * close started is born closed and skips the re-read, and a shutdown landing in the re-read — which
+ * waits for the handler — ends the stream after its connect comment even when
+ * the re-read then fails.
  *
  * An admitted stream's keep-alive interval comes from the server's
  * `audit_log_sse` option, through `AuditLogSse` to the route.
@@ -62,6 +63,8 @@ interface Harness {
 	admin: TestAccount;
 	/** The route's `log.info` calls, each as its arguments. */
 	infos: Array<Array<unknown>>;
+	/** Hold the next session read — the session middleware's, on a fresh request. */
+	stall_next_session_read: () => StalledQuery;
 }
 
 let admin_counter = 0;
@@ -119,7 +122,8 @@ const create_harness = async (
 		infos,
 		// the request's first session read is the middleware's; the second is
 		// the handler's re-read
-		stall: () => gated.stall(is_session_read, { skip: 1 })
+		stall: () => gated.stall(is_session_read, { skip: 1 }),
+		stall_next_session_read: () => gated.stall(is_session_read)
 	};
 };
 
@@ -281,18 +285,23 @@ describe_db('audit log stream admission', (get_db) => {
 		);
 	});
 
-	test('a stream requested after the server closed ends after its connect comment, unread', async () => {
+	test('a stream that registers after the server started closing ends after its connect comment, unread', async () => {
 		const db = get_db();
 		const h = await create_harness(db);
-		await h.test_app.cleanup();
+		// a request after the close starts is refused outright (503), so this
+		// one is accepted first and held in the session middleware's read
+		const middleware_read = h.stall_next_session_read();
+		const response = Promise.resolve(
+			h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
+		);
+		await middleware_read.reached;
+		const closing = h.test_app.cleanup();
 		assert.ok(h.audit_sse.registry.closing);
 
 		// would hold the handler's re-read, were there one
-		const stalled = h.stall();
+		const stalled = h.stall_next_session_read();
 		try {
-			const response = Promise.resolve(
-				h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
-			);
+			middleware_read.release();
 			const res = await Promise.race([response, stalled.reached.then(() => null)]);
 			assert.ok(res, 'a born-closed registration skips the re-read');
 
@@ -307,7 +316,9 @@ describe_db('audit log stream admission', (get_db) => {
 			);
 		} finally {
 			stalled.release();
+			middleware_read.release();
 		}
+		await closing;
 	});
 
 	test('a shutdown during the re-read ends the stream after its connect comment, even when the re-read fails', async () => {
@@ -315,11 +326,14 @@ describe_db('audit log stream admission', (get_db) => {
 		const h = await create_harness(db);
 
 		const { response, stalled } = await open_stalled(h);
-		await h.test_app.cleanup();
+		// the close-all comes before the shutdown drain, which waits for the
+		// handler still in its re-read
+		const closing = h.test_app.cleanup();
 		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the close-all closed it pending');
-		// the database closes under the re-read
+		// the re-read fails while the shutdown waits on it
 		stalled.fail(new Error('database closed'));
 		const res = await response;
+		await closing;
 
 		assert.strictEqual(res.status, 200, "the shutdown's answer, not a 500");
 		assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');

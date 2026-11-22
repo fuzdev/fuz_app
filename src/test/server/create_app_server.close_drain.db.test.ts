@@ -18,7 +18,7 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
-import { create_request_flush_tracker } from '#lib/http/pending_effects.ts';
+import { create_request_tracker } from '#lib/http/pending_effects.ts';
 import {
 	DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
 	drain_effects_on_shutdown
@@ -166,16 +166,16 @@ describe('drain_effects_on_shutdown', () => {
 	test('gives up at its bound, logging what it gave up on', async () => {
 		const { log, errors } = capture_log();
 		const never = create_deferred<void>();
-		const flushes = create_request_flush_tracker();
-		flushes.track(never.promise);
+		const flushes = create_request_tracker();
+		flushes.accept()!.finish(never.promise);
 		const audit = { drain_inflight: () => never.promise, inflight_count: () => 2 };
 
 		const given_up = await drain_effects_on_shutdown(flushes, audit, 20, log);
 
 		// counted apart: a flush's own audit writes are in both
-		assert.deepStrictEqual(given_up, { request_flushes: 1, audit_writes: 2 });
+		assert.deepStrictEqual(given_up, { requests: 1, audit_writes: 2 });
 		assert.strictEqual(errors.length, 1);
-		assert.include(errors[0], '1 request flush(es), 2 audit row write(s)');
+		assert.include(errors[0], '1 request(s) (handler or effect flush), 2 audit row write(s)');
 	});
 
 	test('waits for the flushes, then the audit writes, and gives up on nothing', async () => {
@@ -184,8 +184,8 @@ describe('drain_effects_on_shutdown', () => {
 		const flush = wait(5).then(() => {
 			order.push('flush');
 		});
-		const flushes = create_request_flush_tracker();
-		flushes.track(flush);
+		const flushes = create_request_tracker();
+		flushes.accept()!.finish(flush);
 		const audit = {
 			drain_inflight: async () => {
 				order.push('audit');
@@ -194,7 +194,7 @@ describe('drain_effects_on_shutdown', () => {
 		};
 
 		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
-			request_flushes: 0,
+			requests: 0,
 			audit_writes: 0
 		});
 		assert.deepStrictEqual(order, ['flush', 'audit']);
@@ -203,23 +203,23 @@ describe('drain_effects_on_shutdown', () => {
 
 	test('a flush tracked while draining is waited for too', async () => {
 		const { log, errors } = capture_log();
-		const flushes = create_request_flush_tracker();
+		const flushes = create_request_tracker();
 		const order: Array<string> = [];
 		const first = wait(5).then(() => {
 			order.push('first');
 			// a later flush starts before the first settles — a WS message
 			// answered during the drain
-			flushes.track(
+			flushes.accept()!.finish(
 				wait(5).then(() => {
 					order.push('second');
 				})
 			);
 		});
-		flushes.track(first);
+		flushes.accept()!.finish(first);
 		const audit = { drain_inflight: async () => {}, inflight_count: () => 0 };
 
 		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
-			request_flushes: 0,
+			requests: 0,
 			audit_writes: 0
 		});
 		assert.deepStrictEqual(order, ['first', 'second']);
@@ -229,7 +229,7 @@ describe('drain_effects_on_shutdown', () => {
 
 	test('loops until both are empty: a flush tracked while the audit writes drain is waited for', async () => {
 		const { log, errors } = capture_log();
-		const flushes = create_request_flush_tracker();
+		const flushes = create_request_tracker();
 		const order: Array<string> = [];
 		let audit_passes = 0;
 		const audit = {
@@ -237,7 +237,7 @@ describe('drain_effects_on_shutdown', () => {
 				audit_passes++;
 				if (audit_passes === 1) {
 					// a WS message answered while the audit writes drain
-					flushes.track(
+					flushes.accept()!.finish(
 						wait(5).then(() => {
 							order.push('late flush');
 						})
@@ -248,7 +248,7 @@ describe('drain_effects_on_shutdown', () => {
 		};
 
 		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
-			request_flushes: 0,
+			requests: 0,
 			audit_writes: 0
 		});
 		assert.deepStrictEqual(order, ['late flush']);
@@ -257,9 +257,9 @@ describe('drain_effects_on_shutdown', () => {
 	});
 
 	test('a tracked flush that rejects is removed, not left to wedge the drain', async () => {
-		const flushes = create_request_flush_tracker();
+		const flushes = create_request_tracker();
 		const rejected = Promise.reject(new Error('contract slip'));
-		flushes.track(rejected);
+		flushes.accept()!.finish(rejected);
 		await rejected.catch(() => {});
 		await flushes.drain_inflight();
 		assert.strictEqual(flushes.inflight_count(), 0);

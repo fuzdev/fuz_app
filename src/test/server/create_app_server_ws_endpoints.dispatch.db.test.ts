@@ -15,12 +15,20 @@
  * - the upgrade route answers ahead of `post_route_middleware` and
  *   `static_serving`
  * - `AppServer.close` ends a socket opened through the upgrade path; an
- *   upgrade after it is born closed (going-away, no re-read), and one whose
+ *   upgrade request after it is refused 503, one opened after it is born
+ *   closed (going-away, no re-read), and one whose
  *   re-read the shutdown lands in is closed going-away, never as revoked
  * - a WS reply arrives before its audit write lands, and
  *   `_testing_drain_effects` over a tracked emitter waits for it
  * - `AppServer.close` waits for a WS message's effects still flushing after
  *   its reply — an eager promise and a post-commit thunk, neither an audit write
+ * - `_testing_drain_effects` waits for a WS message's post-commit effect still
+ *   running after its reply
+ * - `AppServer.close` waits for a handler still running when it starts — a WS
+ *   message's and an HTTP RPC call's — and then for its flush; a request
+ *   arriving after the close started is refused 503
+ * - `_testing_drain_effects` over HTTP, with the response awaiting its
+ *   effects, never waits on itself, two at once included
  * - an action's notification, sent over HTTP RPC or WS through the handler
  *   context's sender, reaches the account's sockets on every mounted
  *   registry — once per socket, a registry two endpoints share included
@@ -77,7 +85,11 @@ import { PEER_PING_METHOD } from '#lib/actions/peer_ping.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
-import { emit_after_commit, type EffectErrorContext } from '#lib/http/pending_effects.ts';
+import {
+	emit_after_commit,
+	type EffectErrorContext,
+	create_request_tracker
+} from '#lib/http/pending_effects.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { create_rate_limiter, type RateLimiter } from '#lib/rate_limiter.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -130,6 +142,8 @@ interface TestServer {
 	db: Db;
 	/** The backend's emitter (`deps.audit`). */
 	audit: AuditEmitter;
+	/** The backend's capabilities. */
+	deps: AppBackend['deps'];
 	/** Session cookie header for a fresh account. */
 	create_account: (username: string) => Promise<{
 		account_id: string;
@@ -162,7 +176,8 @@ const create_test_server = async (
 			db,
 			audit,
 			connection_closer: create_realtime_closer(),
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		}
 	};
 	const stub = create_stub_upgrade();
@@ -197,7 +212,7 @@ const create_test_server = async (
 			bearer_headers: { authorization: `Bearer ${api_token}` }
 		};
 	};
-	return { server, stub, db, audit, create_account };
+	return { server, stub, db, audit, deps: backend.deps, create_account };
 };
 
 const servers: Array<AppServer> = [];
@@ -218,6 +233,11 @@ interface TestSocket {
 		method: string,
 		params?: unknown
 	) => Promise<{ frame: any; dispatched: Promise<void> }>;
+	/**
+	 * Send one JSON-RPC request without waiting for its reply. Settles when
+	 * the dispatch, flush included, is done.
+	 */
+	send: (method: string, params?: unknown) => Promise<void>;
 	/** The close frames the server sent the socket. */
 	closes: Array<{ code?: number; reason?: string }>;
 	/** The methods of the notifications the server sent the socket, in order. */
@@ -267,6 +287,14 @@ const open_socket = async (
 			assert.ok(frame, `no response to request ${id}`);
 			return frame;
 		},
+		send: (method, params) =>
+			dispatch_ws_message(
+				events.onMessage!,
+				new MessageEvent('message', {
+					data: JSON.stringify({ jsonrpc: '2.0', id: ++next_request_id, method, params })
+				}),
+				fake.ws
+			),
 		request_reply: async (method, params) => {
 			const id = ++next_request_id;
 			const dispatched = dispatch_ws_message(
@@ -526,17 +554,20 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		assert.strictEqual(socket.closes.length, 1);
 	});
 
-	test('an upgrade after close is born closed: going-away, never admitted, no re-read', async () => {
+	test('an upgrade opened after close is born closed: going-away, never admitted, no re-read', async () => {
 		const t = await create_test_server();
 		const alice = await t.create_account('alice');
-		await t.server.close();
-
-		// the request still reaches the app — a listener stops accepting, but
-		// one already accepted runs on
+		// upgraded before the close — a request after it starts is refused 503 —
+		// and opened after
 		const res = await t.server.app.request(WS_PATH, {
 			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
 		});
 		assert.strictEqual(res.status, 200);
+		await t.server.close();
+		const late = await t.server.app.request(WS_PATH, {
+			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
+		});
+		assert.strictEqual(late.status, 503, 'an upgrade after the close is refused');
 		const { c, create_events } = t.stub.upgrades.at(-1)!;
 		const events = await create_events(c);
 		const fake = create_fake_ws();
@@ -628,7 +659,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			await stalled.reached;
 			assert.strictEqual(await count_rows(), 0, 'the reply came before the audit row landed');
 
-			const drain = create_testing_drain_effects_action(t.audit);
+			const drain = create_testing_drain_effects_action(t.deps);
 			let drained = false;
 			const draining = Promise.resolve(drain.handler(undefined, null as never)).then(() => {
 				drained = true;
@@ -749,7 +780,272 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			deferred_gate.resolve();
 		}
 	});
+
+	test("_testing_drain_effects waits for a WS message's post-commit effect still running after its reply", async () => {
+		// Not an audit write: only the request tracker can hold the drain for it.
+		const effect_gate = create_deferred<void>();
+		const landed: Array<string> = [];
+		const t = await create_test_server({
+			ws_endpoints: [
+				{
+					path: WS_PATH,
+					actions: [...protocol_actions, create_gated_effects_action(null, effect_gate, landed)],
+					receive_timeout: null
+				}
+			]
+		});
+		try {
+			const alice = await t.create_account('alice_drain_post_commit');
+			const socket = await open_socket(t, alice.session_headers);
+			const { frame, dispatched } = await socket.request_reply(GATED_EFFECTS_METHOD);
+			assert_ok(frame);
+
+			const drain = create_testing_drain_effects_action(t.deps);
+			let drained = false;
+			const draining = Promise.resolve(drain.handler(undefined, null as never)).then(() => {
+				drained = true;
+			});
+			await wait(20);
+			assert.ok(!drained, 'the drain resolved with a post-commit effect still running');
+
+			effect_gate.resolve();
+			await draining;
+			assert.deepStrictEqual(landed, ['effect'], 'the effect landed before the drain answered');
+			await dispatched;
+		} finally {
+			effect_gate.resolve();
+		}
+	});
+
+	test('close waits for a WS handler still running when it starts, then for its flush', async () => {
+		const handler_gate = create_deferred<void>();
+		const effect_gate = create_deferred<void>();
+		const landed: Array<string> = [];
+		const t = await create_test_server({
+			ws_endpoints: [
+				{
+					path: WS_PATH,
+					actions: [
+						...protocol_actions,
+						create_gated_effects_action(handler_gate, effect_gate, landed)
+					],
+					receive_timeout: null
+				}
+			]
+		});
+		try {
+			const alice = await t.create_account('alice_close_handler_ws');
+			const socket = await open_socket(t, alice.session_headers);
+			const dispatched = socket.send(GATED_EFFECTS_METHOD);
+			await wait_for(() => landed.includes('handler entered'));
+
+			const closing = track_settled(t.server.close());
+			await wait(20);
+			assert.ok(!closing.settled(), 'close returned with a WS handler still running');
+			assert.deepStrictEqual(socket.closes, [GOING_AWAY_CLOSE], 'the socket closed meanwhile');
+
+			handler_gate.resolve();
+			await wait(20);
+			assert.ok(!closing.settled(), "close returned with the handler's flush still running");
+
+			effect_gate.resolve();
+			await closing.promise;
+			assert.deepStrictEqual(landed, ['handler entered', 'handler returned', 'effect']);
+			await dispatched;
+		} finally {
+			handler_gate.resolve();
+			effect_gate.resolve();
+		}
+	});
+
+	test('close waits for an HTTP handler still running when it starts, then for its flush', async () => {
+		const handler_gate = create_deferred<void>();
+		const effect_gate = create_deferred<void>();
+		const landed: Array<string> = [];
+		// production mode: the response does not wait for the flush
+		const t = await create_test_server({
+			await_pending_effects: false,
+			rpc_endpoints: [
+				{
+					path: RPC_PATH,
+					actions: [create_gated_effects_action(handler_gate, effect_gate, landed)]
+				}
+			]
+		});
+		try {
+			const alice = await t.create_account('alice_close_handler_http');
+			const responding = t.server.app.request(RPC_PATH, {
+				method: 'POST',
+				headers: {
+					host: 'localhost',
+					'content-type': 'application/json',
+					...alice.session_headers
+				},
+				body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: GATED_EFFECTS_METHOD })
+			});
+			await wait_for(() => landed.includes('handler entered'));
+
+			const closing = track_settled(t.server.close());
+			await wait(20);
+			assert.ok(!closing.settled(), 'close returned with an HTTP handler still running');
+
+			handler_gate.resolve();
+			const res = await responding;
+			assert.strictEqual(res.status, 200, await res.text());
+			await wait(20);
+			assert.ok(!closing.settled(), "close returned with the handler's flush still running");
+
+			effect_gate.resolve();
+			await closing.promise;
+			assert.deepStrictEqual(landed, ['handler entered', 'handler returned', 'effect']);
+		} finally {
+			handler_gate.resolve();
+			effect_gate.resolve();
+		}
+	});
 });
+
+describe('the request tracker at the edges', () => {
+	test('a request arriving after close started is refused 503, not run against the closing database', async () => {
+		const handler_gate = create_deferred<void>();
+		const effect_gate = create_deferred<void>();
+		const landed: Array<string> = [];
+		const gated = create_gated_effects_action(handler_gate, effect_gate, landed);
+		const t = await create_test_server({
+			rpc_endpoints: [
+				{
+					path: RPC_PATH,
+					// no transaction, so the held handler leaves the test database's one
+					// connection free for the late request's credential read
+					actions: [counted_action, { ...gated, spec: { ...gated.spec, side_effects: false } }]
+				}
+			]
+		});
+		try {
+			const alice = await t.create_account('alice_after_close');
+			const rpc_headers = {
+				host: 'localhost',
+				'content-type': 'application/json',
+				...alice.session_headers
+			};
+			// one request in flight holds the close in its drain
+			const responding = t.server.app.request(RPC_PATH, {
+				method: 'POST',
+				headers: rpc_headers,
+				body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: GATED_EFFECTS_METHOD })
+			});
+			await wait_for(() => landed.includes('handler entered'));
+			const closing = track_settled(t.server.close());
+			await wait();
+
+			const late = await rpc_call(t.server, alice.session_headers);
+			assert.strictEqual(late.status, 503);
+			assert.deepStrictEqual(await late.json(), { error: 'service_unavailable' });
+			assert.ok(!closing.settled());
+
+			handler_gate.resolve();
+			effect_gate.resolve();
+			assert.strictEqual((await responding).status, 200, 'the request accepted first ran');
+			await closing.promise;
+		} finally {
+			handler_gate.resolve();
+			effect_gate.resolve();
+		}
+	});
+
+	test('_testing_drain_effects over HTTP, awaiting its effects, never waits on itself — two at once included', async () => {
+		const drain = create_testing_drain_effects_action(null as never);
+		const t = await create_test_server({
+			await_pending_effects: true,
+			rpc_endpoints: (ctx) => [
+				{
+					path: RPC_PATH,
+					// the drain's handler under a session-authed spec, so a test
+					// account can call it
+					actions: [
+						{
+							spec: { ...drain.spec, auth: { account: 'required', actor: 'none' } },
+							handler: create_testing_drain_effects_action(ctx.deps).handler
+						}
+					]
+				}
+			]
+		});
+		const alice = await t.create_account('alice_self_drain');
+		const call_drain = () =>
+			t.server.app.request(RPC_PATH, {
+				method: 'POST',
+				headers: {
+					host: 'localhost',
+					'content-type': 'application/json',
+					...alice.session_headers
+				},
+				body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: drain.spec.method })
+			});
+		const answers = await Promise.all([call_drain(), call_drain()]);
+		for (const res of answers) {
+			assert.strictEqual(res.status, 200);
+			assert.deepStrictEqual((await res.json()).result, { ok: true });
+		}
+	});
+});
+
+const GATED_EFFECTS_METHOD = 'gated_effects';
+
+/**
+ * An action whose handler waits on `handler_gate` (when given) and queues a
+ * post-commit thunk that waits on `effect_gate` — each step recorded in
+ * `landed`, so a test can hold it at either point.
+ */
+const create_gated_effects_action = (
+	handler_gate: { promise: Promise<void> } | null,
+	effect_gate: { promise: Promise<void> },
+	landed: Array<string>
+): RpcAction => ({
+	spec: {
+		method: GATED_EFFECTS_METHOD,
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'required', actor: 'none' },
+		side_effects: true,
+		input: fuz_void,
+		output: object({ ok: literal(true) }),
+		async: true,
+		description: 'holds its handler and its post-commit effect on gates the test releases'
+	},
+	handler: async (_input, ctx) => {
+		if (handler_gate) {
+			landed.push('handler entered');
+			await handler_gate.promise;
+			landed.push('handler returned');
+		}
+		emit_after_commit(ctx, async () => {
+			await effect_gate.promise;
+			landed.push('effect');
+		});
+		return { ok: true };
+	}
+});
+
+/** Wait until `predicate` holds, failing after a bound. */
+const wait_for = async (predicate: () => boolean): Promise<void> => {
+	const deadline = Date.now() + 2000;
+	while (!predicate()) {
+		assert.ok(Date.now() < deadline, 'condition never held');
+		await wait();
+	}
+};
+
+/** `promise`, with whether it has settled readable synchronously. */
+const track_settled = (
+	promise: Promise<void>
+): { promise: Promise<void>; settled: () => boolean } => {
+	let settled = false;
+	const tracked = promise.finally(() => {
+		settled = true;
+	});
+	return { promise: tracked, settled: () => settled };
+};
 
 const POKED_METHOD = 'poked';
 

@@ -40,7 +40,7 @@ const setup_test = default_in_process_setup({
 	rpc_endpoints: (ctx) =>
 		spine_rpc_endpoints(ctx).map((endpoint) => ({
 			...endpoint,
-			actions: [...endpoint.actions, create_testing_drain_effects_action(ctx.deps.audit)]
+			actions: [...endpoint.actions, create_testing_drain_effects_action(ctx.deps)]
 		}))
 });
 

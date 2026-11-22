@@ -18,6 +18,7 @@ import type { Db } from '../db/db.ts';
 import type { AuditEmitter } from './audit_emitter.ts';
 import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_closer.ts';
 import type { RealtimeNotificationSender } from '../actions/notification_sender.ts';
+import type { RequestTracker } from '../http/pending_effects.ts';
 
 /**
  * Capabilities bundle for fuz_app backends.
@@ -64,6 +65,16 @@ export interface AppDeps {
 	 * WebSocket endpoint mounted it reaches no one.
 	 */
 	notification_sender: RealtimeNotificationSender;
+	/**
+	 * Holds every request accepted — an HTTP request, a WS message — until
+	 * its handler has returned and its effect flush settled, for the waits
+	 * that must see them finish: `AppServer.close`'s shutdown drain and
+	 * `_testing_drain_effects`. `create_app_backend` creates it;
+	 * `create_app_server` holds its HTTP requests and every WS endpoint it
+	 * mounts on it, and a WebSocket endpoint mounted by hand takes it through
+	 * `register_action_ws`'s `request_tracker`.
+	 */
+	request_tracker: RequestTracker;
 	/**
 	 * Optional content-addressed byte store. Present only on backends that
 	 * serve binary content (facts) — minimal consumers leave it unset. The

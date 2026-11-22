@@ -78,7 +78,7 @@ import { parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { ERROR_INVALID_QUERY_PARAMS } from '../http/error_schemas.ts';
 import { query_first, read_request_query_pairs } from '../http/request_target.ts';
-import type { EffectErrorContext, RequestFlushTracker } from '../http/pending_effects.ts';
+import type { EffectErrorContext, RequestTracker } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import type { NotificationSender } from './notification_sender.ts';
 import { has_test_context_preset } from '../hono_context.ts';
@@ -301,14 +301,18 @@ export interface RegisterActionWsOptions {
 	 */
 	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 	/**
-	 * Where each frame's effect flush is tracked — it runs after the reply is
-	 * sent, so nothing else holds it. `create_app_server` passes the tracker
-	 * its HTTP requests share, so `AppServer.close` waits for a message's
-	 * effects as it does a request's. Required, so it can't be forgotten: a
-	 * hand mount passes its own and drains it before closing the database, or
+	 * Where each message accepted for dispatch is held, from acceptance until
+	 * its handler has returned and its effect flush — run after the reply is
+	 * sent, so nothing else holds it — has settled. `create_app_server` passes
+	 * its view of `deps.request_tracker` (`create_request_tracker_view`), which
+	 * its HTTP requests share, so `AppServer.close` waits for a message as it
+	 * does a request. A message the tracker refuses (once closed) is answered
+	 * `service_unavailable` (`WS_SHUTTING_DOWN_MESSAGE`) and never dispatched.
+	 * Required, so it can't be forgotten: a hand mount passes
+	 * `deps.request_tracker` (or one it drains before closing the database), or
 	 * `null` when it owns its shutdown otherwise (a test harness).
 	 */
-	request_flushes: RequestFlushTracker | null;
+	request_tracker: RequestTracker | null;
 }
 
 /** Result of `register_action_ws`. */
@@ -401,7 +405,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		action_account_rate_limiter,
 		notification_sender,
 		on_effect_error,
-		request_flushes,
+		request_tracker,
 		required_roles = []
 	} = options;
 
@@ -466,7 +470,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		action_account_rate_limiter,
 		notification_sender,
 		on_effect_error,
-		request_flushes,
+		request_tracker,
 		required_roles
 	};
 

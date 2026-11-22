@@ -33,7 +33,11 @@ import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
-import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
+import {
+	flush_pending_effects,
+	flush_post_commit_effects,
+	create_request_tracker
+} from '#lib/http/pending_effects.ts';
 import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import {
 	create_test_limiter,
@@ -187,7 +191,8 @@ const create_password_change_app = (
 			},
 			audit,
 			connection_closer: realtime_closer,
-			notification_sender: create_realtime_notification_sender()
+			notification_sender: create_realtime_notification_sender(),
+			request_tracker: create_request_tracker()
 		},
 		{
 			session_options,
