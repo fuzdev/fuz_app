@@ -66,9 +66,9 @@ import type { ConformanceCase } from './conformance_case.ts';
 import {
 	is_ws_conformance_case,
 	resolve_conformance_rpc_endpoints,
-	send_conformance_case,
-	type ConformancePrincipalConfig
+	send_conformance_case
 } from './conformance_table.ts';
+import type { ConformancePrincipalConfig } from './conformance_principal.ts';
 import {
 	diff_differential_responses,
 	differential_path_covers,

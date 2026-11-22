@@ -708,26 +708,55 @@ interface SuiteEntry<K extends SuiteName> {
 }
 
 /**
- * Whether fuz_app's transcript differential — the suites run once per backend,
- * every request and answer recorded and compared — runs a suite: `'http'`
- * when every request it sends goes through the fixture transports the
- * transcript records, else excluded with why.
+ * Why fuz_app's transcript differential leaves a suite out: it opens
+ * WebSockets, sends on raw sockets, or reads the audit event stream — sends
+ * the recording can't see — or it is HTTP only and not yet triaged. fuz_app's
+ * import census holds each kind to what the suite's module reaches.
  *
  * @internal Read by fuz_app's transcript differential — not stable API.
  */
-export type SpineSuiteTranscript = 'http' | { readonly excluded: string };
+export type SpineSuiteTranscriptExclusionKind = 'websocket' | 'raw_socket' | 'sse' | 'untriaged';
+
+/**
+ * Whether fuz_app's transcript differential — the suites run once per backend,
+ * every request and answer recorded and compared — runs a suite: `'http'`
+ * when every request it sends goes through the fixture transports the
+ * transcript records, else excluded with its kind and why.
+ *
+ * @internal Read by fuz_app's transcript differential — not stable API.
+ */
+export type SpineSuiteTranscript =
+	| 'http'
+	| {
+			readonly excluded: {
+				readonly kind: SpineSuiteTranscriptExclusionKind;
+				readonly reason: string;
+			};
+	  };
 
 const TRANSCRIPT_WEBSOCKET: SpineSuiteTranscript = {
-	excluded: 'opens WebSockets, whose frames the transcript does not record'
+	excluded: {
+		kind: 'websocket',
+		reason: 'opens WebSockets, whose frames the transcript does not record'
+	}
 };
 const TRANSCRIPT_RAW_SOCKET: SpineSuiteTranscript = {
-	excluded: 'sends on raw sockets, outside the fixture transports the transcript records'
+	excluded: {
+		kind: 'raw_socket',
+		reason: 'sends on raw sockets, outside the fixture transports the transcript records'
+	}
 };
 const TRANSCRIPT_SSE: SpineSuiteTranscript = {
-	excluded: 'reads the audit event stream, which the transcript records unread'
+	excluded: {
+		kind: 'sse',
+		reason: 'reads the audit event stream, which the transcript records unread'
+	}
 };
 const TRANSCRIPT_UNTRIAGED: SpineSuiteTranscript = {
-	excluded: 'HTTP only, but not yet run under the transcript with its differences triaged'
+	excluded: {
+		kind: 'untriaged',
+		reason: 'HTTP only, but not yet run under the transcript with its differences triaged'
+	}
 };
 
 /**
@@ -1206,7 +1235,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_standard_cross_process_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: {
 			setup_test: true,
 			surface_source: true,

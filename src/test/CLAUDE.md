@@ -407,7 +407,7 @@ per backend and compare what each sent and got:
 `transcript_differential_ts.cross.test.ts` (Node against Bun, under
 `cross_backend_ts_differential`, empty ledger). Every request and answer of a
 test is recorded, `create_account`'s own included (`transcript_record.ts`),
-and side B's `afterEach` diffs the test's two normalized transcripts
+and as each test finishes side B diffs its two normalized transcripts
 (`transcript_normalize.ts`) — under `cross_backend_parity`, the two databases
 the test left too (`compare_db_state`, `[db]` in a failure) — so a status
 beside an asserted reason, a body field no assertion reads, or a cookie beside
@@ -423,15 +423,41 @@ the one a test checks is held equal across backends with no edit to the suite.
   across the whole test), framing headers, cookie values, a timestamp shift
   under half a minute.
 - **Not seen**: a request no suite sends, a relation between two answers of
-  one backend, a bug both backends share, WebSocket and SSE traffic,
-  `_testing_reset`, and the entries after a misalignment.
+  one backend, a bug both backends share, any untagged `fetch` whose body is a
+  JSON-RPC call of a `_testing_*` backdoor (what the fixture sends on its own
+  transports — `_testing_reset`, the invariant check — and anything else
+  shaped so), and the entries after a misalignment.
+- **Kept out**: every other send of a transcript test goes through the
+  recording. Recording wrappers tag their sends with
+  `TRANSCRIPT_RECORDED_HEADER`, and the patch — live from each test's
+  `beforeEach` until it finishes — strips the tag; an untagged `fetch` to any
+  origin outside `create_account`'s async context, or a `WebSocket` (an
+  `EventSource` where defined) constructed, fails the test naming it, as does
+  a test that passed with none of its own requests recorded
+  (`find_recording_problems`; `create_account`'s don't count, a skipped or
+  failed test is exempt), so a broken recording can't pass on two empty
+  transcripts. The test is judged in an `onTestFinished` registered from the
+  `beforeEach`, which runs whatever an `afterEach` throws. What reaches neither
+  `fetch` nor the global constructors — the `ws` library, raw sockets — is kept
+  out by `transcript_census.test.ts` (a plain `gro test`), which walks each
+  suite's value imports: an `'http'` suite reaches no sender (the raw-socket,
+  WebSocket and event-stream transports, the modules built on them, `ws` or a
+  socket builtin); a suite excluded as `websocket`, `raw_socket` or `sse`
+  reaches a sender of its kind, and an `untriaged` one none. The walk fails
+  closed — a package it doesn't know, a relative import of neither `.ts` nor
+  `.json`, a computed `import()` or `require()` throws.
 
 Entries align on method, path and JSON-RPC method; the diff stops at the
 first entry whose route differs. A closing test fails a test that ran on one
-side only, and on a whole run a ledger row that matched nothing; on a
-filtered or partly skipped run it skips and says which check it left
-unjudged; a gated skip (`test_if`) is held to `expected_skips` on both sides
-instead and doesn't make the run partial. A failure lands on side B's copy of the test, as
+side only, or was skipped at run time (`ctx.skip`) on one side only — vitest
+reports such a test as skipped and drops what its per-test check threw — and
+on a whole run a ledger row that matched nothing; on a filtered or partly
+skipped run, a skip at run time on both sides included, it skips and says
+which check it left unjudged; a gated skip (`test_if`) is held to
+`expected_skips` on both sides instead and doesn't make the run partial. A ledger row's `where` narrows it to
+entries whose responses on both sides carry one status and error: a REST
+`body_error` code, or a JSON-RPC `rpc_code` with an optional `rpc_reason`
+(`error.data.reason`). A difference fails side B's copy of the test, as
 `[entry] path: a=… b=…` lines with the first differing entry in full, or as
 `transcripts stop lining up at entry [n]`. Set
 `FUZ_TEST_TRANSCRIPT_DUMP_DIR=<dir>` for `raw.json`, `transcripts.json` (what

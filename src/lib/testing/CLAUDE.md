@@ -1443,8 +1443,11 @@ here never reaches it.
   `transcript` (`SpineSuiteTranscript`, read with
   `get_spine_suite_transcript`) says whether fuz_app's transcript
   differential runs it: `'http'` when every request goes through the fixture
-  transports the transcript records, else `{excluded: reason}` (WebSockets,
-  raw sockets, the audit stream, or not yet triaged). The transcript registers
+  transports the transcript records, else `{excluded: {kind, reason}}`, the
+  kind (`SpineSuiteTranscriptExclusionKind`) one of `websocket`,
+  `raw_socket`, `sse` — sends the recording can't see — or `untriaged` (HTTP
+  only, its differences not yet triaged); fuz_app's import census holds each
+  kind to what the suite's module reaches. The transcript registers
   the `'http'` suites through `register_spine_suites` with its recorder as
   the wrapper (../../test/CLAUDE.md §Cross-backend self-tests).
 - **Options from the handle.** Paths, cookie name and capabilities come from
@@ -1735,7 +1738,7 @@ session_options, principals?, ws?, suite_name?})`. A case's RPC method
   whole mount built on stub deps for resolution only. Same `{setup_test, surface_source,
 capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   both transports** — in-process (`gro test`) and cross-process (the gate,
-  each backend's real auth resolution). `resolve_conformance_principal` (exported) maps the
+  each backend's real auth resolution). `resolve_conformance_principal` (`conformance_principal.ts`, apart from the table's WebSocket leg so an HTTP-only suite reaches no socket transport) maps the
   always-available principals to fixture accessors; `role_holder` /
   `wrong_role` read a seeded `extra_accounts` username named via
   `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,

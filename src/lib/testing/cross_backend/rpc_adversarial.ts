@@ -99,7 +99,7 @@ import {
 	to_rpc_envelope_request
 } from '../rpc_envelope_cases.ts';
 import type { ConformancePrincipal } from './conformance_case.ts';
-import { resolve_conformance_principal } from './conformance_table.ts';
+import { resolve_conformance_principal } from './conformance_principal.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { xfail_until, type XfailMarker } from './xfail.ts';

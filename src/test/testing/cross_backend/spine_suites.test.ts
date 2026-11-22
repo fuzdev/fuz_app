@@ -156,7 +156,7 @@ describe('the spine suite transcript classification', () => {
 		for (const name of SUITE_NAMES) {
 			const transcript = get_spine_suite_transcript(name);
 			if (transcript === 'http') continue;
-			assert.ok(transcript.excluded.trim().length > 0, name);
+			assert.ok(transcript.excluded.reason.trim().length > 0, name);
 		}
 	});
 

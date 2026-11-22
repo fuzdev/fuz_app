@@ -15,15 +15,24 @@
  * them.
  *
  * Side A's `describe` runs every suite first and stores each test's
- * transcript; side B's runs them again and, in its `afterEach`, diffs against
- * A's for the same test, so a difference fails side B's test whichever side
+ * transcript; side B's runs them again and, as each test finishes
+ * (`onTestFinished`, registered from the `beforeEach` so it runs whatever an
+ * `afterEach` throws), diffs against A's for the same test, so a difference fails side B's test whichever side
  * owns it (the message carries both sides' values). The cross projects run
  * one file at a time, with no concurrent tests, so A finishes before B starts.
  * A test side B runs that side A didn't record fails there.
  *
+ * Each side also fails its own copy of a test that sent past the recording
+ * (an untagged `fetch` to any origin, or a `WebSocket` constructed — the
+ * tripwire in `transcript_record.ts`) or that passed with none of its own
+ * requests recorded, so a recording that broke can't pass by comparing two
+ * empty transcripts (`find_recording_problems`). What reaches neither is kept
+ * out of the transcript suites by the import census
+ * (`transcript_census.test.ts`).
+ *
  * With `compare_db_state`, each test also compares the databases the two
  * backends are left in (`create_db_state_probe`, read directly — both must be
- * on PostgreSQL the test process reaches): side A's `afterEach` stores its
+ * on PostgreSQL the test process reaches): side A stores its
  * normalized state beside the transcript, and side B's diffs against it, the
  * differences named under `db.` (`[db]` in a failure) for the ledger to
  * match by `path` (a row with `where` matches no database difference).
@@ -38,8 +47,11 @@
  * out of the whole-run count, so a declared skip on both sides leaves the
  * ledger judged; an undeclared one, or a declared one that runs, fails here.
  * Any other skip makes every run partial, so the ledger then goes unjudged
- * until it is removed; and a retried test records twice and fails here, so
- * these files take no `retry`.
+ * until it is removed: a registered skip (`test.skip`) by the count, a skip at
+ * run time (`ctx.skip`) by the closing test's record of it — which also fails
+ * a test skipped at run time on one side only, since vitest reports such a
+ * test as skipped and drops what its per-test check threw. A retried test
+ * records twice and fails here, so these files take no `retry`.
  *
  * To investigate a failure, set `FUZ_TEST_TRANSCRIPT_DUMP_DIR`
  * (`TRANSCRIPT_DUMP_DIR_ENV`) to a directory: the closing test writes both
@@ -52,7 +64,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, test } from 'vitest';
+import { afterAll, assert, beforeAll, beforeEach, describe, test } from 'vitest';
 
 import {
 	assert_declared_skip_reasons,
@@ -86,14 +98,37 @@ import {
 	type TranscriptSeqBase
 } from './transcript_normalize.ts';
 import {
-	install_create_account_recorder,
+	close_transcript_window,
+	install_transcript_fetch_patch,
+	open_transcript_window,
 	record_setup_test,
-	uninstall_create_account_recorder,
-	type TranscriptEntry
+	uninstall_transcript_fetch_patch,
+	type TranscriptEntry,
+	type TranscriptWindow
 } from './transcript_record.ts';
 
 /** The env var naming the directory a run's transcripts are written to. */
 export const TRANSCRIPT_DUMP_DIR_ENV = 'FUZ_TEST_TRANSCRIPT_DUMP_DIR';
+
+/**
+ * The entries a ledger row may match, by the error both sides' responses
+ * carry at `status`: a REST error body's `error` code (`body_error`), or a
+ * JSON-RPC error's `error.code` (`rpc_code`), narrowed by its `error.data.reason`
+ * when `rpc_reason` is set.
+ */
+export type TranscriptEntryWhere =
+	| {
+			readonly status: number;
+			readonly body_error: ReadonlyArray<string>;
+			readonly rpc_code?: never;
+			readonly rpc_reason?: never;
+	  }
+	| {
+			readonly status: number;
+			readonly rpc_code: ReadonlyArray<number>;
+			readonly rpc_reason?: ReadonlyArray<string>;
+			readonly body_error?: never;
+	  };
 
 /**
  * A known difference between the two sides' transcripts. `path` is relative
@@ -106,11 +141,8 @@ export interface TranscriptKnownDivergence {
 	readonly reason: string;
 	/** Test keys (`describe > … > test`) the row may match; every test when absent. */
 	readonly tests?: ReadonlyArray<string>;
-	/** The entries the row may match: both sides' responses carry this status and `error`. */
-	readonly where?: {
-		readonly status: number;
-		readonly body_error: ReadonlyArray<string>;
-	};
+	/** The entries the row may match: both sides' responses carry this status and error. */
+	readonly where?: TranscriptEntryWhere;
 	readonly what_differs: ReadonlyArray<{
 		readonly path: string;
 		readonly a?: unknown;
@@ -150,14 +182,63 @@ const DB_DIFF_INDEX = -1;
 
 const is_deep_equal = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
 
-const entry_matches_where = (
-	where: NonNullable<TranscriptKnownDivergence['where']>,
+/**
+ * Whether a normalized entry's response is one `where` names.
+ *
+ * @param where - the ledger row's entry filter
+ * @param entry - one side's normalized entry, `undefined` past its end
+ */
+export const entry_matches_where = (
+	where: TranscriptEntryWhere,
 	entry: Record<string, unknown> | undefined
 ): boolean => {
 	const response = entry?.response as { status?: unknown; body?: unknown } | null | undefined;
 	if (!response || response.status !== where.status) return false;
-	const body = response.body as { error?: unknown } | null | undefined;
-	return typeof body?.error === 'string' && where.body_error.includes(body.error);
+	const error = (response.body as { error?: unknown } | null | undefined)?.error;
+	if (where.body_error !== undefined) {
+		return typeof error === 'string' && where.body_error.includes(error);
+	}
+	if (typeof error !== 'object' || error === null) return false;
+	const { code, data } = error as { code?: unknown; data?: unknown };
+	if (typeof code !== 'number' || !where.rpc_code.includes(code)) return false;
+	if (where.rpc_reason === undefined) return true;
+	const reason = (data as { reason?: unknown } | null | undefined)?.reason;
+	return typeof reason === 'string' && where.rpc_reason.includes(reason);
+};
+
+/** How a test ended, as far as the recording checks care. */
+export type TranscriptTestOutcome = 'pass' | 'fail' | 'skip';
+
+/**
+ * What a test's recording says is wrong with it, beside any difference: a
+ * send the transcript couldn't see, or — for a test that passed — none of its
+ * own sends recorded (`create_account`'s don't count), so the diff would
+ * hold nothing the suite sent equal. A failed or skipped test is already
+ * accounted for.
+ *
+ * @param window - the test's closed window
+ * @param outcome - how the test ended
+ * @returns one line per problem
+ */
+export const find_recording_problems = (
+	window: TranscriptWindow,
+	outcome: TranscriptTestOutcome
+): Array<string> => {
+	const problems: Array<string> = [];
+	if (window.unrecorded.length > 0) {
+		problems.push(
+			'sent outside the recording transports, so the transcript never saw it ' +
+				'(send through `fixture.transport` or `fixture.fresh_transport`):\n' +
+				window.unrecorded.map((send) => `  ${send}`).join('\n')
+		);
+	}
+	if (outcome === 'pass' && !window.entries.some((e) => e.request.via === undefined)) {
+		problems.push(
+			'recorded none of its own requests, so its transcript compares nothing the suite sent — ' +
+				'a transcript suite test sends through the fixture'
+		);
+	}
+	return problems;
 };
 
 const covers = (
@@ -196,7 +277,6 @@ const key_below = (task: Task, root: Task): string => {
 	return names.join(' > ');
 };
 
-/** Every test under `suite`, depth first. */
 /** The tests under `suite`, less a nested `check_declared_skips` scope and its check. */
 const collect_tests = (suite: Task): Array<Task> =>
 	(suite.tasks ?? []).flatMap((t) =>
@@ -215,6 +295,9 @@ const will_run = (test: Task): boolean => test.mode === 'run' || test.mode === '
 const test_failed = (task: Task): boolean =>
 	task.result?.state === 'fail' || (task.result?.errors?.length ?? 0) > 0;
 
+const to_outcome = (task: Task): TranscriptTestOutcome =>
+	test_failed(task) ? 'fail' : task.result?.state === 'skip' ? 'skip' : 'pass';
+
 /** The suites the transcript runs: every registry entry marked `transcript: 'http'`. */
 export const TRANSCRIPT_SUITES: ReadonlyArray<SuiteName> = SUITE_NAMES.filter(
 	(name) => get_spine_suite_transcript(name) === 'http'
@@ -223,7 +306,7 @@ export const TRANSCRIPT_SUITES: ReadonlyArray<SuiteName> = SUITE_NAMES.filter(
 /** Side A's record of one test. */
 interface StoredTranscript {
 	readonly transcript: NormalizedTranscript;
-	/** No earlier test on side A failed, so its audit history matches a clean run's. */
+	/** No earlier test on side A failed or stopped at a skip, so its audit history matches a clean run's. */
 	readonly history_clean: boolean;
 	/** `seq_base` less the previous `seq_base` on side A, `null` for the first. */
 	readonly seq_step: TranscriptSeqBase | null;
@@ -252,6 +335,14 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 	const collected: Record<string, Array<CollectedTest>> = {};
 	const expected_skips = options.expected_skips ?? {};
 	assert_declared_skip_reasons(expected_skips, 'describe_transcript_differential: expected_skips');
+	/**
+	 * Per side, the tests skipped at run time (`ctx.skip`). vitest reports such
+	 * a test as skipped and drops what its `onTestFinished` hooks threw, so the
+	 * per-test checks can't fail it — the closing test holds the two sides'
+	 * sets equal instead.
+	 */
+	const runtime_skipped: Record<string, Set<string>> = { [a.name]: new Set(), [b.name]: new Set() };
+	/** Per side, whether a test has failed or been skipped at run time, cutting its audit history short. */
 	const failed_so_far: Record<string, boolean> = { [a.name]: false, [b.name]: false };
 	const last_seq_base: Record<string, number | null> = { [a.name]: null, [b.name]: null };
 	const sizes: Record<string, Array<number>> = { [a.name]: [], [b.name]: [] };
@@ -262,18 +353,16 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 	};
 
 	describe('transcript differential', () => {
-		beforeAll(install_create_account_recorder);
-		afterAll(uninstall_create_account_recorder);
+		beforeAll(install_transcript_fetch_patch);
+		afterAll(uninstall_transcript_fetch_patch);
 
 		for (const side of sides) {
 			const title = `transcript ${side.name}`;
 			describe(title, () => {
 				let root: Task | null = null;
-				let current: Array<TranscriptEntry> | null = null;
 				const probe: DbStateProbe | null = options.compare_db_state
 					? create_db_state_probe(side.handle)
 					: null;
-				let mark: DbStateMark | null = null;
 				afterAll(async () => {
 					await probe?.close();
 				});
@@ -293,19 +382,35 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					registered[side.name] = tests.filter((t) => !is_gated_skip(t)).length;
 					running[side.name] = tests.filter(will_run).map((t) => key_below(t, suite));
 				});
-				beforeEach(async () => {
-					current = [];
+				// the window closes and the test is judged in `onTestFinished`, which
+				// vitest runs whatever the hooks before it threw: an `afterEach` stops
+				// at the first that throws, a suite's own inner one included, so a
+				// check there would leave the window open and every later test failing
+				// on it, with this test's transcript lost
+				beforeEach(async (ctx) => {
+					let opened = false;
+					let mark: DbStateMark | null = null;
+					ctx.onTestFinished(async () => {
+						if (opened) await finish_test(ctx.task, mark);
+					});
+					open_transcript_window(side.handle.config.base_url);
+					opened = true;
 					mark = probe ? await probe.mark() : null;
 				});
-				afterEach(async (ctx) => {
-					const entries = current;
-					current = null;
+				const finish_test = async (task: Task, mark: DbStateMark | null): Promise<void> => {
+					const window = close_transcript_window();
 					const db_state = probe && mark ? await probe.read(mark) : null;
-					mark = null;
-					if (!entries || !root) return;
-					const key = key_below(ctx.task, root);
+					if (!window || !root) return;
+					const { entries } = window;
+					const key = key_below(task, root);
 					const history_clean = !failed_so_far[side.name];
-					if (test_failed(ctx.task)) failed_so_far[side.name] = true;
+					const outcome = to_outcome(task);
+					if (outcome !== 'pass') failed_so_far[side.name] = true;
+					if (outcome === 'skip') runtime_skipped[side.name]!.add(key);
+					// each side's own, beside any difference
+					const recording_problems = find_recording_problems(window, outcome).map(
+						(p) => `${side.name} ${p}`
+					);
 					sizes[side.name]!.push(JSON.stringify(entries).length);
 					if (options.dump_dir) raw[side.name]![key] = entries;
 					const transcript = normalize_transcript(entries, cookie_name);
@@ -319,6 +424,10 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					if (side === a) {
 						assert.ok(!stored_a.has(key), `transcript: test key recorded twice: ${key}`);
 						stored_a.set(key, { transcript, history_clean, seq_step, db_state });
+						assert.ok(
+							recording_problems.length === 0,
+							`transcript: ${key}\n${recording_problems.join('\n')}`
+						);
 						return;
 					}
 					assert.ok(!normalized_b.has(key), `transcript: test key recorded twice: ${key}`);
@@ -357,7 +466,7 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 						if (diffs.some((d) => row_covers(row, d))) matched_rows.add(row);
 					}
 					const unlisted = diffs.filter((d) => !ledger.some((row) => row_covers(row, d)));
-					const problems: Array<string> = [];
+					const problems: Array<string> = [...recording_problems];
 					if (unlisted.length > 0) {
 						const first = unlisted.find((d) => d.index !== DB_DIFF_INDEX)?.index;
 						problems.push(
@@ -388,14 +497,13 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 						);
 					}
 					assert.ok(problems.length === 0, `transcript: ${key}\n${problems.join('\n')}`);
-				});
+				};
 
 				// the suites as `spine_suites.cross.test.ts` runs them, each
 				// `setup_test` recording
 				register_spine_suites(side.handle, create_spine_cross_suites_options(), {
 					names: TRANSCRIPT_SUITES,
-					wrap_setup_test: (setup_test) =>
-						record_setup_test(setup_test, () => current, side.handle.config.base_url)
+					wrap_setup_test: (setup_test) => record_setup_test(setup_test)
 				});
 			});
 		}
@@ -408,6 +516,9 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 				paired: paired.size,
 				registered,
 				running: { [a.name]: running_a.length, [b.name]: running_b.length },
+				runtime_skipped: Object.fromEntries(
+					sides.map((s) => [s.name, [...runtime_skipped[s.name]!]])
+				),
 				matched_rows: [...matched_rows].map((r) => r.tracking_id),
 				sides: Object.fromEntries(
 					sides.map((s) => [
@@ -453,17 +564,35 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					: [];
 			});
 			assert.deepEqual(skip_problems, [], 'transcript differential: gated skips');
+			// a test skipped at run time on one side compared nothing there, and
+			// vitest swallowed whatever its per-test check found
+			const skipped_a = runtime_skipped[a.name]!;
+			const skipped_b = runtime_skipped[b.name]!;
+			const one_sided_skips = [
+				...[...skipped_a].filter((k) => !skipped_b.has(k)).map((k) => `${a.name} only: ${k}`),
+				...[...skipped_b].filter((k) => !skipped_a.has(k)).map((k) => `${b.name} only: ${k}`)
+			];
+			assert.deepEqual(
+				one_sided_skips,
+				[],
+				'transcript differential: tests skipped at run time on one side only'
+			);
 			// a ledger row is judged only on a whole run: a filtered or partly
-			// skipped one may leave out the tests a row covers
+			// skipped one may leave out the tests a row covers. A run-time skip is
+			// counted at collection as set to run, so it makes the run partial here
+			// — undeclared, unlike a gated skip, it would otherwise let a row that
+			// only the skipped test matches read as stale
 			const whole =
 				both_ran &&
 				running_a.length === registered[a.name] &&
-				running_b.length === registered[b.name];
+				running_b.length === registered[b.name] &&
+				skipped_a.size === 0;
 			if (!whole) {
 				ctx.skip(
 					`stale ledger rows unjudged: ${running_a.length} of ${registered[a.name] ?? 0} ` +
 						`${a.name} tests and ${running_b.length} of ${registered[b.name] ?? 0} ${b.name} ` +
-						'tests ran (a filter, `.only` or a skip)' +
+						`tests set to run, ${skipped_a.size} skipped at run time on both ` +
+						'(a filter, `.only` or a skip)' +
 						(both_ran ? '; the one-sided-test check ran' : '; no side-by-side check ran')
 				);
 			}

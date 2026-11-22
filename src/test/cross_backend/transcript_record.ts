@@ -1,26 +1,40 @@
 /**
  * Recording for the transcript differential (`transcript_differential.ts`):
  * every request a suite sends through its fixture, with the answer, pushed to
- * a sink the registration opens per test.
+ * the window the registration opens per test.
  *
  * Two seams, both outside `src/lib/testing/`:
  *
  * - `transport` and `fresh_transport` are wrapped, so the recorded request is
  *   what the suite passed — the relative path, its own headers and body. The
- *   `Origin` and `Cookie` the transport adds inside are not seen.
+ *   `Origin` and `Cookie` the transport adds inside are not seen. Each send
+ *   is tagged with `TRANSCRIPT_RECORDED_HEADER`, which the `fetch` patch
+ *   strips before it leaves.
  * - `create_account` sends its invite, signup, login and token mint on
  *   transports of its own, which no wrapper reaches. The call is wrapped
- *   instead and, while it runs, `globalThis.fetch` is patched to record what
- *   reaches the wire, so those entries carry the transport-added header names
- *   too. They are marked `via: 'create_account'`. Without them a minted
- *   account's ids would first appear in a later response, and a signup or
- *   login that answers differently would go unseen.
+ *   instead and, in its async context (`AsyncLocalStorage`), the `fetch`
+ *   patch records what reaches the wire, so those entries carry the
+ *   transport-added header names too. They are marked
+ *   `via: 'create_account'`. Without them a minted account's ids would first
+ *   appear in a later response, and a signup or login that answers
+ *   differently would go unseen.
  *
- * The per-test `_testing_reset` runs inside `setup_test()` before the fixture
- * exists, on the handle's own transport, and is never recorded.
+ * The patch is also the tripwire: while a window is open, any other untagged
+ * `fetch`, to any origin, is a send the transcript can't see — listed in the
+ * window's `unrecorded` for the registration to fail the test with — unless
+ * its body is a JSON-RPC call of a `_testing_*` backdoor, which is never
+ * recorded (the fixture sends them on its own transports: the per-test
+ * `_testing_reset` inside `setup_test()`, before the fixture exists, and the
+ * invariant check after the test). Constructing a `WebSocket` (or an
+ * `EventSource`, where the runtime has one) while a window is open is listed
+ * too. What reaches neither — the `ws` library, a raw socket — the tripwire
+ * can't see; the import census (`transcript_census.test.ts`) keeps those out
+ * of a transcript suite.
  *
  * @module
  */
+
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import type { SetupTest, TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import type { FetchTransport } from '#lib/testing/transports/fetch_transport.ts';
@@ -48,9 +62,6 @@ export interface TranscriptEntry {
 		readonly body: unknown;
 	} | null;
 }
-
-/** Where a recording test's entries go; `null` outside one. */
-export type TranscriptSink = () => Array<TranscriptEntry> | null;
 
 /**
  * Sent on every recorded request that names no `accept-encoding`, as the
@@ -90,21 +101,173 @@ const request_body = (body: RequestInit['body']): unknown =>
 			: `<${Object.prototype.toString.call(body)}>`;
 
 /**
+ * The header a recording wrapper tags its sends with, so the `fetch` patch
+ * tells them from a send no wrapper saw; stripped before the request leaves.
+ */
+export const TRANSCRIPT_RECORDED_HEADER = 'x-fuz-transcript-recorded';
+
+/** One test's recording, open from its `beforeEach` until it finishes. */
+export interface TranscriptWindow {
+	/** The backend the test runs against; stripped from the paths `create_account` sends. */
+	readonly base_url: string;
+	readonly entries: Array<TranscriptEntry>;
+	/**
+	 * The sends the recording couldn't see — `METHOD url` for an untagged
+	 * `fetch` outside `create_account`, `WebSocket url` / `EventSource url` for
+	 * a construction — the backend's origin left off the path.
+	 */
+	readonly unrecorded: Array<string>;
+}
+
+/**
+ * The open test's window. Module state is safe because the cross projects
+ * run one test at a time in one worker.
+ */
+let open_window: TranscriptWindow | null = null;
+
+/** Set inside a wrapped `create_account` call's async context. */
+const in_create_account: AsyncLocalStorage<true> = new AsyncLocalStorage();
+
+/** The globals the patch replaces. */
+const PATCHED_GLOBALS = ['fetch', 'WebSocket', 'EventSource'] as const;
+
+/**
+ * Each patched global's own property on `globalThis` before the patch,
+ * `undefined` for one it lacked — restored as it was, so the patch leaves no
+ * property behind (the cross projects share one global scope across files).
+ */
+let originals: Readonly<
+	Record<(typeof PATCHED_GLOBALS)[number], PropertyDescriptor | undefined>
+> | null = null;
+
+const require_window = (what: string): TranscriptWindow => {
+	if (!open_window) throw new Error(`transcript: ${what} outside a recording test`);
+	return open_window;
+};
+
+/**
+ * Open the window a test records into. Needs `install_transcript_fetch_patch`.
+ *
+ * @param base_url - the backend's base URL, stripped from the paths
+ *   `create_account` sends and from an unrecorded send's URL
+ * @throws Error when the patch isn't installed or a window is already open
+ */
+export const open_transcript_window = (base_url: string): void => {
+	if (!originals) throw new Error('transcript: the fetch patch is not installed');
+	if (open_window) throw new Error('transcript: a window is already open');
+	open_window = { base_url, entries: [], unrecorded: [] };
+};
+
+/**
+ * Close the open window.
+ *
+ * @returns what the test recorded and sent unrecorded, `null` when no window was open
+ */
+export const close_transcript_window = (): TranscriptWindow | null => {
+	const closed = open_window;
+	open_window = null;
+	return closed;
+};
+
+/** `url` less the window's base URL when it starts with it. */
+const to_path = (url: string, base_url: string): string =>
+	url.startsWith(`${base_url}/`) || url === base_url ? url.slice(base_url.length) : url;
+
+/** Whether a parsed request body is a JSON-RPC call of a `_testing_*` backdoor. */
+const is_backdoor_call = (body: unknown): boolean =>
+	typeof body === 'object' &&
+	body !== null &&
+	typeof (body as { method?: unknown }).method === 'string' &&
+	(body as { method: string }).method.startsWith('_testing_');
+
+/** The constructor `globalThis[name]` holds, wrapped to list each construction in the open window. */
+const wrap_socket_constructor = <T extends object>(name: string, target: T): T =>
+	new Proxy(target, {
+		construct: (t, args: Array<unknown>, new_target) => {
+			const window = open_window;
+			if (window) {
+				const url = args[0] instanceof URL ? args[0].href : String(args[0]);
+				window.unrecorded.push(`${name} ${to_path(url, window.base_url)}`);
+			}
+			return Reflect.construct(t as new (...a: Array<unknown>) => object, args, new_target);
+		}
+	});
+
+/**
+ * Patch `globalThis.fetch` (and `WebSocket`, and `EventSource` where defined)
+ * for the transcript: a tagged send has its tag stripped; inside a
+ * `create_account` call every send is recorded; with a window open, any
+ * other send — a `_testing_*` call aside — is listed in its `unrecorded`.
+ * With no window open everything passes straight through. Pair with
+ * `uninstall_transcript_fetch_patch`.
+ */
+export const install_transcript_fetch_patch = (): void => {
+	if (originals) return;
+	const inner = globalThis.fetch;
+	const g = globalThis as { WebSocket?: typeof globalThis.WebSocket; EventSource?: object };
+	originals = {
+		fetch: Object.getOwnPropertyDescriptor(globalThis, 'fetch'),
+		WebSocket: Object.getOwnPropertyDescriptor(globalThis, 'WebSocket'),
+		EventSource: Object.getOwnPropertyDescriptor(globalThis, 'EventSource')
+	};
+	if (g.WebSocket) g.WebSocket = wrap_socket_constructor('WebSocket', g.WebSocket);
+	if (g.EventSource) g.EventSource = wrap_socket_constructor('EventSource', g.EventSource);
+	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+		const request = new Request(input, init);
+		if (request.headers.has(TRANSCRIPT_RECORDED_HEADER)) {
+			request.headers.delete(TRANSCRIPT_RECORDED_HEADER);
+			return inner(request);
+		}
+		const window = open_window;
+		if (!window) return inner(request);
+		const body = parse_text(await request.clone().text());
+		const path = to_path(request.url, window.base_url);
+		if (!in_create_account.getStore()) {
+			if (!is_backdoor_call(body)) window.unrecorded.push(`${request.method} ${path}`);
+			return inner(request);
+		}
+		if (!request.headers.has('accept-encoding'))
+			request.headers.set('accept-encoding', IDENTITY_ENCODING['accept-encoding']);
+		const entry: TranscriptEntry = {
+			request: {
+				via: 'create_account',
+				method: request.method,
+				path,
+				header_names: header_names(request.headers),
+				body
+			},
+			response: null
+		};
+		window.entries.push(entry);
+		const res = await inner(request);
+		entry.response = await read_response(res);
+		return res;
+	};
+};
+
+/** Restore what `install_transcript_fetch_patch` replaced. */
+export const uninstall_transcript_fetch_patch = (): void => {
+	if (!originals) return;
+	for (const name of PATCHED_GLOBALS) {
+		const descriptor = originals[name];
+		if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+		else delete (globalThis as Record<string, unknown>)[name];
+	}
+	originals = null;
+};
+
+/**
  * Wrap a transport so each request it sends, and its answer, lands in the
- * sink. The entry is pushed before the send, so order holds even if a suite
- * sends concurrently.
+ * open window, the send tagged with `TRANSCRIPT_RECORDED_HEADER`. The entry
+ * is pushed before the send, so order holds even if a suite sends
+ * concurrently.
  *
  * @param transport - the fixture's transport
- * @param sink - the open test's entries
  * @returns a transport with the same jar
  */
-export const record_transport = (
-	transport: FetchTransport,
-	sink: TranscriptSink
-): FetchTransport => {
+export const record_transport = (transport: FetchTransport): FetchTransport => {
 	const recorded = (async (url: string, init: RequestInit): Promise<Response> => {
-		const entries = sink();
-		if (!entries) throw new Error('transcript: a request was sent outside a recording test');
+		const { entries } = require_window('a request was sent');
 		const headers = new Headers(init.headers);
 		if (!headers.has('accept-encoding'))
 			headers.set('accept-encoding', IDENTITY_ENCODING['accept-encoding']);
@@ -118,6 +281,7 @@ export const record_transport = (
 			response: null
 		};
 		entries.push(entry);
+		headers.set(TRANSCRIPT_RECORDED_HEADER, '1');
 		const res = await transport(url, { ...init, headers });
 		entry.response = await read_response(res);
 		return res;
@@ -127,81 +291,23 @@ export const record_transport = (
 };
 
 /**
- * While set, `globalThis.fetch` records into it: the window of one
- * `create_account` call. Module state is safe because the cross projects run
- * one test at a time in one worker.
- */
-let create_account_recording: { base_url: string; entries: Array<TranscriptEntry> } | null = null;
-
-let original_fetch: typeof fetch | null = null;
-
-/**
- * Patch `globalThis.fetch` to record while a `create_account` call is open.
- * Outside that window it passes straight through. Pair with
- * `uninstall_create_account_recorder`.
- */
-export const install_create_account_recorder = (): void => {
-	if (original_fetch) return;
-	const inner = globalThis.fetch;
-	original_fetch = inner;
-	globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
-		const recording = create_account_recording;
-		if (!recording) return inner(input, init);
-		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-		const headers = new Headers(init?.headers);
-		if (!headers.has('accept-encoding'))
-			headers.set('accept-encoding', IDENTITY_ENCODING['accept-encoding']);
-		const entry: TranscriptEntry = {
-			request: {
-				via: 'create_account',
-				method: (init?.method ?? 'GET').toUpperCase(),
-				path: url.startsWith(recording.base_url) ? url.slice(recording.base_url.length) : url,
-				header_names: header_names(headers),
-				body: request_body(init?.body)
-			},
-			response: null
-		};
-		recording.entries.push(entry);
-		const res = await inner(input, { ...init, headers });
-		entry.response = await read_response(res);
-		return res;
-	};
-};
-
-/** Restore the `fetch` `install_create_account_recorder` replaced. */
-export const uninstall_create_account_recorder = (): void => {
-	if (!original_fetch) return;
-	globalThis.fetch = original_fetch;
-	original_fetch = null;
-};
-
-/**
- * Wrap a `SetupTest` so the fixture it returns records into the sink, its
- * `create_account` included (needs `install_create_account_recorder`).
+ * Wrap a `SetupTest` so the fixture it returns records into the open window,
+ * its `create_account` included (needs `install_transcript_fetch_patch`).
  *
  * @param setup_test - the per-test fixture producer
- * @param sink - the open test's entries
- * @param base_url - the backend's base URL, stripped from the paths `create_account` sends
  * @returns the recording producer
  */
 export const record_setup_test =
-	(setup_test: SetupTest, sink: TranscriptSink, base_url: string): SetupTest =>
+	(setup_test: SetupTest): SetupTest =>
 	async (): Promise<TestFixture> => {
 		const fixture = await setup_test();
 		return {
 			...fixture,
-			transport: record_transport(fixture.transport, sink),
-			fresh_transport: (o) => record_transport(fixture.fresh_transport(o), sink),
-			create_account: async (o) => {
-				const entries = sink();
-				if (!entries) throw new Error('transcript: create_account outside a recording test');
-				if (!original_fetch) throw new Error('transcript: create_account recorder not installed');
-				create_account_recording = { base_url, entries };
-				try {
-					return await fixture.create_account(o);
-				} finally {
-					create_account_recording = null;
-				}
+			transport: record_transport(fixture.transport),
+			fresh_transport: (o) => record_transport(fixture.fresh_transport(o)),
+			create_account: (o) => {
+				require_window('create_account');
+				return in_create_account.run(true, () => fixture.create_account(o));
 			}
 		};
 	};
