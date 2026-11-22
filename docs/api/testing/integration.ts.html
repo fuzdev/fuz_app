@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DkVawWv8.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DSWkh0vO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CWhYyQRM.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DCG71tXn.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -99,22 +99,19 @@ against a real database. Consumers call it with their route factory and
 session config — all auth route tests come for free.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Tests use <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/app_server.ts#stub_password_deps"><!--[0--><!--[-1-->stub_password_deps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (deterministic hashing, no Argon2 overhead).
 Login handlers call <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->verify_password(submitted, stored_hash)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> which works because
 both hash and verify use the same stub logic.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Rate limiters are disabled by default — tests make many login attempts and would
-trigger limits otherwise.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[--><!--]--> <!--[-1--><!--]--></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/integration.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="block relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->2 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">describe_standard_integration_tests</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#describe_standard_integration_tests"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="describe_standard_integration_tests" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="describe_standard_integration_tests"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/integration.ts"><!--[-1-->testing/integration.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/integration.ts#L186" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>options<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">StandardIntegrationTestOptions</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_keyword">void</span></span></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>describe_standard_integration_tests<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/integration.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Standard integration test suite for fuz_app auth routes.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Exercises login/logout, cookie attributes, session security, session
+trigger limits otherwise.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[-1--><!--]--> <!--[--><!--]--> <!--[-1--><!--]--></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/integration.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="block relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->2 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">describe_standard_integration_tests</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#describe_standard_integration_tests"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="describe_standard_integration_tests" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="describe_standard_integration_tests"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/testing/integration.ts"><!--[-1-->testing/integration.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/testing/integration.ts#L183" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>options<span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_type_name token_class_name">StandardIntegrationTestOptions</span></span></span><span class="token_punctuation">)</span><span class="token_type_annotation"><span class="token_operator">:</span> <span class="token_type"><span class="token_keyword">void</span></span></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>describe_standard_integration_tests<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/testing/integration.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Standard integration test suite for fuz_app auth routes.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Exercises login/logout, cookie attributes, session security, session
 revocation, password change (incl. API token revocation), origin
 verification, bearer auth (incl. browser context discard on mutations),
 token revocation, cross-account isolation, expired credential rejection,
 signup invite edge cases, response body validation, and the middleware
 gates each counted route's error map declares (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->middleware_gate_probes.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Each test group asserts that required routes exist, failing with a descriptive
 message if the consumer's route specs are misconfigured.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The two signup-invite-edge-case tests call <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/admin_action_specs.ts#invite_create_action_spec"><!--[0--><!--[-1-->invite_create_action_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
-(admin-gated) over the fixture's session, so consumers wiring signup +
-admin actions must thread <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->extra_keeper_roles: [ROLE_ADMIN]<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> through
-either <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/in_process_setup.ts#default_in_process_suite_options"><!--[0--><!--[-1-->default_in_process_suite_options<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> or
-`default_cross_process_setup(handle, {extra_keeper_roles:
-[ROLE_ADMIN]})<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->. In both modes the fixture's <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->fixture.account` is the
-fresh keeper, and the extra-keeper-roles list grants the bootstrapped
-keeper additional roles inline (cross-process via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_reset<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s
-bootstrap-time seeding; in-process via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/app_server.ts#bootstrap_test_keeper"><!--[0--><!--[-1-->bootstrap_test_keeper<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — no
-per-role RPC cost, no offer/accept round-trip. The tests run against
+(admin-gated) over the fixture's session. In both modes the fixture's
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fixture.account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the fresh keeper, holding <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_KEEPER"><!--[0--><!--[-1-->ROLE_KEEPER<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/role_schema.ts#ROLE_ADMIN"><!--[0--><!--[-1-->ROLE_ADMIN<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> as a production bootstrap grants them (cross-process via
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_reset<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s seeding; in-process via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/app_server.ts#bootstrap_test_keeper"><!--[0--><!--[-1-->bootstrap_test_keeper<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> with
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/app_server.ts#DEFAULT_TEST_KEEPER_ROLES"><!--[0--><!--[-1-->DEFAULT_TEST_KEEPER_ROLES<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), so the invite is admitted with no
+per-role RPC cost or offer/accept round-trip. The tests run against
 the production <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->open_signup: false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> default — the cross-process
 per-test secondary mint via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fixture.create_account()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is
 invite-gated (keeper drives <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invite_create<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> before signup) so the
@@ -158,16 +155,16 @@ catches one covered code swapped for another where a ratio can't.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_ah8xmb = {
+					__sveltekit_1d8fg8l = {
 						base: "",
-						version: "550055b98f84f58d633f7d6cda0ff75d05e69684"
+						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_ah8xmb);
-						const app = await import("/_app/immutable/entry/app.DkVawWv8.js");
+						kit.init(__sveltekit_1d8fg8l);
+						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

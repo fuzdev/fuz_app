@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.DkVawWv8.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DSWkh0vO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/CWhYyQRM.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DCG71tXn.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -318,8 +318,8 @@ refusal with the same <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a cla
 matches the same origins. The shared conformance table
 (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/origin_conformance.json"><!--[0--><!--[-1-->testing/cross_backend/origin_conformance.json<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) pins both.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/pending_effects.ts"><!--[-1-->http/pending_effects.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Two-queue side-effect machinery for request handlers.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Handlers register fire-and-forget work in one of two queues, distinguished
 by their timing contract:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pending_effects: Array&lt;Promise&lt;void>><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — eager. Producers push pool
-writes that are already in flight (audit emits, session-touch UPDATE,
-api-token usage tracking). The pool write is rollback-resilient by
+writes that are already in flight (failure audit rows, session-touch
+UPDATE, api-token usage tracking). The pool write is rollback-resilient by
 virtue of running outside the request transaction; pushing the
 in-flight handle lets test mode (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->await_pending_effects: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) await
 it.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->post_commit_effects: Array&lt;() => void | Promise&lt;void>><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — deferred.
@@ -339,7 +339,10 @@ eager pushers are saying "wait for this work that's already started";
 thunk pushers are saying "run this after the handler returns." Burying
 both behind one <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Array&lt;PendingEffect><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> made <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c.var.pending_effects.push(x)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 ambiguous at the call site. With separate queues, the field name is
-the contract.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Both <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#RouteContext"><!--[0--><!--[-1-->RouteContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (HTTP routes) and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_types.ts#ActionContext"><!--[0--><!--[-1-->ActionContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (RPC + WS
+the contract.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A handler that opens its own transaction (a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->transaction: false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> route)
+runs it through <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/pending_effects.ts#transaction_with_post_commit_rollback"><!--[0--><!--[-1-->transaction_with_post_commit_rollback<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, which discards
+what that transaction queued when it rolls back, even when the handler
+catches the failure and answers normally.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Both <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_spec.ts#RouteContext"><!--[0--><!--[-1-->RouteContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (HTTP routes) and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_types.ts#ActionContext"><!--[0--><!--[-1-->ActionContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (RPC + WS
 actions) carry both queues by convention, so this module stays in
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http/<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (every transport depends on it).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/proxy.ts"><!--[-1-->http/proxy.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Trusted proxy configuration and middleware.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Resolves the client IP from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Forwarded-For<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> only when the TCP connection
 originates from a configured trusted proxy. Without this middleware,
@@ -450,16 +453,16 @@ error map (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declara
 			
 			<script>
 				{
-					__sveltekit_ah8xmb = {
+					__sveltekit_1d8fg8l = {
 						base: "",
-						version: "550055b98f84f58d633f7d6cda0ff75d05e69684"
+						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_ah8xmb);
-						const app = await import("/_app/immutable/entry/app.DkVawWv8.js");
+						kit.init(__sveltekit_1d8fg8l);
+						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
