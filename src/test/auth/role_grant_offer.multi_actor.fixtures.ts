@@ -22,7 +22,7 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import { create_route_specs, session_cookie_name } from './role_grant_offer_test_helpers.ts';
 
 /**
  * Build the multi-actor scaffolding bound to a `describe_db` callback's
@@ -43,7 +43,7 @@ export const create_multi_actor_helpers = (
 } => ({
 	build_app_with_audit: (events) =>
 		create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db(),
 			audit_factory: (params) =>

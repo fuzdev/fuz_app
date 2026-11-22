@@ -22,7 +22,7 @@ import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	create_app_role_route_specs,
-	session_options
+	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 
 // Scoped offers use an admin-grantable app role — builtin roles are
@@ -33,7 +33,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 	describe('scoped offers', () => {
 		test('create-with-scope yields a scoped role_grant on accept', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -70,7 +70,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 
 		test('sibling offers in different scopes do not supersede each other', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

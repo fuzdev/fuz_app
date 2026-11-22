@@ -14,6 +14,7 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
 import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
@@ -21,10 +22,7 @@ import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
-import {
-	spine_roles,
-	spine_session_options
-} from '#lib/testing/cross_backend/default_spine_surface.ts';
+import { spine_roles } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { SPINE_RPC_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import type { ExtraAccountSpec, SetupTest } from '#lib/testing/cross_backend/setup.ts';
@@ -80,7 +78,7 @@ export const create_cell_parity_setup = (
 	rpc_endpoints: (ctx: AppServerContext) => Array<RpcEndpointSpec> = cell_parity_rpc_endpoints
 ): SetupTest =>
 	default_in_process_setup({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: () => [],
 		rpc_endpoints,
 		migration_namespaces: [CELL_MIGRATION_NS],

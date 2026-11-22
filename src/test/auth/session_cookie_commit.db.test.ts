@@ -11,7 +11,6 @@
 
 import { assert, test } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { query_app_settings_update } from '#lib/auth/app_settings_queries.ts';
@@ -27,7 +26,7 @@ import { reset_audit_write_failures } from '#lib/auth/audit_emitter.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
 const STALE = 'test_session=stale.invalidsignature';
 
@@ -47,13 +46,13 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	}),
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: null,
 			login_account_rate_limiter: null,
 			login_fail_floor_ms: 0
 		}),
 		...create_signup_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			signup_fail_floor_ms: 0
@@ -88,7 +87,11 @@ const with_refused_commit = async (
 describe_db('session cookie lines and the commit', (get_db) => {
 	const setup = async (): Promise<{ gated: GatedDb; test_app: TestApp }> => {
 		const gated = create_gated_db(get_db());
-		const test_app = await create_test_app({ session_options, db: gated.db, create_route_specs });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			db: gated.db,
+			create_route_specs
+		});
 		return { gated, test_app };
 	};
 
@@ -180,7 +183,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 				test_app,
 				'/api/account/password',
 				{ current_password: DEFAULT_TEST_PASSWORD, new_password: 'changed-password-123' },
-				{ cookie: `${session_options.cookie_name}=${test_app.backend.session_cookie}` }
+				{ cookie: `${session_cookie_name}=${test_app.backend.session_cookie}` }
 			);
 			assert.strictEqual(res.status, 200);
 			assert.deepStrictEqual(res.headers.getSetCookie(), [CLEAR]);
@@ -192,7 +195,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	test('a logout whose commit fails clears no cookie and ends no session', async () => {
 		const { gated, test_app } = await setup();
 		try {
-			const cookie = `${session_options.cookie_name}=${test_app.backend.session_cookie}`;
+			const cookie = `${session_cookie_name}=${test_app.backend.session_cookie}`;
 			const res = await with_refused_commit(gated, () =>
 				post(test_app, '/api/account/logout', null, { cookie })
 			);
@@ -211,13 +214,13 @@ describe_db('session cookie lines and the commit', (get_db) => {
 		try {
 			gated.refuse_in_transaction(is_audit_insert, new Error('audit insert refused'));
 			const res = await post(test_app, '/api/account/logout', null, {
-				cookie: `${session_options.cookie_name}=${test_app.backend.session_cookie}`
+				cookie: `${session_cookie_name}=${test_app.backend.session_cookie}`
 			});
 			assert.strictEqual(res.status, 500);
 			assert.deepStrictEqual(res.headers.getSetCookie(), []);
 			// the revoke rolled back with the audit row: the session still works
 			const again = await post(test_app, '/api/account/logout', null, {
-				cookie: `${session_options.cookie_name}=${test_app.backend.session_cookie}`
+				cookie: `${session_cookie_name}=${test_app.backend.session_cookie}`
 			});
 			assert.strictEqual(again.status, 200);
 			assert.deepStrictEqual(again.headers.getSetCookie(), [CLEAR]);

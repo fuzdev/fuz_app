@@ -14,7 +14,6 @@
 import { test, assert } from 'vitest';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
@@ -29,7 +28,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_actor_lookup');
+const session_cookie_name = 'test_actor_lookup';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
@@ -50,7 +49,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 
 	test('happy path resolves a batch with id + username + display_name', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -76,7 +75,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 
 	test('unknown ids are silently absent from the response', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -99,7 +98,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 	test('display_name is omitted (not null) when actor.name is blank', async () => {
 		const db = get_db();
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db
 		});
@@ -130,7 +129,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 	test('lookup row exposes only id/username/display_name — no control-plane fields', async () => {
 		const db = get_db();
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db
 		});
@@ -188,7 +187,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 
 	test('rejects ids:[] at the schema (min(1))', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -208,7 +207,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 
 	test(`rejects ids past ACTOR_LOOKUP_IDS_MAX (${ACTOR_LOOKUP_IDS_MAX + 1})`, async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});

@@ -22,14 +22,13 @@
  * @module
  */
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 /** Shared cookie name for the admin-RPC integration suites. */
-export const session_options = create_session_config('test_session');
+export const session_cookie_name = 'test_session';
 
 /** The RPC mount path used across every admin-RPC integration suite. */
 export const RPC_PATH = '/api/rpc';

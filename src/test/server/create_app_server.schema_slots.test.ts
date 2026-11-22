@@ -21,7 +21,6 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
@@ -55,7 +54,7 @@ const boot = async (overrides: Partial<AppServerOptions>): Promise<unknown> => {
 				request_tracker: create_request_tracker()
 			}
 		},
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		allowed_origins: origins.origins,
 		env_schema: object({}),
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },

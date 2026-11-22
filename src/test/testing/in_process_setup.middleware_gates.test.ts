@@ -9,19 +9,18 @@
 
 import { assert, test } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { plan_middleware_gate_probes } from '#lib/testing/middleware_gate_probes.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** Each gate probe the in-process options plan for `GET /health`, as `status code length`. */
 const health_probes = (
 	app_options?: Parameters<typeof default_in_process_suite_options>[0]['app_options']
 ) => {
 	const options = default_in_process_suite_options({
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()],
 		app_options
 	});

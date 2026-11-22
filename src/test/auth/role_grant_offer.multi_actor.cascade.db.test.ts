@@ -31,7 +31,11 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
@@ -110,7 +114,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 
 		test('expired actor-targeted offer carries the actor on the role_grant_offer_expire envelope', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -158,7 +162,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 
 		test('supersede cascade inherits to_actor_id when the sibling was actor-targeted', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

@@ -14,7 +14,6 @@
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
@@ -29,7 +28,7 @@ import { rpc_call } from '#lib/testing/rpc_helpers.ts';
 
 import { db_factories } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('sse-round-trip-rpc', { level: 'off' });
 
@@ -53,7 +52,7 @@ const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 ];
 
 describe_sse_route_tests({
-	session_options,
+	session_cookie_name,
 	db_factories,
 	app_options: {
 		audit_log_sse: true,
@@ -63,7 +62,7 @@ describe_sse_route_tests({
 	create_route_specs: (ctx) => [
 		...prefix_route_specs('/api/account', [
 			...create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0

@@ -14,7 +14,6 @@
 
 import { test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import {
 	account_delete_action_spec,
@@ -33,7 +32,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -52,7 +51,7 @@ describe_db('account removal deletes unclaimed invites', (get_db) => {
 	test('delete and purge delete every unclaimed invite the account issued, audited; a claimed one stays', async () => {
 		const events: Array<AuditLogEvent> = [];
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db(),
 			audit_factory: (params) =>

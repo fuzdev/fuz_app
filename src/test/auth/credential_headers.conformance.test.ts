@@ -21,11 +21,7 @@ import {
 	read_session_cookie_value
 } from '#lib/auth/credential_headers.ts';
 import { generate_daemon_token, is_daemon_token_shaped } from '#lib/auth/daemon_token.ts';
-import {
-	create_session_config,
-	create_session_cookie_value,
-	is_cookie_value
-} from '#lib/auth/session_cookie.ts';
+import { create_session_cookie_value, is_cookie_value } from '#lib/auth/session_cookie.ts';
 import { to_thrown_jsonrpc_error } from '#lib/http/jsonrpc_errors.ts';
 import { resolve_issues_invalid_reason } from '#lib/schema_meta.ts';
 import {
@@ -39,7 +35,7 @@ import {
 import {
 	ERROR_TESTING_CREDENTIAL_READ_LINE,
 	run_testing_credential_read,
-	SessionCookieRead,
+	SessionCookieReadKind,
 	TESTING_CREDENTIAL_READ_LINE_LENGTH_MAX,
 	TESTING_CREDENTIAL_READ_LINES_MAX,
 	TestingCredentialReadInput,
@@ -50,13 +46,13 @@ import { create_test_keyring } from './session_test_helpers.ts';
 
 const table = load_credential_conformance();
 const keyring = create_test_keyring();
-const session_options = create_session_config('fuz_session');
+const session_cookie_name = 'fuz_session';
 
 /** This leg's placeholders: credentials of its own, signed with its own keyring. */
 const build_placeholders = async () =>
 	build_credential_conformance_placeholders({
-		cookie_name: session_options.cookie_name,
-		session_cookie: await create_session_cookie_value(keyring, 'session-token', session_options),
+		cookie_name: session_cookie_name,
+		session_cookie: await create_session_cookie_value(keyring, 'session-token'),
 		api_token: generate_api_token().token,
 		daemon_token: generate_daemon_token(),
 		keyring
@@ -78,7 +74,7 @@ const read_lines = async (
 	}
 	try {
 		return {
-			answer: await run_testing_credential_read(parsed.value, { keyring, session_options })
+			answer: await run_testing_credential_read(parsed.value, { keyring, session_cookie_name })
 		};
 	} catch (error) {
 		const thrown = to_thrown_jsonrpc_error(error);
@@ -188,7 +184,7 @@ describe('credential conformance table', () => {
 	});
 
 	test('every reading, every credential, and every placeholder appears', () => {
-		for (const reading of SessionCookieRead.def) {
+		for (const reading of SessionCookieReadKind.def) {
 			assert.ok(
 				table.rows.some((row) => row.read.session_cookie === reading),
 				`no row reads the session cookie ${reading}`
@@ -270,13 +266,10 @@ describe('the credential readers', () => {
 	});
 
 	test('a minted cookie value reads back as written', async () => {
-		const value = await create_session_cookie_value(keyring, 'session-token', session_options);
+		const value = await create_session_cookie_value(keyring, 'session-token');
 		assert.ok(is_cookie_value(value));
 		assert.strictEqual(
-			read_session_cookie_value(
-				[`a=1; ${session_options.cookie_name}=${value}`],
-				session_options.cookie_name
-			),
+			read_session_cookie_value([`a=1; ${session_cookie_name}=${value}`], session_cookie_name),
 			value
 		);
 	});

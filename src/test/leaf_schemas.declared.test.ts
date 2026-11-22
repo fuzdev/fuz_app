@@ -37,7 +37,7 @@ import {
 	TestingOriginCheckOutput
 } from '#lib/testing/cross_backend/testing_origin_check.ts';
 import {
-	SessionCookieRead,
+	SessionCookieReadKind,
 	TestingCredentialReadInput,
 	TestingCredentialReadOutput
 } from '#lib/testing/cross_backend/testing_credential_read.ts';
@@ -206,7 +206,7 @@ const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<un
 			}
 		]
 	],
-	['SessionCookieRead', SessionCookieRead, ['absent', 'invalid', 'valid']],
+	['SessionCookieReadKind', SessionCookieReadKind, ['absent', 'invalid', 'valid']],
 	['TestingCredentialReadInput', TestingCredentialReadInput, [{ lines: [] }, { lines: ['A: b'] }]],
 	[
 		'TestingCredentialReadOutput',

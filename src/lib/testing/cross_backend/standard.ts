@@ -35,7 +35,6 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { RoleRegistry } from '../../auth/role_schema.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import { describe_standard_integration_tests } from '../integration.ts';
@@ -69,8 +68,8 @@ export interface StandardCrossProcessTestOptions {
 	 * suites in the bundle read no flags and take no capability field.
 	 */
 	capabilities: BackendCapabilities;
-	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name — read for the session cookie and the factory-form `rpc_endpoints` resolution. */
+	session_cookie_name: string;
 	/**
 	 * RPC endpoint specs — required. The standard integration tests drive
 	 * `account_verify`, `account_session_*`, `account_token_*` through the
@@ -186,7 +185,7 @@ export const describe_standard_cross_process_tests = (
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
 		capabilities: options.capabilities,
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		rpc_endpoints: options.rpc_endpoints,
 		error_coverage_min: options.error_coverage_min,
 		base_url: options.base_url,
@@ -204,7 +203,7 @@ export const describe_standard_cross_process_tests = (
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		rpc_endpoints: options.rpc_endpoints,
 		skip_methods: options.rpc_skip_methods,
 		input_overrides: options.rpc_input_overrides,
@@ -220,7 +219,7 @@ export const describe_standard_cross_process_tests = (
 		describe_standard_admin_integration_tests({
 			setup_test: options.setup_test,
 			surface_source: options.surface_source,
-			session_options: options.session_options,
+			session_cookie_name: options.session_cookie_name,
 			roles: options.roles,
 			rpc_endpoints: options.rpc_endpoints,
 			admin_prefix: options.admin_prefix

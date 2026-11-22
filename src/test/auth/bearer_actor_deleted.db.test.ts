@@ -23,12 +23,16 @@ import { create_test_app } from '#lib/testing/test_app.ts';
 import { ERROR_NO_ACTORS_ON_ACCOUNT } from '#lib/http/error_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_admin_route_specs,
+	session_cookie_name
+} from './admin_rpc_test_helpers.ts';
 
 describe_db('bearer auth + dispatcher authorization phase — empty actor list', (get_db) => {
 	test('all actors deleted → 500 no_actors_on_account (resolve_acting_actor empty list)', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: create_admin_route_specs,
 			db: get_db()
 		});

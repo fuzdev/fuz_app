@@ -23,7 +23,6 @@ import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
 import {
@@ -132,7 +131,7 @@ vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 // --- Shared fixtures ---
 
 const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /**
  * Transactions open on `db` right now — to pin that a request waiting for a
@@ -208,7 +207,7 @@ const create_login_app = (
 			request_tracker: create_request_tracker()
 		},
 		{
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter,
 			login_account_rate_limiter,
 			// disable the 401 minimum-delay floor so failure tests don't wait
@@ -586,7 +585,10 @@ describe('login handler rate limiting', () => {
 		// Session cookie set on success
 		const cookies = res.headers.get('Set-Cookie');
 		assert.ok(cookies, 'successful login should set session cookie');
-		assert.ok(cookies.includes('test_session='), 'cookie name should match session config');
+		assert.ok(
+			cookies.includes('test_session='),
+			'cookie name should match the session cookie name'
+		);
 
 		// The window keeps accumulating across the success — a further failure
 		// exhausts it rather than starting a fresh budget. This is the bound the
@@ -1248,7 +1250,7 @@ const create_signup_app = (
 			request_tracker: create_request_tracker()
 		},
 		{
-			session_options,
+			session_cookie_name,
 			signup_ip_rate_limiter,
 			signup_account_rate_limiter,
 			// disable the denial-time floor so failure tests don't wait

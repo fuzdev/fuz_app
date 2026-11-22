@@ -16,7 +16,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
@@ -52,7 +51,7 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
 	const options: AppServerOptions = {
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps }),
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		create_route_specs: () => [create_health_route_spec()],
 		upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 		ws_endpoints: [

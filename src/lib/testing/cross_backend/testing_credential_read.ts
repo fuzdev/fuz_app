@@ -27,14 +27,10 @@ import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_types.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
-import {
-	read_bearer_token,
-	read_daemon_token,
-	read_session_cookie_value
-} from '../../auth/credential_headers.ts';
+import { read_bearer_token, read_daemon_token } from '../../auth/credential_headers.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import type { Keyring } from '../../auth/keyring.ts';
-import { process_session_cookie, type SessionOptions } from '../../auth/session_cookie.ts';
+import { parse_session_from_cookies } from '../../auth/session_cookie.ts';
 import { trim_optional_whitespace } from '../../http/header_lines.ts';
 import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
 import { bounded_string } from '../../primitive_schemas.ts';
@@ -83,12 +79,12 @@ export const TestingCredentialReadInput = object({
 export type TestingCredentialReadInput = Infer<typeof TestingCredentialReadInput>;
 
 /**
- * What a request's `Cookie` lines hold of the session cookie — the wire form
- * of the Rust spine's `fuz_auth::SessionCookieRead`, its variants in
- * lowercase.
+ * What a request's `Cookie` lines hold of the session cookie — the `kind` of
+ * a `SessionCookieRead` (`parse_session_from_cookies`), the wire form of the
+ * Rust spine's `fuz_auth::SessionCookieRead`, its variants in lowercase.
  */
-export const SessionCookieRead = one_of(['absent', 'invalid', 'valid']);
-export type SessionCookieRead = Infer<typeof SessionCookieRead>;
+export const SessionCookieReadKind = one_of(['absent', 'invalid', 'valid']);
+export type SessionCookieReadKind = Infer<typeof SessionCookieReadKind>;
 
 /**
  * Output of `_testing_credential_read`, a `@fuzdev/fuz_schema` `object`: how
@@ -101,7 +97,7 @@ export const TestingCredentialReadOutput = object({
 	 * the server's keyring and its signed expiry is ahead. Says nothing about
 	 * the `auth_session` row.
 	 */
-	session_cookie: SessionCookieRead,
+	session_cookie: SessionCookieReadKind,
 	/** The API token the bearer leg would look up, or `null` when it reads none. */
 	bearer_token: nullable(string),
 	/** The daemon token the daemon leg would compare, or `null` when it reads none. */
@@ -113,8 +109,8 @@ export type TestingCredentialReadOutput = Infer<typeof TestingCredentialReadOutp
 export interface TestingCredentialReadDeps {
 	/** The server's cookie keyring. */
 	readonly keyring: Keyring;
-	/** The server's session options — the cookie name and identity decoder. */
-	readonly session_options: SessionOptions<string>;
+	/** The server's session cookie name. */
+	readonly session_cookie_name: string;
 }
 
 /** An HTTP field name: an RFC 9110 `token`. */
@@ -165,13 +161,13 @@ export const parse_testing_header_lines = (
 /**
  * Answer one `_testing_credential_read` input: read each credential out of
  * the lines with the readers the auth middleware legs call
- * (`read_session_cookie_value` then `process_session_cookie`,
+ * (`parse_session_from_cookies`,
  * `read_bearer_token`, `read_daemon_token`). The action handler and the
  * conformance table's unit test both call this, so the table checks the same
  * functions the wire serves.
  *
  * @param input - the header lines
- * @param deps - the keyring and session options the cookie is verified with
+ * @param deps - the keyring the cookie is verified with, and its name
  * @returns the reading the Rust twin returns for the same lines
  * @throws ThrownJsonrpcError `invalid_params` for a line `parse_testing_header_lines` refuses
  */
@@ -180,13 +176,13 @@ export const run_testing_credential_read = async (
 	deps: TestingCredentialReadDeps
 ): Promise<TestingCredentialReadOutput> => {
 	const header = parse_testing_header_lines(input.lines);
-	const session = await process_session_cookie(
-		read_session_cookie_value(header('cookie'), deps.session_options.cookie_name),
+	const session = await parse_session_from_cookies(
+		header('cookie'),
 		deps.keyring,
-		deps.session_options
+		deps.session_cookie_name
 	);
 	return {
-		session_cookie: session.valid ? 'valid' : session.action === 'clear' ? 'invalid' : 'absent',
+		session_cookie: session.kind,
 		bearer_token: read_bearer_token(header('authorization')),
 		daemon_token: read_daemon_token(header(DAEMON_TOKEN_HEADER.toLowerCase()))
 	};
@@ -225,7 +221,7 @@ export const testing_credential_read_action_spec = {
 /**
  * Build the standalone `_testing_credential_read` action (see the spec doc).
  *
- * @param deps - the server's keyring and session options
+ * @param deps - the server's keyring and session cookie name
  */
 export const create_testing_credential_read_action = (deps: TestingCredentialReadDeps): RpcAction =>
 	rpc_action(testing_credential_read_action_spec, (input) =>

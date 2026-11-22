@@ -6,7 +6,6 @@
  * @module
  */
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
@@ -17,7 +16,7 @@ import { describe_audit_completeness_tests } from '#lib/testing/audit_completene
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 // Factory form — create_app_server evaluates this at mount time and
@@ -34,13 +33,13 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => {
 	return [
 		...prefix_route_specs('/api/account', [
 			...create_account_route_specs(deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
 			}),
 			...create_signup_route_specs(deps, {
-				session_options,
+				session_cookie_name,
 				signup_ip_rate_limiter: null,
 				signup_account_rate_limiter: null
 			})
@@ -51,7 +50,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => {
 
 describe_audit_completeness_tests(
 	default_in_process_suite_options({
-		session_options,
+		session_cookie_name,
 		create_route_specs,
 		rpc_endpoints
 	})

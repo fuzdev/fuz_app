@@ -7,7 +7,6 @@ import {
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { AppSurfaceSpec } from '#lib/http/surface.ts';
 
 const REST_NULL_MESSAGE =
@@ -34,7 +33,7 @@ const register = (cases: ReadonlyArray<ConformanceCase>): void =>
 		surface_source: {} as AppSurfaceSpec,
 		capabilities: in_process_capabilities,
 		rpc_endpoints: [],
-		session_options: create_session_config('fuz_session')
+		session_cookie_name: 'fuz_session'
 	});
 
 describe('check_conformance_cases', () => {

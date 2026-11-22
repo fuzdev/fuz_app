@@ -13,14 +13,14 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import {
 	create_spine_surface_spec,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
@@ -46,7 +46,7 @@ describe_conformance_table_tests({
 	surface_source: create_spine_surface_spec(),
 	capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	principals: { role_holder: PARTICIPATION_HOLDER_USERNAME },
 	suite_name: 'role-gated participation conformance (cross-process)'
 });

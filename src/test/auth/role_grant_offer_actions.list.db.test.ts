@@ -24,13 +24,17 @@ import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_querie
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.list', (get_db) => {
 	describe('role_grant_offer_list', () => {
 		test('caller lists own inbox', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -58,7 +62,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 
 		test('non-admin cross-account list is forbidden', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -79,7 +83,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 
 		test('admin can list another account with account_id param', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -106,7 +110,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 
 		test('a non-admin listing their own inbox and history by uppercased id is self', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -144,7 +148,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 	describe('list edge cases', () => {
 		test('empty inbox returns {offers: []}', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -163,7 +167,7 @@ describe_db('role_grant_offer_actions.list', (get_db) => {
 
 		test('list orders by expires_at asc', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

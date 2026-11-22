@@ -10,7 +10,7 @@
 import { describe, test, assert } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { fuz_session_config } from '#lib/auth/session_cookie.ts';
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import { body_limit_middleware_shape } from '#lib/http/body_limit_schema.ts';
 import {
@@ -39,7 +39,7 @@ const RPC_PATH = '/api/rpc';
 /** A Rust spine consumer's surface, with or without its host gate. */
 const rust_surface = (host_gate: boolean) =>
 	create_rust_spine_consumer_surface_spec({
-		session_options: fuz_session_config,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		domain_action_specs: [],
 		host_gate
 	});

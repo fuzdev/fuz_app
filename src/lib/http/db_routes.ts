@@ -169,7 +169,7 @@ export const NON_BROWSABLE_TABLES: ReadonlyArray<string> = Object.freeze([
  *   (`create_revocation_guard`) closes live connections by listening to audit
  *   events, so a raw row delete here is invisible to it.
  * - `bootstrap_lock` — deleting the singleton closes bootstrap for good:
- *   `check_bootstrap_status` reads a missing row as unavailable (logged as an
+ *   `is_bootstrap_available` reads a missing row as unavailable (logged as an
  *   error), so a database that has not bootstrapped never can until the row
  *   is restored.
  * - `app_settings` — deleting the singleton makes every settings read throw.

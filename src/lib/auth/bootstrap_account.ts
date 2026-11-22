@@ -32,7 +32,7 @@ import {
 import type { AuditEmitter } from './audit_emitter.ts';
 import type { BootstrapTokenStore } from './bootstrap_token_store.ts';
 import type { Keyring } from './keyring.ts';
-import { session_cookie_header, type SessionOptions } from './session_cookie.ts';
+import { sign_session_cookie } from './session_cookie.ts';
 import { create_capped_session } from './session_queries.ts';
 import { DEFAULT_MAX_SESSIONS } from './account_route_schema.ts';
 
@@ -42,9 +42,15 @@ export interface BootstrapAccountInput {
 	password: string;
 }
 
-/** Successful bootstrap result with the created entities and the new session. */
+/**
+ * Successful bootstrap result: the new session and the created entities. Twin
+ * of the Rust `BootstrapSuccess`; internal — the route answers
+ * `BootstrapOutput` from it.
+ */
 export interface BootstrapAccountSuccess {
 	ok: true;
+	/** The raw session token (its hash is the `auth_session` row id) — a live credential. */
+	session_token: string;
 	account: Account;
 	actor: Actor;
 	/**
@@ -99,8 +105,8 @@ export interface BootstrapAccountContext extends RequestEffectsContext {
 
 /** Static options for `bootstrap_account`. */
 export interface BootstrapAccountOptions {
-	/** Session cookie configuration for the session the bootstrap mints. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name for the session the bootstrap mints. */
+	session_cookie_name: string;
 }
 
 /**
@@ -265,16 +271,18 @@ export const bootstrap_account = async (
 			// The account was created above, so the cap evicts nothing. Routed
 			// through the shared minter anyway: the cap is a property of session
 			// creation, not of the login route.
-			const { cookie_value } = await create_capped_session({
-				keyring,
+			const { token: session_token } = await create_capped_session({
 				deps: tx_ctx,
 				account_id: account.id,
-				session_options: options.session_options,
 				max_sessions: DEFAULT_MAX_SESSIONS
 			});
-			// formatted here, as login and signup format theirs: a value the
-			// formatter refuses rolls the bootstrap back with the token unburned
-			const set_cookie = session_cookie_header(cookie_value, options.session_options);
+			// signed here, as login and signup sign theirs: a line the formatter
+			// refuses rolls the bootstrap back with the token unburned
+			const set_cookie = await sign_session_cookie(
+				keyring,
+				session_token,
+				options.session_cookie_name
+			);
 
 			// The success row, in the transaction and ahead of the burn: a refused
 			// INSERT rolls the bootstrap back with the token unburned and the
@@ -300,6 +308,7 @@ export const bootstrap_account = async (
 
 			return {
 				ok: true as const,
+				session_token,
 				account,
 				actor,
 				set_cookie

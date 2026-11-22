@@ -13,19 +13,19 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { describe_transport_composition_cross_tests } from '#lib/testing/cross_backend/transport_composition.ts';
 import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { SPINE_WS_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 
 const setup_test = default_in_process_setup({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints,
 	app_options: {

@@ -56,7 +56,7 @@ import '../assert_dev_env.ts';
  *   seeds the holder each needs.
  *
  * **Inputs the handle doesn't carry.** The declared surface (`surface_source`,
- * `session_options`, `rpc_endpoints`, `roles`) is a required option. Paths and
+ * `session_cookie_name`, `rpc_endpoints`, `roles`) is a required option. Paths and
  * roles that name what the reference spines mount (the role-gated WS endpoint
  * and its roles) default to the `SPINE_*` constants, and a suite whose
  * capability flag is off never reaches them. Anything else a suite needs comes
@@ -103,7 +103,6 @@ import {
 } from 'vitest';
 
 import { ROLE_KEEPER, ROLE_ADMIN, type RoleRegistry } from '../../auth/role_schema.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import { resolve_rpc_endpoints_for_setup, type RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { RpcSuccessFixtures } from '../rpc_round_trip.ts';
@@ -576,8 +575,8 @@ export interface SpineSuiteRoles {
 export interface SpineCrossSuitesOptions {
 	/** The declared surface — the standard bundle and `rpc_adversarial` enumerate it. */
 	readonly surface_source: AppSurfaceSpec;
-	/** The backend's session config, for the standard bundle. */
-	readonly session_options: SessionOptions<string>;
+	/** The session cookie's name, for the standard bundle. */
+	readonly session_cookie_name: string;
 	/** The backend's RPC endpoints, for the standard bundle. */
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
@@ -1175,7 +1174,10 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			surface_source: c.options.surface_source,
 			live_rpc_endpoints:
 				c.options.live_rpc_endpoints &&
-				resolve_rpc_endpoints_for_setup(c.options.live_rpc_endpoints, c.options.session_options),
+				resolve_rpc_endpoints_for_setup(
+					c.options.live_rpc_endpoints,
+					c.options.session_cookie_name
+				),
 			rpc_path: c.config.rpc_path,
 			input_overrides: c.options.rpc_input_overrides
 		}),
@@ -1234,7 +1236,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			}),
 			surface_source: c.options.surface_source,
 			capabilities: c.config.capabilities,
-			session_options: c.options.session_options,
+			session_cookie_name: c.options.session_cookie_name,
 			rpc_endpoints: c.options.rpc_endpoints,
 			roles: c.options.roles,
 			rpc_success_fixtures: c.options.rpc_success_fixtures,
@@ -1248,7 +1250,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: {
 			setup_test: true,
 			surface_source: true,
-			session_options: true,
+			session_cookie_name: true,
 			rpc_endpoints: true,
 			capabilities: true,
 			base_url: true
@@ -1491,7 +1493,7 @@ const validate_spine_cross_suites_options = (
 		if (options.live_rpc_endpoints) {
 			const live = resolve_rpc_endpoints_for_setup(
 				options.live_rpc_endpoints,
-				options.session_options
+				options.session_cookie_name
 			);
 			for (const endpoint of live) {
 				for (const action of endpoint.actions) methods.add(action.spec.method);

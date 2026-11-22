@@ -14,14 +14,7 @@ import type { UpgradeWebSocket } from 'hono/ws';
 import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {
-	SESSION_AGE_MAX,
-	create_session_cookie_value,
-	format_session_set_cookie,
-	is_cookie_name,
-	type SessionOptions
-} from '../auth/session_cookie.ts';
-import { generate_session_token } from '../auth/session_queries.ts';
+import { is_cookie_name } from '../auth/session_cookie.ts';
 import type { BootstrapTokenStore } from '../auth/bootstrap_token_store.ts';
 import { create_sse_stream, type EventSpec } from '../realtime/sse.ts';
 import {
@@ -71,7 +64,7 @@ import {
 } from '../http/route_spec.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import {
-	check_bootstrap_status,
+	is_bootstrap_available,
 	create_bootstrap_route_specs,
 	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
@@ -121,7 +114,7 @@ import type { AuditEmitter } from '../auth/audit_emitter.ts';
  *   Equivalent to omitting `bootstrap` entirely; the explicit mode is
  *   for documentation and reviewable intent at the wiring layer.
  * - `surface_only` — route present, permanent 403 via
- *   `check_bootstrap_status`. For tests asserting on the
+ *   `is_bootstrap_available`. For tests asserting on the
  *   disabled-but-present wire shape.
  * - `live` — route mounted, real token verification. Success path
  *   reachable. `token_store` is required.
@@ -161,12 +154,11 @@ export interface AppServerOptions {
 	/** Pre-initialized backend from `create_app_backend()`. */
 	backend: AppBackend;
 	/**
-	 * Session options for cookie-based auth. Assembly throws on options that
-	 * cannot write the cookie: a `cookie_name` that is no RFC 6265 cookie-name,
-	 * or — found by minting a sample cookie — an `encode_identity` or `max_age`
-	 * the `Set-Cookie` grammar cannot carry.
+	 * The session cookie's name (`SESSION_COOKIE_NAME` is the spine default).
+	 * Assembly throws on a name that is no RFC 6265 cookie-name, which the
+	 * `Set-Cookie` grammar cannot carry.
 	 */
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/**
 	 * Parsed allowed origin patterns, as `parse_allowed_origins` returns them
 	 * (`validate_server_env`'s `allowed_origins`); assembly throws on a matcher
@@ -970,35 +962,14 @@ const assemble_app_server = async (
 	const { log } = deps;
 
 	// option checks first, before anything is acquired
-	if (!is_cookie_name(options.session_options.cookie_name)) {
+	if (!is_cookie_name(options.session_cookie_name)) {
 		// a name the `Cookie` grammar cannot carry would be written as a header
-		// that reads back differently — refused here rather than at the first login
+		// that reads back differently — refused here rather than at the first
+		// mint, which for bootstrap comes after its one-shot token is spent
 		throw new Error(
 			`create_app_server: session cookie name ${JSON.stringify(
-				options.session_options.cookie_name
+				options.session_cookie_name
 			)} is not an RFC 6265 cookie-name`
-		);
-	}
-	// Mint a sample cookie the way a login does. Options that cannot write one
-	// — an `encode_identity` emitting a character outside the cookie grammar, a
-	// `max_age` that is no whole number of seconds — would otherwise throw at
-	// the first mint, which for bootstrap comes after its one-shot token is
-	// spent.
-	try {
-		format_session_set_cookie(
-			options.session_options.cookie_name,
-			await create_session_cookie_value(
-				deps.keyring,
-				generate_session_token(),
-				options.session_options
-			),
-			options.session_options.max_age ?? SESSION_AGE_MAX
-		);
-	} catch (error) {
-		throw new Error(
-			'create_app_server: session_options cannot mint a session cookie — ' +
-				(error instanceof Error ? error.message : String(error)),
-			{ cause: error }
 		);
 	}
 	if (options.allowed_origins.length === 0) {
@@ -1082,7 +1053,7 @@ const assemble_app_server = async (
 	// Auth middleware
 	const auth_middleware = await create_auth_middleware_specs(deps, {
 		allowed_origins: options.allowed_origins,
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		daemon_token_state: options.daemon_token_state,
 		origin_carve_outs: options.origin_carve_outs
 	});
@@ -1121,10 +1092,14 @@ const assemble_app_server = async (
 	// Bootstrap status
 	// - undefined / 'disabled': no route mounted; placeholder status.
 	// - 'surface_only': route mounted but permanently unavailable; status placeholder.
-	// - 'live': real disk + lock check via `check_bootstrap_status`.
+	// - 'live': real disk + lock check via `is_bootstrap_available`.
 	const bootstrap_status: BootstrapStatus =
 		options.bootstrap?.mode === 'live'
-			? await check_bootstrap_status(deps, { token_store: options.bootstrap.token_store })
+			? {
+					available: await is_bootstrap_available(deps, {
+						token_store: options.bootstrap.token_store
+					})
+				}
 			: { available: false };
 
 	// Surface route ref — factory manages the circular ref
@@ -1145,7 +1120,7 @@ const assemble_app_server = async (
 		deps,
 		backend,
 		bootstrap_status,
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		...rate_limiters,
 		audit_sse
 	};
@@ -1160,7 +1135,7 @@ const assemble_app_server = async (
 	// 'surface_only' and the post-bootstrap state for 'live'.
 	if (options.bootstrap && options.bootstrap.mode !== 'disabled') {
 		const bootstrap_routes = create_bootstrap_route_specs(deps, {
-			session_options: options.session_options,
+			session_cookie_name: options.session_cookie_name,
 			bootstrap_status,
 			token_store: options.bootstrap.mode === 'live' ? options.bootstrap.token_store : null,
 			// a successful bootstrap sets its keeper here, after its commit

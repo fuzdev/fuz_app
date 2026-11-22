@@ -12,7 +12,6 @@ import { test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
 import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts';
@@ -29,7 +28,7 @@ import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 /** U+1F600 — one code point, two UTF-16 code units. */
@@ -73,7 +72,7 @@ const invalid_params_body = (issues: Array<WireIssue>): string =>
 describe_db('actor_lookup and actor_search on fuz_schema', (get_db) => {
 	const setup = async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			rpc_endpoints,
 			db: get_db()

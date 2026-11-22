@@ -14,7 +14,6 @@
 
 import { assert, test } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { query_app_settings_update } from '#lib/auth/app_settings_queries.ts';
@@ -31,7 +30,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** What the refused audit INSERT throws. */
 const audit_refused = (): Error => new Error('audit insert refused');
@@ -61,13 +60,13 @@ const setup = async (
 		ctx.deps.connection_closer.add(probe);
 		return prefix_route_specs('/api/account', [
 			...create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
 			}),
 			...create_signup_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				signup_ip_rate_limiter: null,
 				signup_account_rate_limiter: null,
 				signup_fail_floor_ms: 0
@@ -75,7 +74,7 @@ const setup = async (
 		]);
 	};
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db: gated.db,
 		create_route_specs,
 		...(options.await_pending_effects !== undefined && {
@@ -107,7 +106,7 @@ const change_password = (h: Harness): Promise<Response> =>
 		h,
 		'/api/account/password',
 		{ current_password: DEFAULT_TEST_PASSWORD, new_password: 'changed-password-123' },
-		{ cookie: `${session_options.cookie_name}=${h.test_app.backend.session_cookie}` }
+		{ cookie: `${session_cookie_name}=${h.test_app.backend.session_cookie}` }
 	);
 
 const signup = (h: Harness): Promise<Response> =>

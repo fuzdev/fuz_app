@@ -24,7 +24,11 @@ import {
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
@@ -40,7 +44,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			// it's the difference between truthful "offer is terminal"
 			// and misleading "role_grant obtained" UI.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -97,7 +101,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			// the already-accepted offer and returns the existing role_grant.
 			// Must not be broken by the loser-mismatch guard: actor matches.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

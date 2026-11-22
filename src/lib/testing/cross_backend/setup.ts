@@ -230,7 +230,7 @@ export interface TestFixture {
 	 * return the ready-to-send `Cookie` header value (`name=value`). The
 	 * minted `auth_session` row is backdated while the signed cookie payload
 	 * stays valid — so resolution clears the cookie-payload gate
-	 * (`parse_session`) and is refused at the authoritative DB-row gate
+	 * (`parse_session_from_cookies`) and is refused at the authoritative DB-row gate
 	 * (`query_session_get_valid` — `WHERE expires_at > NOW()`). Backs the
 	 * `expired_session` conformance principal. In-process mints directly via
 	 * `mint_test_session`; cross-process drives the `_testing_mint_session`

@@ -37,13 +37,17 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.revoke', (get_db) => {
 	describe('role_grant_revoke', () => {
 		test('admin revokes a role_grant and gets {ok, revoked}', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -74,7 +78,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 		test('non-admin caller forbidden with insufficient_permissions', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -110,7 +114,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 		test('cross-actor revoke returns role_grant_not_found (IDOR guard)', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -141,7 +145,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 		test('non-admin-grant-path role (keeper) rejected with role_not_web_grantable + failure audit', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -182,7 +186,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 		test('nonexistent role_grant returns role_grant_not_found', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -205,7 +209,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 		test('reason persists on role_grant.revoked_reason and audit metadata', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -246,7 +250,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 		test('supersedes pending sibling offers in the same transaction', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -289,7 +293,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 		test("supersedes the revokee's own pending offers, audited, and leaves others'", async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -391,7 +395,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 			test("the keeper account's admin grant is never revoked", async () => {
 				const test_app = await create_test_app({
-					session_options,
+					session_cookie_name,
 					create_route_specs,
 					db: get_db()
 				});
@@ -412,7 +416,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 
 			test("the last active admin's admin grant is not revoked; a second admin lifts the guard", async () => {
 				const test_app = await create_test_app({
-					session_options,
+					session_cookie_name,
 					create_route_specs,
 					db: get_db()
 				});
@@ -454,7 +458,7 @@ describe_db('role_grant_offer_actions.revoke', (get_db) => {
 				exclude_db_invariants?: DbInvariantExclusions
 			) => {
 				const test_app = await create_test_app({
-					session_options,
+					session_cookie_name,
 					create_route_specs,
 					db: get_db(),
 					exclude_db_invariants

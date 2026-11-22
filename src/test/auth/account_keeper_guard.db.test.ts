@@ -12,7 +12,6 @@
 
 import { test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import {
 	account_delete_action_spec,
@@ -35,7 +34,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -53,7 +52,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 
 	test('keeper self-delete is refused (cannot_delete_keeper)', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -77,7 +76,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 
 	test('admin cannot soft-delete the keeper account', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -130,7 +129,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// the only one), and in the two tests after it. Each last-admin test
 		// ends with an active admin, so every invariant holds when it finishes.
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db(),
 			roles: [ROLE_KEEPER]
@@ -186,7 +185,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// admin branch now uses the active-account predicate. Keeper-only
 		// bootstrap, as above: an admin keeper would be a second active admin.
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db(),
 			roles: [ROLE_KEEPER]
@@ -231,7 +230,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 		// the sole *active* admin — deleting it would leave no admin that can
 		// authenticate, so it stays blocked. Keeper-only bootstrap, as above.
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db(),
 			roles: [ROLE_KEEPER]
@@ -277,7 +276,7 @@ describe_db('account_delete keeper guard', (get_db) => {
 		const db = get_db();
 		// Keeper-only bootstrap, as above.
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db,
 			roles: [ROLE_KEEPER],

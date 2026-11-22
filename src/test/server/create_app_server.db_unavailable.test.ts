@@ -13,7 +13,7 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { create_session_config, create_session_cookie_value } from '#lib/auth/session_cookie.ts';
+import { create_session_cookie_value } from '#lib/auth/session_cookie.ts';
 import { generate_api_token } from '#lib/auth/api_token.ts';
 import { Db } from '#lib/db/db.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
@@ -24,7 +24,7 @@ import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
 
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** A `Db` whose every statement throws `create_error()`, recording the statement first. */
 const create_failing_db = (create_error: () => Error): { db: Db; statements: Array<string> } => {
@@ -56,15 +56,15 @@ const request_with_failing_db = async (
 	const server = await create_app_server({
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps }),
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()],
 		rate_limiters: 'disabled_for_testing'
 	});
 	try {
-		const cookie = await create_session_cookie_value(keyring, 'session-token', session_options);
+		const cookie = await create_session_cookie_value(keyring, 'session-token');
 		const res = await server.app.request('/api/anything', {
 			headers: {
-				Cookie: `${session_options.cookie_name}=${cookie}`,
+				Cookie: `${session_cookie_name}=${cookie}`,
 				Authorization: `Bearer ${generate_api_token().token}`
 			}
 		});

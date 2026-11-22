@@ -11,16 +11,16 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { describe_token_lifetime_cross_tests } from '#lib/testing/cross_backend/token_lifetime.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 const setup_test = default_in_process_setup({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints
 });

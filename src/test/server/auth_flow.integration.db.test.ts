@@ -14,7 +14,6 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { literal, loose_object, nullable, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
@@ -35,7 +34,7 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** Route that requires any authenticated user. */
 const create_authenticated_route_spec = (): RouteSpec =>
@@ -82,12 +81,10 @@ describe('auth flow integration', () => {
 
 	beforeAll(async () => {
 		// Bootstrap a test server — the keeper holds keeper + admin by default
-		test_server = await create_test_app_server({
-			session_options
-		});
+		test_server = await create_test_app_server({});
 
 		const base_config = {
-			session_options,
+			session_cookie_name,
 			allowed_origins: create_loopback_app_server_options().allowed_origins,
 			proxy: {
 				trusted_proxies: ['127.0.0.1'],
@@ -181,7 +178,6 @@ describe('auth flow integration', () => {
 		beforeAll(async () => {
 			// Create a second account with only the admin role (no keeper)
 			non_keeper_server = await create_test_app_server({
-				session_options,
 				db: test_server.deps.db,
 				username: 'admin_only_user',
 				roles: [ROLE_ADMIN]
@@ -190,7 +186,7 @@ describe('auth flow integration', () => {
 			const options: AppServerOptions = {
 				...create_loopback_app_server_options(),
 				backend: non_keeper_server,
-				session_options,
+				session_cookie_name,
 				create_route_specs: () => [
 					create_health_route_spec(),
 					create_authenticated_route_spec(),

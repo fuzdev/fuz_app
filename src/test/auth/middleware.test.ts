@@ -34,11 +34,7 @@ import { create_test_account } from '#lib/testing/entities.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],
-	session_options: {
-		cookie_name: 'test_session',
-		encode_identity: (id: string) => id,
-		decode_identity: (payload: string) => payload
-	},
+	session_cookie_name: 'test_session',
 	...overrides
 });
 

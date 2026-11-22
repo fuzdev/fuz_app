@@ -255,8 +255,8 @@ export interface MakeDefaultTsBackendConfigOptions {
 	 */
 	readonly port_env_var?: string;
 	/**
-	 * Session cookie name the binary's `create_session_config` uses.
-	 * Defaults to `'fuz_session'`. Must match the consumer's session config
+	 * Session cookie name the binary's server is assembled with (`session_cookie_name`).
+	 * Defaults to `'fuz_session'`. Must match the consumer's session cookie name
 	 * — the harness threads the `_testing_reset`-returned keeper cookie into
 	 * its jar under this name, so a mismatch surfaces as 401s on the
 	 * `create_account` path (e.g. fuz_forge uses `'fuz_forge_session'`).
@@ -365,7 +365,7 @@ export interface MakeDefaultRustBackendConfigOptions {
 	readonly rust_log?: string;
 	/**
 	 * Session cookie name the binary uses. Defaults to `'fuz_session'`.
-	 * Must match the consumer's session config (see the TS builder's note).
+	 * Must match the consumer's session cookie name (see the TS builder's note).
 	 */
 	readonly cookie_name?: string;
 	/**

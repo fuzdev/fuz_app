@@ -19,13 +19,17 @@ import {
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.decline', (get_db) => {
 	describe('role_grant_offer_decline', () => {
 		test('recipient declines successfully', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -57,7 +61,7 @@ describe_db('role_grant_offer_actions.decline', (get_db) => {
 
 		test('wrong account returns offer_not_found', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -92,7 +96,7 @@ describe_db('role_grant_offer_actions.decline', (get_db) => {
 	describe('decline semantics', () => {
 		test('decline reason persists to decline_reason column', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

@@ -11,8 +11,6 @@ import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
-import type { Keyring } from './keyring.ts';
-import { create_session_cookie_value, type SessionOptions } from './session_cookie.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
 import type { AuthSession, SessionId } from './account_schema.ts';
 import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
@@ -395,31 +393,28 @@ export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<Ar
  * Options for `create_capped_session`.
  */
 export interface CreateCappedSessionOptions {
-	/** Keyring for cookie signing. */
-	keyring: Keyring;
 	/** Query deps (needs db for session creation). */
 	deps: QueryDeps;
 	/** The account to create a session for. */
 	account_id: string;
-	/** Session cookie configuration. */
-	session_options: SessionOptions<string>;
 	/** Per-account session cap (`null` to skip enforcement). */
 	max_sessions?: number | null;
 }
 
-/** What `create_capped_session` minted. */
+/** What `create_capped_session` minted. Twin of the Rust `CappedSession`. */
 export interface CappedSession {
-	/** The signed session cookie value, for `session_cookie_header`. */
-	cookie_value: string;
+	/** The raw session token, for `sign_session_cookie` — a live credential. */
+	token: string;
 	/** The token hashes of the sessions the cap evicted, empty without a cap. */
 	evicted: Array<string>;
 }
 
 /**
- * Mint an auth session: generate a token, persist its hashed row, enforce
- * the per-account cap when given one, and sign the cookie value — without
- * touching a response, so a caller minting inside a transaction sets the
- * cookie only once that transaction has succeeded. Twin of the Rust
+ * Mint an auth session: generate a token, persist its hashed row, and enforce
+ * the per-account cap when given one — without touching a response. The
+ * caller signs the token into its `Set-Cookie` line (`sign_session_cookie`)
+ * and sets it on its success, so a session minted inside a transaction gets
+ * its cookie only once that transaction has succeeded. Twin of the Rust
  * `fuz_auth::create_capped_session`.
  *
  * The cap deletes the sessions it evicts, but not the connections they
@@ -434,13 +429,13 @@ export interface CappedSession {
  * account's mints take turns, which the cap counts on
  * (`query_session_enforce_limit`).
  *
- * @returns the signed cookie value and the evicted sessions' token hashes
+ * @returns the raw session token and the evicted sessions' token hashes
  * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)
  */
 export const create_capped_session = async (
 	options: CreateCappedSessionOptions
 ): Promise<CappedSession> => {
-	const { keyring, deps, account_id, session_options, max_sessions } = options;
+	const { deps, account_id, max_sessions } = options;
 	const session_token = generate_session_token();
 	const token_hash = hash_session_token(session_token);
 	await query_create_session(deps, token_hash, account_id);
@@ -448,6 +443,5 @@ export const create_capped_session = async (
 	const evicted =
 		max_sessions != null ? await query_session_enforce_limit(deps, account_id, max_sessions) : [];
 
-	const cookie_value = await create_session_cookie_value(keyring, session_token, session_options);
-	return { cookie_value, evicted };
+	return { token: session_token, evicted };
 };

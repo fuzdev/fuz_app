@@ -31,7 +31,11 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
@@ -40,7 +44,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 	describe('actor-grain offers (`to_actor_id` set)', () => {
 		test('only the named actor may accept; wrong-actor rejects with role_grant_offer_actor_mismatch', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -99,7 +103,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			// `acting: actor_a` (rejected — wrong actor) or `acting: actor_b`
 			// (accepted). Single account, two actors, one session.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -154,7 +158,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			// actor; the recipient passes `acting: recipient.actor.id` (the
 			// first actor on the account — the wrong actor for this offer).
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -219,7 +223,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 
 		test('to_actor_id from a different account rejects with offer_actor_account_mismatch', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -268,7 +272,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			// self-targeted offer when the grantor picks a specific actor
 			// via `acting`.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

@@ -41,7 +41,6 @@ import { stub_password_deps } from '#lib/testing/app_server.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
@@ -66,7 +65,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db, pg_factory } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 const OLD_PASSWORD = 'old-password-race-1';
 const NEW_PASSWORD = 'new-password-race-2';
@@ -80,7 +79,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs(
 		'/api/account',
 		create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: null,
 			login_account_rate_limiter: null,
 			login_fail_floor_ms: 0
@@ -134,7 +133,7 @@ interface Setup {
 const setup = async (db: Db, exclude_db_invariants?: DbInvariantExclusions): Promise<Setup> => {
 	const latched = create_latched_password();
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db,
 		password: latched.deps,
 		create_route_specs,

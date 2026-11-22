@@ -28,13 +28,17 @@ import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.create', (get_db) => {
 	describe('role_grant_offer_create', () => {
 		test('grantor holding admin role can offer admin', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -56,7 +60,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 
 		test('caller without the role is forbidden (not_authorized)', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -80,7 +84,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 
 		test('self-offer rejected with offer_self_target reason, in either case', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -110,7 +114,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 	describe('re-offer upsert', () => {
 		test('same grantor re-offering returns the same offer with refreshed message', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -144,7 +148,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 		// Rust `perform_action_dispatch` `role_grant_offer_create_is_session_only`.
 		test('an admin api token is refused 403 credential_type_required, writing nothing', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -203,7 +207,7 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 				})
 			];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: custom_route_specs,
 				db: get_db()
 			});

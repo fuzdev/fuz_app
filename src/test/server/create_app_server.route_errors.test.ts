@@ -11,7 +11,6 @@ import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
 	create_app_server,
 	type AppServer,
@@ -79,7 +78,7 @@ const assemble = async (
 	const server = await create_app_server({
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps }),
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		create_route_specs: () => [echo_route(errors)],
 		...overrides
 	});

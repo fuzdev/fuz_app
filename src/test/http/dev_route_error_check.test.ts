@@ -499,7 +499,6 @@ describe('the DEV error check outside DEV', () => {
 		const { create_realtime_notification_sender } =
 			await import('#lib/actions/notification_sender.ts');
 		const { parse_allowed_origins } = await import('#lib/http/origin.ts');
-		const { create_session_config } = await import('#lib/auth/session_cookie.ts');
 		const origins = parse_allowed_origins(ORIGIN);
 		assert.ok(origins.ok);
 		const logged: Array<string> = [];
@@ -528,7 +527,7 @@ describe('the DEV error check outside DEV', () => {
 					request_tracker: create_request_tracker()
 				}
 			},
-			session_options: create_session_config('test_session'),
+			session_cookie_name: 'test_session',
 			allowed_origins: origins.origins,
 			env_schema: object({}),
 			proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },

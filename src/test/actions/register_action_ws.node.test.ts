@@ -34,7 +34,6 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 import {
 	RESOLVED_AUTH_KEY,
@@ -99,7 +98,7 @@ interface TestServer {
 	close: () => Promise<void>;
 }
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /**
  * `session_middleware` mounts the session middleware on every path, ahead of
@@ -116,7 +115,7 @@ const start_server = async (
 			await next();
 			c.res.headers.set('X-Outbound-Probe', '1');
 		});
-		app.use('*', create_session_middleware(create_test_keyring(), session_options));
+		app.use('*', create_session_middleware(create_test_keyring(), session_cookie_name));
 	}
 	// Stand in for the auth middleware chain: a session credential on one
 	// account, pre-baked (no database behind this test).

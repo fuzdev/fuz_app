@@ -12,7 +12,6 @@
 
 import { test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import {
 	account_delete_action_spec,
@@ -31,7 +30,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -60,7 +59,11 @@ describe_db('account_delete self path is session-only', (get_db) => {
 	install_audit_drift_guard();
 
 	test('self via session → deleted', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const member = await test_app.create_account({ username: 'self_session' });
 		const res = await rpc_call_for_spec({
 			app: test_app.app,
@@ -74,7 +77,11 @@ describe_db('account_delete self path is session-only', (get_db) => {
 	});
 
 	test('self via session naming the own id uppercased → deleted, not an elevation refusal', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const member = await test_app.create_account({ username: 'self_session_upper' });
 		const res = await rpc_call_for_spec({
 			app: test_app.app,
@@ -88,7 +95,11 @@ describe_db('account_delete self path is session-only', (get_db) => {
 	});
 
 	test('self via api token → 403 credential_type_required, account survives', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const member = await test_app.create_account({ username: 'self_bearer' });
 		for (const params of [
 			{},
@@ -110,7 +121,11 @@ describe_db('account_delete self path is session-only', (get_db) => {
 	});
 
 	test('self via daemon token → 403 credential_type_required, ahead of the keeper guard', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const res = await rpc_call_for_spec({
 			app: test_app.app,
 			path: RPC_PATH,
@@ -123,7 +138,11 @@ describe_db('account_delete self path is session-only', (get_db) => {
 	});
 
 	test('a keeper self-deleting via api token gets credential_type_required, not cannot_delete_keeper', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const by_bearer = await rpc_call_for_spec({
 			app: test_app.app,
 			path: RPC_PATH,
@@ -152,7 +171,7 @@ describe_db('account_delete self path is session-only', (get_db) => {
 		// another admin (the keeper) is present, so the last-admin guard can't
 		// stand in for the credential check
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -172,7 +191,7 @@ describe_db('account_delete self path is session-only', (get_db) => {
 
 	test('an admin deleting another account via api or daemon token → deleted', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});

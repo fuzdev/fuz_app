@@ -20,11 +20,6 @@ import { afterEach, assert, describe, test, vi } from 'vitest';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {
-	create_session_config,
-	is_cookie_value,
-	type SessionOptions
-} from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { HEALTH_PATH } from '#lib/http/health_schema.ts';
 import {
@@ -45,8 +40,6 @@ import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { origin_wildcard_warning } from '#lib/http/origin_wildcard.ts';
-
-import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -100,7 +93,7 @@ const create_harness = (): Harness => {
 const acquiring_options = (backend: AppBackend): AppServerOptions => ({
 	...create_loopback_app_server_options(),
 	backend,
-	session_options: create_session_config('test_session'),
+	session_cookie_name: 'test_session',
 	create_route_specs: () => [create_health_route_spec()],
 	rate_limiters: 'enforced',
 	audit_log_sse: true,
@@ -536,7 +529,7 @@ describe('option checks fail before anything is acquired', () => {
 			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
 			const thrown = await assemble_rejects({
 				...acquiring_options(harness.backend),
-				session_options: create_session_config(cookie_name)
+				session_cookie_name: cookie_name
 			});
 			assert.instanceOf(thrown, Error);
 			assert.match(thrown.message, /is not an RFC 6265 cookie-name/);
@@ -544,85 +537,6 @@ describe('option checks fail before anything is acquired', () => {
 			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
 		});
 	}
-
-	const unmintable: Array<
-		[label: string, options: Partial<SessionOptions<string>>, message: RegExp]
-	> = [
-		[
-			'an encode_identity emitting a space',
-			{ encode_identity: (id) => `${id} with spaces` },
-			/cookie-octets/
-		],
-		[
-			'an encode_identity emitting a non-ASCII character',
-			{ encode_identity: (id) => `${id}\u00e9` },
-			/cookie-octets/
-		],
-		['a fractional max_age', { max_age: 1.5 }, /not a whole number of seconds/],
-		['a negative max_age', { max_age: -1 }, /not a whole number of seconds/]
-	];
-	for (const [label, session_options, message] of unmintable) {
-		test(`session options that cannot mint a cookie: ${label}`, async () => {
-			const harness = create_harness();
-			// a real keyring: the sample cookie is signed as a login's is
-			harness.backend.deps.keyring = create_test_keyring();
-			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-			const thrown = await assemble_rejects({
-				...acquiring_options(harness.backend),
-				session_options: { ...create_session_config('test_session'), ...session_options }
-			});
-			assert.instanceOf(thrown, Error);
-			assert.match(thrown.message, /session_options cannot mint a session cookie/);
-			assert.match(thrown.message, message);
-			assert.deepStrictEqual(current(harness), harness.baseline);
-			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
-		});
-	}
-
-	test('a keyring whose sign answers no string', async () => {
-		const harness = create_harness();
-		harness.backend.deps.keyring = {
-			sign: async () => undefined as unknown as string,
-			verify: async () => null
-		};
-		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-		const thrown = await assemble_rejects(acquiring_options(harness.backend));
-		assert.instanceOf(thrown, Error);
-		assert.match(thrown.message, /session_options cannot mint a session cookie/);
-		assert.deepStrictEqual(current(harness), harness.baseline);
-		assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
-	});
-
-	test("the stub deps' keyring signs a string, so the sample mint is real", async () => {
-		const { keyring } = create_stub_app_deps();
-		const signed = await keyring.sign('value');
-		assert.strictEqual(typeof signed, 'string');
-		assert.ok(is_cookie_value(signed));
-		assert.ok(signed.startsWith('value'), 'the signed value carries what encode_identity gave');
-	});
-
-	test('a stub backend refuses session options that cannot mint, too', async () => {
-		const harness = create_harness();
-		const thrown = await assemble_rejects({
-			...acquiring_options(harness.backend),
-			session_options: {
-				...create_session_config('test_session'),
-				encode_identity: (id) => `${id} with spaces`
-			}
-		});
-		assert.instanceOf(thrown, Error);
-		assert.match(thrown.message, /cookie-octets/);
-	});
-
-	test('session options that mint a cookie assemble', async () => {
-		const harness = create_harness();
-		harness.backend.deps.keyring = create_test_keyring();
-		const server = await create_app_server({
-			...acquiring_options(harness.backend),
-			session_options: { ...create_session_config('test_session'), max_age: 90 }
-		});
-		await server.close();
-	});
 
 	test('an empty allowed_origins', async () => {
 		const harness = create_harness();

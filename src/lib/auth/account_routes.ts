@@ -20,11 +20,7 @@
  * @module
  */
 
-import {
-	clear_session_cookie_header,
-	session_cookie_header,
-	type SessionOptions
-} from './session_cookie.ts';
+import { format_session_clear_cookie, sign_session_cookie } from './session_cookie.ts';
 import { RoleGrantSummaryJson, to_session_account } from './account_schema.ts';
 import {
 	account_status_route_shape,
@@ -216,7 +212,7 @@ export const DEFAULT_LOGIN_FAIL_JITTER_MS = 25;
  * budget that bounds guessing on every other one.
  */
 export interface AuthSessionRouteOptions {
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 }
 
 /**
@@ -283,7 +279,7 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * a refused row rolls the change back and closes nothing.
  *
  * @param deps - capabilities (keyring, password, log, audit, connection_closer)
- * @param options - per-factory configuration (session_options, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
+ * @param options - per-factory configuration (session_cookie_name, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
  * @returns route specs (not yet applied to Hono)
  */
 export const create_account_route_specs = (
@@ -292,7 +288,7 @@ export const create_account_route_specs = (
 ): Array<RouteSpec> => {
 	const { keyring, password, connection_closer } = deps;
 	const {
-		session_options,
+		session_cookie_name,
 		login_ip_rate_limiter,
 		login_account_rate_limiter,
 		max_sessions = DEFAULT_MAX_SESSIONS,
@@ -402,13 +398,15 @@ export const create_account_route_specs = (
 								return null;
 							}
 							const session = await create_capped_session({
-								keyring,
 								deps: tx_ctx,
 								account_id: account.id,
-								session_options,
 								max_sessions
 							});
-							const set_cookie = session_cookie_header(session.cookie_value, session_options);
+							const set_cookie = await sign_session_cookie(
+								keyring,
+								session.token,
+								session_cookie_name
+							);
 							await deps.audit.emit(tx_ctx, {
 								event_type: 'login',
 								account_id: account.id,
@@ -501,7 +499,7 @@ export const create_account_route_specs = (
 			// row have committed — a rollback clears nothing
 			return route_ok(
 				{ ok: true, username: ctx.account.username },
-				{ set_cookie: [clear_session_cookie_header(session_options)] }
+				{ set_cookie: [format_session_clear_cookie(session_cookie_name)] }
 			);
 		}),
 		attach_route_handler(password_shape, async (route) => {
@@ -651,7 +649,7 @@ export const create_account_route_specs = (
 				);
 				return route_ok(
 					{ ok: true, sessions_revoked, tokens_revoked },
-					{ set_cookie: [clear_session_cookie_header(session_options)] }
+					{ set_cookie: [format_session_clear_cookie(session_cookie_name)] }
 				);
 			} finally {
 				ip_reserved.reservation.release();

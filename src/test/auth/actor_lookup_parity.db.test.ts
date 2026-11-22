@@ -16,7 +16,6 @@
 
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { describe_actor_lookup_cross_tests } from '#lib/testing/cross_backend/actor_lookup.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
@@ -24,10 +23,10 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const RPC_PATH = '/api/rpc';
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const setup_test = default_in_process_setup({
-	session_options,
+	session_cookie_name,
 	create_route_specs: (ctx: AppServerContext): Array<RouteSpec> =>
 		create_rpc_endpoint({
 			notification_sender: ctx.deps.notification_sender,

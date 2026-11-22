@@ -14,7 +14,6 @@ import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import type { FetchTransport } from '#lib/testing/transports/fetch_transport.ts';
 import type { AppSurfaceSpec } from '#lib/http/surface.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 
 const case_on = (name: string, method: string): ConformanceCase => ({
 	name,
@@ -138,7 +137,7 @@ describe('the differential asks for uncompressed responses', () => {
 		],
 		surface_source: {} as AppSurfaceSpec,
 		rpc_endpoints: probe_rpc_endpoints,
-		session_options: create_session_config('test_differential_session')
+		session_cookie_name: 'test_differential_session'
 	});
 });
 

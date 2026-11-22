@@ -50,7 +50,7 @@ import {
 	TEST_APP_ROLE,
 	admit_all_authorize,
 	app_roles,
-	session_options
+	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 
@@ -73,7 +73,7 @@ const create_app = (
 	authorize?: RoleGrantOfferCreateAuthorize
 ): Promise<TestApp> =>
 	create_test_app({
-		session_options,
+		session_cookie_name,
 		create_route_specs: create_standard_route_specs(authorize),
 		db: get_db()
 	});

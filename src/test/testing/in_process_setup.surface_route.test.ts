@@ -10,17 +10,16 @@
 
 import { assert, test } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { create_spine_surface_spec } from '#lib/testing/cross_backend/default_spine_surface.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 for (const surface_route of [undefined, false, true] as const) {
 	test(`surface_source lists GET /api/surface iff the live app mounts it (surface_route: ${surface_route})`, () => {
 		const { surface_source } = default_in_process_suite_options({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [create_health_route_spec()],
 			app_options: surface_route === undefined ? undefined : { surface_route }
 		});
@@ -33,7 +32,7 @@ for (const surface_route of [undefined, false, true] as const) {
 
 test('surface_source lists the daemon_token layer create_test_app mounts', () => {
 	const { surface_source } = default_in_process_suite_options({
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()]
 	});
 	assert.ok(surface_source.surface.middleware.some((m) => m.name === 'daemon_token'));

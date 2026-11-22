@@ -57,7 +57,6 @@ import { parse } from '@fuzdev/fuz_schema/schema.ts';
 import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
 import type { RouteMethod, RouteSpec } from '../../http/route_spec.ts';
 import type { RpcAction } from '../../actions/action_types.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import {
 	find_auth_route,
 	rest_auth_route_suffixes,
@@ -119,8 +118,8 @@ export interface ConformanceTableOptions {
 	 * live mount is fine. Omitted, only declared methods resolve.
 	 */
 	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** Session options — needed to resolve the `rpc_endpoints` factory form. */
-	readonly session_options: SessionOptions<string>;
+	/** The session cookie's name — needed to resolve the `rpc_endpoints` factory form. */
+	readonly session_cookie_name: string;
 	/** Maps the `role_holder` / `wrong_role` principals to seeded usernames. */
 	readonly principals?: ConformancePrincipalConfig;
 	/**
@@ -140,8 +139,8 @@ export interface ConformanceRpcEndpointsOptions {
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
 	/** The live-mounted RPC endpoints, for methods off the declared surface. */
 	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** Session options — needed to resolve the factory forms. */
-	readonly session_options: SessionOptions<string>;
+	/** The session cookie's name — needed to resolve the factory forms. */
+	readonly session_cookie_name: string;
 }
 
 /**
@@ -150,15 +149,15 @@ export interface ConformanceRpcEndpointsOptions {
  * takes the first match, so a declared method resolves from the declared
  * surface even when the live mount repeats it.
  *
- * @param options - the declared and live endpoints, and the session options
+ * @param options - the declared and live endpoints, and the session cookie name
  * @returns the endpoints in lookup order
  */
 export const resolve_conformance_rpc_endpoints = (
 	options: ConformanceRpcEndpointsOptions
 ): Array<RpcEndpointSpec> => [
-	...resolve_rpc_endpoints_for_setup(options.rpc_endpoints, options.session_options),
+	...resolve_rpc_endpoints_for_setup(options.rpc_endpoints, options.session_cookie_name),
 	...(options.live_rpc_endpoints
-		? resolve_rpc_endpoints_for_setup(options.live_rpc_endpoints, options.session_options)
+		? resolve_rpc_endpoints_for_setup(options.live_rpc_endpoints, options.session_cookie_name)
 		: [])
 ];
 
@@ -662,7 +661,7 @@ const run_case = async (
 	});
 	assert_response_headers(sent.headers, c);
 	// a frame carries no headers, so the cookie assertions are the HTTP legs'
-	if (!options.ws) assert_session_cookie(sent, c, options.session_options.cookie_name);
+	if (!options.ws) assert_session_cookie(sent, c, options.session_cookie_name);
 
 	const normalized =
 		sent.target.kind === 'rest'

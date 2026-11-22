@@ -20,7 +20,6 @@ import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { SSE_CONNECTED_COMMENT } from '../realtime/sse_constants.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -74,8 +73,8 @@ export interface SseRouteTestSpec {
 
 /** Options for `describe_sse_route_tests`. */
 export interface SseRouteTestOptions {
-	/** Session config for cookie-based auth. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name. */
+	session_cookie_name: string;
 	/** Route spec factory — same shape as production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
@@ -176,7 +175,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options
+		options.session_cookie_name
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
@@ -206,7 +205,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 							? (params) => create_audit_emitter({ ...params, on_audit_event })
 							: undefined;
 						test_app = await create_test_app({
-							session_options: options.session_options,
+							session_cookie_name: options.session_cookie_name,
 							create_route_specs: options.create_route_specs,
 							db,
 							rpc_endpoints: options.rpc_endpoints,

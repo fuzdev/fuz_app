@@ -23,7 +23,6 @@
 import { test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
@@ -50,7 +49,7 @@ import {
 	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const RPC_PATH = NOTIFICATION_TEST_RPC_PATH;
 
@@ -76,7 +75,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -115,7 +114,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -172,7 +171,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 				log
 			});
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: get_db()
 		});
@@ -211,7 +210,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -239,7 +238,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -301,7 +300,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -341,7 +340,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});
@@ -369,7 +368,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		const calls: Array<CapturedNotificationCall> = [];
 		const sender = create_capture_sender(calls);
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			...create_notification_app_options(sender),
 			db: get_db()
 		});

@@ -64,7 +64,6 @@ import {
 	type KeeperHeaderProvider
 } from './integration_helpers.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
-import type { SessionOptions } from '../auth/session_cookie.ts';
 
 /** Options for `describe_rpc_round_trip_tests`. */
 export interface RpcRoundTripTestOptions {
@@ -77,12 +76,12 @@ export interface RpcRoundTripTestOptions {
 	 */
 	surface_source: AppSurfaceSpec;
 	/**
-	 * Session config — only needed to resolve factory-form `rpc_endpoints`
+	 * The session cookie's name — only needed to resolve factory-form `rpc_endpoints`
 	 * against a stub `AppServerContext` at setup time (the actions' input
 	 * schemas drive params generation; auth/dispatch run against the real
 	 * backend through the fixture's transports).
 	 */
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/**
 	 * RPC endpoint specs — eager array or factory. The factory must return
 	 * the same endpoint `path` + `spec.method` list regardless of ctx
@@ -363,7 +362,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 	// match what the running backend serves.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options
+		options.session_cookie_name
 	);
 	const surface_rpc_endpoints = options.surface_source.surface.rpc_endpoints;
 

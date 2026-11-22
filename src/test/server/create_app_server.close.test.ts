@@ -25,7 +25,6 @@ import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	APP_SERVER_RATE_LIMITER_KEYS,
@@ -83,11 +82,16 @@ const base_options = (
 	backend: AppBackend
 ): Pick<
 	AppServerOptions,
-	'backend' | 'session_options' | 'allowed_origins' | 'proxy' | 'env_schema' | 'create_route_specs'
+	| 'backend'
+	| 'session_cookie_name'
+	| 'allowed_origins'
+	| 'proxy'
+	| 'env_schema'
+	| 'create_route_specs'
 > => ({
 	...create_loopback_app_server_options(),
 	backend,
-	session_options: create_session_config('test_session'),
+	session_cookie_name: 'test_session',
 	create_route_specs: () => [create_health_route_spec()]
 });
 

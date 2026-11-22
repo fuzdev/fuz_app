@@ -40,7 +40,6 @@ import { assert, test } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
@@ -93,7 +92,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
  */
 const setup = async (gated: GatedDb) => {
 	const test_app: TestApp = await create_test_app({
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		db: gated.db,
 		create_route_specs
 	});

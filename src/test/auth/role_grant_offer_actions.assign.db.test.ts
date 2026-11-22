@@ -43,7 +43,7 @@ import {
 	admit_all_authorize,
 	create_app_role_route_specs,
 	create_route_specs,
-	session_options
+	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.assign', (get_db) => {
@@ -52,7 +52,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 	describe('role_grant_assign', () => {
 		test('admin assigns an admin-grantable role and gets {ok, role_grant_id}', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -85,7 +85,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 		test('success emits a role_grant_create audit row with the actor-bound envelope', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -129,7 +129,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 		test('non-grantable role (keeper) rejected with role_not_web_grantable + failure audit', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -175,7 +175,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 
 		test('non-admin caller forbidden with insufficient_permissions (dispatcher gate)', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -200,7 +200,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 
 		test('nonexistent account returns 404', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -218,7 +218,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 
 		test('to_actor_id not belonging to to_account_id → actor_account_mismatch', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -243,7 +243,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 
 		test('idempotent — re-assigning an active grant returns the same role_grant_id', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -273,7 +273,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 
 		test('multi-actor account: requires to_actor_id, then assigns the named actor', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -320,7 +320,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 		const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 		const setup = async (username: string) => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_app_role_route_specs({ authorize: admit_all_authorize }),
 				db: get_db()
 			});
@@ -385,7 +385,7 @@ describe_db('role_grant_offer_actions.assign', (get_db) => {
 			inputs.length = 0;
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_app_role_route_specs({ authorize: scoped_only }),
 				db: get_db(),
 				audit_factory: (params) =>

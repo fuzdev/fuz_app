@@ -23,7 +23,6 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Db } from '#lib/db/db.ts';
@@ -94,7 +93,7 @@ vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 // --- Shared fixtures ---
 
 const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /**
  * Transactions open on `db` right now — to pin that a request waiting for a
@@ -195,7 +194,7 @@ const create_password_change_app = (
 			request_tracker: create_request_tracker()
 		},
 		{
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter,
 			login_account_rate_limiter,
 			login_fail_floor_ms: 0

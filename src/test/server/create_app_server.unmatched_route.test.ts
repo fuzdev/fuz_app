@@ -11,7 +11,6 @@
 import { afterEach, assert, describe, test } from 'vitest';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_app_server, type AppServer } from '#lib/server/app_server.ts';
 import { create_stub_app_backend, create_stub_app_deps } from '#lib/testing/stubs.ts';
 import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
@@ -36,7 +35,7 @@ const assemble = async (): Promise<AppServer> => {
 	const server = await create_app_server({
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps: create_stub_app_deps() }),
-		session_options: create_session_config(SESSION_COOKIE_NAME),
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: () => [
 			define_route({
 				method: 'GET',

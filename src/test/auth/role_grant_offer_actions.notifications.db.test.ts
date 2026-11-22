@@ -15,7 +15,6 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
@@ -42,7 +41,7 @@ import {
 	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = NOTIFICATION_TEST_RPC_PATH;
 
 const send_rpc = async (
@@ -70,7 +69,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -101,7 +100,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -141,7 +140,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -182,7 +181,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -217,7 +216,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -281,7 +280,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -320,7 +319,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -342,7 +341,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});
@@ -376,7 +375,7 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const calls: Array<CapturedNotificationCall> = [];
 			const sender = create_capture_sender(calls);
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				...create_notification_app_options(sender),
 				db: get_db()
 			});

@@ -32,7 +32,7 @@ import '../assert_dev_env.ts';
  * spine, so this is an imperative suite (not a `conformance_table` row) — the
  * sibling of `origin.ts` / `login_security.ts`. Cross-process only: reading the
  * raw `Set-Cookie` attributes needs the wire response (the in-process
- * `parse_session` / `session_cookie.rs` unit tests cover each impl's cookie
+ * `parse_session_from_cookies` / `session_cookie.rs` unit tests cover each impl's cookie
  * codec directly). Cited property: `docs/security.md` §"Session Security"
  * (the "Cookie attributes" bullet — `HttpOnly; Secure; SameSite=Strict; Path=/`).
  *

@@ -26,7 +26,6 @@ import type { RpcAction } from '#lib/actions/action_types.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { describe_rpc_attack_surface_tests } from '#lib/testing/rpc_attack_surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
@@ -44,7 +43,7 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 
-const session_options = create_session_config('test_rpc_session');
+const session_cookie_name = 'test_rpc_session';
 
 // --- Fixture action specs ---
 
@@ -119,7 +118,7 @@ const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
 const build = () =>
 	create_test_app_surface_spec({
-		session_options,
+		session_cookie_name,
 		create_route_specs,
 		rpc_endpoints: [rpc_endpoint_spec]
 	});
@@ -244,7 +243,7 @@ describe('rpc_helpers', () => {
 
 	test('resolve_rpc_endpoints_for_setup returns array form unchanged', () => {
 		const input: Array<RpcEndpointSpec> = [{ path: '/api/rpc', actions: fixture_actions }];
-		const resolved = resolve_rpc_endpoints_for_setup(input, session_options);
+		const resolved = resolve_rpc_endpoints_for_setup(input, session_cookie_name);
 		assert.strictEqual(resolved, input);
 	});
 
@@ -257,7 +256,7 @@ describe('rpc_helpers', () => {
 			return [{ path: '/api/rpc', actions: fixture_actions }];
 		};
 
-		const resolved = resolve_rpc_endpoints_for_setup(factory, session_options);
+		const resolved = resolve_rpc_endpoints_for_setup(factory, session_cookie_name);
 
 		// Two invocations: one returned, one for the path-purity comparison.
 		assert.strictEqual(call_count, 2);
@@ -266,7 +265,7 @@ describe('rpc_helpers', () => {
 		// would not pin `actions` to the module-level `fixture_actions` ref.
 		assert.strictEqual(resolved[0]?.actions, fixture_actions);
 		if (!captured_ctx) throw new Error('factory should have been invoked with a ctx');
-		assert.strictEqual(captured_ctx.session_options, session_options);
+		assert.strictEqual(captured_ctx.session_cookie_name, session_cookie_name);
 		// Stub ctx exposes `deps` and nulled rate limiters — enough for
 		// canonical action factories like `create_standard_rpc_actions`.
 		assert.ok(captured_ctx.deps);
@@ -286,7 +285,7 @@ describe('rpc_helpers', () => {
 		};
 
 		assert.throws(
-			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_options),
+			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_cookie_name),
 			/not path-pure/
 		);
 	});
@@ -304,7 +303,7 @@ describe('rpc_helpers', () => {
 		};
 
 		assert.throws(
-			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_options),
+			() => resolve_rpc_endpoints_for_setup(drifting_factory, session_cookie_name),
 			/not path-pure/
 		);
 	});
@@ -329,7 +328,7 @@ describe('create_test_app_surface_spec — ws_endpoints', () => {
 
 	test('array form threads ws_endpoints into the generated surface', () => {
 		const spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			ws_endpoints: [ws_endpoint_spec]
 		});
@@ -343,7 +342,7 @@ describe('create_test_app_surface_spec — ws_endpoints', () => {
 	test('factory form threads ws_endpoints and receives a stub AppServerContext', () => {
 		let captured_ctx: AppServerContext | undefined;
 		const spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			ws_endpoints: (ctx) => {
 				captured_ctx = ctx;
@@ -359,7 +358,7 @@ describe('create_test_app_surface_spec — ws_endpoints', () => {
 
 	test('omitting ws_endpoints leaves the surface ws section empty (no implicit default)', () => {
 		const spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => []
 		});
 		assert.strictEqual(spec.surface.ws_endpoints.length, 0);
@@ -378,7 +377,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 		assert.throws(
 			() =>
 				create_test_app_surface_spec({
-					session_options,
+					session_cookie_name,
 					create_route_specs: () => [],
 					rpc_endpoints: [{ path: '/rpc', actions: fixture_actions }]
 				}),
@@ -391,7 +390,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 			assert.throws(
 				() =>
 					create_test_app_surface_spec({
-						session_options,
+						session_cookie_name,
 						create_route_specs: () => [],
 						ws_endpoints: [{ path, allowed_origins: [], actions: fixture_actions }]
 					}),
@@ -402,7 +401,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 
 	test('accepts the bare scope prefix /api, as Hono matches it', () => {
 		const spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			rpc_endpoints: [{ path: '/api', actions: fixture_actions }],
 			ws_endpoints: [{ path: '/api', allowed_origins: [], actions: fixture_actions }]
@@ -416,7 +415,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 			assert.throws(
 				() =>
 					create_test_app_surface_spec({
-						session_options,
+						session_cookie_name,
 						create_route_specs: () => [],
 						rpc_endpoints: [{ path: '/api/rpc', actions: fixture_actions }],
 						origin_carve_outs: [{ path, reason: 'too wide on purpose' }]
@@ -430,7 +429,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 		assert.throws(
 			() =>
 				create_test_app_surface_spec({
-					session_options,
+					session_cookie_name,
 					create_route_specs: () => [
 						{
 							...create_health_route_spec(),
@@ -447,7 +446,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 
 	test("a carve-out keeps the origin check's 403 off the routes it covers, and only those", () => {
 		const spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [
 				create_health_route_spec(),
 				{ ...create_health_route_spec(), path: '/hooks/push' }
@@ -470,7 +469,7 @@ describe('create_test_app_surface_spec — auth scope', () => {
 		assert.throws(
 			() =>
 				create_test_app_surface_spec({
-					session_options,
+					session_cookie_name,
 					create_route_specs: () => [],
 					ws_endpoints: [{ path: '/api/ws', actions: fixture_actions }]
 				}),

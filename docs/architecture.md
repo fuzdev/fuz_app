@@ -33,56 +33,31 @@ infrastructure that any domain could use stays in `http/` or `db/`.
 
 ## Session System
 
-Sessions are parameterized on identity type via `SessionOptions<TIdentity>`. Apps
-provide `encode_identity` and `decode_identity` — the library handles signing,
-expiration, and key rotation.
+A session is a server-side `auth_session` row and a signed cookie carrying its
+raw token; the server hashes the token (blake3) to find the row, which enables
+per-session revocation, admin session management, and audit trails. The only
+per-app choice is the cookie's name, a bare `session_cookie_name` string
+wherever the spine takes one (`SESSION_COOKIE_NAME`, `fuz_session`, is the
+default), as on the Rust spine.
 
-Cookie value format: `${encode(identity)}:${expires_at}` signed with HMAC-SHA256.
-The value goes on the wire as it is — never percent-encoded — and is read back
-verbatim, so `encode_identity` must emit RFC 6265 cookie-octets (no space,
-`"`, `,`, `;`, `\`, control or non-ASCII character): setting a cookie whose
-value isn't throws. The attributes are fixed
+Cookie value format: `${session_token}:${expires_at}` signed with HMAC-SHA256
+(`create_session_cookie_value`), the expiry `SESSION_AGE_MAX` past the mint —
+an absolute lifetime, never renewed. The value goes on the wire as it is —
+never percent-encoded — and is read back verbatim; setting a cookie whose name
+or value is outside RFC 6265's grammar throws. The attributes are fixed
 (`Path=/; HttpOnly; Secure; SameSite=Strict`), and the Rust spine writes and
-reads the same string, so a session survives a move between the two.
+reads the same string, so a session survives a move between the two. A minting
+route signs its line with `sign_session_cookie(keyring, token, cookie_name)`
+over the token `create_capped_session` returns; a clearing one carries
+`format_session_clear_cookie(cookie_name)`.
 
-The session middleware (`create_session_middleware`, a `SessionOptions<string>`)
-sets the session token on the Hono context under `SESSION_TOKEN_KEY`
-(`'auth_session_id'`, null when invalid/missing), the key the auth chain's session
-leg reads, and clears a cookie that is present and does not verify. The key is fixed: the middleware and the leg must agree on it, and no
-other context variable may share it.
-
-### String Identity (Standard)
-
-Most apps use the standard string-identity config. The cookie stores a raw session
-token; the server hashes it (blake3) to look up the `auth_session` row. This enables
-per-session revocation, admin session management, and audit trails.
-
-```typescript
-import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
-const my_session_config = create_session_config('my_session');
-```
-
-### Custom Identity Types
-
-For a different identity format, construct `SessionOptions<T>` directly and use the
-cookie helpers (`create_session_cookie_value`, `process_session_cookie`). The spine's
-session middleware and auth chain take a string identity only — the session token:
-
-```typescript
-// Number identity — cookie encodes account_id directly (no server-side session state)
-const my_config: SessionOptions<number> = {
-	cookie_name: 'my_session',
-	encode_identity: (id) => String(id),
-	decode_identity: (payload) => {
-		const n = parseInt(payload, 10);
-		return Number.isFinite(n) && n > 0 ? n : null;
-	}
-};
-```
-
-**Trade-off**: String identity (server-side sessions) supports per-session revocation
-and admin controls. Number/direct identity is simpler but individual sessions can only
-be invalidated by rotating the signing key (which invalidates all sessions).
+The session middleware (`create_session_middleware(keyring, session_cookie_name)`)
+reads the cookie with `parse_session_from_cookies` — `absent`, `invalid` or
+`valid` (`SessionCookieRead`) — sets the session token on the Hono context
+under `SESSION_TOKEN_KEY` (`'auth_session_id'`, null when invalid/missing), the
+key the auth chain's session leg reads, and clears a cookie that is present and
+does not verify. The key is fixed: the middleware and the leg must agree on it,
+and no other context variable may share it.
 
 The full auth middleware stack (origin, optional daemon_token, session,
 request_context, bearer_auth) can be created via `create_auth_middleware_specs()`
@@ -333,9 +308,9 @@ Once the bootstrap commits, the route sets the new account as the keeper on the
 server's `daemon_token_state` (`BootstrapRouteOptions.daemon_token_state`, which
 `create_app_server` passes), so the keeper's daemon token authenticates from the
 next request; the daemon leg never re-reads the keeper, so one seeded by another
-process needs a restart, as on the Rust spine. `check_bootstrap_status()` caches
-availability at startup so the status endpoint avoids per-request
-filesystem/DB queries.
+process needs a restart, as on the Rust spine. `create_app_server` caches
+`is_bootstrap_available()`'s answer in the `BootstrapStatus` ref at startup, so
+the status endpoint avoids per-request filesystem/DB queries.
 
 ## App Settings
 

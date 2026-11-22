@@ -22,7 +22,11 @@ import { create_test_app } from '#lib/testing/test_app.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_admin_route_specs,
+	session_cookie_name
+} from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with bootstrap/test accounts. Must be
 // version-4 because `Uuid` checks the RFC 9562 version and variant.
@@ -32,7 +36,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 	describe('admin_session_revoke_all — missing target account', () => {
 		test('returns 404 and emits an `outcome: "failure"` audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -73,7 +77,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 	describe('admin_token_revoke_all — missing target account', () => {
 		test('returns 404 and emits an `outcome: "failure"` audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});

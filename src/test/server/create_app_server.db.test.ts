@@ -26,7 +26,6 @@ import {
 	with_default
 } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
@@ -69,7 +68,7 @@ import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -86,7 +85,7 @@ const factory = create_default_db_factory(async () => {
 /** Shared option fields (everything except backend). */
 const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
-	session_options,
+	session_cookie_name,
 	create_route_specs: () => [create_health_route_spec()]
 };
 
@@ -184,7 +183,7 @@ describe('create_app_server', () => {
 		assert.isDefined(ctx.deps.keyring);
 		assert.isDefined(ctx.backend);
 		assert.isDefined(ctx.bootstrap_status);
-		assert.isDefined(ctx.session_options);
+		assert.isDefined(ctx.session_cookie_name);
 	});
 
 	test('transform_middleware is applied', async () => {

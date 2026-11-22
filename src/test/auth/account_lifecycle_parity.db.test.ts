@@ -19,13 +19,13 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
 import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backend/account_lifecycle.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { SPINE_RPC_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
@@ -33,7 +33,7 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 
 const setup_test = default_in_process_setup({
 	reject_unknown_audit_metadata_keys: true,
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	// tracked so `_testing_drain_effects` awaits the emitter, as on the binaries
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log }),
 	create_route_specs: create_spine_route_specs,

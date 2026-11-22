@@ -11,13 +11,13 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
@@ -34,7 +34,7 @@ import { describe_invite_duplicate_tests } from './invite_duplicate.ts';
 import { describe_offer_cross_account_tests } from './offer_cross_account.ts';
 
 const suite_options = default_in_process_suite_options({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints
 });
@@ -59,7 +59,7 @@ describe_conformance_table_tests({
 // a keeper with a second actor: the `acting` rows, and the generated rows,
 // which bind `acting` to their principal's actor so they hold here too
 const multi_actor_suite_options = default_in_process_suite_options({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints,
 	extra_actors: [ACTING_EXTRA_ACTOR_NAME]

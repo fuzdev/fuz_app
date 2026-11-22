@@ -30,6 +30,7 @@ import type { Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { WS_RECEIVE_TIMEOUT_MAX } from '#lib/actions/register_action_ws.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
@@ -62,8 +63,7 @@ import {
 import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
 import {
 	create_spine_ready_route_spec,
-	create_spine_route_specs,
-	spine_session_options
+	create_spine_route_specs
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import {
 	build_full_spine_mount,
@@ -402,7 +402,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 
 	const app_server = await create_app_server({
 		backend: app_backend,
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		allowed_origins,
 		allow_origin_wildcards,
 		proxy: { trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip },

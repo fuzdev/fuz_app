@@ -44,7 +44,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { UpgradeWebSocket, WSEvents } from 'hono/ws';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
@@ -105,7 +104,7 @@ const parse_origins = (raw: string): Array<RegExp> => {
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const log = new Logger('test', { level: 'off' });
 
 const factory = create_default_db_factory(async () => {});
@@ -114,7 +113,7 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
 	// the endpoints' own lists name :3000; the server takes both dev ports
 	allowed_origins: parse_origins('http://localhost:3000, http://localhost:5173'),
-	session_options,
+	session_cookie_name,
 	create_route_specs: () => [create_health_route_spec()]
 };
 

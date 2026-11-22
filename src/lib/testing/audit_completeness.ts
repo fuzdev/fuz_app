@@ -26,7 +26,6 @@ import './assert_dev_env.ts';
 
 import { describe, test, assert } from 'vitest';
 
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import {
 	AUDIT_EVENT_TYPES,
@@ -92,8 +91,8 @@ export interface AuditCompletenessTestOptions {
 	 * options uniformity.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Session config — needed for factory-form rpc_endpoints resolution. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name — needed for factory-form rpc_endpoints resolution. */
+	session_cookie_name: string;
 	/**
 	 * RPC endpoint specs — required. The admin role_grant flow is RPC-only
 	 * and the suite hard-fails without it.
@@ -216,7 +215,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options
+		options.session_cookie_name
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 

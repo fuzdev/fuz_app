@@ -11,7 +11,6 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import {
@@ -29,8 +28,8 @@ import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
-const { cookie_name } = session_options;
+const session_cookie_name = 'test_session';
+const cookie_name = session_cookie_name;
 
 const RPC_PATH = '/api/rpc';
 
@@ -45,7 +44,7 @@ const create_route_factory =
 		...prefix_route_specs(
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
 				login_fail_floor_ms: 0,
@@ -67,7 +66,7 @@ describe_db('session_token_limits', (get_db) => {
 		test('logging in beyond max_sessions evicts oldest session', async () => {
 			const max_sessions = 2;
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_sessions }),
 				db: get_db()
 			});
@@ -133,7 +132,7 @@ describe_db('session_token_limits', (get_db) => {
 
 		test('max_sessions = 1 evicts the bootstrap session on the first additional login', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_sessions: 1 }),
 				db: get_db()
 			});
@@ -183,7 +182,7 @@ describe_db('session_token_limits', (get_db) => {
 			// a signed cookie, but the cookie's session id is no longer in the
 			// DB — the next request 401s.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_sessions: 0 }),
 				db: get_db()
 			});
@@ -232,7 +231,7 @@ describe_db('session_token_limits', (get_db) => {
 
 		test('max_sessions null disables enforcement', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_sessions: null }),
 				db: get_db()
 			});
@@ -270,7 +269,7 @@ describe_db('session_token_limits', (get_db) => {
 		test('creating tokens beyond max_tokens evicts oldest token', async () => {
 			const max_tokens = 2;
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_tokens }),
 				db: get_db()
 			});
@@ -329,7 +328,7 @@ describe_db('session_token_limits', (get_db) => {
 
 		test('max_tokens = 1 evicts the bootstrap token on the first additional create', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_tokens: 1 }),
 				db: get_db()
 			});
@@ -374,7 +373,7 @@ describe_db('session_token_limits', (get_db) => {
 			// the DB. The handler does not surface this — by design, since the
 			// account-grain contract is "limit applies after insert."
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_tokens: 0 }),
 				db: get_db()
 			});
@@ -414,7 +413,7 @@ describe_db('session_token_limits', (get_db) => {
 
 		test('max_tokens null disables enforcement', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_factory({ max_tokens: null }),
 				db: get_db()
 			});

@@ -10,7 +10,6 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { SessionOptions } from './session_cookie.ts';
 import { bootstrap_account, read_bootstrap_token } from './bootstrap_account.ts';
 import type { DaemonTokenState } from './daemon_token.ts';
 import type { BootstrapTokenStore } from './bootstrap_token_store.ts';
@@ -48,7 +47,7 @@ export interface BootstrapStatus {
  * the one and set the other's keeper.
  */
 export interface BootstrapRouteOptions {
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/** Shared mutable reference — flipped to false when the window closes. */
 	bootstrap_status: BootstrapStatus;
 	/**
@@ -81,16 +80,17 @@ export interface BootstrapRouteOptions {
 }
 
 /**
- * Dependencies for checking bootstrap status at startup.
+ * Dependencies for `is_bootstrap_available`.
  */
-export interface CheckBootstrapStatusDeps {
+export interface IsBootstrapAvailableDeps {
 	/** Only the single-row `bootstrap_lock` read — narrower than the full `Db`. */
 	db: Pick<Db, 'query_one'>;
 	log: Logger;
 }
 
 /**
- * Check bootstrap availability at startup.
+ * Whether bootstrap is available — read once at startup into the
+ * `BootstrapStatus` ref.
  *
  * Bootstrap is available when a token store is configured, the
  * `bootstrap_lock` row shows `bootstrapped = false`, and the token file
@@ -114,16 +114,16 @@ export interface CheckBootstrapStatusDeps {
  *
  * @param deps - the lock read and a logger
  * @param options - the token store, `null` when bootstrap is not configured
- * @returns the initial `BootstrapStatus`
+ * @returns whether the bootstrap window is open
  */
-export const check_bootstrap_status = async (
-	deps: CheckBootstrapStatusDeps,
+export const is_bootstrap_available = async (
+	deps: IsBootstrapAvailableDeps,
 	options: { token_store: BootstrapTokenStore | null }
-): Promise<BootstrapStatus> => {
+): Promise<boolean> => {
 	const { db, log } = deps;
 	const { token_store } = options;
 
-	if (!token_store) return { available: false };
+	if (!token_store) return false;
 
 	const lock_row = await db.query_one<{ bootstrapped: boolean }>(
 		'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
@@ -132,7 +132,7 @@ export const check_bootstrap_status = async (
 		log.error(
 			'Bootstrap unavailable: the bootstrap_lock row is missing — the auth migration seeds it; restore it to bootstrap'
 		);
-		return { available: false };
+		return false;
 	}
 
 	if (lock_row.bootstrapped) {
@@ -149,18 +149,18 @@ export const check_bootstrap_status = async (
 		} else {
 			log.info('Bootstrap unavailable: already bootstrapped');
 		}
-		return { available: false };
+		return false;
 	}
 
 	try {
 		await read_bootstrap_token({ token_store, log });
 	} catch (err) {
 		log.warn(`Bootstrap unavailable: token file unreadable: ${to_error_message(err)}`);
-		return { available: false };
+		return false;
 	}
 
 	log.info(`Bootstrap token available: ${token_store.path}`);
-	return { available: true };
+	return true;
 };
 
 /**
@@ -175,7 +175,7 @@ export const create_bootstrap_route_specs = (
 	options: BootstrapRouteOptions
 ): Array<RouteSpec> => {
 	const {
-		session_options,
+		session_cookie_name,
 		bootstrap_status,
 		token_store,
 		daemon_token_state,
@@ -227,7 +227,7 @@ export const create_bootstrap_route_specs = (
 					route,
 					input.token,
 					input,
-					{ session_options }
+					{ session_cookie_name }
 				);
 				if (!result.ok) {
 					// The lock-race loser — the window open here, the lock already
@@ -242,7 +242,7 @@ export const create_bootstrap_route_specs = (
 						return route_fail(REST_ALREADY_BOOTSTRAPPED);
 					}
 					// An unreadable token file closes the window. Bootstrap cannot
-					// succeed without one, and `check_bootstrap_status` already reads
+					// succeed without one, and `is_bootstrap_available` already reads
 					// an unreadable file as unavailable at startup — so leaving the
 					// flag set means the two disagree, and every later request takes
 					// this leg and writes another audit row. A wrong token and an

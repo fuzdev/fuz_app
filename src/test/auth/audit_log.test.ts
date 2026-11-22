@@ -20,7 +20,6 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
@@ -143,7 +142,7 @@ const ACC_TEST = '00000000-0000-4000-8000-000000000001' as Uuid;
 const ACT_TEST = '00000000-0000-4000-8000-000000000002' as Uuid;
 
 const keyring = create_test_keyring('audit-integration-test-key-at-least-32-chars');
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const db = create_stub_db();
 
@@ -225,7 +224,7 @@ describe('account route audit logging', () => {
 				request_tracker: create_request_tracker()
 			},
 			{
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: options?.login_ip_rate_limiter ?? null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
@@ -408,7 +407,7 @@ describe('account route audit logging', () => {
 				request_tracker: create_request_tracker()
 			},
 			{
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0

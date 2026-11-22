@@ -14,7 +14,6 @@
 
 import { test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import {
 	ERROR_TOKEN_SCOPE_INVALID,
@@ -39,7 +38,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -64,7 +63,11 @@ describe_db('account_token_create over-cap scope', (get_db) => {
 			JSON.stringify(OVER_CAP_METHODS).length > MAX_TOKEN_SCOPE_BYTES,
 			'the fixture must overrun the cap'
 		);
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const headers = test_app.create_session_headers();
 		const before = await rpc_call_for_spec({
 			app: test_app.app,
@@ -108,7 +111,11 @@ const TWO_BYTE_FILLER = '\u00e9'.repeat(40);
 
 describe_db('account_token_create scope cap in UTF-8 bytes', (get_db) => {
 	test('a two-byte scope at the cap mints, one byte past it is refused', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const headers = test_app.create_session_headers();
 		const mint = (methods: Array<string>) =>
 			rpc_call_for_spec({

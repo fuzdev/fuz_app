@@ -20,13 +20,13 @@ import {
 } from '#lib/auth/role_grant_queries.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import { create_route_specs, session_cookie_name } from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer.multi_actor — scope_revoke', (get_db) => {
 	describe('query_role_grant_revoke_for_scope returns actor + account per revoked role_grant', () => {
 		test('cascade returns one entry per revoked role_grant with correct actor + account', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

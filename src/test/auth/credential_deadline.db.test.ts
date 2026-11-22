@@ -26,7 +26,7 @@ import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 import {
 	SESSION_AGE_MAX,
 	create_session_cookie_value,
-	fuz_session_config
+	SESSION_COOKIE_NAME
 } from '#lib/auth/session_cookie.ts';
 import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 import {
@@ -88,7 +88,7 @@ const create_deadline_app = (db: Db): Hono => {
 		c.set('pending_effects', []);
 		await next();
 	});
-	app.use('*', create_session_middleware(keyring, fuz_session_config));
+	app.use('*', create_session_middleware(keyring, SESSION_COOKIE_NAME));
 	app.use('*', create_request_context_middleware({ db }));
 	app.use('*', create_bearer_auth_middleware({ db }, log));
 	app.get('/deadline', (c) => {
@@ -152,8 +152,8 @@ describe_db('credential deadline', (get_db) => {
 		const account_id = await create_account(db);
 		const session_token = generate_session_token();
 		await create_test_session_row(db, hash_session_token(session_token), account_id, DAY_S);
-		const cookie = await create_session_cookie_value(keyring, session_token, fuz_session_config);
-		const headers = { cookie: `${fuz_session_config.cookie_name}=${cookie}` };
+		const cookie = await create_session_cookie_value(keyring, session_token);
+		const headers = { cookie: `${SESSION_COOKIE_NAME}=${cookie}` };
 
 		// the row (a day) under the cookie (30 days)
 		const by_row = await get_deadline(app, headers);

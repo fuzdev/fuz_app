@@ -29,7 +29,7 @@ after the route's transaction commits, so a handler never returns a
 `Response`. `define_route` checks them against the route: the value
 against `output`, each failure against `errors` and the codes `auth` and
 `rate_limit` derive (the 401, the auth 403s, the 429). A session cookie rides the
-success: `route_ok(value, {set_cookie: [session_cookie_header(…)]})`.
+success: `route_ok(value, {set_cookie: [await sign_session_cookie(…)]})`.
 
 ```typescript
 import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
@@ -164,7 +164,6 @@ import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_audit_log_config } from '@fuzdev/fuz_app/auth/audit_log_schema.ts';
 import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
-import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '@fuzdev/fuz_app/auth/standard_rpc_actions.ts';
 import {
 	create_health_route_spec,
@@ -222,7 +221,7 @@ const backend = await create_app_backend({
 const connection_registry = new ConnectionRegistry();
 const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
-	session_options: create_session_config('my_session'),
+	session_cookie_name: 'my_session',
 	allowed_origins,
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],

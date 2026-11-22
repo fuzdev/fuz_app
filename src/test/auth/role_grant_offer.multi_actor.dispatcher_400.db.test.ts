@@ -20,7 +20,11 @@ import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
@@ -38,7 +42,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 			// envelope bodies, so reaching the data assertions is itself
 			// the regression guard for the dispatcher's envelope wrap.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -73,7 +77,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 			// Regression guard for the v1 1:1 default — middleware must
 			// transparently pick the unique actor and not 400.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -101,7 +105,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 			// `error.code`, `error.message`, `error.data.reason`, and
 			// `error.data.available`.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

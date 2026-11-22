@@ -11,7 +11,7 @@ import { test, assert, describe, beforeAll, beforeEach, afterAll } from 'vitest'
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { fuz_session_config } from '#lib/auth/session_cookie.ts';
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
@@ -49,7 +49,7 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs(
 		'/api/account',
 		create_account_route_specs(ctx.deps, {
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
@@ -104,7 +104,7 @@ const rpc_verify_status_no_origin = async (
 
 describe_standard_integration_tests({
 	...default_in_process_suite_options({
-		session_options: fuz_session_config,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: test_route_factory,
 		rpc_endpoints: test_rpc_endpoints
 	}),
@@ -149,7 +149,7 @@ describe('create_test_app', () => {
 
 	test('health route returns 200', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db
 		});
@@ -162,7 +162,7 @@ describe('create_test_app', () => {
 
 	test('create_session_headers produces working auth headers', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db,
 			rpc_endpoints: test_rpc_endpoints
@@ -176,7 +176,7 @@ describe('create_test_app', () => {
 
 	test('create_bearer_headers produces working auth headers', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db,
 			rpc_endpoints: test_rpc_endpoints
@@ -190,7 +190,7 @@ describe('create_test_app', () => {
 
 	test('create_account returns working credentials', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db,
 			rpc_endpoints: test_rpc_endpoints
@@ -218,7 +218,7 @@ describe('create_test_app', () => {
 
 	test('route_specs include consumer and factory-managed routes', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db,
 			rpc_endpoints: test_rpc_endpoints
@@ -234,7 +234,7 @@ describe('create_test_app', () => {
 	// whatever credential the request carries
 	test('GET /api/account/verify is unrouted → 404, as an unknown account path is', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db
 		});
@@ -267,7 +267,7 @@ describe('create_test_app', () => {
 	test('disables every rate limiter, the action limiters included', async () => {
 		let ctx: AppServerContext | null = null;
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: (context) => {
 				ctx = context;
 				return test_route_factory(context);
@@ -282,7 +282,7 @@ describe('create_test_app', () => {
 		const action_account_rate_limiter = create_rate_limiter({ cleanup_interval_ms: 0 });
 		let ctx: AppServerContext | null = null;
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: (context) => {
 				ctx = context;
 				return test_route_factory(context);
@@ -382,7 +382,7 @@ describe('assert_response_matches_spec', () => {
 
 	test('validates correct 200 response', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db
 		});
@@ -401,7 +401,7 @@ describe('assert_response_matches_spec', () => {
 
 	test('validates correct 401 response', async () => {
 		const test_app = await create_test_app({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: test_route_factory,
 			db
 		});

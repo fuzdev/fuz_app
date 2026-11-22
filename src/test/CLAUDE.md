@@ -114,7 +114,7 @@ Named `.integration.test.ts`. Use `create_test_app()` from
 ```ts
 const { app, create_session_headers, create_bearer_headers, create_account, cleanup } =
 	await create_test_app({
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		create_route_specs: (ctx) => my_routes(ctx)
 	});
 ```

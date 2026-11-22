@@ -12,7 +12,6 @@
 import { describe, test, assert } from 'vitest';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import {
@@ -42,7 +41,7 @@ import {
 } from './notification_helpers.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const test_roles = create_role_registry([{ name: 'teacher', grant_paths: ['self_service'] }]);
@@ -98,7 +97,7 @@ describe_db('self_service_role_actions', (get_db) => {
 	describe('self_service_role_set — enabled:true (grant)', () => {
 		test('new grant returns changed:true and writes role_grant_create audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -143,7 +142,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 		test('idempotent re-grant returns changed:false and writes no extra audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -180,7 +179,7 @@ describe_db('self_service_role_actions', (get_db) => {
 	describe('self_service_role_set — enabled:false (revoke)', () => {
 		test('revoke after grant returns changed:true and writes role_grant_revoke audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -233,7 +232,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			// to the caller's account is a sibling of the self-granted role
 			const calls: Array<CapturedNotificationCall> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: (ctx) => {
 					ctx.deps.notification_sender.add(create_capture_sender(calls));
 					return create_route_specs(ctx);
@@ -323,7 +322,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			// its revokee's outgoing offers, the self-service one included
 			const calls: Array<CapturedNotificationCall> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: (ctx) => {
 					ctx.deps.notification_sender.add(create_capture_sender(calls));
 					return create_route_specs(ctx);
@@ -421,7 +420,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 		test('revoke without prior grant returns changed:false and writes no audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -452,7 +451,7 @@ describe_db('self_service_role_actions', (get_db) => {
 			// Eligibility check fires before the `enabled` branch, so testing
 			// one direction is sufficient.
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -475,7 +474,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 		test('an invalid input is refused with -32602 and, under DEV, fuz_schema issues', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -522,7 +521,7 @@ describe_db('self_service_role_actions', (get_db) => {
 
 		test('unauthenticated call returns -32001', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -546,7 +545,7 @@ describe_db('self_service_role_actions', (get_db) => {
 		// caller's scope-bound role_grants.
 		test('scoped role_grant neither satisfies enable nor is touched by disable', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

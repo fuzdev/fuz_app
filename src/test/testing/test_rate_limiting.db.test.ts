@@ -9,7 +9,7 @@
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { fuz_session_config } from '#lib/auth/session_cookie.ts';
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
@@ -28,7 +28,7 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs(
 		'/api/account',
 		create_account_route_specs(ctx.deps, {
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
@@ -50,7 +50,7 @@ const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 
 describe_rate_limiting_tests(
 	default_in_process_suite_options({
-		session_options: fuz_session_config,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: test_route_factory,
 		rpc_endpoints: test_rpc_endpoints
 	})

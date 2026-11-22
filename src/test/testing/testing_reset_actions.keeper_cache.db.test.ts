@@ -17,7 +17,6 @@ import {
 	generate_daemon_token,
 	type DaemonTokenState
 } from '#lib/auth/daemon_token.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	create_test_app_server,
@@ -28,7 +27,7 @@ import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 const DAEMON_TOKEN = generate_daemon_token();
 
@@ -54,7 +53,7 @@ afterAll(async () => {
 });
 
 const create_reset_server = async () => {
-	const backend = await create_test_app_server({ session_options, db });
+	const backend = await create_test_app_server({ db });
 	const daemon_token_state: DaemonTokenState = {
 		current_token: DAEMON_TOKEN,
 		previous_token: null,
@@ -65,7 +64,7 @@ const create_reset_server = async () => {
 	const server = await create_app_server({
 		...create_loopback_app_server_options(),
 		backend,
-		session_options,
+		session_cookie_name,
 		rate_limiters: 'disabled_for_testing',
 		await_pending_effects: true,
 		daemon_token_state,
@@ -74,7 +73,6 @@ const create_reset_server = async () => {
 			{
 				path: RPC_PATH,
 				actions: create_testing_actions(backend.deps, {
-					session_options,
 					daemon_token_state,
 					// the consumer-shaped domain wipe, on the reset's transaction
 					reset_state: async (tx_db) => {

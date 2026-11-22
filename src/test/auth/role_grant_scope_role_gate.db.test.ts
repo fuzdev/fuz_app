@@ -28,7 +28,11 @@ import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_admin_route_specs,
+	session_cookie_name
+} from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID for the synthetic scope. Any non-bootstrap-account scope id
 // works — the gate only checks role + scope, not whether the scope row exists.
@@ -38,7 +42,7 @@ describe_db('role_grant_scope_role_gate', (get_db) => {
 	describe('scoped admin role_grant must not unlock unscoped admin RPC actions', () => {
 		test('account holding admin@scope is rejected by `admin_account_list`', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});

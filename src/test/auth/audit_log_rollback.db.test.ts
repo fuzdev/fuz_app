@@ -17,7 +17,6 @@ import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { get_audit_write_failures } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -25,7 +24,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { define_route, type RouteSpec, type TypedRouteHandler } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** What each probe route saw, in order, so a test can read the interleaving. */
 const timeline: Array<string> = [];
@@ -71,7 +70,7 @@ describe('audit rows and the request transaction', () => {
 				handler
 			});
 		test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: (ctx) => [
 				route('/api/failure_then_crash', async (r) => {
 					await ctx.deps.audit.emit(r, {

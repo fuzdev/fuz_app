@@ -29,7 +29,6 @@ import {
 } from '@fuzdev/fuz_schema/schema.ts';
 import { get_schema_entries } from '@fuzdev/fuz_schema/introspect.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { WireIssue } from '#lib/schema_issues.ts';
 import { TokenRevokeInput, TokenRevokeOutput } from '#lib/auth/account_action_specs.ts';
 import { ActorSearchInput, ActorSearchOutput } from '#lib/auth/actor_search_action_specs.ts';
@@ -137,7 +136,7 @@ const create_app = async (dev: boolean) => {
 				request_tracker: create_request_tracker()
 			}
 		},
-		session_options: create_session_config('test_session'),
+		session_cookie_name: 'test_session',
 		allowed_origins: origins.origins,
 		env_schema: object({}),
 		surface_route: true,

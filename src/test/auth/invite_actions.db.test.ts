@@ -33,7 +33,11 @@ import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_admin_route_specs, session_options } from './admin_rpc_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_admin_route_specs,
+	session_cookie_name
+} from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with any real invite row.
 const missing_invite_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;
@@ -59,7 +63,7 @@ describe_db('invite_actions_failure', (get_db) => {
 	describe('invite_create', () => {
 		test('rejects empty input with a validation error', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -80,7 +84,7 @@ describe_db('invite_actions_failure', (get_db) => {
 
 		test('rejects username colliding with an existing account', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -103,7 +107,7 @@ describe_db('invite_actions_failure', (get_db) => {
 
 		test('rejects email colliding with an existing account', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -134,7 +138,7 @@ describe_db('invite_actions_failure', (get_db) => {
 
 		test('rejects a duplicate unclaimed invite for the same identifier', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -169,7 +173,7 @@ describe_db('invite_actions_failure', (get_db) => {
 	describe('invite_delete', () => {
 		test('returns 404 `invite_not_found` for a missing invite id', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});
@@ -203,7 +207,7 @@ describe_db('invite_actions_failure', (get_db) => {
 
 		test('a delete and the create before it each write a success row carrying the acting actor', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_admin_route_specs,
 				db: get_db()
 			});

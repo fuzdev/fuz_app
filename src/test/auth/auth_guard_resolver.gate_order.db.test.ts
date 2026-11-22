@@ -25,7 +25,6 @@ import { assert, describe, test } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
@@ -35,7 +34,7 @@ import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const SESSION_ONLY_PATH = '/api/test_session_only';
 
 /** Session-gated and actor-grain — the combination that makes the order observable. */
@@ -78,7 +77,7 @@ describe_db('auth_guard_resolver — gate order', (get_db) => {
 	describe('the wrong channel is refused before actor resolution', () => {
 		test('bearer on a multi-actor account gets 403 credential_type_required, not 400 actor_required', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -98,7 +97,7 @@ describe_db('auth_guard_resolver — gate order', (get_db) => {
 
 		test('the session channel still reaches the authorization phase and gets 400 actor_required', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -118,7 +117,7 @@ describe_db('auth_guard_resolver — gate order', (get_db) => {
 
 		test('the session channel with an `acting` selector reaches the handler', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

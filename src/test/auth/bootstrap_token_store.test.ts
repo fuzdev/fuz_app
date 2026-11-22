@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import { create_file_bootstrap_token_store } from '#lib/auth/bootstrap_token_store.ts';
-import { check_bootstrap_status } from '#lib/auth/bootstrap_routes.ts';
+import { is_bootstrap_available } from '#lib/auth/bootstrap_routes.ts';
 import { BOOTSTRAP_TOKEN_MIN_BYTES } from '#lib/auth/bootstrap_account.ts';
 import { create_node_runtime } from '#lib/runtime/node.ts';
 import { create_mock_runtime } from '#lib/runtime/mock.ts';
@@ -78,11 +78,11 @@ describe.runIf(process.platform !== 'win32')('the file store on disk', () => {
 		const warnings: Array<string> = [];
 		const log = new Logger('test', { level: 'off' });
 		log.warn = (...args: Array<unknown>) => void warnings.push(args.join(' '));
-		const status = await check_bootstrap_status(
+		const available = await is_bootstrap_available(
 			{ db: { query_one: async () => ({ bootstrapped: false }) as never }, log },
 			{ token_store: create_file_bootstrap_token_store(create_node_runtime(), path) }
 		);
-		assert.deepStrictEqual(status, { available: false });
+		assert.strictEqual(available, false);
 		assert.strictEqual(warnings.length, 1);
 		assert.include(warnings[0], 'has 2 hard links');
 	});

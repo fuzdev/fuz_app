@@ -19,7 +19,6 @@ import { describe, test, assert } from 'vitest';
 import { literal, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import type { TestAccount } from '#lib/testing/test_app.ts';
@@ -31,7 +30,7 @@ import {
 
 const COOKIE_NAME = 'test_round_trip_session';
 
-const session_options = create_session_config(COOKIE_NAME);
+const session_cookie_name = COOKIE_NAME;
 
 const create_account_stub = (cookie: string): TestAccount => ({
 	account: {
@@ -222,7 +221,7 @@ const fake_fixture = {
 
 describe_round_trip_validation({
 	setup_test: async () => fake_fixture,
-	surface_source: create_test_app_surface_spec({ session_options, create_route_specs })
+	surface_source: create_test_app_surface_spec({ session_cookie_name, create_route_specs })
 });
 
 test('the mutation ran on an account of its own', () => {

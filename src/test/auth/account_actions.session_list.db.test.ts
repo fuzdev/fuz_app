@@ -8,7 +8,6 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { account_session_list_action_spec } from '#lib/auth/account_action_specs.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
@@ -19,7 +18,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -35,7 +34,11 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 describe_db('account_actions.session_list', (get_db) => {
 	describe('account_session_list is_current', () => {
 		test("a session caller's list marks its own session, and only it", async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const account = await test_app.create_account({ username: 'session_list_current' });
 
 			const res = await rpc_call_for_spec({
@@ -52,7 +55,11 @@ describe_db('account_actions.session_list', (get_db) => {
 		});
 
 		test("a bearer caller's list marks no session current", async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const account = await test_app.create_account({ username: 'session_list_bearer' });
 
 			const res = await rpc_call_for_spec({

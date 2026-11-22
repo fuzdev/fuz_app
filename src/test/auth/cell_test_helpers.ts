@@ -17,7 +17,6 @@
 import { assert } from 'vitest';
 import type { Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
@@ -55,7 +54,7 @@ import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 /** Shared cookie config for the cell integration suites. */
-export const session_options = create_session_config('test_session');
+export const session_cookie_name = 'test_session';
 
 /** RPC mount path used across every cell integration suite. */
 export const RPC_PATH = '/api/rpc';
@@ -171,7 +170,7 @@ export const create_cell_test_app = (
 	options?: CellTestAppOptions
 ): Promise<TestApp> =>
 	create_test_app({
-		session_options,
+		session_cookie_name,
 		create_route_specs: options ? create_cell_route_specs(options) : create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),

@@ -3,7 +3,7 @@
  *
  * Promotes the expired-session rejection from in-process-only coverage
  * (which forged a cookie with a backdated *payload* and so only ever
- * exercised the pre-DB `parse_session` gate) to a cross-process assertion
+ * exercised the pre-DB `parse_session_from_cookies` gate) to a cross-process assertion
  * against the authoritative server-side **DB-row** expiry gate
  * (`query_session_get_valid` — `WHERE expires_at > NOW()`). The
  * `expired_session` principal mints a backdated `auth_session` row behind a
@@ -16,7 +16,7 @@
  * Two rows: a read path (RPC `account_verify`) and a mutation path (REST
  * `POST /logout`). The two byte-identical in-process `account_verify`
  * skips collapse into the single read row. The cookie-*payload* gate stays
- * covered by `parse_session`'s own unit tests (pure crypto, no DB — the
+ * covered by `parse_session_from_cookies`'s own unit tests (pure crypto, no DB — the
  * same TS-internal treatment architecture decision 8 gives the timing
  * floor).
  *

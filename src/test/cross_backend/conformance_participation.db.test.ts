@@ -13,6 +13,7 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import { describe_role_grant_participation_cross_tests } from '#lib/testing/cross_backend/role_grant_participation.ts';
@@ -24,8 +25,7 @@ import {
 import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
@@ -42,7 +42,7 @@ const extra_accounts = [
 ];
 
 const suite_options = default_in_process_suite_options({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: spine_rpc_endpoints,
 	extra_accounts
@@ -61,7 +61,7 @@ describe_conformance_table_tests({
 // suites alone, leaving the table's surface as declared.
 const drained_setup_test = default_in_process_setup({
 	reject_unknown_audit_metadata_keys: true,
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: (ctx) =>
 		spine_rpc_endpoints(ctx).map((endpoint) => ({

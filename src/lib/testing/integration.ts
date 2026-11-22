@@ -6,7 +6,7 @@ import './assert_dev_env.ts';
  * `describe_standard_integration_tests` creates a composable test suite that
  * exercises the full middleware stack (origin, session, bearer_auth, request_context)
  * against a real database. Consumers call it with their route factory and
- * session config — all auth route tests come for free.
+ * session cookie name — all auth route tests come for free.
  *
  * Tests use `stub_password_deps` (deterministic hashing, no Argon2 overhead).
  * Login handlers call `verify_password(submitted, stored_hash)` which works because
@@ -21,7 +21,6 @@ import './assert_dev_env.ts';
 import { describe, test, assert, afterAll } from 'vitest';
 import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import {
 	find_auth_route,
 	assert_response_matches_spec,
@@ -95,11 +94,11 @@ export interface StandardIntegrationTestOptions {
 	/** Backend capability declarations for capability-gated cases. */
 	capabilities: BackendCapabilities;
 	/**
-	 * Session config — needed to resolve factory-form `rpc_endpoints`
+	 * The session cookie's name — needed to resolve factory-form `rpc_endpoints`
 	 * against a stub `AppServerContext` at setup time and to read
 	 * `cookie_name` for manual cookie composition in the session cases.
 	 */
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/**
 	 * RPC endpoint specs — required. This suite dispatches
 	 * `account_verify`, `account_session_*`, and `account_token_*` via
@@ -190,12 +189,12 @@ export const describe_standard_integration_tests = (
 	// path; the running backend handles live dispatch.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options
+		options.session_cookie_name
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	describe('standard_integration', () => {
-		const { cookie_name } = options.session_options;
+		const cookie_name = options.session_cookie_name;
 
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
@@ -612,7 +611,7 @@ export const describe_standard_integration_tests = (
 			// it exercises the authoritative server-side DB-row expiry gate over
 			// real auth resolution on every spine, not the cookie-payload gate a
 			// backdated-payload forge hit here. The payload gate stays covered by
-			// `parse_session`'s own unit tests.
+			// `parse_session_from_cookies`'s own unit tests.
 		});
 
 		// --- 4. Session revocation ---

@@ -9,7 +9,6 @@
 import { describe, assert, test, vi, afterEach } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 
 /**
@@ -24,7 +23,7 @@ const import_fresh = async () => {
 	return { ...fail_floor, create_account_route_specs, create_signup_route_specs };
 };
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const route_deps = () => ({
 	...create_stub_app_deps(),
@@ -41,14 +40,14 @@ describe('warn_if_fail_floor_disabled', () => {
 		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const login = (login_fail_floor_ms: number) =>
 			fresh.create_account_route_specs(route_deps(), {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms
 			});
 		const signup = (signup_fail_floor_ms: number) =>
 			fresh.create_signup_route_specs(route_deps(), {
-				session_options,
+				session_cookie_name,
 				signup_ip_rate_limiter: null,
 				signup_account_rate_limiter: null,
 				signup_fail_floor_ms
@@ -76,12 +75,12 @@ describe('warn_if_fail_floor_disabled', () => {
 		const fresh = await import_fresh();
 		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		fresh.create_account_route_specs(route_deps(), {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: null,
 			login_account_rate_limiter: null
 		});
 		fresh.create_signup_route_specs(route_deps(), {
-			session_options,
+			session_cookie_name,
 			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			signup_fail_floor_ms: 1

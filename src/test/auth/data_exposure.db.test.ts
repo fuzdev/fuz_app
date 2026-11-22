@@ -7,7 +7,6 @@
  * @module
  */
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
@@ -17,13 +16,13 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { describe_data_exposure_tests } from '#lib/testing/data_exposure.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: null,
 			login_account_rate_limiter: null,
 			login_fail_floor_ms: 0,
@@ -39,5 +38,5 @@ const rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 ];
 
 describe_data_exposure_tests(
-	default_in_process_suite_options({ session_options, create_route_specs, rpc_endpoints })
+	default_in_process_suite_options({ session_cookie_name, create_route_specs, rpc_endpoints })
 );

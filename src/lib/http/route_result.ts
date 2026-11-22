@@ -39,7 +39,7 @@ export interface RouteOkOptions {
 	 * `Set-Cookie` header values, written in order after every `Set-Cookie`
 	 * line the middleware put on the context — the session middleware's clear
 	 * of a stale cookie first. Formatted by the caller
-	 * (`session_cookie_header`, `clear_session_cookie_header`); the framework
+	 * (`sign_session_cookie`, `format_session_clear_cookie`); the framework
 	 * treats them as opaque lines.
 	 */
 	readonly set_cookie?: ReadonlyArray<string>;

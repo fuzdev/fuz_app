@@ -15,7 +15,7 @@ import { describe, test, assert, beforeAll } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config, create_session_cookie_value } from '#lib/auth/session_cookie.ts';
+import { create_session_cookie_value } from '#lib/auth/session_cookie.ts';
 import { define_route } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 import { create_app_server, type AppServer } from '#lib/server/app_server.ts';
@@ -31,7 +31,7 @@ import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
 
 const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const STALE = 'test_session=stale.invalidsignature';
 
 const factory = create_default_db_factory(async () => {});
@@ -68,7 +68,7 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 		server = await create_app_server({
 			backend,
 			...create_loopback_app_server_options(),
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [
 				define_route({
 					method: 'GET',
@@ -107,7 +107,7 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 	});
 
 	test('the same answer to a valid or an absent cookie is not', async () => {
-		const valid = `test_session=${await create_session_cookie_value(keyring, 'a_token', session_options)}`;
+		const valid = `test_session=${await create_session_cookie_value(keyring, 'a_token')}`;
 		for (const cookie of [valid, null]) {
 			await request('/api/own', cookie);
 			assert.deepStrictEqual(errors, [], String(cookie));

@@ -27,7 +27,11 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.audit', (get_db) => {
 	describe('audit event fan-out', () => {
@@ -35,7 +39,7 @@ describe_db('role_grant_offer_actions.audit', (get_db) => {
 			events: Array<AuditLogEvent>
 		): Promise<Awaited<ReturnType<typeof create_test_app>>> =>
 			create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>
@@ -109,7 +113,7 @@ describe_db('role_grant_offer_actions.audit', (get_db) => {
 		test('authorize=false emits failure-outcome create event', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db(),
 				audit_factory: (params) =>

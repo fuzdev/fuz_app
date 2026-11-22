@@ -1,28 +1,23 @@
 /**
- * Hono session boundary — the session cookie read off a request, and the
- * request-time middleware that resolves it and clears a stale one.
+ * Hono session boundary — the request-time middleware that reads the session
+ * cookie off a request, resolves it, and clears a stale one.
  *
  * The cookie is read from the request's `Cookie` lines by
- * `read_session_cookie_value` and written as the exact `Set-Cookie` strings of
+ * `parse_session_from_cookies` and written as the exact `Set-Cookie` strings of
  * `auth/session_cookie.ts` — no framework cookie parser or serializer sits on
  * the credential path, so nothing is percent-decoded on the way in or
  * percent-encoded on the way out. A route sets or clears the cookie by
  * returning the line on its success (`route_ok(value, {set_cookie})`, the
- * lines from `session_cookie_header` and `clear_session_cookie_header`), never
+ * lines from `sign_session_cookie` and `format_session_clear_cookie`), never
  * by writing on the context.
  *
  * @module
  */
 
-import type { Context, MiddlewareHandler } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 
 import type { Keyring } from './keyring.ts';
-import { read_session_cookie_value } from './credential_headers.ts';
-import {
-	type SessionOptions,
-	format_session_clear_cookie,
-	process_session_cookie
-} from './session_cookie.ts';
+import { format_session_clear_cookie, parse_session_from_cookies } from './session_cookie.ts';
 import {
 	EXPECTED_FIRST_SET_COOKIE_KEY,
 	SESSION_COOKIE_EXPIRES_AT_KEY,
@@ -31,22 +26,12 @@ import {
 import { get_header_lines } from '../http/header_lines.ts';
 
 /**
- * Read the session cookie's value from a request, as sent
- * (`read_session_cookie_value` over the request's `Cookie` lines).
- *
- * @returns the value — `''` for a cookie sent with none — or `null` when the request carries no session cookie
- */
-export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): string | null =>
-	read_session_cookie_value(get_header_lines(c, 'Cookie'), options.cookie_name);
-
-/**
  * Create session middleware that parses cookies and sets the session token on
  * context.
  *
  * Always sets `SESSION_TOKEN_KEY` (null when invalid/missing) for type-safe
  * reads — the key the session leg (`create_request_context_middleware`)
- * reads. The identity is the session token, so the options are a
- * `SessionOptions<string>`.
+ * reads.
  *
  * A cookie that is present and fails verification is cleared — an empty value
  * (`name=`) included; a request with no session cookie clears nothing. The
@@ -116,26 +101,30 @@ export const get_session_cookie = <T>(c: Context, options: SessionOptions<T>): s
  * where its own router puts the auth scope.
  *
  * @param keyring - key ring for cookie verification
- * @param options - session configuration
+ * @param session_cookie_name - the session cookie's name
  * @mutates Hono context - sets `SESSION_TOKEN_KEY` and `SESSION_COOKIE_EXPIRES_AT_KEY`, and may put the clearing `Set-Cookie` on the context's headers, recording it under `EXPECTED_FIRST_SET_COOKIE_KEY`
  */
 export const create_session_middleware = (
 	keyring: Keyring,
-	options: SessionOptions<string>
+	session_cookie_name: string
 ): MiddlewareHandler => {
 	return async (c, next) => {
-		const signed_value = get_session_cookie(c, options);
-		const result = await process_session_cookie(signed_value, keyring, options);
+		const read = await parse_session_from_cookies(
+			get_header_lines(c, 'Cookie'),
+			keyring,
+			session_cookie_name
+		);
+		const cookie = read.kind === 'valid' ? read.cookie : null;
 
 		// Always set the token (null when invalid/missing) for type-safe reads
-		c.set(SESSION_TOKEN_KEY, result.identity ?? null);
+		c.set(SESSION_TOKEN_KEY, cookie?.token ?? null);
 		// the signed expiry rides beside it, for the credential deadline
-		c.set(SESSION_COOKIE_EXPIRES_AT_KEY, result.expires_at ?? null);
+		c.set(SESSION_COOKIE_EXPIRES_AT_KEY, cookie?.expires_at ?? null);
 
 		// ahead of the handler, so it precedes any `Set-Cookie` a success carries;
 		// recorded, so the DEV `Set-Cookie` check can see a response that lost it
-		if (result.action === 'clear') {
-			const clear = format_session_clear_cookie(options.cookie_name);
+		if (read.kind === 'invalid') {
+			const clear = format_session_clear_cookie(session_cookie_name);
 			c.header('Set-Cookie', clear, { append: true });
 			c.set(EXPECTED_FIRST_SET_COOKIE_KEY, clear);
 		}

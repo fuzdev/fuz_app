@@ -7,7 +7,6 @@
  * @module
  */
 
-import type { SessionOptions } from './session_cookie.ts';
 import type { AppDeps } from './deps.ts';
 import type { DaemonTokenState } from './daemon_token.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
@@ -256,7 +255,7 @@ export const assert_middleware_stack_mounted = (
  */
 export interface AuthMiddlewareOptions {
 	allowed_origins: Array<RegExp>;
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/**
 	 * Path pattern for the session, request-context, bearer, and daemon-token
 	 * layers (default: `AUTH_MIDDLEWARE_PATH`, `'/api/*'`). The origin check
@@ -290,7 +289,7 @@ export interface AuthMiddlewareOptions {
  * non-standard paths (e.g., tx's `/tx` binary endpoint).
  *
  * @param deps - stateless capabilities (keyring, db)
- * @param options - middleware configuration (allowed_origins, session_options, path, daemon_token_state, origin_carve_outs)
+ * @param options - middleware configuration (allowed_origins, session_cookie_name, path, daemon_token_state, origin_carve_outs)
  * @throws Error when an origin carve-out has no path or no reason, or overlaps `path`
  * @returns the middleware spec array
  */
@@ -301,7 +300,7 @@ export const create_auth_middleware_specs = async (
 	const { keyring, db } = deps;
 	const {
 		allowed_origins,
-		session_options,
+		session_cookie_name,
 		path = AUTH_MIDDLEWARE_PATH,
 		daemon_token_state
 	} = options;
@@ -328,7 +327,7 @@ export const create_auth_middleware_specs = async (
 		import('./bearer_auth.ts')
 	]);
 
-	const session_middleware = create_session_middleware(keyring, session_options);
+	const session_middleware = create_session_middleware(keyring, session_cookie_name);
 	// the first credential leg clears the resolved credential: the daemon
 	// token's when it is composed, else this one
 	const request_context_middleware = create_request_context_middleware(query_deps, {

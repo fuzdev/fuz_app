@@ -8,7 +8,7 @@ import './assert_dev_env.ts';
  * (2 attempts / 1 minute) and fire requests until 429 is returned.
  *
  * Consumers call `describe_rate_limiting_tests` with their route factory and
- * session config — rate limit enforcement tests come for free.
+ * session cookie name — rate limit enforcement tests come for free.
  *
  * Each test body constructs its own `TestApp` with a per-test rate limiter
  * override in `app_options`, so this suite reads its inputs directly from
@@ -25,7 +25,6 @@ import './assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
@@ -48,8 +47,8 @@ import type { Db } from '../db/db.ts';
  * Configuration for `describe_rate_limiting_tests`.
  */
 export interface RateLimitingTestOptions {
-	/** Session config for cookie-based auth. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name. */
+	session_cookie_name: string;
 	/** Route spec factory — same one used in production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
@@ -112,7 +111,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 				const login_ip_rate_limiter = create_test_rate_limiter();
 				try {
 					const test_app = await create_test_app({
-						session_options: options.session_options,
+						session_cookie_name: options.session_cookie_name,
 						create_route_specs: options.create_route_specs,
 						db: get_db(),
 						rpc_endpoints: options.rpc_endpoints,
@@ -176,7 +175,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 				const login_account_rate_limiter = create_test_rate_limiter();
 				try {
 					const test_app = await create_test_app({
-						session_options: options.session_options,
+						session_cookie_name: options.session_cookie_name,
 						create_route_specs: options.create_route_specs,
 						db: get_db(),
 						rpc_endpoints: options.rpc_endpoints,

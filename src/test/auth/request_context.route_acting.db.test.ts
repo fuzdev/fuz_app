@@ -29,7 +29,6 @@ import { assert, describe, test } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_INVALID_REQUEST_BODY } from '#lib/http/error_schemas.ts';
@@ -38,7 +37,7 @@ import { route_ok } from '#lib/http/route_result.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const ACTING_PATH = '/api/test_acting_echo';
 
 const ActingEchoInput = s.object({ acting: ActingActor, note: s.string });
@@ -66,7 +65,7 @@ describe_db('request_context — acting on a mutation body', (get_db) => {
 	describe('read_route_acting reads the raw body', () => {
 		test('a body-supplied `acting` resolves that actor, and the body still reaches validation + handler', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -91,7 +90,7 @@ describe_db('request_context — acting on a mutation body', (get_db) => {
 
 		test('a multi-actor account omitting `acting` gets 400 actor_required', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -109,7 +108,7 @@ describe_db('request_context — acting on a mutation body', (get_db) => {
 
 		test('a single-actor account resolves without a selector', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -131,7 +130,7 @@ describe_db('request_context — acting on a mutation body', (get_db) => {
 	describe('a malformed selector reads as omitted', () => {
 		test('multi-actor: the authorization phase answers actor_required, not a body-shape 400', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -153,7 +152,7 @@ describe_db('request_context — acting on a mutation body', (get_db) => {
 
 		test('single-actor: resolution succeeds, then input validation rejects the bad value', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

@@ -32,7 +32,6 @@ import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
 import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 import { query_actor_soft_delete } from '#lib/auth/account_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { Db } from '#lib/db/db.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -54,7 +53,7 @@ import { create_sse_frame_reader } from '#lib/testing/transports/sse_frame_reade
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, is_session_read, type StalledQuery } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const STREAM_PATH = '/api/admin/audit/stream';
 
 interface Harness {
@@ -90,14 +89,14 @@ const create_harness = async (
 	// recorded call is exactly the route's arguments
 	const log = new Logger(undefined, { level: 'info', console: recording_console });
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db: gated.db,
 		exclude_db_invariants,
 		app_options: { audit_log_sse: true },
 		create_route_specs: (ctx) => [
 			...prefix_route_specs('/api/account', [
 				...create_account_route_specs(ctx.deps, {
-					session_options,
+					session_cookie_name,
 					login_ip_rate_limiter: null,
 					login_account_rate_limiter: null,
 					login_fail_floor_ms: 0
@@ -428,7 +427,7 @@ describe_db('audit log stream keep-alive', (get_db) => {
 
 	test("audit_log_sse's keep_alive_ms reaches the route's streams", async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			db: get_db(),
 			app_options: { audit_log_sse: { keep_alive_ms: 20 } },
 			create_route_specs: (ctx) =>
@@ -460,7 +459,7 @@ describe_db('audit log stream keep-alive', (get_db) => {
 		let error: unknown = null;
 		try {
 			await create_test_app({
-				session_options,
+				session_cookie_name,
 				db: get_db(),
 				app_options: { audit_log_sse: { keep_alive_ms: 0 } },
 				create_route_specs: () => []

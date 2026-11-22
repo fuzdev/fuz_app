@@ -33,12 +33,12 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_handler()` — a `route_raw` text answer (`stub`), a handler that fits any route (`attach_route_handler(shape, stub_handler)`).
 - `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
-- `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer` and `notification_sender`.
+- `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so a session cookie signed on stub deps is a line; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer` and `notification_sender`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `inflight_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` with `create_auth_middleware_specs`'s names, paths, order and declared `errors` (pinned against it by `auth/middleware.mounted.test.ts`), each layer its own pass-through handler so `assert_middleware_stack_mounted` tells them apart. A stub declaring more errors than the real layer would widen every route's error map under its path. The real stack: `auth/CLAUDE.md` §Middleware.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
-- `create_stub_app_server_context(session_options)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
+- `create_stub_app_server_context(session_cookie_name)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
 - `create_test_app_surface_spec(options)` — the `AppSurfaceSpec` `create_app_server` would build, in its order (consumer routes, bootstrap, RPC endpoints, `GET /api/surface` when `surface_route: true` — pass both the same value), over a stub middleware list mirroring the real one (body limit, host gate, `trusted_proxy`, the stub auth stack). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here; `testing/test_app_server.db.test.ts` pins it against `create_test_app`. It throws where `create_app_server` throws (the assembly asserts of `auth/CLAUDE.md` §Middleware, and a `ws_endpoints` spec with no `allowed_origins` when none is given). Options: `CreateTestAppSurfaceSpecOptions` TSDoc.
 
 Throwing stubs surface mock escape: a test that accidentally reaches into
@@ -240,7 +240,7 @@ cookie" flow, split by intent:
 - `bootstrap_test_keeper(options)` — keeper path used by `create_test_app_server`. Same body as the general helper plus a lock flip (`UPDATE bootstrap_lock SET bootstrapped = true ...`) so test DB state matches a real bootstrap completion, letting production code trust the lock as the single signal.
 - `create_test_account_with_credentials(options)` — general path used by `TestApp.create_account` for additional non-keeper accounts. Same body, no lock interaction (additional accounts aren't bootstraps).
 
-Both take `{db, keyring, session_options, password, username?, password_value?, roles?}`
+Both take `{db, keyring, password, username?, password_value?, roles?}`
 (shared `CreateTestAccountWithCredentialsOptions` / `BootstrapTestKeeperOptions`),
 and store the username lowercased, as the Rust spine's `_testing_reset` seeds
 do, so the returned `account.username` is its lowercase.
@@ -248,8 +248,8 @@ do, so the returned `account.username` is its lowercase.
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles` (default `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin, as a production bootstrap grants), `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions`.
-- `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`), and `exclude_db_invariants?` (§`db_invariant_queries.ts` + `db_invariants.ts`).
+- `TestAppServerOptions` — optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles` (default `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin, as a production bootstrap grants), `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions`.
+- `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `session_cookie_name` and `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_cookie_name`, `create_route_specs`, `rpc_endpoints`, `bootstrap`), and `exclude_db_invariants?` (§`db_invariant_queries.ts` + `db_invariants.ts`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, assert_db_invariants, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
 
@@ -654,7 +654,7 @@ valid credential must name its reason** — `data.reason` over RPC (pass
 `{reason}` to `jsonrpc_errors.unauthenticated`), the flat `error` over REST. A
 ≥500 carrying a declared code (503 `service_unavailable`, 504 `timeout`, a
 consumer's `register_jsonrpc_error_code`) passes. Options: `{setup_test,
-surface_source, session_options, rpc_endpoints, skip_methods?,
+surface_source, session_cookie_name, rpc_endpoints, skip_methods?,
 input_overrides?, success_fixtures?}`; a method no picked principal can reach
 goes in `skip_methods`.
 
@@ -789,7 +789,7 @@ Each group asserts its required route exists with a descriptive message.
 Creates a tight rate limiter (default `max_attempts: 2`, `window_ms: 60_000`)
 per test and disposes it in `finally`.
 
-Options: `{session_options, create_route_specs, rpc_endpoints?, app_options?, db_factories?, max_attempts?}`.
+Options: `{session_cookie_name, create_route_specs, rpc_endpoints?, app_options?, db_factories?, max_attempts?}`.
 Reads inputs directly from the options bag instead of going through the
 `setup_test` fixture protocol — the per-test rate-limiter overrides need a
 fresh `TestApp` per test that the single-fixture model can't carry.
@@ -832,7 +832,7 @@ probes each gate on each counted route. Override with
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).
 
-Options: `{setup_test, surface_source, session_options, rpc_endpoints, base_url,
+Options: `{setup_test, surface_source, session_cookie_name, rpc_endpoints, base_url,
 max_body_bytes?, rpc_max_body_bytes?, error_coverage_min?,
 check_uncovered_errors?}`; the last is called with the declared paths left
 uncovered before the floor is asserted, which fuz_app's own wirings hold to an
@@ -881,7 +881,7 @@ header/account mismatch. Direct-grant fixtures (test focuses on revoke or
 isolation, not the consent path) go through `create_test_role_grant_direct`
 from `db_entities.ts`.
 
-Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleRegistry, admin_prefix?}`.
+Required options: `{setup_test, surface_source, session_cookie_name, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleRegistry, admin_prefix?}`.
 
 fuz_app runs it cross-process through the standard bundle
 and in-process as a consumer wires it
@@ -979,7 +979,7 @@ Registry lookups:
 - `find_rpc_method(rpc_endpoints, method)` — surface-shape lookup over `AppSurfaceRpcEndpoint[]` (generated by `generate_app_surface`).
 - `require_rpc_endpoint_path(rpc_endpoints)` — returns the single endpoint path; throws descriptively on zero or multiple endpoints. Used by the admin/audit suites to hard-fail at setup.
 - `RpcEndpointsSuiteOption` — union `Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)` accepted by every DB-backed suite's `rpc_endpoints` field.
-- `resolve_rpc_endpoints_for_setup(rpc_endpoints, session_options)` — resolves the union to an array for setup-time inspection (path lookup, `find_rpc_action` presence checks). Factory form is invoked once with a stub `AppServerContext`; the produced actions are discarded because `create_app_server` invokes the factory a second time per-test with its real ctx. Safe when the factory is pure wrt endpoint `path` and action `spec.method` list.
+- `resolve_rpc_endpoints_for_setup(rpc_endpoints, session_cookie_name)` — resolves the union to an array for setup-time inspection (path lookup, `find_rpc_action` presence checks). Factory form is invoked once with a stub `AppServerContext`; the produced actions are discarded because `create_app_server` invokes the factory a second time per-test with its real ctx. Safe when the factory is pure wrt endpoint `path` and action `spec.method` list.
 
 ### `rpc_attack_surface.ts` + `rpc_envelope_cases.ts` — `describe_rpc_attack_surface_tests`
 
@@ -1104,7 +1104,7 @@ minus their in-process-only knobs (`create_route_specs`,
 
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
-session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
+session_cookie_name, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
 exclude_cases?, expected_skips?, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
 rpc_skip_methods?, rpc_input_overrides?, rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
@@ -1204,7 +1204,7 @@ builtin, and `sse_round_trip`'s other-role keep case for `ROLE_ADMIN`. fuz_app's
 ### `cross_backend/rust_spine_consumer_surface.ts` — `create_rust_spine_consumer_surface_spec`
 
 The declared surface of a consumer served by the Rust spine, for its cross
-suites: `create_rust_spine_consumer_surface_spec({session_options,
+suites: `create_rust_spine_consumer_surface_spec({session_cookie_name,
 domain_action_specs, extra_rpc_actions?, roles?, exclude_methods?,
 rpc_path?, host_gate?})`, built on `create_test_app_surface_spec` from the hono-free route
 shapes. It declares `/health`, the `ACCOUNT_ROUTER_PATHS` under
@@ -1246,7 +1246,7 @@ conformance cases assert _expected behavior_ — the security negatives
 wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — the `ConformanceCase` type (data, never parsed): `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status, error_reason?, error_code?, fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. `method` resolves its schemas from the live registry (RPC) or the REST auth routes. `as` is a closed `ConformancePrincipal` — fixture accessors, never inline minting; what each principal sends and which leg refuses it is on the type. `acting` (`ConformanceActingBinding`) has the runner fill `params.acting` with a real actor id. Beyond status and reason (`error_reason: null` pins an RPC denial carrying no `data.reason`): `error_code` (else the status's default JSON-RPC code), `equivalence_group` (members answer byte-identical `{status, body}`), `headers` (present-and-equal, or `null` for absent), `set_cookie` (a `SessionCookieEffect`; **omitted means `'none'`**). Always checked: no fingerprint header (`FINGERPRINT_HEADERS`), and no session cookie minted outside 2xx. `check_conformance_cases` refuses a row that can't mean anything.
-- `conformance_table.ts` — `describe_conformance_table_tests({cases, setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?, session_options, principals?, ws?, suite_name?})`, on the Tier 1 fixture protocol, so **one case array runs in-process and cross-process**. Methods resolve from `rpc_endpoints`, then `live_rpc_endpoints` (methods kept off the declared surface; fuz_app's is `create_spine_live_rpc_endpoints()`) — `resolve_conformance_rpc_endpoints`; `send_conformance_case` is the send half the differential shares; `role_holder` / `wrong_role` read an `extra_accounts` username named in `principals`. `ws` (cross-process only) re-sends each case `is_ws_conformance_case` admits as one frame on a socket the principal opens, under the same expectations; an equivalence group left with one member there is dropped.
+- `conformance_table.ts` — `describe_conformance_table_tests({cases, setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?, session_cookie_name, principals?, ws?, suite_name?})`, on the Tier 1 fixture protocol, so **one case array runs in-process and cross-process**. Methods resolve from `rpc_endpoints`, then `live_rpc_endpoints` (methods kept off the declared surface; fuz_app's is `create_spine_live_rpc_endpoints()`) — `resolve_conformance_rpc_endpoints`; `send_conformance_case` is the send half the differential shares; `role_holder` / `wrong_role` read an `extra_accounts` username named in `principals`. `ws` (cross-process only) re-sends each case `is_ws_conformance_case` admits as one frame on a socket the principal opens, under the same expectations; an equivalence group left with one member there is dropped.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
   live_rpc_endpoints?, skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
   `RouteAuth`, then each live-mounted one the declared surface lacks
@@ -1761,7 +1761,7 @@ re-roll the serve / daemon-info / drain boilerplate:
 - `testing/daemon_info.ts` — the `~/.{name}/run/daemon.json` plumbing the core's stale-daemon check and daemon-info write use: `DaemonInfo` (a strict `@fuzdev/fuz_schema` object), `get_app_dir`, `get_daemon_info_path`, `write_daemon_info` (atomic), `read_daemon_info`, `is_daemon_running` (`probe_process`, signal 0 with no program spawned; another user's process or a pid naming no single process reads as not running).
 - `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server`'s `serve` and module-level `upgradeWebSocket`, over a `ws` `WebSocketServer`). Optional peer deps; only test binaries import them. `prepare_websocket` builds the `ws` server (`noServer: true`) with `maxPayload` at twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`; `ws`'s own default is 100 MiB), and `serve` hands it to `@hono/node-server`, so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
-- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `create_spine_ready_route_spec` (the `/ready` route over the committed `expected_schema.json`), `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
+- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_roles`, `create_spine_route_specs`, `create_spine_ready_route_spec` (the `/ready` route over the committed `expected_schema.json`), `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, then the WS-only room verbs and `room_notification_actions`, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust — and the stub's RPC dispatcher refuses its `ws_only` room verbs). `options.room_registry` is the registry the room verbs, `_testing_room_evict`, and `_testing_reset` (which clears it) share — the binary builds it with `create_spine_room_registry(connections)` (exclusive, the default bounds; the twin of the stub's `stub_room_registry`) over its WS endpoints' connection registry; omitted, one over a fresh connection registry serves enumeration. Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 

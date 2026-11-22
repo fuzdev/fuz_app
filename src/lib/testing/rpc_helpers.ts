@@ -27,7 +27,6 @@ import type {
 	RpcEndpointSpec
 } from '../http/surface.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import { create_stub_app_server_context } from './stubs.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
 
@@ -68,11 +67,11 @@ export type RpcEndpointsSuiteOption =
  */
 export const resolve_rpc_endpoints_for_setup = (
 	rpc_endpoints: RpcEndpointsSuiteOption,
-	session_options: SessionOptions<string>
+	session_cookie_name: string
 ): Array<RpcEndpointSpec> => {
 	if (typeof rpc_endpoints !== 'function') return rpc_endpoints;
-	const first = rpc_endpoints(create_stub_app_server_context(session_options));
-	const second = rpc_endpoints(create_stub_app_server_context(session_options));
+	const first = rpc_endpoints(create_stub_app_server_context(session_cookie_name));
+	const second = rpc_endpoints(create_stub_app_server_context(session_cookie_name));
 	const summarize = (eps: Array<RpcEndpointSpec>): string =>
 		JSON.stringify(
 			eps

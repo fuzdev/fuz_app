@@ -75,7 +75,7 @@ fuz_app uses **deep path imports** — no barrel/index exports. The wildcard
 
 ```typescript
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
-import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import { sign_session_cookie } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 import type { RouteSpec } from '@fuzdev/fuz_app/http/route_spec.ts';
 ```
 
@@ -137,7 +137,7 @@ Keep these categories separate:
 
 - Capabilities (`AppDeps`) — injectable, swappable per env: `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` the consumer's `audit_factory` builds), `connection_closer` and `notification_sender` (the realtime fan-outs `create_app_server` fills), `request_tracker` (every request and WS message accepted, held until its effects flush — what `AppServer.close` and `_testing_drain_effects` wait on), and the optional `fact_store`
 - Route caps (`RouteFactoryDeps`) — `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)
-- Parameters (`*Options`) — Static startup values, per-factory: `session_options`, `login_ip_rate_limiter`, `login_account_rate_limiter`, `rate_limiters` (the `RateLimiterMode` for omitted limiters), `token_store` (the live bootstrap's `BootstrapTokenStore`)
+- Parameters (`*Options`) — Static startup values, per-factory: `session_cookie_name`, `login_ip_rate_limiter`, `login_account_rate_limiter`, `rate_limiters` (the `RateLimiterMode` for omitted limiters), `token_store` (the live bootstrap's `BootstrapTokenStore`)
 - Runtime state (inline ref) — Mutable values: `bootstrap_status` — NOT in deps or options
 
 The top-level `create_route_specs` callback receives `(ctx: AppServerContext)`.

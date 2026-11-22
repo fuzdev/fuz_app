@@ -21,10 +21,10 @@ import '../assert_dev_env.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_account_route_specs } from '../../auth/account_routes.ts';
+import { SESSION_COOKIE_NAME } from '../../auth/session_cookie.ts';
 import { create_audit_log_route_specs } from '../../auth/audit_log_routes.ts';
 import { create_role_registry, type RoleRegistry } from '../../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../../auth/grant_path_schema.ts';
-import { create_session_config, type SessionOptions } from '../../auth/session_cookie.ts';
 import { create_signup_route_specs } from '../../auth/signup_routes.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
 import { create_ready_route_spec, load_expected_schema } from '../../http/common_routes.ts';
@@ -45,12 +45,6 @@ import {
 	SPINE_PARTICIPANT_ROLE,
 	SPINE_RPC_PATH
 } from './spine_surface_constants.ts';
-
-/**
- * Session config — cookie name matches the binary's issued session cookie
- * (`fuz_session`) so cookie-attribute assertions + jar extraction line up.
- */
-export const spine_session_options: SessionOptions<string> = create_session_config('fuz_session');
 
 /**
  * The spine's closed role registry: built-ins plus two app roles —
@@ -100,7 +94,7 @@ export const spine_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpe
 export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs(SPINE_ACCOUNT_PATH_PREFIX, [
 		...create_account_route_specs(ctx.deps, {
-			session_options: spine_session_options,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			// Honor the limiters the server was assembled with (on `AppServerContext`
 			// per the `login_ip_rate_limiter` / `login_account_rate_limiter` TSDoc)
 			// rather than hardcoding `null`. The standard spine binary passes `null`
@@ -115,7 +109,7 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			bootstrap_status: ctx.bootstrap_status
 		}),
 		...create_signup_route_specs(ctx.deps, {
-			session_options: spine_session_options,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			// Disable the denial floor so the identity-parity suite's accepted
@@ -155,7 +149,7 @@ export const create_spine_ready_route_spec = (log?: Logger): RouteSpec =>
  */
 export const create_spine_surface_spec = (): AppSurfaceSpec =>
 	create_test_app_surface_spec({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints,
 		bootstrap: { mode: 'surface_only' },

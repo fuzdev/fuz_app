@@ -17,7 +17,6 @@
 import type { AppDeps } from '../auth/deps.ts';
 import type { AppBackend } from './app_backend.ts';
 import type { BootstrapStatus } from '../auth/bootstrap_routes.ts';
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import type { AuditLogSse } from '../realtime/audit_log_sse.ts';
 
@@ -26,7 +25,7 @@ export interface AppServerContext {
 	deps: AppDeps;
 	backend: AppBackend;
 	bootstrap_status: BootstrapStatus;
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	/**
 	 * Per-IP login + password-change rate limiter. One instance per auth
 	 * surface — see `AppServerOptions.login_ip_rate_limiter` for why these

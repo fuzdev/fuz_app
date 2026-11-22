@@ -14,7 +14,6 @@
 
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { describe_simple_request_cross_tests } from '#lib/testing/cross_backend/simple_request.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
@@ -22,15 +21,15 @@ import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
 const RPC_PATH = '/api/rpc';
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const setup_test = default_in_process_setup({
-	session_options,
+	session_cookie_name,
 	create_route_specs: (ctx: AppServerContext): Array<RouteSpec> => [
 		...prefix_route_specs(
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null
 			})

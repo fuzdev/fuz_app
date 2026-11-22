@@ -1,6 +1,6 @@
 /**
  * Tests for `create_capped_session` and the `Set-Cookie` line a success
- * carries for it (`session_cookie_header`) — verifies cookie ↔ DB coherence
+ * carries for it (`sign_session_cookie`) — verifies cookie ↔ DB coherence
  * and per-account session-cap enforcement against a real DB, the cookie read
  * back through the session middleware's reader on a real Hono app.
  *
@@ -10,13 +10,9 @@
 import { assert, test } from 'vitest';
 import { Hono } from 'hono';
 
-import { get_session_cookie } from '#lib/auth/session_middleware.ts';
 import type { Keyring } from '#lib/auth/keyring.ts';
-import {
-	create_session_config,
-	parse_session,
-	session_cookie_header
-} from '#lib/auth/session_cookie.ts';
+import { parse_session_from_cookies, sign_session_cookie } from '#lib/auth/session_cookie.ts';
+import { get_header_lines } from '#lib/http/header_lines.ts';
 import {
 	create_capped_session,
 	hash_session_token,
@@ -29,7 +25,7 @@ import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 import { describe_db } from '../db_fixture.ts';
 import { TEST_KEY, create_test_keyring } from './session_test_helpers.ts';
 
-const SESSION_OPTIONS = create_session_config('test_session');
+const COOKIE_NAME = 'test_session';
 
 /**
  * Mint a session with `create_capped_session` and return the `Set-Cookie`
@@ -42,27 +38,25 @@ const fire_create_session = async (params: {
 	max_sessions?: number | null;
 }): Promise<string> => {
 	const { keyring, db, account_id, max_sessions } = params;
-	const { cookie_value } = await create_capped_session({
-		keyring,
-		deps: { db },
-		account_id,
-		session_options: SESSION_OPTIONS,
-		max_sessions
-	});
-	return session_cookie_header(cookie_value, SESSION_OPTIONS);
+	const { token } = await create_capped_session({ deps: { db }, account_id, max_sessions });
+	return sign_session_cookie(keyring, token, COOKIE_NAME);
 };
 
 /**
- * Round-trip the `Set-Cookie` value through Hono's `getCookie` (URL-decode)
- * + `parse_session` (signature verify) and return the embedded session token.
+ * Round-trip the `Set-Cookie` value through a request's `Cookie` line and
+ * `parse_session_from_cookies` (signature verify), and return the embedded
+ * session token.
  */
 const read_session_token = async (set_cookie: string, keyring: Keyring): Promise<string | null> => {
 	const cookie_pair = set_cookie.split(';')[0]!;
 	const app = new Hono();
 	app.get('/token', async (c) => {
-		const signed = get_session_cookie(c, SESSION_OPTIONS);
-		const parsed = await parse_session(signed, keyring, SESSION_OPTIONS);
-		return c.json({ token: parsed?.identity ?? null });
+		const read = await parse_session_from_cookies(
+			get_header_lines(c, 'Cookie'),
+			keyring,
+			COOKIE_NAME
+		);
+		return c.json({ token: read.kind === 'valid' ? read.cookie.token : null });
 	});
 	const response = await app.request('/token', { headers: { Cookie: cookie_pair } });
 	const { token } = (await response.json()) as { token: string | null };

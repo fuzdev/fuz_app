@@ -21,7 +21,6 @@ import type { RpcAction } from '#lib/actions/action_types.ts';
 import type { AppSurfaceRpcMethod, RpcEndpointSpec } from '#lib/http/surface.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
@@ -42,7 +41,7 @@ import {
 import type { RpcTestTransport } from '#lib/testing/rpc_helpers.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
 
-const session_options = create_session_config('test_rpc_round_trip_session');
+const session_cookie_name = 'test_rpc_round_trip_session';
 
 const COOKIE_NAME = 'test_rpc_round_trip_session';
 
@@ -411,11 +410,11 @@ const fake_fixture = {
 describe_rpc_round_trip_tests({
 	setup_test: async () => fake_fixture,
 	surface_source: create_test_app_surface_spec({
-		session_options,
+		session_cookie_name,
 		create_route_specs,
 		rpc_endpoints: [rpc_endpoint_spec]
 	}),
-	session_options,
+	session_cookie_name,
 	rpc_endpoints: [rpc_endpoint_spec],
 	success_fixtures: new Map([
 		['widget_peek', async () => ({ params: {}, headers: fixture_owner.create_session_headers() })]

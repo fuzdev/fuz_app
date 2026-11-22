@@ -11,17 +11,17 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
 import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
 import { describe_testing_backdoor_cross_tests } from '#lib/testing/cross_backend/testing_backdoor.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 const setup_test = default_in_process_setup({
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: (ctx) => spine_rpc_endpoints(ctx)
 });

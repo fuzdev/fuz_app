@@ -14,7 +14,6 @@ import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import { create_stub_app_deps, create_test_audit_emitter } from '#lib/testing/stubs.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
 
 describe('create_testing_actions — _testing_drain_effects', () => {
@@ -32,7 +31,6 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 			}
 		};
 		const actions = create_testing_actions(deps, {
-			session_options: create_session_config('test_session'),
 			daemon_token_state: {} as DaemonTokenState
 		});
 		const drain = actions.find((a) => a.spec.method === '_testing_drain_effects');
@@ -71,7 +69,6 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 			})
 		);
 		const actions = create_testing_actions(deps, {
-			session_options: create_session_config('test_session'),
 			daemon_token_state: {} as DaemonTokenState
 		});
 		const drain = actions.find((a) => a.spec.method === '_testing_drain_effects');
@@ -94,7 +91,6 @@ describe('create_testing_actions — _testing_drain_effects', () => {
 	test('answers {ok: true}, every emitter counting its writes', async () => {
 		const deps = { ...create_stub_app_deps(), audit: create_test_audit_emitter() };
 		const actions = create_testing_actions(deps, {
-			session_options: create_session_config('test_session'),
 			daemon_token_state: {} as DaemonTokenState
 		});
 		const drain = actions.find((a) => a.spec.method === '_testing_drain_effects');

@@ -13,7 +13,6 @@ import { test, assert } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { is } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import {
 	account_token_create_action_spec,
@@ -30,7 +29,7 @@ import type { RpcEndpointSpec } from '#lib/http/surface.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const SURFACE_FIXTURE_PATH = new URL(
@@ -45,7 +44,7 @@ const rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 describe_db('account_token_revoke', (get_db) => {
 	const setup = () =>
 		create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			rpc_endpoints,
 			db: get_db()

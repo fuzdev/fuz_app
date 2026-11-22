@@ -23,7 +23,6 @@ import type { RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import type { BootstrapServerOptions } from '../../server/app_server.ts';
 import type { AppServerContext } from '../../server/app_server_context.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import {
 	AUTH_SESSION_LIFETIME_MS,
 	query_session_revoke_for_account
@@ -155,12 +154,12 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 		// `grant_paths` excludes `'admin'` (e.g. `ROLE_KEEPER`) — see
 		// `ExtraAccountSpec` for why this bypass is bootstrap-cradle-only.
 		const extra_accounts: Record<string, TestAccount> = {};
-		const { cookie_name } = options.session_options;
+		const cookie_name = options.session_cookie_name;
 		// where `account_verify` is mounted, for the liveness checks of the
 		// dead-credential mints; read only when one runs
 		const account_verify_rpc_path = (accessor: string): string => {
 			const found = find_rpc_action(
-				resolve_rpc_endpoints_for_setup(options.rpc_endpoints ?? [], options.session_options),
+				resolve_rpc_endpoints_for_setup(options.rpc_endpoints ?? [], options.session_cookie_name),
 				'account_verify'
 			);
 			if (!found) {
@@ -174,7 +173,6 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 			const seeded = await create_test_account_with_credentials({
 				db: test_app.backend.deps.db,
 				keyring: test_app.backend.keyring,
-				session_options: options.session_options,
 				password: test_app.backend.deps.password,
 				username: spec.username,
 				password_value: spec.password_value,
@@ -220,7 +218,6 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 				const { session_cookie } = await mint_test_session({
 					db: test_app.backend.deps.db,
 					keyring: test_app.backend.keyring,
-					session_options: options.session_options,
 					account_id: test_app.backend.account.id,
 					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS
 				});
@@ -239,7 +236,6 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 				const { session_cookie, session_hash } = await mint_test_session({
 					db,
 					keyring: test_app.backend.keyring,
-					session_options: options.session_options,
 					account_id,
 					expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000
 				});
@@ -312,7 +308,7 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
  * `{setup_test, surface_source, capabilities}` bundle.
  */
 export interface DefaultInProcessSuiteOptions {
-	session_options: SessionOptions<string>;
+	session_cookie_name: string;
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	rpc_endpoints?: RpcEndpointsSuiteOption;
 	/**
@@ -375,7 +371,7 @@ export interface DefaultInProcessSuiteOptions {
  * Build the full in-process suite bundle in a single helper invocation.
  * Output covers `{setup_test, surface_source, capabilities}` plus every
  * factory input the Tier 1 suites read at their top level
- * (`session_options`, `create_route_specs`, `rpc_endpoints`), and the
+ * (`session_cookie_name`, `create_route_specs`, `rpc_endpoints`), and the
  * integration suite's `base_url` (`null`, no socket) and `max_body_bytes`
  * (`app_options.max_body_size`, `app_options.host_gate`) — so the call site spreads once and adds
  * only suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
@@ -384,7 +380,7 @@ export interface DefaultInProcessSuiteOptions {
  * ```ts
  * // Suite-extras-free call: helper output is the entire options bag.
  * describe_round_trip_validation(default_in_process_suite_options({
- *   session_options,
+ *   session_cookie_name,
  *   create_route_specs,
  *   rpc_endpoints: [rpc_endpoint_spec],
  * }));
@@ -392,14 +388,14 @@ export interface DefaultInProcessSuiteOptions {
  * // With suite-specific extras: spread and add.
  * describe_standard_admin_integration_tests({
  *   ...default_in_process_suite_options({
- *     session_options, create_route_specs, rpc_endpoints,
+ *     session_cookie_name, create_route_specs, rpc_endpoints,
  *     extra_keeper_roles: [MY_APP_ROLE],
  *   }),
  *   roles,
  * });
  * ```
  *
- * Suites that don't read `session_options` / `rpc_endpoints` at their
+ * Suites that don't read `session_cookie_name` / `rpc_endpoints` at their
  * top level (`round_trip`, `data_exposure`) accept the spread anyway —
  * excess properties on spread sources aren't checked by TS, and the
  * uniform shape keeps consumer call sites mechanical.
@@ -410,14 +406,14 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	setup_test: SetupTest;
 	surface_source: AppSurfaceSpec;
 	capabilities: BackendCapabilities;
-	session_options: O['session_options'];
+	session_cookie_name: O['session_cookie_name'];
 	create_route_specs: O['create_route_specs'];
 	rpc_endpoints: O['rpc_endpoints'];
 	base_url: null;
 	max_body_bytes: number | undefined;
 } => ({
 	setup_test: default_in_process_setup({
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		create_route_specs: options.create_route_specs,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
@@ -431,7 +427,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	surface_source:
 		options.surface_source ??
 		create_test_app_surface_spec({
-			session_options: options.session_options,
+			session_cookie_name: options.session_cookie_name,
 			create_route_specs: options.create_route_specs,
 			rpc_endpoints: options.rpc_endpoints,
 			// Mirror what `create_test_app` → `create_app_server` will mount.
@@ -446,7 +442,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 			daemon_token: true
 		}),
 	capabilities: in_process_capabilities,
-	session_options: options.session_options,
+	session_cookie_name: options.session_cookie_name,
 	create_route_specs: options.create_route_specs,
 	rpc_endpoints: options.rpc_endpoints,
 	// in-process: no socket, and the limit `create_app_server` mounts

@@ -15,7 +15,6 @@
 import { test, assert, beforeAll, beforeEach, afterAll, describe } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
@@ -24,7 +23,7 @@ import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const SURFACE_FIXTURE_PATH = new URL('../fixtures/surface/acting_query.json', import.meta.url);
 
@@ -54,7 +53,7 @@ interface Setup {
 
 const setup = async (): Promise<Setup> => {
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db,
 		create_route_specs: () => [create_health_route_spec()],
 		app_options: { surface_route: true }

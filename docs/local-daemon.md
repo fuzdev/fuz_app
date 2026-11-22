@@ -30,7 +30,6 @@ as full server apps. PGlite is auto-detected from the `database_url`:
 ```ts
 import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
-import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
 import { create_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
 import { parse_allowed_origins } from '@fuzdev/fuz_app/http/origin.ts';
@@ -60,7 +59,7 @@ const origins = parse_allowed_origins('http://localhost:5173');
 if (!origins.ok) throw new Error('invalid allowed origins');
 const { app, close } = await create_app_server({
 	backend,
-	session_options: create_session_config('my_session'),
+	session_cookie_name: 'my_session',
 	allowed_origins: origins.origins,
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],
@@ -112,7 +111,7 @@ Use the in-memory database for tests (`database_url: 'memory://'`, pglet via
 import { create_test_app } from '@fuzdev/fuz_app/testing/test_app.ts';
 
 const { app, create_session_headers, create_account, cleanup } = await create_test_app({
-	session_options: create_session_config('test_session'),
+	session_cookie_name: 'test_session',
 	create_route_specs: (ctx) => my_routes(ctx)
 });
 

@@ -26,13 +26,13 @@ The categories are root ../../../CLAUDE.md §AppDeps Vocabulary. What auth adds:
 ### Crypto primitives (pure, I/O-free)
 
 - `auth/keyring.ts` — `Keyring`; `create_keyring` validates and is the one way to build one.
-- `auth/session_cookie.ts` — the signed session cookie: parse, verify (`process_session_cookie` answers `'none'` only for an absent cookie — a present one that fails to verify, the empty string included, is `'clear'`; no refresh, the lifetime is an absolute cap signed at mint), and the `Set-Cookie` writers (`session_cookie_header` / `clear_session_cookie_header` for a route's result). The attributes are fixed (`SESSION_COOKIE_ATTRIBUTES`, no option weakens them), and the writers throw on a name or value outside RFC 6265 cookie-octets, so a consumer's `encode_identity` must emit them. The strings match the Rust spine's byte for byte.
+- `auth/session_cookie.ts` — the signed session cookie, named by a bare `session_cookie_name` (`SESSION_COOKIE_NAME` the default), as on the Rust spine: `parse_session_from_cookies` reads it off the `Cookie` lines as `SessionCookieRead` — `absent`, `invalid` (a present cookie that fails to verify, the empty value included) or `valid` with its token and signed expiry; no refresh, the lifetime is an absolute cap signed at mint — and the `Set-Cookie` writers for a route's result (`sign_session_cookie` over a minted token, `format_session_clear_cookie`). The attributes are fixed (`SESSION_COOKIE_ATTRIBUTES`, no option weakens them), and the writers throw on a name or value outside RFC 6265's grammar. The strings and names match the Rust spine's byte for byte.
 - `auth/credential_headers.ts` — the grammar of the three credential headers as pure readers over header lines (`read_session_cookie_value`, `read_bearer_token`, `read_daemon_token`; a credential header sent twice is discarded). Hono-free; twin of the Rust `fuz_auth::credential_headers`, both held to `testing/cross_backend/credential_conformance.json`.
 - `auth/password.ts` — `Password` (creation and change) vs `PasswordProvided` (login and verify): split so tightening creation rules never locks out an existing account. Both carry `sensitivity: 'secret'`.
 - `auth/password_argon2.ts` — `argon2_password_deps` (Argon2id at OWASP parameters); `verify_dummy` equalizes timing on an account-lookup miss.
 - `auth/api_token.ts` — the API token format: the `secret_fuz_token_` prefix exists for secret scanning; the public id (`ApiTokenId`, `to_api_token_id`) is derived from the token; storage is the blake3 hash; the raw token is returned once. `is_api_token_shaped` is the precheck that keeps a malformed bearer from costing a query.
 - `auth/daemon_token.ts` — `DaemonToken`, its shape precheck, `DAEMON_TOKEN_HEADER`, `DaemonTokenState`.
-- `auth/bootstrap_account.ts` — `bootstrap_account`, the one-shot keeper bootstrap: one transaction holds the `bootstrap_lock`, the account and grants, the session and its cookie line, the success row, and last the token burn — a failed burn (`BootstrapTokenBurnError`) rolls everything back and answers `token_file_undeletable`. `read_bootstrap_token` is the read it and `check_bootstrap_status` share.
+- `auth/bootstrap_account.ts` — `bootstrap_account`, the one-shot keeper bootstrap: one transaction holds the `bootstrap_lock`, the account and grants, the session and its cookie line, the success row, and last the token burn — a failed burn (`BootstrapTokenBurnError`) rolls everything back and answers `token_file_undeletable`. `read_bootstrap_token` is the read it and `is_bootstrap_available` share. Its success (`BootstrapAccountSuccess`, internal) is the Rust `BootstrapSuccess`: the session token, the account and actor, and the signed `Set-Cookie` line.
 - `auth/bootstrap_token_store.ts` — `BootstrapTokenStore`, the one seam to the token file. Its read refuses a file with a second hard link, which would outlive the burn under the other name. Twin of the Rust trait.
 
 ### Schemas, types, DDL
@@ -71,7 +71,7 @@ read projects through its table's `*_COLUMNS` const (../../../docs/architecture.
 - `auth/actor_lookup_queries.ts` / `auth/actor_search_queries.ts` — batched id → label and prefix search; active actors of active accounts only.
 - `auth/role_grant_queries.ts` — idempotent create, scope-aware lookups, `query_role_grant_revoke_for_scope` (parent-scope cascade).
 - `auth/role_grant_offer_queries.ts` — the offer lifecycle, atomic `query_accept_offer` with sibling supersede, `query_revoke_role_grant` (every revoke's one supersede rule: the revokee's incoming siblings and every offer its actor made), the offer-row lockers, and the `RoleGrantOffer*Error` classes.
-- `auth/session_queries.ts` — server-side sessions (blake3-hashed). `create_capped_session` is the one session minter (row, cap evictions, signed cookie value; Hono-free; twin of the Rust one). No touch or renewal: `expires_at` is an absolute cap on the database clock. The cap and the expiry sweep return the ids they remove, so the caller closes their connections after the commit.
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed). `create_capped_session` is the one session minter (row, cap evictions, the raw token the caller signs with `sign_session_cookie`; Hono-free; twin of the Rust one). No touch or renewal: `expires_at` is an absolute cap on the database clock. The cap and the expiry sweep return the ids they remove, so the caller closes their connections after the commit.
 - `auth/api_token_queries.ts` — `query_validate_api_token` (records nothing, refuses an unreadable stored scope) and the separate usage touch the bearer leg runs only once the account is found live; `query_api_token_live_account`, the no-touch re-check sharing the validate query's liveness predicate; the token cap.
 - `auth/invite_queries.ts`, `auth/app_settings_queries.ts`.
 - `auth/audit_log_queries.ts` — `query_audit_log` (the insert), the list and history reads, the retention cleanup, and the drift counters.
@@ -119,7 +119,7 @@ does not compile until it declares its scope. Twin of the Rust
 ### Routes
 
 - `auth/account_routes.ts` — `POST /login`, `/logout`, `/password`, `GET /status`. Rules on `create_account_route_specs`; the close-after-commit split is below.
-- `auth/bootstrap_routes.ts` — `POST /bootstrap`, `check_bootstrap_status` (the boot report), the `BootstrapStatus` ref. A success sets the daemon-token keeper (`daemon_token_state`) after its commit. The lock-race loser answers with no audit row.
+- `auth/bootstrap_routes.ts` — `POST /bootstrap`, `is_bootstrap_available` (the boot report), the `BootstrapStatus` ref. A success sets the daemon-token keeper (`daemon_token_state`) after its commit. The lock-race loser answers with no audit row.
 - `auth/signup_routes.ts` — `POST /signup`, open or invite-gated; the success row last in its transaction, an unclassified failure a `signup` failure row with reason `internal_error`.
 - `auth/audit_log_routes.ts` — the optional `GET /audit/stream` (SSE); list and history are RPC. Admission is two-phase (register pending, re-read the credential and role grants, admit), so a revocation racing the request opens no stream.
 - `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver`, injected into `apply_route_specs` so `http/` stays auth-agnostic; the one site every route spec passes, so it also refuses a malformed `required_scope` and one on an unrestricted route.
@@ -164,7 +164,7 @@ and credential-leg layers (daemon token, session parsing, request context,
 bearer auth) and the `transform_middleware` paragraph. The modules:
 
 - `auth/middleware.ts` — `create_auth_middleware_specs(deps, options)`, the stack `create_app_server` mounts at `AUTH_MIDDLEWARE_PATH` (the origin check at `'*'`), and the assembly asserts above.
-- `auth/session_middleware.ts` — the session leg's cookie read and the clear of a present, invalid cookie. A route sets or clears the cookie only on its success result (`route_ok(value, {set_cookie})` with `session_cookie_header` / `clear_session_cookie_header`); nothing writes a cookie on the context but the middleware's clear.
+- `auth/session_middleware.ts` — the session leg's cookie read and the clear of a present, invalid cookie. A route sets or clears the cookie only on its success result (`route_ok(value, {set_cookie})` with `sign_session_cookie` / `format_session_clear_cookie`); nothing writes a cookie on the context but the middleware's clear.
 - `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `apply_authorization_phase`, the predicates (`has_scoped_role`, `has_any_scoped_role` — builtin-role checks read the **global** grant, `scope_id` null), the guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `get_public_account` (what a `reads_credential` route may read — `null` for a scope-narrowed token), and `RequestContextForAuth`, the narrowing a route's `route.auth` and an action's `ctx.auth` share.
 - `auth/resolved_auth.ts` — `ResolvedAuth`, the resolved credential as one union on `credential_type`, carrying the account row the leg read (the authorization phase builds on it rather than reading again). `revalidate_resolved_auth` is the no-touch re-read a long-lived connection (WS, the audit stream) runs between registering pending and admitting.
 - `auth/credential_deadline.ts` — when a resolved credential stops authenticating, which an open WebSocket or audit stream closes at (expiry writes nothing a revocation listener hears). Survives host suspend and `setTimeout`'s ceiling; rules in its TSDoc.
@@ -244,9 +244,9 @@ Test harnesses pre-set `REQUEST_CONTEXT_KEY` and set
 `TEST_CONTEXT_PRESET_KEY` to the `TEST_CONTEXT_PRESET` symbol to skip
 DB-backed resolution (`has_test_context_preset`; any other value is unset).
 
-**The session token key is fixed** (`SESSION_TOKEN_KEY`): `SessionOptions`
-carries no context key, so the session middleware and the leg cannot
-disagree.
+**The session token key is fixed** (`SESSION_TOKEN_KEY`): the session
+middleware takes only the cookie's name, no context key, so it and the leg
+cannot disagree.
 
 ### Row locks
 

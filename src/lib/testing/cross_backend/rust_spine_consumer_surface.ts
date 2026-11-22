@@ -30,7 +30,6 @@ import {
 	create_account_route_shapes
 } from '../../auth/account_route_schema.ts';
 import type { RoleRegistry } from '../../auth/role_schema.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import { create_signup_route_shape } from '../../auth/signup_route_schema.ts';
 import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
 import { create_health_route_spec } from '../../http/common_routes.ts';
@@ -81,8 +80,8 @@ export interface RustSpineConsumerRpcEndpointsOptions {
 
 /** Options for `create_rust_spine_consumer_surface_spec`. */
 export interface RustSpineConsumerSurfaceSpecOptions extends RustSpineConsumerRpcEndpointsOptions {
-	/** The backend's session config — its cookie name above all. */
-	readonly session_options: SessionOptions<string>;
+	/** The session cookie's name. */
+	readonly session_cookie_name: string;
 	/**
 	 * Whether the server mounts the spine's host gate
 	 * (`fuz_http::StackOptions::host_gate`, on by default), declared as the
@@ -176,7 +175,7 @@ const create_spine_consumer_route_specs = (ctx: AppServerContext): Array<RouteSp
  * layer every consumer test binary wires, and — unless `host_gate` is
  * `false` — the host gate's `host` layer.
  *
- * @param options - the consumer's session config, action specs, extras and roles
+ * @param options - the consumer's session cookie name, action specs, extras and roles
  * @returns the surface spec, for `describe_spine_cross_suites`'s `surface_source`
  * @throws Error when an account route shape the Rust router mounts is missing,
  *   or an `exclude_methods` entry names no domain spec
@@ -185,7 +184,7 @@ export const create_rust_spine_consumer_surface_spec = (
 	options: RustSpineConsumerSurfaceSpecOptions
 ): AppSurfaceSpec =>
 	create_test_app_surface_spec({
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		create_route_specs: create_spine_consumer_route_specs,
 		rpc_endpoints: create_rust_spine_consumer_rpc_endpoints(options),
 		// the binaries mount `bootstrap_router`; `surface_only` declares its shape

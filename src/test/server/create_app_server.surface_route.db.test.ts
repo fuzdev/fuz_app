@@ -8,7 +8,6 @@
 
 import { test, assert, beforeAll, beforeEach, afterAll, describe } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { generate_api_token } from '#lib/auth/api_token.ts';
 import { query_create_api_token } from '#lib/auth/api_token_queries.ts';
@@ -20,7 +19,7 @@ import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 let db: Awaited<ReturnType<typeof default_db_factory.create>>;
 
@@ -40,7 +39,7 @@ afterAll(async () => {
 
 const build = (surface_route?: boolean): Promise<TestApp> =>
 	create_test_app({
-		session_options,
+		session_cookie_name,
 		db,
 		create_route_specs: () => [create_health_route_spec()],
 		app_options: surface_route === undefined ? undefined : { surface_route }

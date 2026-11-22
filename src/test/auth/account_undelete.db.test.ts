@@ -10,7 +10,6 @@
 
 import { test, assert } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import {
 	account_delete_action_spec,
@@ -32,7 +31,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
@@ -49,7 +48,11 @@ describe_db('account_undelete', (get_db) => {
 	install_audit_drift_guard();
 
 	test('admin reactivates a soft-deleted account; auth resolves again', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const admin = await test_app.create_account({ username: 'admin1', roles: [ROLE_ADMIN] });
 		const victim = await test_app.create_account({ username: 'victim' });
 
@@ -82,7 +85,11 @@ describe_db('account_undelete', (get_db) => {
 	});
 
 	test('undeleting a non-deleted account is a not-found no-op', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const admin = await test_app.create_account({ username: 'admin1', roles: [ROLE_ADMIN] });
 		const live = await test_app.create_account({ username: 'still_here' });
 
@@ -100,7 +107,11 @@ describe_db('account_undelete', (get_db) => {
 	});
 
 	test('a non-admin cannot reactivate an account (admin-gated)', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const admin = await test_app.create_account({ username: 'admin1', roles: [ROLE_ADMIN] });
 		const victim = await test_app.create_account({ username: 'victim' });
 		const non_admin = await test_app.create_account({ username: 'rando' });
@@ -139,7 +150,11 @@ describe_db('account_undelete', (get_db) => {
 	});
 
 	test('undelete does not restore the revoked session', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const admin = await test_app.create_account({ username: 'admin1', roles: [ROLE_ADMIN] });
 		const victim = await test_app.create_account({ username: 'victim' });
 

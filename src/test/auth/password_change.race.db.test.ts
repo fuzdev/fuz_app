@@ -32,7 +32,6 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
@@ -43,7 +42,7 @@ import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { pg_factory } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const ORIGINAL_PW = 'original-pw-12345';
 const RACE_A_NEW_PW = 'race-a-pw-9876543';
 const RACE_B_NEW_PW = 'race-b-pw-1234567';
@@ -118,7 +117,7 @@ describe_pg('password change concurrent race', (get_db) => {
 	beforeEach(async () => {
 		gated = create_gated_db(get_db());
 		test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			db: gated.db,
 			db_type: 'postgres',
 			password_value: ORIGINAL_PW,
@@ -126,7 +125,7 @@ describe_pg('password change concurrent race', (get_db) => {
 				...prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: null,
 						login_account_rate_limiter: null,
 						login_fail_floor_ms: 0

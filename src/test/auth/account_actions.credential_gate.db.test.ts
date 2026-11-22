@@ -24,7 +24,6 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import {
@@ -46,14 +45,14 @@ import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs(
 		'/api/account',
 		create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
@@ -88,7 +87,11 @@ const assert_credential_type_required = (res: {
 describe_db('credential_channel_gate', (get_db) => {
 	describe('bearer rejected on gated RPC methods', () => {
 		test('account_token_create — bearer → 403 credential_type_required', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -105,7 +108,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_token_revoke — bearer → 403 credential_type_required', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -118,7 +125,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_session_revoke — bearer → 403 credential_type_required (closes list+loop gap)', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -131,7 +142,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_session_revoke_all — bearer → 403 credential_type_required', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -146,7 +161,11 @@ describe_db('credential_channel_gate', (get_db) => {
 
 	describe('bearer rejected on gated REST POST /password', () => {
 		test('bearer credential → 403 credential_type_required', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'Expected POST /password route');
 			const res = await test_app.app.request(password_route.path, {
@@ -179,7 +198,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		// this order; the cross-backend conformance batch carries the wire twin.
 
 		test('bearer + missing required `scope` → 403 credential_type_required, not 400', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -194,7 +217,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('anonymous + missing required `scope` → 401, not 400', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -210,7 +237,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('session + missing required `scope` → 400 (validation still runs once authority passes)', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -230,7 +261,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		// policy information to callers that haven't even authenticated.
 
 		test('account_token_create', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -250,7 +285,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_token_revoke', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -262,7 +301,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_session_revoke', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -274,7 +317,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('account_session_revoke_all', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -286,7 +333,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('REST POST /password', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'Expected POST /password route');
 			const res = await test_app.app.request(password_route.path, {
@@ -312,7 +363,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		// budget and obscuring legitimate activity.
 
 		test('all five gated attempts via bearer leave audit_log free of gated event types', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'Expected POST /password route');
 
@@ -387,7 +442,11 @@ describe_db('credential_channel_gate', (get_db) => {
 
 	describe('positive controls', () => {
 		test('session credential reaches token_create handler (gate accepts session)', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
@@ -405,7 +464,11 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 
 		test('ungated account_token_list accepts bearer (gate is per-method, not blanket)', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,

@@ -11,6 +11,7 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
 import type { RpcEndpointSpec } from '#lib/http/surface.ts';
@@ -20,8 +21,7 @@ import { describe_conformance_table_tests } from '#lib/testing/cross_backend/con
 import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import {
 	create_spine_surface_spec,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { resolve_rpc_endpoints_for_setup } from '#lib/testing/rpc_helpers.ts';
 
@@ -51,9 +51,9 @@ describe_conformance_table_tests({
 		...conformance_cell_cases,
 		...generate_rpc_auth_conformance_cases({
 			surface_source,
-			live_rpc_endpoints: resolve_rpc_endpoints_for_setup(rpc_endpoints, spine_session_options),
+			live_rpc_endpoints: resolve_rpc_endpoints_for_setup(rpc_endpoints, SESSION_COOKIE_NAME),
 			// the declared methods' rows run in `conformance.db.test.ts`
-			skip_methods: resolve_rpc_endpoints_for_setup(spine_rpc_endpoints, spine_session_options)
+			skip_methods: resolve_rpc_endpoints_for_setup(spine_rpc_endpoints, SESSION_COOKIE_NAME)
 				.flatMap((endpoint) => endpoint.actions)
 				.map((action) => action.spec.method)
 		})
@@ -63,6 +63,6 @@ describe_conformance_table_tests({
 	capabilities: in_process_capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
 	live_rpc_endpoints: rpc_endpoints,
-	session_options: spine_session_options,
+	session_cookie_name: SESSION_COOKIE_NAME,
 	suite_name: 'conformance table, off-surface methods (in-process)'
 });

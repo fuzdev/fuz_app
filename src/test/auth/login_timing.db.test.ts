@@ -23,13 +23,12 @@ import { stub_password_deps } from '#lib/testing/app_server.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import type { PasswordHashDeps } from '#lib/auth/password.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const login_headers = {
 	'Content-Type': 'application/json',
@@ -78,13 +77,13 @@ describe('login verify_dummy behavior', () => {
 
 	beforeAll(async () => {
 		test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			password: tracking.deps,
 			create_route_specs: (ctx) =>
 				prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 						login_account_rate_limiter: ctx.login_account_rate_limiter,
 						// these tests assert the verify-branch, not timing — skip the
@@ -170,7 +169,7 @@ describe('login denial timing floor', () => {
 		prefix_route_specs(
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
 				login_fail_floor_ms: FLOOR_MS,
@@ -180,7 +179,7 @@ describe('login denial timing floor', () => {
 
 	test('non-existent username (401) takes at least the floor', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: create_route_specs_floored
 		});
 		const t0 = performance.now();
@@ -202,7 +201,7 @@ describe('login denial timing floor', () => {
 
 	test('existing username with wrong password (401) takes at least the floor', async () => {
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: create_route_specs_floored
 		});
 		const t0 = performance.now();

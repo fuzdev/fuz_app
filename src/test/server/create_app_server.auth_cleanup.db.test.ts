@@ -27,7 +27,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
 import type { AppBackend } from '#lib/server/app_backend.ts';
@@ -111,7 +110,7 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 		options: {
 			...create_loopback_app_server_options(),
 			backend,
-			session_options: create_session_config('test_session'),
+			session_cookie_name: 'test_session',
 			create_route_specs: () => [create_health_route_spec()],
 			...overrides
 		},
@@ -338,21 +337,25 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 
 	test('create_test_app leaves it off, and its cleanup stops a schedule a suite opted into', async () => {
 		const db = get_db();
-		const session_options = create_session_config('test_session');
+		const session_cookie_name = 'test_session';
 		const create_route_specs = () => [create_health_route_spec()];
 
 		// expired before the app exists, so a startup pass would sweep it
 		const seeded = await seed_accounts(db);
 		const untouched = await seed_expired_session(db, 'harness-off', seeded.account_id);
 		const gated_off = create_gated_db(db);
-		const off = await create_test_app({ session_options, create_route_specs, db: gated_off.db });
+		const off = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: gated_off.db
+		});
 		// `create_app_server` is its last step, and a startup pass begins inside it
 		await assert_no_pass(gated_off, db, untouched, 'the harness schedules nothing');
 		await off.cleanup();
 
 		const gated_on = create_gated_db(db);
 		const on = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db: gated_on.db,
 			username: 'keeper_on',

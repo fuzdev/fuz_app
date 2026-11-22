@@ -13,7 +13,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { AnySchema } from '@fuzdev/fuz_schema/schema.ts';
 
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import { REST_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
 import { body_limit_middleware_shape } from '../http/body_limit_schema.ts';
@@ -221,8 +220,8 @@ export const create_stub_audit_sse = (): AuditLogSse => {
  * Create no-op `AppDeps` for auth surface testing.
  */
 export const create_stub_app_deps = (): AppDeps => ({
-	// `sign` answers a string, as a keyring does: `create_app_server` mints a
-	// sample session cookie at assembly and refuses a value that is none
+	// `sign` answers a string, as a keyring does, so a route that signs a
+	// session cookie on stub deps writes a line
 	keyring: create_noop_stub('keyring', {
 		sign: async (value: string): Promise<string> => `${value}.stub_signature`
 	}),
@@ -311,20 +310,18 @@ export const create_stub_api_middleware = (options?: {
 /**
  * Create a stub `AppServerContext` for attack surface testing.
  *
- * Provides sensible defaults for all fields. Pass `session_options` since
+ * Provides sensible defaults for all fields. Pass `session_cookie_name` since
  * it varies per consumer; other fields use stubs/nulls.
  *
- * @param session_options - consumer's session config (required — varies per app)
+ * @param session_cookie_name - consumer's session cookie name (required — varies per app)
  */
-export const create_stub_app_server_context = (
-	session_options: SessionOptions<string>
-): AppServerContext => {
+export const create_stub_app_server_context = (session_cookie_name: string): AppServerContext => {
 	const backend = create_stub_app_backend();
 	return {
 		deps: backend.deps,
 		backend,
 		bootstrap_status: { available: false },
-		session_options,
+		session_cookie_name,
 		login_ip_rate_limiter: null,
 		signup_ip_rate_limiter: null,
 		bootstrap_ip_rate_limiter: null,
@@ -338,8 +335,8 @@ export const create_stub_app_server_context = (
 
 /** Options for `create_test_app_surface_spec`. */
 export interface CreateTestAppSurfaceSpecOptions {
-	/** Consumer's session config (required — varies per app). */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name (required — varies per app). */
+	session_cookie_name: string;
 	/** Consumer's route factory — receives the same `AppServerContext` as production. */
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Env schema for surface generation (default: `BaseServerEnv`). */
@@ -491,7 +488,7 @@ const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSp
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
 ): AppSurfaceSpec => {
-	const ctx = create_stub_app_server_context(options.session_options);
+	const ctx = create_stub_app_server_context(options.session_cookie_name);
 	const consumer_routes = options.create_route_specs(ctx);
 
 	// Auto-mount rpc endpoints (mirrors create_app_server) so consumer

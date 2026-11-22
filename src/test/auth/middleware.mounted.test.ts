@@ -21,7 +21,6 @@ import {
 	create_auth_middleware_specs
 } from '#lib/auth/middleware.ts';
 import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
@@ -41,7 +40,7 @@ import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
 
 type TransformMiddleware = (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const proxy_options = {
 	trusted_proxies: ['127.0.0.1'],
@@ -60,7 +59,7 @@ const create_stack = async (include_daemon_token = false): Promise<Array<Middlew
 	create_proxy_middleware_spec(proxy_options),
 	...(await create_auth_middleware_specs(create_stub_app_deps(), {
 		allowed_origins: [],
-		session_options,
+		session_cookie_name,
 		daemon_token_state: include_daemon_token ? create_daemon_token_state() : undefined
 	}))
 ];
@@ -281,7 +280,7 @@ describe('create_stub_api_middleware', () => {
 				specs.map((s) => ({ name: s.name, path: s.path, errors: s.errors ?? null }));
 			const real = await create_auth_middleware_specs(create_stub_app_deps(), {
 				allowed_origins: [],
-				session_options,
+				session_cookie_name,
 				daemon_token_state: include_daemon_token ? create_daemon_token_state() : undefined
 			});
 			assert.deepStrictEqual(
@@ -294,7 +293,7 @@ describe('create_stub_api_middleware', () => {
 
 const build_surface = (transform_middleware?: TransformMiddleware) =>
 	create_test_app_surface_spec({
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [],
 		transform_middleware
 	});
@@ -334,7 +333,7 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 
 	test('with max_body_size: null the body limit is left out, and so are its codes', () => {
 		const surface_spec = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [create_health_route_spec()],
 			max_body_size: null
 		});
@@ -344,7 +343,7 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 		);
 		assert.deepStrictEqual(Object.keys(surface_spec.surface.routes[0]!.error_schemas!), ['403']);
 		const with_limit = create_test_app_surface_spec({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [create_health_route_spec()]
 		});
 		assert.deepStrictEqual(Object.keys(with_limit.surface.routes[0]!.error_schemas!), [
@@ -479,7 +478,7 @@ const create_server_options = (
 	return {
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend(),
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()],
 		rate_limiters: 'disabled_for_testing',
 		daemon_token_state,
@@ -639,13 +638,13 @@ describe('create_app_server — origin carve-outs', () => {
 	test('account and signup routes mounted outside the auth scope throw', async () => {
 		const account_routes = (ctx: AppServerContext): Array<RouteSpec> =>
 			create_account_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null
 			});
 		const signup_routes = (ctx: AppServerContext): Array<RouteSpec> =>
 			create_signup_route_specs(ctx.deps, {
-				session_options,
+				session_cookie_name,
 				signup_ip_rate_limiter: null,
 				signup_account_rate_limiter: null
 			});
@@ -723,12 +722,12 @@ describe('create_app_server — origin carve-outs', () => {
 			create_route_specs: (ctx) =>
 				prefix_route_specs('/api/auth', [
 					...create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: null,
 						login_account_rate_limiter: null
 					}),
 					...create_signup_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						signup_ip_rate_limiter: null,
 						signup_account_rate_limiter: null
 					})

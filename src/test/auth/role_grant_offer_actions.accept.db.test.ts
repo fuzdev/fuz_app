@@ -27,13 +27,17 @@ import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_querie
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.accept', (get_db) => {
 	describe('role_grant_offer_accept', () => {
 		test('recipient accepts and receives role_grant_id + offer', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -65,7 +69,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 
 		test('wrong account returns offer_not_found (IDOR mask)', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -99,7 +103,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 
 		test('accepting a declined offer returns offer_terminal', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -140,7 +144,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 
 		test('accepting an expired offer returns offer_expired', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -177,7 +181,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 
 		test('accept reports superseded siblings', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -222,7 +226,7 @@ describe_db('role_grant_offer_actions.accept', (get_db) => {
 	describe('terminal-on-accepted', () => {
 		const setup_accepted_offer = async (username_suffix: string, get_db_fn: typeof get_db) => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db_fn()
 			});

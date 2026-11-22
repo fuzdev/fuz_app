@@ -37,7 +37,7 @@ import {
 } from '../auth/session_queries.ts';
 import { create_test_session_row } from './db_entities.ts';
 import { query_create_api_token } from '../auth/api_token_queries.ts';
-import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
+import { create_session_cookie_value } from '../auth/session_cookie.ts';
 import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
@@ -127,7 +127,6 @@ const resolve_fallback_factory = (
 export interface CreateTestAccountWithCredentialsOptions {
 	db: Db;
 	keyring: Keyring;
-	session_options: SessionOptions<string>;
 	password: PasswordHashDeps;
 	username?: string;
 	password_value?: string;
@@ -165,7 +164,6 @@ export const create_test_account_with_credentials = async (
 	const {
 		db,
 		keyring,
-		session_options,
 		password,
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
@@ -204,7 +202,7 @@ export const create_test_account_with_credentials = async (
 	// database clock), as the Rust reset seeds through its production minter.
 	const session_token = generate_session_token();
 	await query_create_session({ db }, hash_session_token(session_token), account.id);
-	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
+	const session_cookie = await create_session_cookie_value(keyring, session_token);
 
 	return {
 		account: { id: account.id, username: account.username },
@@ -218,7 +216,6 @@ export const create_test_account_with_credentials = async (
 export interface MintTestSessionOptions {
 	db: Db;
 	keyring: Keyring;
-	session_options: SessionOptions<string>;
 	/** Account the minted session belongs to. */
 	account_id: string;
 	/**
@@ -227,7 +224,7 @@ export interface MintTestSessionOptions {
 	 * the authoritative DB-row expiry gate (`query_session_get_valid` —
 	 * `WHERE expires_at > NOW()`) rejects it, while the returned cookie's
 	 * own signed payload stays valid (future). Resolution therefore passes
-	 * the cookie-payload check in `parse_session` and is refused at the
+	 * the cookie-payload check in `parse_session_from_cookies` and is refused at the
 	 * DB-row gate — the gate the in-process payload-expiry tests never
 	 * reach and the one that structurally needs a server-side mint.
 	 */
@@ -250,11 +247,11 @@ export interface MintTestSessionOptions {
 export const mint_test_session = async (
 	options: MintTestSessionOptions
 ): Promise<{ session_cookie: string; session_hash: string }> => {
-	const { db, keyring, session_options, account_id, expires_in_seconds } = options;
+	const { db, keyring, account_id, expires_in_seconds } = options;
 	const session_token = generate_session_token();
 	const session_hash = hash_session_token(session_token);
 	await create_test_session_row(db, session_hash, account_id, expires_in_seconds);
-	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
+	const session_cookie = await create_session_cookie_value(keyring, session_token);
 	return { session_cookie, session_hash };
 };
 
@@ -317,8 +314,6 @@ export interface TestAppServer extends AppBackend {
  * Configuration for `create_test_app_server`.
  */
 export interface TestAppServerOptions {
-	/** Session options — needed for cookie signing. */
-	session_options: SessionOptions<string>;
 	/** Existing database — skips internal DB creation when provided. Caller owns the DB lifecycle. */
 	db?: Db;
 	/** Database driver type — only used when `db` is provided. Default: `'pglet-memory'`. */
@@ -466,7 +461,7 @@ const _build_test_backend = async (
  * Uses `stub_password_deps` by default — deterministic hashing that works
  * correctly for login/logout tests without Argon2 overhead.
  *
- * @param options - session options and optional overrides
+ * @param options - the database, the keeper's credentials and roles, and the audit factory
  * @returns a `TestAppServer` ready for HTTP testing
  * @mutates the underlying database — when `db` is supplied, first resets the
  *   `app_settings` row (`open_signup`, `updated_at`, `updated_by`); in either
@@ -477,7 +472,6 @@ export const create_test_app_server = async (
 	options: TestAppServerOptions
 ): Promise<TestAppServer> => {
 	const {
-		session_options,
 		password = stub_password_deps,
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
@@ -489,7 +483,6 @@ export const create_test_app_server = async (
 	const bootstrapped = await bootstrap_test_keeper({
 		db: backend.deps.db,
 		keyring,
-		session_options,
 		password,
 		username,
 		password_value,

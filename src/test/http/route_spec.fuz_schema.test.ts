@@ -36,7 +36,6 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 import { rest_error } from '#lib/http/error_schemas.ts';
 import { create_dev_route_error_check } from '#lib/http/dev_route_error_check.ts';
 import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { SERDE_REFUSED_PARAMS_JSON } from '#lib/testing/rpc_envelope_cases.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
@@ -379,7 +378,7 @@ describe('an assembled app with a fuz_schema route', () => {
 					request_tracker: create_request_tracker()
 				}
 			},
-			session_options: create_session_config('test_session'),
+			session_cookie_name: 'test_session',
 			allowed_origins: origins.origins,
 			env_schema: object({}),
 			proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },

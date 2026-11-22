@@ -1,17 +1,18 @@
 /**
- * Tests for `create_session_cookie_value`, the `Set-Cookie` formatters
- * (`format_session_set_cookie`, `format_session_clear_cookie`, and the
- * cookie grammar predicates they guard with) + module-level constants
- * (`SESSION_AGE_MAX`, `SESSION_COOKIE_ATTRIBUTES`).
+ * Tests for `create_session_cookie_value`, `sign_session_cookie`, the
+ * `Set-Cookie` formatters (`format_session_set_cookie`,
+ * `format_session_clear_cookie`, and the cookie grammar predicates they guard
+ * with) + module-level constants (`SESSION_AGE_MAX`,
+ * `SESSION_COOKIE_ATTRIBUTES`, `SESSION_COOKIE_NAME`).
  *
- * Sibling files cover `parse_session` + round-trip
- * (`session_cookie.parse.test.ts`) and `process_session_cookie`
- * (`session_cookie.process.test.ts`).
+ * The sibling `session_cookie.parse.test.ts` covers
+ * `parse_session_from_cookies` and the round-trip.
  *
  * @module
  */
 
 import { assert, describe, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_session_cookie_value,
@@ -19,15 +20,13 @@ import {
 	format_session_set_cookie,
 	is_cookie_name,
 	is_cookie_value,
+	parse_session_from_cookies,
 	SESSION_AGE_MAX,
 	SESSION_COOKIE_ATTRIBUTES,
-	type SessionOptions
+	SESSION_COOKIE_NAME,
+	sign_session_cookie
 } from '#lib/auth/session_cookie.ts';
-import {
-	create_test_keyring,
-	TEST_IDENTITY,
-	test_session_options
-} from './session_test_helpers.ts';
+import { create_test_keyring, TEST_IDENTITY } from './session_test_helpers.ts';
 
 describe('session constants', () => {
 	test('SESSION_AGE_MAX is 30 days in seconds', () => {
@@ -76,7 +75,7 @@ describe('session Set-Cookie strings', () => {
 
 	test('a real signed value is written unencoded', async () => {
 		const keyring = create_test_keyring();
-		const value = await create_session_cookie_value(keyring, TEST_IDENTITY, test_session_options);
+		const value = await create_session_cookie_value(keyring, TEST_IDENTITY);
 		assert.ok(is_cookie_value(value), 'a signed value is cookie-octets as it is');
 		const header = format_session_set_cookie('fuz_session', value, SESSION_AGE_MAX);
 		assert.ok(header.startsWith(`fuz_session=${value}; `), header);
@@ -166,24 +165,14 @@ describe('session Set-Cookie strings', () => {
 describe('create_session_cookie_value', () => {
 	test('produces a signed string with dot separator', async () => {
 		const keyring = create_test_keyring();
-		const value = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			1000
-		);
+		const value = await create_session_cookie_value(keyring, TEST_IDENTITY, 1000);
 		assert.ok(value.includes('.'));
 	});
 
 	test('embeds expiration in the signed value', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
 		const result = await keyring.verify(signed);
 		assert.ok(result);
 		assert.ok(result.value.includes(`${now + SESSION_AGE_MAX}`));
@@ -191,12 +180,7 @@ describe('create_session_cookie_value', () => {
 
 	test('embeds identity in the signed value', async () => {
 		const keyring = create_test_keyring();
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			1000
-		);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, 1000);
 		const result = await keyring.verify(signed);
 		assert.ok(result);
 		assert.ok(result.value.startsWith(`${TEST_IDENTITY}:`));
@@ -205,44 +189,53 @@ describe('create_session_cookie_value', () => {
 	test('different identities produce different values', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const value1 = await create_session_cookie_value(keyring, 'user-1', test_session_options, now);
-		const value2 = await create_session_cookie_value(keyring, 'user-2', test_session_options, now);
+		const value1 = await create_session_cookie_value(keyring, 'user-1', now);
+		const value2 = await create_session_cookie_value(keyring, 'user-2', now);
 		assert.notStrictEqual(value1, value2);
 	});
 
 	test('same inputs produce same output (deterministic)', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const value1 = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const value2 = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
+		const value1 = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		const value2 = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
 		assert.strictEqual(value1, value2);
 	});
 
-	test('honors options.max_age override', async () => {
-		// `SessionOptions.max_age` overrides the default `SESSION_AGE_MAX`.
-		// Pin it: a 60s max_age must produce `expires_at = now + 60`.
+	test('the expiry is SESSION_AGE_MAX past the mint', async () => {
 		const keyring = create_test_keyring();
-		const custom_options: SessionOptions<string> = {
-			...test_session_options,
-			max_age: 60
-		};
 		const now = 1000;
-		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, custom_options, now);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
 		const result = await keyring.verify(signed);
 		assert.ok(result);
-		assert.ok(
-			result.value.endsWith(`:${now + 60}`),
-			`expected expires_at = ${now + 60}, got value: ${result.value}`
+		assert.strictEqual(result.value, `${TEST_IDENTITY}:${now + SESSION_AGE_MAX}`);
+	});
+});
+
+describe('sign_session_cookie', () => {
+	test('the Set-Cookie line of a freshly signed cookie, with SESSION_AGE_MAX as Max-Age', async () => {
+		const keyring = create_test_keyring();
+		const line = await sign_session_cookie(keyring, TEST_IDENTITY, 'test_session');
+		const prefix = 'test_session=';
+		const suffix = `; ${SESSION_COOKIE_ATTRIBUTES}; Max-Age=${SESSION_AGE_MAX}`;
+		assert.ok(line.startsWith(prefix), line);
+		assert.ok(line.endsWith(suffix), line);
+		const value = line.slice(prefix.length, -suffix.length);
+		const read = await parse_session_from_cookies(
+			[`test_session=${value}`],
+			keyring,
+			'test_session'
 		);
+		assert.strictEqual(read.kind, 'valid');
+		assert.strictEqual(read.kind === 'valid' && read.cookie.token, TEST_IDENTITY);
+	});
+
+	test('refuses a name that is no cookie-name', async () => {
+		const keyring = create_test_keyring();
+		await assert_rejects(() => sign_session_cookie(keyring, TEST_IDENTITY, 'a b'), /cookie-name/);
+	});
+
+	test("the default name is the Rust spine's SESSION_COOKIE_NAME", () => {
+		assert.strictEqual(SESSION_COOKIE_NAME, 'fuz_session');
 	});
 });

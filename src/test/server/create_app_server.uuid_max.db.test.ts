@@ -10,7 +10,6 @@
 import { assert, describe, test } from 'vitest';
 import { literal, object, string, type Infer } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import {
@@ -25,7 +24,7 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { ActingActor, Uuid } from '#lib/primitive_schemas.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
 const MAX_UUID_CASES = [
@@ -95,7 +94,7 @@ const rpc_endpoints = [
 
 describe_db('the max UUID in any case through the assembled app', (get_db) => {
 	const setup = () =>
-		create_test_app({ session_options, create_route_specs, rpc_endpoints, db: get_db() });
+		create_test_app({ session_cookie_name, create_route_specs, rpc_endpoints, db: get_db() });
 
 	describe('REST', () => {
 		test('a Uuid params field takes it, lowercased', async () => {

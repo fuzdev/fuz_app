@@ -60,7 +60,6 @@ import '../assert_dev_env.ts';
 import { afterAll, assert, describe, test } from 'vitest';
 
 import type { AppSurfaceSpec } from '../../http/surface.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
 import type { ConformanceCase } from './conformance_case.ts';
 import {
@@ -185,8 +184,8 @@ export interface DifferentialConformanceOptions {
 	 * (`resolve_conformance_rpc_endpoints`).
 	 */
 	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** Session options — needed to resolve the `rpc_endpoints` factory form. */
-	readonly session_options: SessionOptions<string>;
+	/** The session cookie's name — needed to resolve the `rpc_endpoints` factory form. */
+	readonly session_cookie_name: string;
 	/** Maps the `role_holder` / `wrong_role` principals to seeded usernames. */
 	readonly principals?: ConformancePrincipalConfig;
 	/** The tracked divergences these cases may show. */
@@ -324,7 +323,7 @@ export const describe_differential_conformance_tests = (
 				request_headers: DIFFERENTIAL_REQUEST_HEADERS,
 				...(backend.ws && { ws: backend.ws })
 			}),
-			options.session_options.cookie_name
+			options.session_cookie_name
 		);
 		const db_state = backend.db_state && mark ? await backend.db_state.read(mark) : null;
 		return { response, db_state };

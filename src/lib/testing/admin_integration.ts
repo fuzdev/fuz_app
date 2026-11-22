@@ -8,7 +8,7 @@ import './assert_dev_env.ts';
  * surface — see `role_grant_offer_create` / `role_grant_revoke`), session/token
  * management, and audit log routes against a real database.
  *
- * Consumers call it with their route factory, session config, role registry,
+ * Consumers call it with their route factory, session cookie name, role registry,
  * and RPC endpoint specs — all admin route tests come for free.
  *
  * Scope: admin *semantics* — cross-admin isolation, role_grant grant/revoke
@@ -30,7 +30,6 @@ import './assert_dev_env.ts';
 import { describe, test, assert, afterAll } from 'vitest';
 import type { Uuid } from '../primitive_schemas.ts';
 
-import type { SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN, type RoleRegistry } from '../auth/role_schema.ts';
 import { GRANT_PATH_ADMIN } from '../auth/grant_path_schema.ts';
 import type { TestAccount, TestApp } from './test_app.ts';
@@ -108,8 +107,8 @@ export interface StandardAdminIntegrationTestOptions {
 	 * shape for in-process and cross-process tests).
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
-	session_options: SessionOptions<string>;
+	/** The session cookie's name — read for the session cookie and the factory-form `rpc_endpoints` resolution. */
+	session_cookie_name: string;
 	/** Role registry from `create_role_registry()` — used to determine valid/invalid/web-grantable roles. */
 	roles: RoleRegistry;
 	/**
@@ -163,12 +162,12 @@ export const describe_standard_admin_integration_tests = (
 	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options
+		options.session_cookie_name
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	describe('standard_admin_integration', () => {
-		const { cookie_name } = options.session_options;
+		const cookie_name = options.session_cookie_name;
 		const { role_specs } = options.roles;
 		const grantable_role = pick_grantable_role(role_specs);
 

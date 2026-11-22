@@ -31,7 +31,6 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { create_stub_app_backend, create_stub_db } from '#lib/testing/stubs.ts';
 import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -282,7 +281,7 @@ describe('create_app_server refuses a spec breaking a cross-axis invariant at as
 	const base_options = () => ({
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend(),
-		session_options: create_session_config('test_session')
+		session_cookie_name: 'test_session'
 	});
 
 	test('a route spec', async () => {

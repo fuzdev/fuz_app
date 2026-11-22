@@ -19,7 +19,6 @@ import type { BurnOutcome } from '#lib/runtime/secure_file.ts';
 import { stub_password_deps, TEST_COOKIE_SECRET } from '#lib/testing/app_server.ts';
 import { argon2_password_deps } from '#lib/auth/password_argon2.ts';
 import { create_keyring } from '#lib/auth/keyring.ts';
-import { create_session_config, type SessionOptions } from '#lib/auth/session_cookie.ts';
 import { Db } from '#lib/db/db.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import {
@@ -37,7 +36,7 @@ import { query_role_grant_has_role } from './auth_test_queries.ts';
 
 const log = new Logger('test', { level: 'off' });
 const TEST_TOKEN = 'bootstrap_secret_token_abc123_xyz789';
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const keyring_result = create_keyring(TEST_COOKIE_SECRET);
 if (!keyring_result.ok) throw new Error('the test cookie secret builds a keyring');
 const keyring = keyring_result.keyring;
@@ -117,12 +116,12 @@ const create_deps = (
 
 const INPUT: BootstrapAccountInput = { username: 'keeper', password: 'password_12_chars' };
 
-/** `bootstrap_account` with the shared session options. */
+/** `bootstrap_account` with the shared session cookie name. */
 const run = (
 	deps: TestBootstrapDeps,
 	token: string,
 	input: BootstrapAccountInput = INPUT,
-	options: { session_options: SessionOptions<string> } = { session_options }
+	options: { session_cookie_name: string } = { session_cookie_name }
 ): Promise<BootstrapAccountResult> =>
 	bootstrap_account(
 		deps,
@@ -418,11 +417,11 @@ describe_db('bootstrap_account', (get_db) => {
 	test('a cookie line the formatter refuses rolls the bootstrap back with the token unburned', async () => {
 		const db = get_db();
 		const store = create_mock_store();
-		// a cookie name outside RFC 6265: the session mints, its line can't be written
+		// a cookie name outside RFC 6265: the session mints, its line can't be signed
 		await assert_rejects(
 			() =>
 				run(create_deps(db, { store }), TEST_TOKEN, INPUT, {
-					session_options: { ...session_options, cookie_name: 'bad name' }
+					session_cookie_name: 'bad name'
 				}),
 			/cookie/i
 		);

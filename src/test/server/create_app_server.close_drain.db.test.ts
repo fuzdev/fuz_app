@@ -15,7 +15,6 @@ import { assert, describe, test } from 'vitest';
 import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
@@ -29,20 +28,20 @@ import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type StalledQuery } from '../gated_db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 describe_db('AppServer.close drains the effects in flight', (get_db) => {
 	test('close waits for a failure row a request left in flight, then the row is there', async () => {
 		const gated = create_gated_db(get_db());
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			db: gated.db,
 			app_options: { await_pending_effects: false },
 			create_route_specs: (ctx) =>
 				prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: null,
 						login_account_rate_limiter: null,
 						login_fail_floor_ms: 0
@@ -90,14 +89,14 @@ describe_db('AppServer.close drains the effects in flight', (get_db) => {
 	test('close waits for a token-usage write a request left in flight, then it landed', async () => {
 		const gated = create_gated_db(get_db());
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			db: gated.db,
 			app_options: { await_pending_effects: false },
 			create_route_specs: (ctx) =>
 				prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: null,
 						login_account_rate_limiter: null,
 						login_fail_floor_ms: 0

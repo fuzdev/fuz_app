@@ -12,7 +12,7 @@ import type { Account, Actor } from './account_schema.ts';
 
 import { query_create_account_with_actor } from './account_queries.ts';
 import { create_capped_session } from './session_queries.ts';
-import { session_cookie_header } from './session_cookie.ts';
+import { sign_session_cookie } from './session_cookie.ts';
 import { query_app_settings_load } from './app_settings_queries.ts';
 import {
 	query_invite_find_unclaimed_match_for_update,
@@ -105,7 +105,7 @@ export const create_signup_route_specs = (
 ): Array<RouteSpec> => {
 	const { keyring, password } = deps;
 	const {
-		session_options,
+		session_cookie_name,
 		signup_ip_rate_limiter,
 		signup_account_rate_limiter,
 		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
@@ -289,12 +289,14 @@ export const create_signup_route_specs = (
 							// the account back, and rides the success, answered only
 							// once the commit has landed
 							const session = await create_capped_session({
-								keyring,
 								deps: tx_ctx,
-								account_id: account.id,
-								session_options
+								account_id: account.id
 							});
-							const set_cookie = session_cookie_header(session.cookie_value, session_options);
+							const set_cookie = await sign_session_cookie(
+								keyring,
+								session.token,
+								session_cookie_name
+							);
 
 							// the success row, last: a refused row rolls the account back
 							// and answers through the `internal_error` catch below

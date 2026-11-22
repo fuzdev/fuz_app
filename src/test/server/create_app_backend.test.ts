@@ -9,7 +9,6 @@ import { describe, test, assert, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
 import { create_app_backend, type AppBackend, type AuditFactory } from '#lib/server/app_backend.ts';
@@ -24,7 +23,7 @@ import { create_test_keyring } from '../auth/session_test_helpers.ts';
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 /** Canonical default audit factory — every test uses this unless it cares about emitter wiring. */
 const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({ db, log });
@@ -32,7 +31,7 @@ const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({
 /** Shared option fields (everything except backend). */
 const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
-	session_options,
+	session_cookie_name,
 	create_route_specs: () => [create_health_route_spec()]
 };
 

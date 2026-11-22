@@ -21,7 +21,7 @@ import type { BurnOutcome, SecureReadOptions } from '../runtime/secure_file.ts';
  *
  * Twin of the Rust `BootstrapTokenStore` trait, which has no `path`: the Rust
  * boot check (`is_bootstrap_available`) takes the path itself, while
- * `check_bootstrap_status` reads through this store and names the file in its
+ * `is_bootstrap_available` reads through this store and names the file in its
  * log lines from here.
  */
 export interface BootstrapTokenStore {
@@ -62,7 +62,7 @@ const BOOTSTRAP_TOKEN_READ_OPTIONS: SecureReadOptions = Object.freeze({
  * burn (`burn_secure_file` — unlink, then fsync the directory). The read
  * alone of the runtime's secure reads asks for a single link
  * (`BOOTSTRAP_TOKEN_READ_OPTIONS`): both of bootstrap's reads, the boot check
- * (`check_bootstrap_status`) and the request's, go through it. Twin of the
+ * (`is_bootstrap_available`) and the request's, go through it. Twin of the
  * Rust `FileBootstrapTokenStore`.
  *
  * @param deps - the runtime's secure read and burn (`create_node_runtime()` satisfies both)

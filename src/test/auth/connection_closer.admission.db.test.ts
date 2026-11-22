@@ -59,7 +59,6 @@ import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { query_account_by_id } from '#lib/auth/account_queries.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import type { Db } from '#lib/db/db.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
@@ -80,7 +79,7 @@ import { pg_factory } from '../db_fixture.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
 
 const log = new Logger('test', { level: 'off' });
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 const STREAM_PATH = '/api/admin/audit/stream';
 const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON };
@@ -173,7 +172,7 @@ const create_harness = async (
 ): Promise<Harness> => {
 	const gated = create_gated_db(db);
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db: gated.db,
 		db_type: 'postgres',
 		app_options: { audit_log_sse: true },
@@ -181,7 +180,7 @@ const create_harness = async (
 			...prefix_route_specs(
 				'/api/account',
 				create_account_route_specs(ctx.deps, {
-					session_options,
+					session_cookie_name,
 					login_ip_rate_limiter: null,
 					login_account_rate_limiter: null,
 					login_fail_floor_ms: 0,

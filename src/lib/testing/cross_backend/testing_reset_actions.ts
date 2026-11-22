@@ -113,7 +113,6 @@ import { query_put_fact_holder } from '../../db/fact_holder_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import type { AppDeps } from '../../auth/deps.ts';
 import type { AuditEmitter } from '../../auth/audit_emitter.ts';
-import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
 import type { Db } from '../../db/db.ts';
 import {
@@ -262,7 +261,7 @@ export const testing_drain_effects_action_spec = {
  * The minted `auth_session` row's `expires_at` is backdated while the
  * returned cookie's own signed payload stays valid (future). Cross-process
  * auth resolution therefore passes the
- * cookie-payload gate (`parse_session`) and is refused by the authoritative
+ * cookie-payload gate (`parse_session_from_cookies`) and is refused by the authoritative
  * DB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —
  * the gate the in-process payload-expiry tests never reach and the one that
  * structurally needs a server-side mint (the cross-process driver has no
@@ -845,13 +844,6 @@ export const create_testing_action_manifest_action = (
 /** Options for `create_testing_actions`. */
 export interface CreateTestingActionsOptions {
 	/**
-	 * Session cookie options — the reset action uses these when signing
-	 * the fresh keeper's (and any extra accounts') session cookies.
-	 * Pass the same `SessionOptions` the live `create_app_server` call
-	 * was wired with.
-	 */
-	readonly session_options: SessionOptions<string>;
-	/**
 	 * Daemon-token runtime state — the reset action points
 	 * `state.keeper_account_id` at the freshly seeded keeper once its
 	 * transaction commits (a post-commit effect, so a reset that rolls back
@@ -899,7 +891,7 @@ export const create_testing_actions = (
 	deps: AppDeps,
 	options: CreateTestingActionsOptions
 ): Array<RpcAction> => {
-	const { session_options, daemon_token_state, reset_state } = options;
+	const { daemon_token_state, reset_state } = options;
 	const log = deps.log;
 	return [
 		rpc_action(testing_reset_action_spec, async (input, ctx) => {
@@ -963,7 +955,6 @@ export const create_testing_actions = (
 			const keeper = await create_test_account_with_credentials({
 				db: ctx.db,
 				keyring: deps.keyring,
-				session_options,
 				password: deps.password,
 				password_value: DEFAULT_TEST_PASSWORD,
 				roles: [...new Set([...DEFAULT_TEST_KEEPER_ROLES, ...(input.extra_keeper_roles ?? [])])]
@@ -990,7 +981,6 @@ export const create_testing_actions = (
 				const seeded = await create_test_account_with_credentials({
 					db: ctx.db,
 					keyring: deps.keyring,
-					session_options,
 					password: deps.password,
 					username: spec.username,
 					password_value: spec.password_value ?? DEFAULT_TEST_PASSWORD,
@@ -1019,7 +1009,6 @@ export const create_testing_actions = (
 			const { session_cookie } = await mint_test_session({
 				db: ctx.db,
 				keyring: deps.keyring,
-				session_options,
 				account_id: input.account_id,
 				expires_in_seconds: input.expires_in_seconds
 			});

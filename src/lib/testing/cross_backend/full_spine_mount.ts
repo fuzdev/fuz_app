@@ -42,6 +42,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '../../auth/session_cookie.ts';
 import type { Action, RpcAction } from '../../actions/action_types.ts';
 import { ConnectionRegistry } from '../../actions/connection_registry.ts';
 import { peer_ping_action } from '../../actions/peer_ping.ts';
@@ -75,7 +76,7 @@ import { create_testing_credential_read_action } from './testing_credential_read
 import { create_testing_origin_check_action } from './testing_origin_check.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { test_cell_grant_steward_revoke_authorize } from './test_cell_grant_steward_revoke_authorize.ts';
-import { spine_roles, spine_session_options } from './default_spine_surface.ts';
+import { spine_roles } from './default_spine_surface.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
@@ -148,7 +149,7 @@ interface FullSpineActions {
  * the off-surface families (`_testing_*` backdoors, cells, actor resolvers).
  *
  * Mirrors the previous inline assembly in `testing_spine_server.ts` exactly —
- * `session_options` is pinned to `spine_session_options` (the binary's cookie
+ * `session_cookie_name` is pinned to `SESSION_COOKIE_NAME` (the binary's cookie
  * config) and `roles` to `spine_roles` (carrying `cell_editor`), so the only
  * runtime-varying inputs are the daemon-token state and the room registry.
  *
@@ -179,7 +180,6 @@ const build_full_spine_actions = (
 	const actions: Array<RpcAction> = [
 		...create_standard_rpc_actions(deps, { roles: spine_roles }),
 		...create_testing_actions(deps, {
-			session_options: spine_session_options,
 			daemon_token_state: options.daemon_token_state,
 			reset_state: create_reset_spine_domain_state(room_registry)
 		}),
@@ -210,7 +210,7 @@ const build_full_spine_actions = (
 		// cookie name — out of `create_testing_actions` for the same reason
 		create_testing_credential_read_action({
 			keyring: deps.keyring,
-			session_options: spine_session_options
+			session_cookie_name: SESSION_COOKIE_NAME
 		}),
 		// the credential-deadline suite's shorten-only seam — kept out of
 		// `create_testing_actions` for the same reason

@@ -14,7 +14,7 @@ import { actor_lookup_action_spec } from '#lib/auth/actor_lookup_action_specs.ts
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
 import { role_grant_offer_received_notification_spec } from '#lib/auth/role_grant_offer_notifications.ts';
 import { create_role_registry } from '#lib/auth/role_schema.ts';
-import { fuz_session_config } from '#lib/auth/session_cookie.ts';
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import {
 	account_status_route_shape,
@@ -41,7 +41,7 @@ const rpc_methods = (spec: ReturnType<typeof create_rust_spine_consumer_surface_
 describe('create_rust_spine_consumer_surface_spec', () => {
 	test('declares the routes the Rust spine mounts, and no others', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs
 		});
 		const keys = route_keys(spec);
@@ -77,12 +77,12 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 
 	test('lists the daemon_token layer, and the host gate unless host_gate is false', () => {
 		const with_gate = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs
 		}).surface.middleware.map((m) => m.name);
 		assert.include(with_gate, 'daemon_token');
 		const without = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs,
 			host_gate: false
 		}).surface.middleware.map((m) => m.name);
@@ -95,7 +95,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 
 	test('the host gate declares its 403 forbidden_host on every route', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs
 		});
 		const layer = spec.surface.middleware.find((m) => m.name === 'host')!;
@@ -104,7 +104,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 			assert.ok(errors.defs.includes(REST_FORBIDDEN_HOST));
 		}
 		const without = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs,
 			host_gate: false
 		});
@@ -115,7 +115,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 
 	test('mounts the standard actions and the request-response domain specs only', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs
 		});
 		const methods = rpc_methods(spec);
@@ -128,7 +128,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 
 	test('exclude_methods leaves a domain method off, and extras join the endpoint', () => {
 		const spec = create_rust_spine_consumer_surface_spec({
-			session_options: fuz_session_config,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			domain_action_specs,
 			exclude_methods: [actor_lookup_action_spec.method],
 			extra_rpc_actions: (ctx) => create_actor_search_actions({ log: ctx.deps.log }),
@@ -143,7 +143,7 @@ describe('create_rust_spine_consumer_surface_spec', () => {
 		assert.throws(
 			() =>
 				create_rust_spine_consumer_surface_spec({
-					session_options: fuz_session_config,
+					session_cookie_name: SESSION_COOKIE_NAME,
 					domain_action_specs,
 					exclude_methods: ['no_such_method']
 				}),

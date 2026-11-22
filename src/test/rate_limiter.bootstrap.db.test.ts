@@ -29,7 +29,6 @@ import { BOOTSTRAP_TOKEN_LENGTH_MAX, BootstrapOutput } from '#lib/auth/bootstrap
 import { MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
 import { apply_route_specs } from '#lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
@@ -63,7 +62,7 @@ const log = new Logger('test', { level: 'off' });
 // --- Shared fixtures ---
 
 const keyring = create_test_keyring('integration-test-key-at-least-32-chars');
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 // --- Bootstrap helpers ---
 
@@ -129,7 +128,7 @@ const create_bootstrap_app = async (
 			request_tracker: create_request_tracker()
 		},
 		{
-			session_options,
+			session_cookie_name,
 			bootstrap_status,
 			token_store,
 			daemon_token_state: extra?.daemon_token_state ?? null,
@@ -408,7 +407,7 @@ describe('bootstrap handler rate limiting', () => {
 describe('unreadable token file closes the window', () => {
 	test('the second attempt takes the write-free closed-window path', async () => {
 		// Bootstrap can't succeed without a readable token, and
-		// `check_bootstrap_status` already reads an unreadable file as
+		// `is_bootstrap_available` already reads an unreadable file as
 		// unavailable at startup — so leaving the flag set means the two
 		// disagree, and every later request writes another audit row. The
 		// limiter would bound that channel; closing it ends it. Twin of the

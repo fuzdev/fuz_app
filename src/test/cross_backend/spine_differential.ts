@@ -20,6 +20,7 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import {
 	default_cross_process_setup,
 	type ReconstructedBootstrappedBackendHandle
@@ -31,8 +32,7 @@ import {
 import { generate_rpc_auth_conformance_cases } from '#lib/testing/cross_backend/conformance_rpc_auth.ts';
 import {
 	create_spine_surface_spec,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { create_db_state_probe } from '#lib/testing/cross_backend/db_state_diff.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
@@ -113,7 +113,7 @@ export const describe_spine_differential_suites = (
 		surface_source,
 		rpc_endpoints: spine_rpc_endpoints,
 		live_rpc_endpoints,
-		session_options: spine_session_options
+		session_cookie_name: SESSION_COOKIE_NAME
 	};
 	const ws_target = (
 		handle: ReconstructedBootstrappedBackendHandle

@@ -14,7 +14,6 @@ import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { account_verify_action_spec } from '#lib/auth/account_action_specs.ts';
@@ -23,7 +22,7 @@ import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { query_session_list_for_account } from '#lib/auth/session_queries.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 
 describe('password change multi-session invalidation', () => {
@@ -31,12 +30,12 @@ describe('password change multi-session invalidation', () => {
 
 	beforeAll(async () => {
 		test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: (ctx) => [
 				...prefix_route_specs(
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
-						session_options,
+						session_cookie_name,
 						login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 						login_account_rate_limiter: ctx.login_account_rate_limiter,
 						login_fail_floor_ms: 0

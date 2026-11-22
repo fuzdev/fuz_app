@@ -11,7 +11,6 @@ import * as s from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { describe_rpc_attack_surface_tests } from '#lib/testing/rpc_attack_surface.ts';
 
 // a value the generator never produces, so only the override reaches a valid base
@@ -33,7 +32,7 @@ const gizmo_register_spec: RequestResponseActionSpec = {
 describe_rpc_attack_surface_tests({
 	build: () =>
 		create_test_app_surface_spec({
-			session_options: create_session_config('test_rpc_overrides_session'),
+			session_cookie_name: 'test_rpc_overrides_session',
 			create_route_specs: () => [],
 			rpc_endpoints: [
 				{

@@ -15,7 +15,6 @@ import { assert, describe, test } from 'vitest';
 import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { query_account_by_id, query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_account_status_route_spec } from '#lib/auth/account_routes.ts';
@@ -32,7 +31,7 @@ import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const STATUS_PATH = '/api/account/status';
 const ALLOWED_ORIGIN = 'http://localhost:3000';
 const log = new Logger('test', { level: 'off' });
@@ -84,7 +83,11 @@ const upgrade = (app: Hono, query: string): Promise<Response> =>
 describe_db('the ?acting= query selector', (get_db) => {
 	describe('GET /status', () => {
 		test('an uppercased acting id resolves its actor', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const second = await query_create_actor(
 				{ db: get_db() },
 				test_app.backend.account.id,
@@ -99,7 +102,11 @@ describe_db('the ?acting= query selector', (get_db) => {
 		});
 
 		test('a malformed acting reads as omitted: account-only on a multi-actor account', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			await query_create_actor({ db: get_db() }, test_app.backend.account.id, 'second_persona');
 			const res = await test_app.app.request(`${STATUS_PATH}?acting=not-a-uuid`, {
 				headers: test_app.create_session_headers()
@@ -112,7 +119,11 @@ describe_db('the ?acting= query selector', (get_db) => {
 
 		test('a malformed acting answers account-only on a single-actor account too', async () => {
 			// no default-actor resolve: without a selector this account resolves its one actor
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			for (const acting of ['not-a-uuid', '']) {
 				const res = await test_app.app.request(`${STATUS_PATH}?acting=${acting}`, {
 					headers: test_app.create_session_headers()
@@ -131,7 +142,11 @@ describe_db('the ?acting= query selector', (get_db) => {
 
 	describe('the WS upgrade', () => {
 		test('an uppercased acting id resolves its actor', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			const second = await query_create_actor(
 				{ db: get_db() },
 				test_app.backend.account.id,
@@ -146,7 +161,11 @@ describe_db('the ?acting= query selector', (get_db) => {
 		});
 
 		test('a malformed acting reads as omitted', async () => {
-			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const test_app = await create_test_app({
+				session_cookie_name,
+				create_route_specs,
+				db: get_db()
+			});
 			// single-actor: resolves without a selector, so the upgrade goes ahead
 			const single = build_ws_app(get_db(), test_app.backend.account.id);
 			const res = await upgrade(single.app, '?acting=not-a-uuid');

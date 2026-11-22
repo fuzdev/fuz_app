@@ -29,7 +29,11 @@ import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { pg_factory } from '../db_fixture.ts';
-import { RPC_PATH, create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
+import {
+	RPC_PATH,
+	create_route_specs,
+	session_cookie_name
+} from './role_grant_offer_test_helpers.ts';
 
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
@@ -37,7 +41,7 @@ describe_pg('role_grant_revoke concurrent cross-revoke', (get_db) => {
 	test('two admins revoking each other: one lands, the other is refused 403', async () => {
 		const db = get_db();
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db
 		});

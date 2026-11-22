@@ -23,14 +23,13 @@ import { describe } from 'vitest';
 
 import { describe_body_size_cross_tests } from '#lib/testing/cross_backend/body_size.ts';
 import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from '#lib/testing/cross_backend/spine_surface_constants.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const RPC_PATH = '/api/rpc';
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 	create_rpc_endpoint({
@@ -43,7 +42,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> =>
 	});
 
 const setup_test = default_in_process_setup({
-	session_options,
+	session_cookie_name,
 	create_route_specs
 });
 
@@ -66,7 +65,7 @@ const RAISED_CAP_BYTES = 2 * SPINE_BODY_LIMIT_DEFAULT_BYTES + 1000;
 describe('a raised cap', () => {
 	describe_body_size_cross_tests({
 		setup_test: default_in_process_setup({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			app_options: { max_body_size: RAISED_CAP_BYTES }
 		}),

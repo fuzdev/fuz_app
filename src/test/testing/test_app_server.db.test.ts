@@ -9,7 +9,6 @@ import { array, object, string, void as fuz_void } from '@fuzdev/fuz_schema/sche
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
@@ -25,7 +24,7 @@ import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_que
 
 import { default_db_factory } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 let db: Awaited<ReturnType<typeof default_db_factory.create>>;
 
@@ -44,7 +43,7 @@ afterAll(async () => {
 });
 
 test('creates a bootstrapped auth server', async () => {
-	const server = await create_test_app_server({ session_options, db });
+	const server = await create_test_app_server({ db });
 
 	// Account exists with default username
 	assert.strictEqual(server.account.username, 'keeper');
@@ -62,7 +61,6 @@ test('creates a bootstrapped auth server', async () => {
 
 test('custom username and roles are applied', async () => {
 	const server = await create_test_app_server({
-		session_options,
 		db,
 		username: 'admin',
 		roles: [ROLE_KEEPER, 'admin']
@@ -78,12 +76,12 @@ test('custom username and roles are applied', async () => {
 });
 
 test('works with create_app_server', async () => {
-	const test_server = await create_test_app_server({ session_options, db });
+	const test_server = await create_test_app_server({ db });
 
 	const { app } = await create_app_server({
 		...create_loopback_app_server_options(),
 		backend: test_server,
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()]
 	});
 
@@ -113,7 +111,7 @@ const widget_actions: Array<RpcAction> = [
 
 test('create_test_app forwards top-level rpc_endpoints to create_app_server', async () => {
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db,
 		create_route_specs: () => [],
 		rpc_endpoints: [{ path: '/api/rpc', actions: widget_actions }]
@@ -144,7 +142,7 @@ const route_shape = (surface: AppSurface) =>
 for (const surface_route of [undefined, false, true] as const) {
 	test(`create_test_app_surface_spec routes match create_test_app's (surface_route: ${surface_route})`, async () => {
 		const shared = {
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [create_health_route_spec()],
 			rpc_endpoints: [{ path: '/api/rpc', actions: widget_actions }],
 			bootstrap: { mode: 'surface_only' as const }

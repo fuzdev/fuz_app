@@ -50,7 +50,7 @@ import {
 	RPC_PATH,
 	TEST_APP_ROLE,
 	create_app_role_route_specs,
-	session_options
+	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 
@@ -61,7 +61,7 @@ const create_app = (
 	exclude_db_invariants?: DbInvariantExclusions
 ): Promise<TestApp> =>
 	create_test_app({
-		session_options,
+		session_cookie_name,
 		create_route_specs: create_app_role_route_specs(),
 		db: get_db(),
 		exclude_db_invariants

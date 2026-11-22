@@ -16,7 +16,6 @@ import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { HTTPException } from 'hono/http-exception';
 import { literal, loose_object, string } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import {
 	route_fail,
@@ -29,7 +28,7 @@ import { REST_TABLE_NOT_FOUND } from '#lib/http/error_schemas.ts';
 import { create_test_app, type TestApp } from '#lib/testing/test_app.ts';
 import { check_db_invariants_after_suite } from '#lib/testing/db_invariants.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
 const STALE = 'test_session=stale.invalidsignature';
 
@@ -114,7 +113,7 @@ describe('session cookie clear beside another credential', () => {
 
 	beforeAll(async () => {
 		test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [create_credential_route_spec(), ...create_kind_route_specs()],
 			app_options: {
 				// a layer behind the auth stack that throws, as a credential leg does:

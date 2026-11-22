@@ -16,7 +16,6 @@ import { test, assert } from 'vitest';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
@@ -28,7 +27,7 @@ import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 
 import { describe_db } from '../db_fixture.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const STREAM_PATH = '/api/admin/audit/stream';
 
 /** Poll until `predicate` holds, failing with `message` after two seconds. */
@@ -56,7 +55,7 @@ describe_db('audit log stream outbound overflow', (get_db) => {
 		// recorded call is exactly the stream's arguments
 		const log = new Logger(undefined, { level: 'warn', console: recording_console });
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			db: get_db(),
 			app_options: { audit_log_sse: true },
 			create_route_specs: (ctx) =>

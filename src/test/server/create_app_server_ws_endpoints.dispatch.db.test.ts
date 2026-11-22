@@ -47,7 +47,6 @@ import { afterEach, describe, test, assert, vi } from 'vitest';
 import { literal, object, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
@@ -102,7 +101,7 @@ import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const log = new Logger('test', { level: 'off' });
 
 const WS_PATH = '/api/ws';
@@ -185,7 +184,7 @@ const create_test_server = async (
 		// the loopback proxy is trusted, so `X-Forwarded-For` sets the client IP
 		...create_loopback_app_server_options(),
 		backend,
-		session_options,
+		session_cookie_name,
 		create_route_specs: () => [create_health_route_spec()],
 		upgrade_websocket: stub.upgradeWebSocket,
 		ws_endpoints: [
@@ -198,7 +197,6 @@ const create_test_server = async (
 		const { account, session_cookie, api_token } = await create_test_account_with_credentials({
 			db,
 			keyring,
-			session_options,
 			password: stub_password_deps,
 			username
 		});
@@ -206,7 +204,7 @@ const create_test_server = async (
 			account_id: account.id,
 			session_headers: {
 				origin: ORIGIN,
-				cookie: `${session_options.cookie_name}=${session_cookie}`
+				cookie: `${session_cookie_name}=${session_cookie}`
 			},
 			// bearer is refused beside an Origin header
 			bearer_headers: { authorization: `Bearer ${api_token}` }
@@ -512,7 +510,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		const t = await create_test_server();
 		const alice = await t.create_account('alice');
 		const clear = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
-		const stale = { cookie: `${session_options.cookie_name}=stale.invalidsignature` };
+		const stale = { cookie: `${session_cookie_name}=stale.invalidsignature` };
 		const upgrade = async (headers: Record<string, string>): Promise<Response> =>
 			t.server.app.request(WS_PATH, {
 				headers: { host: 'localhost', upgrade: 'websocket', ...headers }

@@ -26,7 +26,6 @@
 import { test, assert } from 'vitest';
 import { boolean, literal, object, one_of, string } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_default_db_factory, auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { create_describe_db } from '#lib/testing/describe_db.ts';
@@ -44,7 +43,7 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Db } from '#lib/db/db.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 const REST_PATH = '/test/rollback_probe';
 const REST_BUILD_PATH = '/test/rollback_probe_build';
@@ -170,7 +169,7 @@ const setup = async (get_db: () => Db) => {
 	});
 
 	const test_app = await create_test_app({
-		session_options,
+		session_cookie_name,
 		db: get_db(),
 		create_route_specs,
 		rpc_endpoints: [{ path: RPC_PATH, actions: [probe_rpc_action] }]
@@ -351,7 +350,7 @@ const setup_inner_transaction = async (get_db: () => Db) => {
 			}
 		})
 	];
-	const test_app = await create_test_app({ session_options, db: get_db(), create_route_specs });
+	const test_app = await create_test_app({ session_cookie_name, db: get_db(), create_route_specs });
 	return { test_app, sinks };
 };
 

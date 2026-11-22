@@ -10,7 +10,6 @@
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { nullable, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_app_server, type AppServer } from '#lib/server/app_server.ts';
 import {
 	create_test_app_server,
@@ -21,7 +20,7 @@ import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 import { ERROR_ACTOR_NOT_ON_ACCOUNT } from '#lib/http/error_schemas.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 
 const whoami_spec = {
 	method: 'fuz_whoami',
@@ -40,11 +39,11 @@ describe('a fuz_schema input declaring the ActingActor twin', () => {
 	let server: AppServer;
 
 	beforeAll(async () => {
-		test_server = await create_test_app_server({ session_options });
+		test_server = await create_test_app_server({});
 		server = await create_app_server({
 			...create_loopback_app_server_options(),
 			backend: test_server,
-			session_options,
+			session_cookie_name,
 			create_route_specs: () => [],
 			rpc_endpoints: [
 				{

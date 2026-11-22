@@ -1,220 +1,158 @@
 /**
- * Tests for `parse_session` + the create→parse round-trip.
+ * Tests for `parse_session_from_cookies` — its three answers, the cookie's
+ * verification, and the create→parse round-trip.
  *
- * Sibling files cover `create_session_cookie_value` + constants
- * (`session_cookie.create.test.ts`) and `process_session_cookie`
- * (`session_cookie.process.test.ts`).
+ * The sibling `session_cookie.create.test.ts` covers
+ * `create_session_cookie_value`, `sign_session_cookie` and the `Set-Cookie`
+ * formatters.
  *
  * @module
  */
 
 import { assert, describe, test } from 'vitest';
+import type { Keyring } from '#lib/auth/keyring.ts';
 
 import {
 	create_session_cookie_value,
-	parse_session,
+	parse_session_from_cookies,
 	SESSION_AGE_MAX,
-	type SessionOptions
+	type SessionCookieRead
 } from '#lib/auth/session_cookie.ts';
 import {
 	create_test_keyring,
 	OLD_KEY,
+	TEST_COOKIE_NAME,
 	TEST_IDENTITY,
-	TEST_KEY,
-	test_session_options
+	TEST_KEY
 } from './session_test_helpers.ts';
 
-describe('parse_session', () => {
-	test('returns undefined for undefined input', async () => {
-		const keyring = create_test_keyring();
-		const result = await parse_session(undefined, keyring, test_session_options);
-		assert.strictEqual(result, undefined);
-	});
+/** Read `value` as the session cookie of one `Cookie` line, or no line for `null`. */
+const read = (
+	value: string | null,
+	keyring: Keyring,
+	now_seconds?: number
+): Promise<SessionCookieRead> =>
+	parse_session_from_cookies(
+		value === null ? [] : [`${TEST_COOKIE_NAME}=${value}`],
+		keyring,
+		TEST_COOKIE_NAME,
+		now_seconds
+	);
 
-	test('returns undefined for null input', async () => {
-		const keyring = create_test_keyring();
-		const result = await parse_session(null, keyring, test_session_options);
-		assert.strictEqual(result, undefined);
-	});
+/** The verified cookie of a `valid` read, failing the test on any other. */
+const valid_cookie = (result: SessionCookieRead) => {
+	assert.strictEqual(result.kind, 'valid');
+	if (result.kind !== 'valid') throw new Error('unreachable');
+	return result.cookie;
+};
 
-	test('returns null for the empty string — a cookie sent with no value is invalid, not absent', async () => {
+describe('parse_session_from_cookies — the three answers', () => {
+	test('absent: no Cookie line, or no pair naming the cookie', async () => {
 		const keyring = create_test_keyring();
-		const result = await parse_session('', keyring, test_session_options);
-		assert.strictEqual(result, null);
-	});
-
-	test('returns null for invalid signature', async () => {
-		const keyring = create_test_keyring();
-		const result = await parse_session(
-			'user-123:99999999999.invalidsig',
+		assert.deepStrictEqual(await read(null, keyring), { kind: 'absent' });
+		const other = await parse_session_from_cookies(
+			['other_cookie=value', 'another=1'],
 			keyring,
-			test_session_options
+			TEST_COOKIE_NAME
 		);
-		assert.strictEqual(result, null);
+		assert.deepStrictEqual(other, { kind: 'absent' });
 	});
 
-	test('parses valid session', async () => {
+	test('invalid: a pair naming the cookie whose value fails verification', async () => {
 		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const result = await parse_session(signed, keyring, test_session_options, now + 1);
-		assert.ok(result);
-		assert.strictEqual(result.identity, TEST_IDENTITY);
-		assert.strictEqual(result.key_index, 0);
+		// an empty value is a cookie sent with none: present, not absent
+		assert.deepStrictEqual(await read('', keyring), { kind: 'invalid' });
+		assert.deepStrictEqual(await read('user-123:99999999999.invalidsig', keyring), {
+			kind: 'invalid'
+		});
 	});
 
-	test('returns null for expired session', async () => {
+	test('valid: the token and the signed expiry', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const result = await parse_session(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX + 1
-		);
-		assert.strictEqual(result, null);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		assert.deepStrictEqual(await read(signed, keyring, now + 1), {
+			kind: 'valid',
+			cookie: { token: TEST_IDENTITY, expires_at: now + SESSION_AGE_MAX }
+		});
 	});
 
-	test('returns null at exact expiration time', async () => {
+	test('reads the first pair naming the cookie, among other cookies', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const signed = await create_session_cookie_value(
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		const result = await parse_session_from_cookies(
+			[`theme=dark; ${TEST_COOKIE_NAME}=${signed}; ${TEST_COOKIE_NAME}=garbage`],
 			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
+			TEST_COOKIE_NAME,
+			now + 1
 		);
-		const result = await parse_session(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX
-		);
-		assert.strictEqual(result, null);
+		assert.strictEqual(valid_cookie(result).token, TEST_IDENTITY);
 	});
+});
 
-	test('valid just before expiration', async () => {
+describe('parse_session_from_cookies — verification', () => {
+	test('invalid past the signed expiry, and at it', async () => {
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const result = await parse_session(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX - 1
-		);
-		assert.ok(result);
-		assert.strictEqual(result.identity, TEST_IDENTITY);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		assert.strictEqual((await read(signed, keyring, now + SESSION_AGE_MAX + 1)).kind, 'invalid');
+		assert.strictEqual((await read(signed, keyring, now + SESSION_AGE_MAX)).kind, 'invalid');
 	});
 
-	test('key rotation sets should_refresh_signature', async () => {
-		const old_keyring = create_test_keyring(OLD_KEY);
+	test('valid just before the signed expiry', async () => {
+		const keyring = create_test_keyring();
+		const now = 1000;
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		const cookie = valid_cookie(await read(signed, keyring, now + SESSION_AGE_MAX - 1));
+		assert.strictEqual(cookie.token, TEST_IDENTITY);
+	});
+
+	test('a retired key keeps verifying its cookies until it leaves the keyring', async () => {
 		const now = 1000;
 		const signed = await create_session_cookie_value(
-			old_keyring,
+			create_test_keyring(OLD_KEY),
 			TEST_IDENTITY,
-			test_session_options,
 			now
 		);
-
 		const rotated_keyring = create_test_keyring(TEST_KEY + '__' + OLD_KEY);
-		const result = await parse_session(signed, rotated_keyring, test_session_options, now + 1);
-		assert.ok(result);
-		assert.strictEqual(result.identity, TEST_IDENTITY);
-		assert.strictEqual(result.key_index, 1);
+		assert.strictEqual(
+			valid_cookie(await read(signed, rotated_keyring, now + 1)).token,
+			TEST_IDENTITY
+		);
+		assert.strictEqual((await read(signed, create_test_keyring(), now + 1)).kind, 'invalid');
 	});
 
-	test('returns null when no key can verify', async () => {
+	test('invalid when no key can verify', async () => {
 		const other_keyring = create_test_keyring('completely-different-key-32-chars!');
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			other_keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const result = await parse_session(signed, create_test_keyring(), test_session_options, now);
-		assert.strictEqual(result, null);
+		const signed = await create_session_cookie_value(other_keyring, TEST_IDENTITY, now);
+		assert.strictEqual((await read(signed, create_test_keyring(), now)).kind, 'invalid');
 	});
 
-	test('returns null when signed payload has no separator', async () => {
+	test('invalid when the signed payload has no separator', async () => {
 		const keyring = create_test_keyring();
-		// sign a raw string with no colon separator
 		const signed = await keyring.sign('noseparator');
-		const result = await parse_session(signed, keyring, test_session_options);
-		assert.strictEqual(result, null);
+		assert.strictEqual((await read(signed, keyring)).kind, 'invalid');
 	});
 
-	test('returns null when decode_identity returns null', async () => {
+	test('invalid when the token is empty', async () => {
 		const keyring = create_test_keyring();
-		const rejecting_config: SessionOptions<string> = {
-			cookie_name: 'test_session',
-			encode_identity: (id) => id,
-			decode_identity: () => null // always rejects
-		};
 		const now = 1000;
-		// create a valid signed cookie with the standard config
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		// parse with the rejecting config
-		const result = await parse_session(signed, keyring, rejecting_config, now + 1);
-		assert.strictEqual(result, null);
+		const signed = await keyring.sign(`:${now + SESSION_AGE_MAX}`);
+		assert.strictEqual((await read(signed, keyring, now)).kind, 'invalid');
 	});
 
-	test('returns null when expires_at portion is not a number', async () => {
+	test('a token holding a colon splits at the last one', async () => {
 		const keyring = create_test_keyring();
-		const signed = await keyring.sign('user-123:notanumber');
-		const result = await parse_session(signed, keyring, test_session_options);
-		assert.strictEqual(result, null);
-	});
-
-	test('handles identity payload containing colons (lastIndexOf split)', async () => {
-		const keyring = create_test_keyring();
-		const colon_config: SessionOptions<string> = {
-			cookie_name: 'test_session',
-			encode_identity: (id) => `prefix:${id}`,
-			decode_identity: (payload) => {
-				const idx = payload.indexOf(':');
-				return idx !== -1 ? payload.slice(idx + 1) || null : null;
-			}
-		};
 		const now = 1000;
-		const signed = await create_session_cookie_value(keyring, 'sess-abc', colon_config, now);
-		const result = await parse_session(signed, keyring, colon_config, now + 1);
-		assert.ok(result);
-		assert.strictEqual(result.identity, 'sess-abc');
-	});
-
-	test('rejects negative expires_at', async () => {
-		// Negative expires_at fails the strict-integer regex outright (would
-		// also fall through to `expires_at <= now` if the regex were absent).
-		const keyring = create_test_keyring();
-		const signed = await keyring.sign(`${TEST_IDENTITY}:-100`);
-		const result = await parse_session(signed, keyring, test_session_options, 1000);
-		assert.strictEqual(result, null);
+		const signed = await create_session_cookie_value(keyring, 'prefix:sess-abc', now);
+		assert.strictEqual(valid_cookie(await read(signed, keyring, now + 1)).token, 'prefix:sess-abc');
 	});
 
 	test.each([
+		['not a number', 'notanumber'],
+		['negative', '-100'],
 		['leading whitespace', ' 123'],
 		['trailing whitespace', '123 '],
 		['plus sign', '+123'],
@@ -223,7 +161,7 @@ describe('parse_session', () => {
 		['hex prefix', '0x10'],
 		['trailing alpha', '123abc'],
 		['empty', '']
-	])('rejects malformed expires_at: %s (%j)', async (_label, expires_at_str) => {
+	])('invalid for a malformed expires_at: %s (%j)', async (_label, expires_at_str) => {
 		// Strict integer regex closes the `parseInt` permissiveness gap —
 		// `parseInt('123abc')` returns `123`, so without the regex a tampered
 		// cookie with garbage trailing chars would parse as a valid future
@@ -231,169 +169,62 @@ describe('parse_session', () => {
 		// defense-in-depth pins the contract.
 		const keyring = create_test_keyring();
 		const signed = await keyring.sign(`${TEST_IDENTITY}:${expires_at_str}`);
-		const result = await parse_session(signed, keyring, test_session_options, 1000);
-		assert.strictEqual(result, null);
+		assert.strictEqual((await read(signed, keyring, 1000)).kind, 'invalid');
 	});
 
-	test('rejects an all-digit expires_at beyond u64::MAX', async () => {
+	test('invalid for an all-digit expires_at beyond u64::MAX', async () => {
 		// the Rust spine parses `expires_at` as `u64`, so one past its max is refused
 		// there; `parseInt` alone would read it as a finite far-future float
 		const keyring = create_test_keyring();
 		const signed = await keyring.sign(`${TEST_IDENTITY}:18446744073709551616`);
-		const result = await parse_session(signed, keyring, test_session_options, 1000);
-		assert.strictEqual(result, null);
+		assert.strictEqual((await read(signed, keyring, 1000)).kind, 'invalid');
 	});
 
-	test('accepts expires_at at exactly u64::MAX', async () => {
+	test('valid for expires_at at exactly u64::MAX', async () => {
 		const keyring = create_test_keyring();
 		const signed = await keyring.sign(`${TEST_IDENTITY}:18446744073709551615`);
-		const result = await parse_session(signed, keyring, test_session_options, 1000);
-		assert.ok(result);
-		assert.strictEqual(result.identity, TEST_IDENTITY);
+		assert.strictEqual(valid_cookie(await read(signed, keyring, 1000)).token, TEST_IDENTITY);
 	});
 
-	test('accepts leading zeros past twenty digits when the value fits u64', async () => {
+	test('leading zeros past twenty digits pass when the value fits u64', async () => {
 		// `u64::from_str` takes leading zeros, so the bound is on the value, not the length
 		const keyring = create_test_keyring();
 		const signed = await keyring.sign(`${TEST_IDENTITY}:000000000000000000000002000`);
-		const result = await parse_session(signed, keyring, test_session_options, 1000);
-		assert.ok(result);
-		assert.strictEqual(result.expires_at, 2000);
-	});
-
-	test('returns null when identity payload is empty (default decoder)', async () => {
-		// Signed value `:<expires_at>` splits into identity_payload='' and
-		// the default decoder (`(payload) => payload || null`) rejects it.
-		// Locks in the default-decoder empty-string contract beyond the
-		// explicit-rejecting-decoder path above.
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await keyring.sign(`:${now + SESSION_AGE_MAX}`);
-		const result = await parse_session(signed, keyring, test_session_options, now);
-		assert.strictEqual(result, null);
+		assert.strictEqual(valid_cookie(await read(signed, keyring, 1000)).expires_at, 2000);
 	});
 });
 
-describe('parse_session — absolute expiry', () => {
-	test('a cookie parses identically at any age — no refresh signal exists', async () => {
-		// The sliding-renewal signal (`should_refresh_expiration`) is gone:
-		// the embedded expiry is absolute, set once at mint, so a near-expiry
-		// parse carries no instruction to re-sign. One second past it the
-		// cookie is simply invalid.
+describe('parse_session_from_cookies — absolute lifetime', () => {
+	test('a cookie reads identically at any age, and its expiry never moves', async () => {
+		// No refresh exists: a re-sign would compute a fresh `now +
+		// SESSION_AGE_MAX`, extending the cookie past the DB row's fixed
+		// `expires_at`. The signed expiry is set once at mint — one second
+		// before it the cookie is just valid, at it, invalid.
 		const keyring = create_test_keyring();
 		const now = 1000;
-		const signed = await create_session_cookie_value(
-			keyring,
-			TEST_IDENTITY,
-			test_session_options,
-			now
-		);
-		const near_expiry = await parse_session(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX - 1
-		);
-		assert.ok(near_expiry);
-		assert.deepStrictEqual(near_expiry, {
-			identity: TEST_IDENTITY,
-			key_index: 0,
-			expires_at: now + SESSION_AGE_MAX
-		});
-
-		const past_expiry = await parse_session(
-			signed,
-			keyring,
-			test_session_options,
-			now + SESSION_AGE_MAX
-		);
-		assert.strictEqual(past_expiry, null);
+		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, now);
+		for (const at of [now + 1, now + SESSION_AGE_MAX - 60, now + SESSION_AGE_MAX - 1]) {
+			assert.deepStrictEqual(await read(signed, keyring, at), {
+				kind: 'valid',
+				cookie: { token: TEST_IDENTITY, expires_at: now + SESSION_AGE_MAX }
+			});
+		}
+		assert.strictEqual((await read(signed, keyring, now + SESSION_AGE_MAX)).kind, 'invalid');
+		const verified = await keyring.verify(signed);
+		assert.ok(verified);
+		assert.ok(verified.value.endsWith(`:${now + SESSION_AGE_MAX}`));
 	});
 });
 
-describe('parse_session — generic identity', () => {
-	test('round-trips with SessionOptions<number>', async () => {
-		// Documents the generic `TIdentity` parameter — the visiones-style
-		// account-id-as-number config from the source's docstring example.
-		// Catches regressions in the encode/decode plumbing that would only
-		// surface for non-string identities.
-		const number_options: SessionOptions<number> = {
-			cookie_name: 'test_session',
-			encode_identity: (id) => String(id),
-			decode_identity: (payload) => {
-				const n = parseInt(payload, 10);
-				return Number.isFinite(n) && n > 0 ? n : null;
-			}
-		};
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(keyring, 42, number_options, now);
-		const result = await parse_session(signed, keyring, number_options, now + 1);
-		assert.ok(result);
-		assert.strictEqual(result.identity, 42);
-		assert.strictEqual(typeof result.identity, 'number');
-	});
-});
-
-describe('session round-trip', () => {
-	const IDENTITIES = ['user-1', 'admin-42', 'service-account', 'a'.repeat(100)];
+describe('session cookie round-trip', () => {
+	const TOKENS = ['user-1', 'admin-42', 'service-account', 'a'.repeat(100), 'x'.repeat(5000)];
 	const NOW = 1000000;
 
-	for (const identity of IDENTITIES) {
-		test(`round-trips identity: ${identity.slice(0, 30)}`, async () => {
+	for (const token of TOKENS) {
+		test(`round-trips token: ${token.slice(0, 30)}`, async () => {
 			const keyring = create_test_keyring();
-			const signed = await create_session_cookie_value(
-				keyring,
-				identity,
-				test_session_options,
-				NOW
-			);
-			const result = await parse_session(signed, keyring, test_session_options, NOW);
-			assert.ok(result);
-			assert.strictEqual(result.identity, identity);
+			const signed = await create_session_cookie_value(keyring, token, NOW);
+			assert.strictEqual(valid_cookie(await read(signed, keyring, NOW)).token, token);
 		});
 	}
-
-	test('round-trips identity containing null byte', async () => {
-		const keyring = create_test_keyring();
-		const identity = 'user\x00injected';
-		const signed = await create_session_cookie_value(keyring, identity, test_session_options, NOW);
-		const result = await parse_session(signed, keyring, test_session_options, NOW);
-		assert.ok(result);
-		assert.strictEqual(result.identity, identity);
-	});
-
-	test('round-trips very long identity (>4KB)', async () => {
-		const keyring = create_test_keyring();
-		const identity = 'x'.repeat(5000);
-		const signed = await create_session_cookie_value(keyring, identity, test_session_options, NOW);
-		const result = await parse_session(signed, keyring, test_session_options, NOW);
-		assert.ok(result);
-		assert.strictEqual(result.identity, identity);
-	});
-
-	test('round-trips identity with HTTP-sensitive characters', async () => {
-		const keyring = create_test_keyring();
-		const test_identities = [
-			'user;with;semicolons',
-			'user=with=equals',
-			'user with spaces',
-			'user\twith\ttabs'
-		];
-		for (const identity of test_identities) {
-			const signed = await create_session_cookie_value(
-				keyring,
-				identity,
-				test_session_options,
-				NOW
-			);
-			const result = await parse_session(signed, keyring, test_session_options, NOW);
-			assert.ok(result, `should parse identity: ${JSON.stringify(identity)}`);
-			assert.strictEqual(
-				result.identity,
-				identity,
-				`identity mismatch for ${JSON.stringify(identity)}`
-			);
-		}
-	});
 });

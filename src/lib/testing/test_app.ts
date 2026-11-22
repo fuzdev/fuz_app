@@ -50,6 +50,8 @@ import type { DbInvariantExclusions } from './db_invariant_queries.ts';
  * Configuration for `create_test_app`.
  */
 export interface CreateTestAppOptions extends TestAppServerOptions {
+	/** The session cookie's name the assembled server reads and sets. */
+	session_cookie_name: string;
 	/** Route spec factory — called with the assembled `AppServerContext`. */
 	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
 	/**
@@ -72,7 +74,7 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 	bootstrap?: BootstrapServerOptions;
 	/**
 	 * Optional overrides for `AppServerOptions`. Excludes fields
-	 * `create_test_app` manages directly: `backend`, `session_options`,
+	 * `create_test_app` manages directly: `backend`, `session_cookie_name`,
 	 * `create_route_specs`, `rpc_endpoints`, `bootstrap` (top-level slots
 	 * above).
 	 */
@@ -91,7 +93,7 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 /**
  * `app_options` shape accepted by `create_test_app` and the DB-backed suite
  * helpers. Excludes fields the helpers manage directly — `backend` /
- * `session_options` / `create_route_specs` are constructed by the helper
+ * `session_cookie_name` / `create_route_specs` are constructed by the helper
  * itself; `rpc_endpoints` and `bootstrap` live on top-level options so
  * setup-time surface lookup and runtime dispatch read from one source of
  * truth.
@@ -99,7 +101,7 @@ export interface CreateTestAppOptions extends TestAppServerOptions {
 export type SuiteAppOptions = Partial<
 	Omit<
 		AppServerOptions,
-		'backend' | 'session_options' | 'create_route_specs' | 'rpc_endpoints' | 'bootstrap'
+		'backend' | 'session_cookie_name' | 'create_route_specs' | 'rpc_endpoints' | 'bootstrap'
 	>
 >;
 
@@ -242,7 +244,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	const result = await create_app_server({
 		...test_app_options(),
 		backend: test_server,
-		session_options: options.session_options,
+		session_cookie_name: options.session_cookie_name,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
@@ -254,7 +256,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	});
 	const { app, surface_spec } = result;
 
-	const { cookie_name } = options.session_options;
+	const cookie_name = options.session_cookie_name;
 	const { password = stub_password_deps } = options;
 
 	const create_session_headers = create_session_headers_builder(
@@ -278,7 +280,6 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		const bootstrapped = await create_test_account_with_credentials({
 			db: test_server.deps.db,
 			keyring: test_server.keyring,
-			session_options: options.session_options,
 			password,
 			username: account_options?.username ?? `test_user_${account_counter}`,
 			password_value: account_options?.password_value ?? DEFAULT_TEST_PASSWORD,

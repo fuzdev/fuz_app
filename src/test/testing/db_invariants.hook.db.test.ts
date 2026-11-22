@@ -9,6 +9,7 @@
  * @module
  */
 
+import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { assert, onTestFinished, test } from 'vitest';
 
 import type { Db } from '#lib/db/db.ts';
@@ -17,8 +18,7 @@ import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_
 import { create_test_app } from '#lib/testing/test_app.ts';
 import {
 	create_spine_route_specs,
-	spine_rpc_endpoints,
-	spine_session_options
+	spine_rpc_endpoints
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import type { SetupTest } from '#lib/testing/cross_backend/setup.ts';
 import type { DbInvariantExclusions } from '#lib/testing/db_invariant_queries.ts';
@@ -29,7 +29,7 @@ const create_setup = (
 ): { setup_test: SetupTest; get_db: () => Db } => {
 	let db: Db | null = null;
 	const setup_test = default_in_process_setup({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		// the factory sees the app's database; the fixture exposes none
 		audit_factory: (deps) => {
 			db = deps.db;
@@ -128,7 +128,7 @@ test.fails('a direct create_test_app caller is checked when its test finishes', 
 		direct_flagged_errors = (task.result?.errors ?? []).map((e) => e.message);
 	});
 	const test_app = await create_test_app({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints
 	});
@@ -145,7 +145,7 @@ test('the flagged direct-caller test failed on the hook and nothing else', () =>
 
 test('a direct caller excludes by name and checks on demand', async () => {
 	const test_app = await create_test_app({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints,
 		exclude_db_invariants: {
@@ -160,7 +160,7 @@ test('a direct caller excludes by name and checks on demand', async () => {
 
 test('the bootstrapped keeper holds keeper and admin, so a fresh app passes', async () => {
 	const test_app = await create_test_app({
-		session_options: spine_session_options,
+		session_cookie_name: SESSION_COOKIE_NAME,
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints
 	});
@@ -171,7 +171,7 @@ test('create_test_app refuses an exclusion without a reason', async () => {
 	let error: unknown = null;
 	try {
 		await create_test_app({
-			session_options: spine_session_options,
+			session_cookie_name: SESSION_COOKIE_NAME,
 			create_route_specs: create_spine_route_specs,
 			exclude_db_invariants: { credential_of_tombstoned_account: ' ' }
 		});

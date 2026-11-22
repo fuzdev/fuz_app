@@ -54,7 +54,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
@@ -125,7 +124,7 @@ import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
 /** The role the mounted `self_service_role_set` toggles. */
 const SELF_SERVICE_ROLE = 'helper';
@@ -167,7 +166,7 @@ const make_create_route_specs =
 			...prefix_route_specs(
 				'/api/account',
 				create_account_route_specs(ctx.deps, {
-					session_options,
+					session_cookie_name,
 					login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 					login_account_rate_limiter: ctx.login_account_rate_limiter,
 					login_fail_floor_ms: 0,
@@ -207,7 +206,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -267,7 +266,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -316,7 +315,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -397,7 +396,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// reach the count-zero branch from the public API.
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});
@@ -419,7 +418,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		test('account_token_revoke closes the token socket on success', async () => {
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});
@@ -466,7 +465,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -506,7 +505,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -574,7 +573,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -609,7 +608,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -657,7 +656,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -706,7 +705,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -747,7 +746,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// least one session via the higher-level `create_account` helper).
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});
@@ -773,7 +772,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// Symmetric to the `admin_session_revoke_all` zero-count test above.
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});
@@ -800,7 +799,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -844,7 +843,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// backstop for a logout emitted by code that holds no closer.
 			const registry = new ConnectionRegistry({ log });
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				db: get_db(),
 				// mounting the audit stream registers the guard on the backend's closer
 				app_options: { audit_log_sse: true },
@@ -857,7 +856,7 @@ describe_db('connection_closer wiring', (get_db) => {
 								// an empty fan-out — the handler's close reaches nothing
 								{ ...ctx.deps, connection_closer: create_realtime_closer() },
 								{
-									session_options,
+									session_cookie_name,
 									login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 									login_account_rate_limiter: ctx.login_account_rate_limiter,
 									login_fail_floor_ms: 0
@@ -907,7 +906,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -970,7 +969,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// the gate rejects (it can't reach the close path at all).
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});
@@ -1000,7 +999,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
@@ -1048,14 +1047,14 @@ describe_db('connection_closer wiring', (get_db) => {
 		test('account + admin handlers both fire the closer when wired via the bundle', async () => {
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: (ctx: AppServerContext): Array<RouteSpec> => {
 					ctx.deps.connection_closer.add(closer);
 					return [
 						...prefix_route_specs(
 							'/api/account',
 							create_account_route_specs(ctx.deps, {
-								session_options,
+								session_cookie_name,
 								login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 								login_account_rate_limiter: ctx.login_account_rate_limiter,
 								login_fail_floor_ms: 0
@@ -1215,7 +1214,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			};
 			const registry = new ConnectionRegistry({ log });
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				db: gated.db,
 				// `create_app_server` adds the audit stream registry to the
 				// backend's closer; the registry is added by hand below, the way
@@ -1909,7 +1908,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		test('a self-service disable closes the role-gated socket', async () => {
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				db: get_db(),
 				create_route_specs: make_create_route_specs(closer)
 			});
@@ -2014,7 +2013,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const { closer, calls } = create_recording_closer();
 			const db = get_db();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				db,
 				create_route_specs: (ctx) => {
 					ctx.deps.connection_closer.add(closer);
@@ -2072,7 +2071,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		test('a login under the session cap queues no close', async () => {
 			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db()
 			});

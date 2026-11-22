@@ -20,7 +20,6 @@ import { stream } from 'hono/streaming';
 import { serve, upgradeWebSocket, type ServerType } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 import {
 	raw_http_exchange,
@@ -33,7 +32,7 @@ import { connect_raw_ws, type RawWsClient } from '#lib/testing/transports/ws_raw
 
 import { create_test_keyring } from './session_test_helpers.ts';
 
-const session_options = create_session_config('test_session');
+const session_cookie_name = 'test_session';
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
 const STALE = 'test_session=stale.invalidsignature';
 
@@ -46,7 +45,7 @@ interface TestServer {
 
 const start_server = async (): Promise<TestServer> => {
 	const app = new Hono();
-	app.use('/api/*', create_session_middleware(create_test_keyring(), session_options));
+	app.use('/api/*', create_session_middleware(create_test_keyring(), session_cookie_name));
 	// built by the context
 	app.get('/api/json_401', (c) => c.json({ error: 'authentication_required' }, 401));
 	app.get('/api/text', (c) => c.text('text'));
@@ -274,7 +273,7 @@ describe('the clear of an invalid session cookie, over a Node server', () => {
 		const { port } = upstream_server.address() as AddressInfo;
 
 		const app = new Hono();
-		app.use('/*', create_session_middleware(create_test_keyring(), session_options));
+		app.use('/*', create_session_middleware(create_test_keyring(), session_cookie_name));
 		app.get('/proxied', () => fetch(`http://127.0.0.1:${port}/`));
 
 		const res = await app.request('/proxied', { headers: { Cookie: STALE } });

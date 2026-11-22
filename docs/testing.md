@@ -192,7 +192,7 @@ other standard suites build their per-test fixture through
 ## In-Process Wiring
 
 The standard suites take a unified `{setup_test, surface_source}` shape plus
-the factory inputs (`session_options`, `create_route_specs`,
+the factory inputs (`session_cookie_name`, `create_route_specs`,
 `rpc_endpoints`); the suites that gate cases on a backend flag also take
 `capabilities`. `default_in_process_suite_options` from
 `@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts` emits the entire bag in
@@ -206,7 +206,7 @@ import { default_in_process_suite_options } from '@fuzdev/fuz_app/testing/cross_
 // Suite-extras-free: helper output is the entire options bag.
 describe_standard_integration_tests(
 	default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs
 	})
@@ -215,7 +215,7 @@ describe_standard_integration_tests(
 // With suite-specific extras: spread and add.
 describe_standard_admin_integration_tests({
 	...default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs,
 		extra_keeper_roles: ['teacher'] // beside the default keeper and admin
@@ -224,7 +224,7 @@ describe_standard_admin_integration_tests({
 });
 ```
 
-`session_options` and `create_route_specs` are required; the rest are on
+`session_cookie_name` and `create_route_specs` are required; the rest are on
 `DefaultInProcessSuiteOptions`. The keeper holds `ROLE_KEEPER` and
 `ROLE_ADMIN` (`DEFAULT_TEST_KEEPER_ROLES`, what a production bootstrap
 grants); `extra_keeper_roles` adds to them. `app_options` overrides
@@ -278,7 +278,7 @@ In-process, the same option sits on `create_test_app` and the setups over it:
 
 ```ts
 const test_app = await create_test_app({
-	session_options,
+	session_cookie_name,
 	create_route_specs,
 	exclude_db_invariants: {
 		actor_tombstone_disagrees_with_account: 'one actor is soft-deleted by hand'
@@ -305,7 +305,7 @@ import { create_my_route_specs } from '#lib/server/my_route_specs.ts';
 
 export const create_my_app_surface_spec = (): AppSurfaceSpec =>
 	create_test_app_surface_spec({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: (ctx) => create_my_route_specs(ctx),
 		env_schema: my_env_schema,
 		// Mirror your production `create_app_server` call — omit `bootstrap`
@@ -391,7 +391,7 @@ import { build_rpc_endpoint_specs } from '#lib/server/my_rpc_endpoints.ts';
 
 describe_standard_integration_tests(
 	default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs // factory form — see note below
 	})
@@ -399,7 +399,7 @@ describe_standard_integration_tests(
 
 describe_standard_admin_integration_tests({
 	...default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		// the keeper holds ROLE_KEEPER and ROLE_ADMIN by default, so the
 		// admin-gated RPC methods (admin_account_list, etc.) accept it
@@ -442,7 +442,7 @@ import { db_factories } from '../db_fixture.ts';
 
 describe_rate_limiting_tests({
 	...default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs // optional — both groups drive REST auth routes
 	}),
@@ -483,7 +483,7 @@ describe('app-specific integration', () => {
 
 	beforeAll(async () => {
 		test_app = await create_test_app({
-			session_options: my_session_config,
+			session_cookie_name: my_session_cookie_name,
 			create_route_specs: create_my_route_specs
 		});
 	});
@@ -564,7 +564,7 @@ import { describe_data_exposure_tests } from '@fuzdev/fuz_app/testing/data_expos
 
 describe_data_exposure_tests({
 	...default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs
 	}),
@@ -618,7 +618,7 @@ import { describe_round_trip_validation } from '@fuzdev/fuz_app/testing/round_tr
 
 describe_round_trip_validation({
 	...default_in_process_suite_options({
-		session_options: my_session_config,
+		session_cookie_name: my_session_cookie_name,
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs
 	}),
@@ -653,7 +653,7 @@ const registry = new SseRegistry<SseNotification>();
 const guard = create_revocation_guard(create_sse_connection_closer(registry, 'admin'), log);
 
 describe_sse_route_tests({
-	session_options: my_session_config,
+	session_cookie_name: my_session_cookie_name,
 	create_route_specs: (ctx) =>
 		create_my_route_specs(ctx, {subscribers: registry /* or an adapter */}),
 	rpc_endpoints: (ctx) => build_rpc_endpoint_specs(ctx), // required — close-on-revoke dispatches `account_session_revoke_all` via RPC
@@ -965,7 +965,7 @@ const handle = inject_backend_handle();
 
 describe_spine_cross_suites(handle, {
 	surface_source: create_my_app_surface_spec(),
-	session_options: my_session_options,
+	session_cookie_name: my_session_cookie_name,
 	rpc_endpoints: my_rpc_endpoints,
 	roles: my_roles,
 	exclude: {
@@ -988,7 +988,7 @@ import {
 } from '@fuzdev/fuz_app/testing/cross_backend/rust_spine_consumer_surface.ts';
 
 const surface_options = {
-	session_options: my_session_options,
+	session_cookie_name: my_session_cookie_name,
 	domain_action_specs: all_my_action_specs, // protocol and notification specs are skipped
 	roles: my_roles,
 	exclude_methods: ['my_refined_input_method'] // ones the generic round-trip can't drive
@@ -1110,8 +1110,8 @@ through the production surface, its roles through the role-grant-offer
 consent flow, so a role an admin can't grant is refused there — use
 `extra_accounts` for it.
 
-The reset action factory is `create_testing_actions(deps, {session_options,
-daemon_token_state, reset_state})`: the consumer's test binary registers it
+The reset action factory is `create_testing_actions(deps, {daemon_token_state,
+reset_state})`: the consumer's test binary registers it
 with a `reset_state` closure that clears its own domain state. The closure
 runs before the auth wipe, so a domain table with a restricting FK to `actor`
 or `account` empties first; it can't see the fresh keeper.
@@ -1273,7 +1273,7 @@ describe_differential_conformance_tests({
   ],
   surface_source,
   rpc_endpoints,
-  session_options,
+  session_cookie_name,
   known_divergences: my_ledger,
 });
 ```

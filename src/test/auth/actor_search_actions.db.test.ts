@@ -13,7 +13,6 @@
 import { test, assert } from 'vitest';
 import { Uuid, create_uuid } from '#lib/primitive_schemas.ts';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { create_actor_search_actions } from '#lib/auth/actor_search_actions.ts';
@@ -32,7 +31,7 @@ import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_actor_search');
+const session_cookie_name = 'test_actor_search';
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
@@ -53,7 +52,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('non-admin caller with scope_ids gets actors in those scopes', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const caller = await test_app.create_account({ username: 'teacher' });
 		const scope = create_uuid();
 		// Caller's authority to pass this scope_id is the consumer's responsibility —
@@ -87,7 +86,11 @@ describe_db('actor_search_actions', (get_db) => {
 	});
 
 	test('non-admin caller with empty scope_ids is rejected with actor_search_scope_required', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const caller = await test_app.create_account({ username: 'student' });
 
 		const res = await rpc_call_for_spec({
@@ -104,7 +107,11 @@ describe_db('actor_search_actions', (get_db) => {
 	});
 
 	test('non-admin caller with scope_ids: [] is rejected — empty array is equivalent to omitted', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const caller = await test_app.create_account({ username: 'student2' });
 
 		const res = await rpc_call_for_spec({
@@ -122,7 +129,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('admin caller may omit scope_ids for unbounded global search', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const admin = await test_app.create_account({ username: 'admin_user', roles: [ROLE_ADMIN] });
 		const alpha = await test_app.create_account({ username: 'alpha_target' });
 		await db.query(`UPDATE actor SET name = $1 WHERE id = $2`, ['Alpha Target', alpha.actor.id]);
@@ -141,7 +148,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('admin status is account-grain — admin role on any actor on the account unlocks the global arm', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		// Create the admin with no role first, then grant admin on a separate actor on the same account.
 		const admin = await test_app.create_account({ username: 'admin_alt' });
 		// Create a second actor on this account.
@@ -176,7 +183,7 @@ describe_db('actor_search_actions', (get_db) => {
 		// resolves and the only thing that can refuse the call is the admin gate.
 		const db = get_db();
 		const test_app = await create_test_app({
-			session_options,
+			session_cookie_name,
 			create_route_specs,
 			db,
 			exclude_db_invariants: {
@@ -211,7 +218,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('display_name is omitted (not null) when actor.name trims to empty', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const admin = await test_app.create_account({ username: 'admin2', roles: [ROLE_ADMIN] });
 		const target = await test_app.create_account({ username: 'target' });
 		// Whitespace-only name — handler's .trim() collapses to falsy. Use two spaces
@@ -236,7 +243,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('search row exposes only id/username/display_name — no control-plane fields', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const admin = await test_app.create_account({ username: 'admin_fields', roles: [ROLE_ADMIN] });
 		const target = await test_app.create_account({ username: 'searchtarget' });
 		// Populate the control-plane fields on the underlying rows so the test
@@ -285,7 +292,11 @@ describe_db('actor_search_actions', (get_db) => {
 	});
 
 	test('rejects query: "" at the schema (min(1))', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const caller = await test_app.create_account({ username: 'caller2', roles: [ROLE_ADMIN] });
 
 		const res = await rpc_call_for_spec({
@@ -301,7 +312,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('omitted limit falls back to ACTOR_SEARCH_LIMIT_DEFAULT', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const admin = await test_app.create_account({ username: 'lim_admin', roles: [ROLE_ADMIN] });
 		// Create > ACTOR_SEARCH_LIMIT_DEFAULT actors matching a unique prefix so the
 		// admin caller's own username doesn't pollute the result count.
@@ -325,7 +336,7 @@ describe_db('actor_search_actions', (get_db) => {
 
 	test('caller appears in own search results when they hold a grant on the scope', async () => {
 		const db = get_db();
-		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const test_app = await create_test_app({ session_cookie_name, create_route_specs, db });
 		const teacher = await test_app.create_account({ username: 'self_teacher' });
 		await db.query(`UPDATE actor SET name = $1 WHERE id = $2`, ['Self Teacher', teacher.actor.id]);
 		const scope = create_uuid();
@@ -353,7 +364,11 @@ describe_db('actor_search_actions', (get_db) => {
 	});
 
 	test('rejects limit past ACTOR_SEARCH_LIMIT_MAX', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const caller = await test_app.create_account({ username: 'caller3', roles: [ROLE_ADMIN] });
 
 		const res = await rpc_call_for_spec({
@@ -368,7 +383,11 @@ describe_db('actor_search_actions', (get_db) => {
 	});
 
 	test('empty result on no-match — no error', async () => {
-		const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+		const test_app = await create_test_app({
+			session_cookie_name,
+			create_route_specs,
+			db: get_db()
+		});
 		const caller = await test_app.create_account({ username: 'caller4', roles: [ROLE_ADMIN] });
 
 		const res = await rpc_call_for_spec({

@@ -1,28 +1,37 @@
 /**
- * Generic session management for cookie-based auth.
+ * The signed session cookie: its name, value format, verification, and the
+ * exact `Set-Cookie` strings that set and clear it — byte for byte the Rust
+ * spine's `fuz_auth::session_cookie`.
  *
- * Parameterized on identity type via `SessionOptions<TIdentity>`.
- * Handles signing, expiration, and key rotation. Apps provide
- * encode/decode for their specific identity format.
- *
- * Cookie value format: `${encode(identity)}:${expires_at}` (signed with HMAC-SHA256).
+ * Cookie value: `keyring.sign("${session_token}:${expires_at}")`. The signed
+ * payload carries the raw session token (whose blake3 hash is the
+ * `auth_session` row id) and its expiry, so one HMAC covers both the token
+ * bind and the freshness check.
  *
  * @module
  */
 
 import type { Keyring } from './keyring.ts';
+import { read_session_cookie_value } from './credential_headers.ts';
+
+/**
+ * The default session cookie name — the Rust spine's `SESSION_COOKIE_NAME`,
+ * so a cookie either spine mints reads on both. An app with its own name
+ * passes it as `session_cookie_name` wherever the spine takes one.
+ */
+export const SESSION_COOKIE_NAME = 'fuz_session';
 
 /**
  * Cookie max age in seconds (30 days — aligned with AUTH_SESSION_LIFETIME_MS).
  *
  * This is an **absolute** session lifetime: the cookie is signed once at
- * mint (`expires_at = mint + max_age`) and never re-signed, matching the DB
+ * mint (`expires_at = mint + SESSION_AGE_MAX`) and never re-signed, matching the DB
  * row's fixed `expires_at`. There is deliberately no sliding renewal on
  * either leg — see `docs/security.md` §Session Security.
  */
 export const SESSION_AGE_MAX = 60 * 60 * 24 * 30;
 
-/** Separator between identity payload and expires_at in signed value. */
+/** Separator between the session token and `expires_at` in the signed value. */
 const VALUE_SEPARATOR = ':';
 
 /** Strict integer matcher for the embedded `expires_at` field. */
@@ -70,9 +79,8 @@ export const is_cookie_name = (name: string): boolean =>
  * what a reader that decodes nothing needs. Twin of the Rust spine's
  * `is_cookie_value`.
  *
- * Anything but a string is refused, whatever its type says: the value comes
- * out of a consumer's `encode_identity` and keyring, and a regex alone would
- * read `undefined` as the text `undefined`.
+ * Anything but a string is refused, whatever its type says: a regex alone
+ * would read `undefined` as the text `undefined`.
  *
  * @param value - a cookie value
  */
@@ -104,7 +112,7 @@ const assert_cookie_name = (cookie_name: string): void => {
  * @param value - the signed cookie value (`create_session_cookie_value`)
  * @param max_age - the cookie's lifetime in seconds
  * @returns the `Set-Cookie` header value
- * @throws Error when the name is not an RFC 6265 `cookie-name`, the value holds anything but `cookie-octet`s (an `encode_identity` that emits a space, a `;`, or a non-ASCII character), or `max_age` is not a non-negative safe integer — a header that would read back differently is never written
+ * @throws Error when the name is not an RFC 6265 `cookie-name`, the value holds anything but `cookie-octet`s (a space, a `;`, a non-ASCII character), or `max_age` is not a non-negative safe integer — a header that would read back differently is never written
  */
 export const format_session_set_cookie = (
 	cookie_name: string,
@@ -116,7 +124,7 @@ export const format_session_set_cookie = (
 		// the value is a credential: say what is wrong with it, never what it is
 		throw new Error(
 			`session cookie '${cookie_name}': the signed value holds a character outside RFC 6265's ` +
-				'cookie-octets — `encode_identity` must emit only visible ASCII without `"`, `,`, `;` or `\\`'
+				'cookie-octets — only visible ASCII without `"`, `,`, `;` or `\\` can be written'
 		);
 	}
 	if (!Number.isSafeInteger(max_age) || max_age < 0) {
@@ -142,144 +150,95 @@ export const format_session_clear_cookie = (cookie_name: string): string => {
 };
 
 /**
- * Configuration for a session cookie format.
+ * Sign a session token into a session cookie value: the keyring's signature
+ * of `${session_token}:${expires_at}`, the expiry `SESSION_AGE_MAX` from now —
+ * what a `Cookie` header carries after `<name>=`. Signed once, at mint: the
+ * lifetime is absolute, never renewed (`docs/security.md` §Session Security).
+ * Twin of the Rust `create_session_cookie_value`.
  *
- * Apps provide encode/decode to control the identity portion
- * of the cookie payload.
- *
- * The `TIdentity` type parameter determines the trust model:
- * - `string` (e.g. a session_id) — the cookie references a server-side session record,
- *   enabling per-session revocation and metadata. Use when you need admin controls
- *   like "revoke all sessions" or per-session audit trails.
- * - `number` (e.g. an account_id) — the cookie directly encodes the user identity,
- *   requiring no server-side session state. Simpler, but individual sessions
- *   can only be invalidated by rotating the signing key (which invalidates all sessions).
- *
- * The cookie helpers here take either. The spine's session middleware and
- * auth chain take `SessionOptions<string>` — the identity is the session token
- * the session leg hashes to find its `auth_session` row (`create_session_config`).
- *
- * @example
- * ```ts
- * // zap: 3-part format (admin:session_id)
- * const zap_config: SessionOptions<string> = {
- *   cookie_name: 'zap_session',
- *   encode_identity: (session_id) => `admin:${session_id}`,
- *   decode_identity: (payload) => {
- *     const parts = payload.split(':');
- *     if (parts.length !== 2 || parts[0] !== 'admin') return null;
- *     return parts[1] || null;
- *   },
- * };
- *
- * // visiones: 1-part format (account_id)
- * const visiones_config: SessionOptions<number> = {
- *   cookie_name: 'session_id',
- *   encode_identity: (id) => String(id),
- *   decode_identity: (payload) => {
- *     const n = parseInt(payload, 10);
- *     return Number.isFinite(n) && n > 0 ? n : null;
- *   },
- * };
- * ```
+ * @param keyring - key ring for signing
+ * @param session_token - the raw session token
+ * @param now_seconds - current time in seconds (for testing)
+ * @returns the signed cookie value
  */
-export interface SessionOptions<TIdentity> {
-	cookie_name: string;
-	/**
-	 * Cookie lifetime in seconds. Single source of truth for both the embedded
-	 * `expires_at` (via `create_session_cookie_value`) and the cookie's HTTP
-	 * `Max-Age` attribute (via `session_cookie_header`). Defaults to
-	 * `SESSION_AGE_MAX` (30 days). Every other attribute is fixed
-	 * (`SESSION_COOKIE_ATTRIBUTES`).
-	 */
-	max_age?: number;
-	/**
-	 * Encode identity into the cookie payload (before the `:expires_at` suffix).
-	 * The payload goes into the cookie as written, so it must hold only RFC
-	 * 6265 `cookie-octet`s (`is_cookie_value`) — `session_cookie_header` throws
-	 * on anything else.
-	 */
-	encode_identity: (identity: TIdentity) => string;
-	/** Decode identity from cookie payload. Return null if invalid. */
-	decode_identity: (payload: string) => TIdentity | null;
-}
+export const create_session_cookie_value = async (
+	keyring: Keyring,
+	session_token: string,
+	now_seconds?: number
+): Promise<string> => {
+	const now = now_seconds ?? Math.floor(Date.now() / 1000);
+	return keyring.sign(`${session_token}${VALUE_SEPARATOR}${now + SESSION_AGE_MAX}`);
+};
 
 /**
- * The `Set-Cookie` value that sets the session cookie to `value`, a signed
- * cookie value (`create_session_cookie_value`, or the `cookie_value` of
- * `create_capped_session`) — what a success carries
- * (`route_ok(value, {set_cookie: [...]})`). `options.max_age` sets `Max-Age`,
- * as it set the value's embedded expiry; `SESSION_AGE_MAX` when unset. Twin of
- * the Rust `session_cookie_header`, which signs the token itself.
+ * Sign a session token and build the `Set-Cookie` header value that sets it
+ * under `cookie_name` — `format_session_set_cookie` over
+ * `create_session_cookie_value`, with `SESSION_AGE_MAX` as its lifetime. What
+ * a success that mints a session carries (`route_ok(value, {set_cookie})`).
+ * Twin of the Rust `sign_session_cookie`.
  *
- * @param value - the signed cookie value
- * @param options - the cookie name and lifetime
- * @returns the `Set-Cookie` header value (`format_session_set_cookie`)
- * @throws Error when the cookie name or the value is outside the RFC 6265 grammar
+ * @param keyring - key ring for signing
+ * @param session_token - the raw session token (`create_capped_session`'s `token`)
+ * @param cookie_name - the session cookie's name
+ * @returns the `Set-Cookie` header value
+ * @throws Error when the cookie name, or the signed value, is outside the RFC 6265 grammar
  */
-export const session_cookie_header = <T>(value: string, options: SessionOptions<T>): string =>
-	format_session_set_cookie(options.cookie_name, value, options.max_age ?? SESSION_AGE_MAX);
+export const sign_session_cookie = async (
+	keyring: Keyring,
+	session_token: string,
+	cookie_name: string
+): Promise<string> =>
+	format_session_set_cookie(
+		cookie_name,
+		await create_session_cookie_value(keyring, session_token),
+		SESSION_AGE_MAX
+	);
 
 /**
- * The `Set-Cookie` value that clears the session cookie — what a logout or a
- * password change carries on its success. Twin of the Rust
- * `clear_session_cookie_header`.
- *
- * @param options - the cookie name
- * @returns the `Set-Cookie` header value (`format_session_clear_cookie`)
- * @throws Error when the cookie name is outside the RFC 6265 grammar
+ * A verified, unexpired session cookie: the raw session token it carries and
+ * the expiry signed beside it. Twin of the Rust `SessionCookie`.
  */
-export const clear_session_cookie_header = <T>(options: SessionOptions<T>): string =>
-	format_session_clear_cookie(options.cookie_name);
-
-/**
- * Result of parsing a signed session cookie.
- */
-export interface ParsedSession<TIdentity> {
-	/** The decoded identity. */
-	identity: TIdentity;
-	/** Index of the key that verified the signature (0 = primary). */
-	key_index: number;
+export interface SessionCookie {
+	/** The raw session token — its blake3 hash is the `auth_session` row id. */
+	token: string;
 	/** The signed expiry, in seconds since the Unix epoch — later than the parse. */
 	expires_at: number;
 }
 
 /**
- * Parse a signed session cookie value.
+ * How a request's `Cookie` lines read for the session cookie — what the
+ * cookie alone shows, before any database work. Twin of the Rust
+ * `SessionCookieRead`.
  *
- * The signed value format is `${encode(identity)}:${expires_at}`.
- * Tries all keys in order to support key rotation.
- *
- * An empty string is a cookie that was sent with no value (`name=`): present
- * and invalid, like any other value that fails verification. Only a nullish
- * `signed_value` is "no cookie".
- *
- * @param signed_value - the raw cookie value (signed), nullish when the request carries no session cookie
- * @param keyring - key ring for verification
- * @param options - session configuration with decode logic
- * @param now_seconds - current time in seconds (for testing)
- * @returns `ParsedSession` if valid, null if invalid/expired (the empty string included), undefined if missing
+ * - `absent` — no pair names the cookie
+ * - `invalid` — a pair names it and its value fails verification: unreadable,
+ *   a bad MAC, a signed expiry that has passed, an empty token, an empty
+ *   value. What the session middleware clears.
+ * - `valid` — it verifies under the keyring and its signed expiry is ahead.
+ *   Says nothing about the `auth_session` row.
  */
-export const parse_session = async <TIdentity>(
-	signed_value: string | null | undefined,
-	keyring: Keyring,
-	options: SessionOptions<TIdentity>,
-	now_seconds?: number
-): Promise<ParsedSession<TIdentity> | null | undefined> => {
-	if (signed_value == null) return undefined;
+export type SessionCookieRead =
+	{ kind: 'absent' } | { kind: 'invalid' } | { kind: 'valid'; cookie: SessionCookie };
 
+/**
+ * Verify one signed cookie value: the MAC under any of the keyring's keys (a
+ * retired key keeps verifying until it leaves the keyring — safe to drop after
+ * `SESSION_AGE_MAX`, `docs/security.md` §Cookie Key Rotation), the
+ * `expires_at` grammar and freshness, and a non-empty token.
+ */
+const verify_session_cookie_value = async (
+	signed_value: string,
+	keyring: Keyring,
+	now_seconds: number
+): Promise<SessionCookie | null> => {
 	const result = await keyring.verify(signed_value);
 	if (!result) return null;
 
-	// Split on the last VALUE_SEPARATOR to get identity_payload and expires_at
+	// split on the last separator: the token, then the signed expiry
 	const last_sep = result.value.lastIndexOf(VALUE_SEPARATOR);
 	if (last_sep === -1) return null;
-
-	const identity_payload = result.value.slice(0, last_sep);
+	const token = result.value.slice(0, last_sep);
 	const expires_at_str = result.value.slice(last_sep + 1);
-
-	const identity = options.decode_identity(identity_payload);
-	if (identity === null) return null;
 
 	// Strict integer match — `parseInt` would accept `'123abc'` as `123` and
 	// `' 123'` as `123`. HMAC integrity makes such a tampered value
@@ -288,120 +247,47 @@ export const parse_session = async <TIdentity>(
 	// refuse what the Rust spine's `u64` parse refuses, leading zeros allowed
 	if (BigInt(expires_at_str) > EXPIRES_AT_MAX) return null;
 	const expires_at = parseInt(expires_at_str, 10);
+	if (expires_at <= now_seconds) return null;
 
-	// Check expiration
-	const now = now_seconds ?? Math.floor(Date.now() / 1000);
-	if (expires_at <= now) return null;
+	if (token === '') return null;
 
-	return {
-		identity,
-		key_index: result.key_index,
-		expires_at
-	};
+	return { token, expires_at };
 };
 
 /**
- * Create a signed session cookie value.
+ * Read the session cookie out of a request's `Cookie` lines: the
+ * `cookie_name` pair (`read_session_cookie_value` — the first, verbatim),
+ * verified under the keyring, its signed expiry checked, its session token
+ * answered with that expiry.
  *
- * Format: `${encode(identity)}:${expires_at}` signed with HMAC-SHA256.
- * Embeds expiration in the signed value itself for defense-in-depth.
+ * The three answers are what the cookie alone shows (`SessionCookieRead`). An
+ * empty value (`name=`) is a cookie sent with none: present and invalid. A
+ * valid cookie whose `auth_session` row is gone is still valid here; nothing
+ * clears it. There is deliberately no refresh: a re-sign would compute a
+ * fresh expiry past the row's fixed `expires_at`, so the lifetime is the one
+ * signing at mint, on both spines.
  *
- * @param keyring - key ring for signing
- * @param identity - the identity to encode
- * @param options - session configuration with encode logic
+ * Twin of the Rust `parse_session_from_cookies`, which takes the request's
+ * headers.
+ *
+ * @param cookie_lines - the request's `Cookie` header lines
+ * @param keyring - key ring for verification
+ * @param cookie_name - the session cookie's name
  * @param now_seconds - current time in seconds (for testing)
- * @returns signed cookie value string
+ * @returns the cookie's reading
  */
-export const create_session_cookie_value = async <TIdentity>(
+export const parse_session_from_cookies = async (
+	cookie_lines: ReadonlyArray<string>,
 	keyring: Keyring,
-	identity: TIdentity,
-	options: SessionOptions<TIdentity>,
+	cookie_name: string,
 	now_seconds?: number
-): Promise<string> => {
-	const max_age = options.max_age ?? SESSION_AGE_MAX;
-	const now = now_seconds ?? Math.floor(Date.now() / 1000);
-	const expires_at = now + max_age;
-	const value = `${options.encode_identity(identity)}${VALUE_SEPARATOR}${expires_at}`;
-	return keyring.sign(value);
-};
-
-/**
- * Result of processing a session cookie.
- */
-export interface ProcessSessionResult<TIdentity> {
-	/** Whether the session is valid. */
-	valid: boolean;
-	/** Action the adapter should take. */
-	action: 'none' | 'clear';
-	/** The decoded identity if the cookie was valid. */
-	identity?: TIdentity;
-	/** The cookie's signed expiry, epoch seconds, if the cookie was valid. */
-	expires_at?: number;
-}
-
-/**
- * Create a session config for raw session token identity.
- *
- * The standard pattern: cookie stores the raw session token,
- * server hashes it (blake3) to look up the `auth_session` row.
- * Only the `cookie_name` varies per app.
- *
- * @param cookie_name - cookie name (e.g. `'zap_session'`, `'visiones_session'`)
- * @returns a `SessionOptions<string>` ready for use with session middleware
- */
-export const create_session_config = (cookie_name: string): SessionOptions<string> => ({
-	cookie_name,
-	encode_identity: (session_id) => session_id,
-	decode_identity: (payload) => payload || null
-});
-
-/** Canonical session config for fuz_app auth. */
-export const fuz_session_config: SessionOptions<string> = create_session_config('fuz_session');
-
-/**
- * Process a session cookie and determine what action to take.
- *
- * There is deliberately no refresh action: any re-sign computes a fresh
- * `now + max_age` expiry, extending the cookie past the DB row's fixed
- * `expires_at` — the holder would go silently anonymous while carrying a
- * self-perpetuating cookie. The absolute lifetime is one signing at mint,
- * on both legs, matching the Rust spine. A cookie signed by a retired
- * (non-primary) key keeps verifying until the key leaves the keyring;
- * retired keys are safe to drop after `SESSION_AGE_MAX` (see
- * `docs/security.md` §Cookie Key Rotation).
- *
- * The three outcomes are what the cookie alone shows: no cookie (`action:
- * 'none'`), a cookie that fails verification — unreadable, a bad MAC, a signed
- * expiry that has passed, an empty identity, an empty value — (`action:
- * 'clear'`), and a valid one. A valid cookie whose `auth_session` row is gone
- * is still valid here; nothing clears it.
- *
- * @param signed_value - the raw cookie value, nullish when the request carries no session cookie
- * @param keyring - key ring for verification and signing
- * @param options - session configuration
- * @param now_seconds - current time in seconds (for testing)
- * @returns result with validity and action to take
- */
-
-export const process_session_cookie = async <TIdentity>(
-	signed_value: string | null | undefined,
-	keyring: Keyring,
-	options: SessionOptions<TIdentity>,
-	now_seconds?: number
-): Promise<ProcessSessionResult<TIdentity>> => {
-	const now = now_seconds ?? Math.floor(Date.now() / 1000);
-
-	const parsed = await parse_session(signed_value, keyring, options, now);
-
-	if (parsed === undefined) {
-		// No cookie present
-		return { valid: false, action: 'none' };
-	}
-
-	if (parsed === null) {
-		// Invalid cookie - should be cleared
-		return { valid: false, action: 'clear' };
-	}
-
-	return { valid: true, action: 'none', identity: parsed.identity, expires_at: parsed.expires_at };
+): Promise<SessionCookieRead> => {
+	const signed_value = read_session_cookie_value(cookie_lines, cookie_name);
+	if (signed_value === null) return { kind: 'absent' };
+	const cookie = await verify_session_cookie_value(
+		signed_value,
+		keyring,
+		now_seconds ?? Math.floor(Date.now() / 1000)
+	);
+	return cookie ? { kind: 'valid', cookie } : { kind: 'invalid' };
 };

@@ -11,7 +11,6 @@
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { create_admin_actions } from '#lib/auth/admin_actions.ts';
@@ -43,21 +42,21 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 
-const session_options = create_session_config('test_session');
-const { cookie_name } = session_options;
+const session_cookie_name = 'test_session';
+const cookie_name = session_cookie_name;
 
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
 		}),
 		...create_signup_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			// disable the denial-time floor so the failure-shape tests don't
@@ -113,7 +112,7 @@ describe_db('invite + signup integration', (get_db) => {
 	describe('admin invite RPC actions', () => {
 		test('admin can create an invite with email', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -134,7 +133,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('admin can create an invite with username', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -151,7 +150,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite with neither email nor username errors with invalid_params', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -167,7 +166,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating duplicate unclaimed invite returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -190,7 +189,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('non-admin gets forbidden on invite RPC', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -208,7 +207,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('admin can list invites', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -239,7 +238,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('admin can delete an unclaimed invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -275,7 +274,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite for existing username returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -292,7 +291,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite for existing email returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -312,7 +311,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite for existing username (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -329,7 +328,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite for existing email (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -348,7 +347,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite rejects invalid username format', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -364,7 +363,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite rejects invalid email format', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -380,7 +379,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating invite with both fields rejects when username has existing account', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -397,7 +396,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('creating duplicate unclaimed invite (case variant) returns conflict', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -420,7 +419,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('delete returns not_found for nonexistent invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -438,7 +437,7 @@ describe_db('invite + signup integration', (get_db) => {
 	describe('signup', () => {
 		test('signup succeeds with matching invite by username', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -468,7 +467,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup succeeds with matching invite by email', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -490,7 +489,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup fails with 403 when no invite matches', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -507,7 +506,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup fails with 409 when username already exists', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -532,7 +531,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup fails with 409 when email already exists', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -564,7 +563,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('username and email conflicts produce the same error code', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -614,7 +613,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('after signup the invite shows as claimed in admin list', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -648,7 +647,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('after signup the new account can verify its session', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -687,7 +686,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup with email-only invite fails when only username matches', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -713,7 +712,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup with both-field invite requires both to match', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -755,7 +754,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup with case-variant email matches email-only invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -779,7 +778,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup with case-variant username matches username-only invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -803,7 +802,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup rejects invalid username format', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -818,7 +817,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup rejects too-short password', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -833,7 +832,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup rejects username exceeding max length', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -848,7 +847,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('duplicate username signup gets 409 even with unclaimed invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -887,7 +886,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('delete returns not_found for claimed invite', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -921,7 +920,7 @@ describe_db('invite + signup integration', (get_db) => {
 	describe('open signup', () => {
 		test('signup succeeds without invite when open_signup is enabled', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -952,7 +951,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup fails without invite when open_signup is disabled', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -970,7 +969,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('open signup rejects duplicate username', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1000,7 +999,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('open signup respects toggle state change', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1036,7 +1035,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('open signup audit log records open_signup metadata', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1091,7 +1090,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup failure with no matching invite emits outcome=failure audit row', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1126,7 +1125,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup_conflict (invite-gated) emits outcome=failure audit row with invite_id', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1169,7 +1168,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('open-signup conflict emits outcome=failure with open_signup=true', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1219,7 +1218,7 @@ describe_db('invite + signup integration', (get_db) => {
 		const create_route_specs_floored = (ctx: AppServerContext): Array<RouteSpec> => [
 			...prefix_route_specs('/api/account', [
 				...create_signup_route_specs(ctx.deps, {
-					session_options,
+					session_cookie_name,
 					signup_ip_rate_limiter: null,
 					signup_account_rate_limiter: null,
 					signup_fail_floor_ms: FLOOR_MS,
@@ -1238,7 +1237,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('no_match (403) takes at least the floor', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_specs_floored,
 				db: get_db()
 			});
@@ -1261,7 +1260,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('signup_conflict (409) takes at least the floor', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs: create_route_specs_floored,
 				db: get_db()
 			});
@@ -1302,7 +1301,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('a tx rejection emits outcome=failure reason=internal_error before rethrow', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -1358,7 +1357,7 @@ describe_db('invite + signup integration', (get_db) => {
 
 		test('an invite claim that misses rolls the signup back as internal_error', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});

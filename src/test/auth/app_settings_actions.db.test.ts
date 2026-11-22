@@ -25,13 +25,13 @@ import { describe_db } from '../auth_db_default.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs_with,
-	session_options
+	session_cookie_name
 } from './admin_rpc_test_helpers.ts';
 
 const create_route_specs = create_admin_route_specs_with((ctx) => [
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
-			session_options,
+			session_cookie_name,
 			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
@@ -43,7 +43,7 @@ describe_db('app settings RPC actions', (get_db) => {
 	describe('app_settings_get', () => {
 		test('admin can read settings', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -60,7 +60,7 @@ describe_db('app settings RPC actions', (get_db) => {
 
 		test('non-admin gets forbidden', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -78,7 +78,7 @@ describe_db('app settings RPC actions', (get_db) => {
 
 		test('unauthenticated gets unauthenticated error', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -97,7 +97,7 @@ describe_db('app settings RPC actions', (get_db) => {
 	describe('app_settings_update', () => {
 		test('admin can toggle open_signup on', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -116,7 +116,7 @@ describe_db('app settings RPC actions', (get_db) => {
 
 		test('toggle roundtrip: on then off', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -150,7 +150,7 @@ describe_db('app settings RPC actions', (get_db) => {
 
 		test('non-admin gets forbidden on update', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
@@ -168,7 +168,7 @@ describe_db('app settings RPC actions', (get_db) => {
 
 		test('update creates audit log entry', async () => {
 			const test_app = await create_test_app({
-				session_options,
+				session_cookie_name,
 				create_route_specs,
 				db: get_db()
 			});
