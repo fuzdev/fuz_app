@@ -66,11 +66,8 @@ test('cell_audit_factory counts in-flight writes, so the drain waits on them', a
 	assert.ok(drained);
 });
 
-test('the TS spine binary answers the drain with tracked: true', async () => {
+test('the TS spine binary answers the drain with {ok: true}', async () => {
 	const audit = cell_audit_factory({ db: { query: async () => [] } as unknown as Db, log });
 	const drain = create_testing_drain_effects_action(audit);
-	assert.deepStrictEqual(await drain.handler(undefined, null as never), {
-		ok: true,
-		tracked: true
-	});
+	assert.deepStrictEqual(await drain.handler(undefined, null as never), { ok: true });
 });

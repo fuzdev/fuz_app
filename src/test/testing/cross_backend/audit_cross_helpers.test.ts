@@ -1,7 +1,6 @@
 /**
- * `cross_drain_effects` holds the drain to `tracked: true`, so a backend whose
- * audit emitter was built without in-flight tracking fails its first audit
- * read instead of racing it.
+ * `cross_drain_effects` holds the drain to exactly `{ok: true}`, so a backend
+ * answering anything else fails its first audit read instead of racing it.
  *
  * @module
  */
@@ -34,27 +33,26 @@ const create_fixture = (result: unknown): { fixture: AuditReadFixture; methods: 
 };
 
 describe('cross_drain_effects', () => {
-	test('accepts a tracked drain', async () => {
-		const { fixture, methods } = create_fixture({ ok: true, tracked: true });
+	test('accepts the {ok: true} drain', async () => {
+		const { fixture, methods } = create_fixture({ ok: true });
 		await cross_drain_effects(fixture);
 		assert.deepStrictEqual(methods, ['_testing_drain_effects']);
 	});
 
-	test('refuses tracked: false', async () => {
-		const { fixture } = create_fixture({ ok: true, tracked: false });
+	test('refuses ok: false', async () => {
+		const { fixture } = create_fixture({ ok: false });
 		const error = await assert_rejects(() => cross_drain_effects(fixture));
-		assert.include(error.message, 'tracked: true');
-		assert.include(error.message, '"tracked":false');
+		assert.include(error.message, '{ok: true}');
+		assert.include(error.message, '"ok":false');
 	});
 
-	test('refuses an answer without tracked', async () => {
-		const { fixture } = create_fixture({ ok: true });
-		const error = await assert_rejects(() => cross_drain_effects(fixture));
-		assert.include(error.message, 'tracked: true');
+	test('refuses an unknown key, the retired tracked included', async () => {
+		const { fixture } = create_fixture({ ok: true, tracked: true });
+		await assert_rejects(() => cross_drain_effects(fixture));
 	});
 
-	test('refuses a truthy tracked that is not true', async () => {
-		const { fixture } = create_fixture({ ok: true, tracked: 'true' });
+	test('refuses a truthy ok that is not true', async () => {
+		const { fixture } = create_fixture({ ok: 'true' });
 		await assert_rejects(() => cross_drain_effects(fixture));
 	});
 });

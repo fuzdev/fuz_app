@@ -44,11 +44,11 @@ export interface AuditReadFixture {
  * test binary does; in-process suites mount
  * `create_testing_drain_effects_action`.
  *
- * Refuses an answer without `tracked: true` — what both spines always answer,
- * their drains awaiting the backend's in-flight detached writes (audit rows;
- * on the Rust spine also the token touch and the bootstrap write). A backend
- * answering anything else did not drain, and its audit reads would race the
- * writes — an absent row then reading as a pass. Every audit read runs through here, so each one
+ * Refuses any answer but exactly `{ok: true}` — what both spines answer once
+ * their drains have awaited the backend's in-flight detached writes. A backend
+ * answering anything else (an unknown key included) is not the drain this
+ * contract names, and its audit reads could race the writes — an absent row
+ * then reading as a pass. Every audit read runs through here, so each one
  * checks the barrier is live.
  *
  * @param fixture - the per-test fixture, whose daemon token authorizes the drain
@@ -66,15 +66,10 @@ export const cross_drain_effects = async (
 		fixture.create_daemon_token_headers()
 	);
 	assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
-	const tracked =
-		typeof drained.result === 'object' && drained.result !== null
-			? (drained.result as Record<string, unknown>).tracked
-			: undefined;
-	assert.strictEqual(
-		tracked,
-		true,
-		'_testing_drain_effects must answer tracked: true — anything else is a drain that waited ' +
-			`on nothing (got ${JSON.stringify(drained.result)})`
+	assert.deepStrictEqual(
+		drained.result,
+		{ ok: true },
+		`_testing_drain_effects must answer exactly {ok: true} (got ${JSON.stringify(drained.result)})`
 	);
 };
 

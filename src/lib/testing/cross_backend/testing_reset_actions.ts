@@ -227,10 +227,6 @@ export const testing_reset_action_spec = {
  * `pending_effects`. The Rust spine spawns its touch on the same tracker as
  * its audit writes, so its drain awaits that too.
  *
- * The output's `tracked` is a constant `true` on both spines — every drain
- * waits on what it covers. It is kept until consumers are on a release whose
- * `cross_drain_effects` no longer reads it.
- *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
 export const testing_drain_effects_action_spec = {
@@ -240,14 +236,7 @@ export const testing_drain_effects_action_spec = {
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
 	input: fuz_void,
-	output: object({
-		ok: boolean,
-		tracked: meta(boolean, {
-			description:
-				'Always true — every drain waits on the writes it covers. Kept until consumers no ' +
-				'longer read it.'
-		})
-	}),
+	output: object({ ok: boolean }),
 	async: true,
 	description:
 		'Test-binary only — await in-flight fire-and-forget writes so a following audit_log_list or database read is authoritative.'
@@ -310,14 +299,14 @@ export const testing_mint_session_action_spec = {
  * emitter the backend's handlers emit through (`deps.audit`). Mount it on any test endpoint
  * whose suite asserts on audit rows (the spine binary bundles it via
  * `create_testing_actions`; in-process suites mount it directly). Answers
- * `{ok: true, tracked: true}`.
+ * `{ok: true}`.
  *
  * @param audit - the backend's emitter, whose in-flight writes the action awaits
  */
 export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => {
 		await audit.drain_inflight();
-		return { ok: true, tracked: true };
+		return { ok: true };
 	});
 
 /**

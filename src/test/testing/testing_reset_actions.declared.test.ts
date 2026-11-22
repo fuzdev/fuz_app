@@ -124,10 +124,7 @@ const SAMPLES: Array<[name: string, schema: AnySchema, samples: ReadonlyArray<un
 	[
 		'_testing_drain_effects output',
 		testing_drain_effects_action_spec.output,
-		[
-			{ ok: true, tracked: true },
-			{ ok: true, tracked: false }
-		]
+		[{ ok: true }, { ok: false }]
 	],
 	[
 		'_testing_mint_session input',
