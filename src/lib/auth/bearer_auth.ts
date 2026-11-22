@@ -4,18 +4,14 @@
  * Bearer tokens are rejected when `Origin` or `Referer` headers are present —
  * browsers must use cookie auth. This reduces attack surface: a stolen token
  * cannot be replayed from a browser context (the browser adds `Origin`
- * automatically). The discard is silent on the wire (anti-enumeration); in
- * `DEV` only, the middleware adds an `X-Fuz-Auth-Debug:
- * bearer_discarded_browser_context` response header so tests/tooling can tell
- * "token discarded for browser context" apart from "no credential supplied"
- * without weakening production.
+ * automatically). The discard is silent on the wire (anti-enumeration) and
+ * logged at debug, the line the Rust spine logs.
  *
  * Token generation and hashing utilities live in `auth/api_token.ts`.
  *
  * @module
  */
 
-import { DEV } from 'esm-env';
 import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -94,13 +90,9 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 		// the RPC dispatcher can still handle public actions or fall through to
 		// cookie auth.
 		if (is_browser_context(get_header_lines(c, 'origin'), get_header_lines(c, 'referer'))) {
+			// silent on the wire by design: a stolen-token probe gets an
+			// indistinguishable 401, not a "your token was dropped" signal
 			log.debug('bearer auth rejected: browser context (Origin/Referer present)');
-			// The discard is silent on the wire by design (a stolen-token probe
-			// gets an indistinguishable 401, not a "your token was dropped"
-			// signal — anti-enumeration). That same silence makes the contract
-			// easy to trip over in tests/tooling, so surface the reason in DEV
-			// only: production never emits it, so it leaks nothing to an attacker.
-			if (DEV) c.header('X-Fuz-Auth-Debug', 'bearer_discarded_browser_context');
 			await next();
 			return;
 		}

@@ -33,21 +33,6 @@ const ts_dev_issues = (method: ReadonlyArray<string>): KnownDivergence => ({
 	what_differs: [{ path: 'body.error.data.issues', b: undefined }]
 });
 
-/**
- * The TS spine's DEV-only `X-Fuz-Auth-Debug` header on a credential discarded
- * as browser context; never sent in production, never sent by Rust.
- */
-const ts_dev_auth_debug_header: KnownDivergence = {
-	case_name: [
-		'valid daemon token + Origin (+ session) → account_purge → 403 credential_type_required ' +
-			'(browser-context discard, not honored)',
-		'bearer token + Origin → account_verify → 401 (browser-context discard, no replay)'
-	],
-	tracking_id: 'ts-dev-auth-debug-header',
-	reason: 'TS names a browser-context credential discard in a DEV-only header',
-	what_differs: [{ path: 'headers.x-fuz-auth-debug', a: true, b: undefined }]
-};
-
 /** The admin lists with `limit` / `offset` paging. */
 const PAGED_LIST_METHODS = [
 	'admin_account_list',
@@ -56,7 +41,7 @@ const PAGED_LIST_METHODS = [
 	'role_grant_offer_history'
 ];
 
-/** Divergences the main conformance arrays show. */
+/** Divergences the main conformance arrays show, over HTTP and over the WebSocket leg alike. */
 export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 	ts_dev_issues([
 		...PAGED_LIST_METHODS,
@@ -68,16 +53,8 @@ export const differential_known_divergences: ReadonlyArray<KnownDivergence> = [
 		'cell_list',
 		'cell_field_list',
 		'cell_item_list'
-	]),
-	ts_dev_auth_debug_header
+	])
 ];
-
-/**
- * Divergences the main conformance arrays show over the WebSocket leg: the
- * HTTP ledger minus the header rows, since a frame carries no headers.
- */
-export const differential_ws_known_divergences: ReadonlyArray<KnownDivergence> =
-	differential_known_divergences.filter((d) => d !== ts_dev_auth_debug_header);
 
 /** Divergences the participation cases show. */
 export const differential_participation_known_divergences: ReadonlyArray<KnownDivergence> = [

@@ -8,10 +8,9 @@
  * upgrade, its `Request` / `Response` — never the spine's logic.
  *
  * The ledger is empty. The TS-vs-Rust ledger's rows are all TS-against-Rust
- * differences, and its DEV-only rows (the `issues` on `invalid_params`, the
- * `X-Fuz-Auth-Debug` header) show on both sides here, since both binaries run
- * the one spine under `DEV` — a ledger row naming them would fail as an entry
- * that no longer differs.
+ * differences, and its DEV-only row (the `issues` on `invalid_params`) shows on
+ * both sides here, since both binaries run the one spine under `DEV` — a
+ * ledger row naming it would fail as an entry that no longer differs.
  *
  * Runs under the dual-spawn `cross_backend_ts_differential` project
  * (`ts_differential_handle_a` = Node, `ts_differential_handle_b` = Bun), both

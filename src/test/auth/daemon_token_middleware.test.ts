@@ -106,9 +106,9 @@ beforeEach(() => {
 });
 
 /** Create a Hono test app with daemon token middleware. */
-const create_daemon_app = (state: DaemonTokenState): Hono => {
+const create_daemon_app = (state: DaemonTokenState, log: Logger = test_log): Hono => {
 	const app = new Hono();
-	app.use('/*', create_daemon_token_middleware(state, mock_deps, test_log));
+	app.use('/*', create_daemon_token_middleware(state, mock_deps, log));
 	app.get('/test', (c) => {
 		const auth = get_resolved_auth(c);
 		return c.json({
@@ -536,73 +536,70 @@ describe('browser-context discard', () => {
 	// so a header-bearing request is a browser context: discard the credential
 	// (pass through, no 401) so the dispatcher returns `credential_type_required`
 	// downstream — exactly mirroring the bearer guard and Rust's `resolve.rs`.
+	// The discard is silent on the wire and logged at debug, the line the Rust
+	// spine logs.
 
-	test('Origin present → 200 pass-through, no context, DEV debug header', async () => {
-		const state = create_state();
-		const app = create_daemon_app(state);
+	const BROWSER_CONTEXT_LINE =
+		'daemon token auth rejected: browser context (Origin/Referer present)';
 
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Origin: 'https://x.example' }
+	const request_with_debug_spy = async (
+		state: DaemonTokenState,
+		headers: Record<string, string>
+	): Promise<{ res: Response; debug_lines: Array<unknown> }> => {
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		const res = await create_daemon_app(state, log).request('/test', { headers });
+		return { res, debug_lines: debug.mock.calls.map((call) => call[0]) };
+	};
+
+	for (const [label, browser_headers] of [
+		['Origin', { Origin: 'https://x.example' }],
+		['Referer', { Referer: 'https://x.example/page' }],
+		['empty-string Origin', { Origin: '' }]
+	] as const) {
+		test(`${label} present → 200 pass-through, no context, the discard logged`, async () => {
+			const state = create_state();
+			const { res, debug_lines } = await request_with_debug_spy(state, {
+				[DAEMON_TOKEN_HEADER]: state.current_token,
+				...browser_headers
+			});
+			assert.strictEqual(res.status, 200);
+			const body = await res.json();
+			// credential discarded — middleware sets no identity
+			assert.strictEqual(body.context, null);
+			assert.strictEqual(body.credential_type, null);
+			assert.deepStrictEqual(debug_lines, [BROWSER_CONTEXT_LINE]);
+		});
+	}
+
+	test('no token beside an Origin → nothing to discard, nothing logged', async () => {
+		const { res, debug_lines } = await request_with_debug_spy(create_state(), {
+			Origin: 'https://x.example'
 		});
 		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		// credential discarded — middleware sets no identity
-		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(
-			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context'
-		);
+		assert.deepStrictEqual(debug_lines, []);
 	});
 
-	test('Referer present → 200 pass-through, no context, DEV debug header', async () => {
-		const state = create_state();
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Referer: 'https://x.example/page' }
+	test('an unshaped token beside an Origin → refused by its format, no discard line', async () => {
+		const { res, debug_lines } = await request_with_debug_spy(create_state(), {
+			[DAEMON_TOKEN_HEADER]: 'a'.repeat(42),
+			Origin: 'https://x.example'
 		});
 		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(
-			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context'
-		);
+		assert.deepStrictEqual(debug_lines, ['daemon token auth soft-fail: malformed token']);
 	});
 
-	test('empty-string Origin → still discarded (browser context)', async () => {
+	test('no Origin/Referer → authenticates (keeper context), nothing logged', async () => {
 		const state = create_state();
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Origin: '' }
-		});
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-		assert.strictEqual(
-			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context'
-		);
-	});
-
-	test('no Origin/Referer → authenticates (keeper context, no debug header)', async () => {
-		const state = create_state();
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
+		const { res, debug_lines } = await request_with_debug_spy(state, {
+			[DAEMON_TOKEN_HEADER]: state.current_token
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.ok(body.context);
 		assert.strictEqual(body.context.account_id, 'acct-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
-		// not a browser-context discard → no diagnostic header
-		assert.strictEqual(res.headers.get('X-Fuz-Auth-Debug'), null);
+		assert.deepStrictEqual(debug_lines, []);
 	});
 });
 

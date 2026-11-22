@@ -8,7 +8,9 @@
  * @module
  */
 
-import { assert, describe, test } from 'vitest';
+import { assert, describe, test, vi } from 'vitest';
+import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	describe_bearer_auth_cases,
@@ -24,6 +26,9 @@ import {
 } from '#lib/testing/entities.ts';
 import { API_TOKEN_PREFIX } from '#lib/auth/api_token.ts';
 import { token_scope_methods } from '#lib/auth/token_scope.ts';
+import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
 
 // --- Test data ---
 
@@ -343,38 +348,45 @@ describe('bearer token sent as two header lines', () => {
 	});
 });
 
-// --- DEV-only browser-context discard diagnostic header ---
+// --- the browser-context discard, logged at debug ---
 
-describe('bearer browser-context discard diagnostic (DEV)', () => {
-	test('emits X-Fuz-Auth-Debug on browser-context discard, absent otherwise', async () => {
-		const { app } = create_bearer_auth_test_app({
-			name: 'browser-context discard diagnostic header',
-			headers: { Authorization: `Bearer ${TOKEN}` },
-			expected_status: 'next'
-		});
+describe('bearer browser-context discard log', () => {
+	// The discard is silent on the wire (anti-enumeration) and logged at debug,
+	// the line the Rust spine's `resolve.rs` logs. Every path below returns
+	// before the token lookup, so the app needs no query deps.
+	const BROWSER_CONTEXT_LINE = 'bearer auth rejected: browser context (Origin/Referer present)';
 
-		// Origin present → discarded for browser context → DEV header set.
-		const discarded = await app.request('/api/test', {
-			headers: { Authorization: `Bearer ${TOKEN}`, Origin: 'https://x.example' }
-		});
-		assert.strictEqual(
-			discarded.headers.get('X-Fuz-Auth-Debug'),
-			'bearer_discarded_browser_context'
-		);
+	const request_with_debug_spy = async (
+		init: RequestInit,
+		env?: object
+	): Promise<{ res: Response; debug_lines: Array<unknown> }> => {
+		const log = new Logger('test', { level: 'off' });
+		const debug = vi.spyOn(log, 'debug');
+		const app = new Hono();
+		app.use('/api/*', create_bearer_auth_middleware({} as QueryDeps, log));
+		app.get('/api/test', (c) => c.json({ resolved_auth: get_resolved_auth(c) }));
+		const res = await app.request('/api/test', init, env);
+		return { res, debug_lines: debug.mock.calls.map((call) => call[0]) };
+	};
 
-		// No Origin/Referer → not a browser-context discard → no diagnostic header.
-		const non_browser = await app.request('/api/test', {
-			headers: { Authorization: `Bearer ${TOKEN}` }
-		});
-		assert.strictEqual(non_browser.headers.get('X-Fuz-Auth-Debug'), null);
+	test('a shaped token beside an Origin or a Referer is discarded, the discard logged', async () => {
+		const browser_headers_list: Array<Record<string, string>> = [
+			{ Origin: 'https://x.example' },
+			{ Referer: 'https://x.example/page' },
+			{ Origin: '' }
+		];
+		for (const browser_headers of browser_headers_list) {
+			const label = JSON.stringify(browser_headers);
+			const { res, debug_lines } = await request_with_debug_spy({
+				headers: { Authorization: `Bearer ${TOKEN}`, ...browser_headers }
+			});
+			assert.strictEqual(res.status, 200, label);
+			assert.strictEqual((await res.json()).resolved_auth, null, label);
+			assert.deepStrictEqual(debug_lines, [BROWSER_CONTEXT_LINE], label);
+		}
 	});
 
 	test('names no discard for a header that reads as no token', async () => {
-		const { app } = create_bearer_auth_test_app({
-			name: 'browser-context diagnostic needs a shaped token',
-			headers: { Authorization: `Bearer ${TOKEN}` },
-			expected_status: 'next'
-		});
 		// nothing was discarded for the browser context: no token was read at all
 		const unread: Array<[label: string, headers: Record<string, string>, env?: object]> = [
 			['an unshaped token', { Authorization: 'Bearer garbage' }],
@@ -388,16 +400,18 @@ describe('bearer browser-context discard diagnostic (DEV)', () => {
 						rawHeaders: ['Authorization', `Bearer ${TOKEN}`, 'Authorization', `Bearer ${TOKEN}`]
 					}
 				}
-			],
-			['no Authorization header', {}]
+			]
 		];
 		for (const [label, headers, env] of unread) {
-			const res = await app.request(
-				'/api/test',
+			const { debug_lines } = await request_with_debug_spy(
 				{ headers: { ...headers, Origin: 'https://x.example' } },
 				env
 			);
-			assert.strictEqual(res.headers.get('X-Fuz-Auth-Debug'), null, label);
+			assert.deepStrictEqual(debug_lines, ['bearer auth soft-fail: no token read'], label);
 		}
+		const { debug_lines } = await request_with_debug_spy({
+			headers: { Origin: 'https://x.example' }
+		});
+		assert.deepStrictEqual(debug_lines, [], 'no Authorization header');
 	});
 });

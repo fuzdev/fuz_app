@@ -27,8 +27,7 @@ import { inject_parity_handles } from '#lib/testing/cross_backend/provided_conte
 
 import {
 	differential_known_divergences,
-	differential_participation_known_divergences,
-	differential_ws_known_divergences
+	differential_participation_known_divergences
 } from './differential_known_divergences.ts';
 import { describe_spine_differential_suites } from './spine_differential.ts';
 
@@ -42,7 +41,7 @@ describe_spine_differential_suites({
 	compare_db_state: true,
 	known_divergences: {
 		http: differential_known_divergences,
-		ws: differential_ws_known_divergences,
+		ws: differential_known_divergences,
 		participation: differential_participation_known_divergences
 	}
 });

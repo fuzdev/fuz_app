@@ -14,7 +14,6 @@
  * @module
  */
 
-import { DEV } from 'esm-env';
 import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
@@ -70,8 +69,8 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  * - A shaped token + `Origin` / `Referer` present: discard the credential
  *   (browser context) and pass through — daemon tokens are loopback-only and
  *   never carry an `Origin` in production, so a header-bearing request is not
- *   a legitimate daemon caller. Silent on the wire (anti-enumeration); in
- *   `DEV` only, sets `X-Fuz-Auth-Debug: daemon_token_discarded_browser_context`.
+ *   a legitimate daemon caller. Silent on the wire (anti-enumeration), logged
+ *   at debug as on the Rust spine.
  * - Header present + invalid value (not the current/previous token): soft-fail
  *   discard (pass through, not 401) — same downstream behavior.
  * - Header present + valid + `keeper_account_id` null (still pre-bootstrap
@@ -129,7 +128,6 @@ export const create_daemon_token_middleware = (
 		// `credential_type_required` downstream rather than a hard fail.
 		if (is_browser_context(get_header_lines(c, 'origin'), get_header_lines(c, 'referer'))) {
 			log.debug('daemon token auth rejected: browser context (Origin/Referer present)');
-			if (DEV) c.header('X-Fuz-Auth-Debug', 'daemon_token_discarded_browser_context');
 			await next();
 			return;
 		}
