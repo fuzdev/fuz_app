@@ -102,9 +102,8 @@ export const start_daemon_token_rotation = async (
 		await runtime.mkdir(token_path.slice(0, last_slash), { recursive: true });
 	}
 
-	// resolve keeper account (may be null pre-bootstrap; the middleware
-	// lazily refreshes on the first null hit to cover the
-	// rotation-starts-before-bootstrap case)
+	// resolve keeper account (null pre-bootstrap; the bootstrap route sets it
+	// once its account commits, given this state on `create_app_server`)
 	const keeper_account_id = await resolve_keeper_account_id(deps);
 
 	// generate initial token and write to disk

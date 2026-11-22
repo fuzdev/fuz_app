@@ -7,6 +7,7 @@
 import { assert, test, beforeEach } from 'vitest';
 
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 import {
 	bootstrap_account,
 	type BootstrapAccountDeps,
@@ -164,15 +165,14 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(result.actor.account_id, result.account.id);
 		assert.strictEqual(result.actor.name, 'keeper');
 
-		const { keeper, admin } = result.role_grants;
-		assert.strictEqual(keeper.role, ROLE_KEEPER);
-		assert.strictEqual(keeper.actor_id, result.actor.id);
-		assert.strictEqual(keeper.granted_by, null);
-		assert.strictEqual(keeper.expires_at, null);
-		assert.strictEqual(admin.role, ROLE_ADMIN);
-		assert.strictEqual(admin.actor_id, result.actor.id);
-		assert.strictEqual(admin.granted_by, null);
-		assert.strictEqual(admin.expires_at, null);
+		const grants = await query_role_grant_find_active_for_actor({ db }, result.actor.id);
+		assert.deepStrictEqual(grants.map((g) => g.role).sort(), [ROLE_ADMIN, ROLE_KEEPER].sort());
+		for (const grant of grants) {
+			assert.strictEqual(grant.actor_id, result.actor.id);
+			assert.strictEqual(grant.scope_id, null);
+			assert.strictEqual(grant.granted_by, null);
+			assert.strictEqual(grant.expires_at, null);
+		}
 	});
 
 	test('sets bootstrap_lock to true on success', async () => {

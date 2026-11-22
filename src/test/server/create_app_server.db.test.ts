@@ -57,6 +57,14 @@ import {
 } from '#lib/auth/bootstrap_token_store.ts';
 import { create_mock_runtime } from '#lib/runtime/mock.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
+import {
+	DAEMON_TOKEN_HEADER,
+	generate_daemon_token,
+	type DaemonTokenState
+} from '#lib/auth/daemon_token.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -286,22 +294,87 @@ describe('create_app_server', () => {
 		assert.include(error.message, 'bootstrap.route_prefix path /auth/bootstrap');
 	});
 
-	test('on_bootstrap callback wires through to bootstrap routes (live mode)', async () => {
-		let callback_registered = false;
-		await create_app_server(
-			await create_config({
-				bootstrap: {
-					mode: 'live',
-					token_store: missing_token_store(),
-					on_bootstrap: async () => {
-						callback_registered = true;
-					}
-				}
-			})
+	test('a live bootstrap sets the daemon-token keeper once it commits', async () => {
+		const token = 'test_token_test_token_test_token_32';
+		const token_store: BootstrapTokenStore = {
+			path: '/fake/bootstrap_token',
+			read_token: async () => new TextEncoder().encode(token),
+			burn_token: async () => 'burned'
+		};
+		const daemon_token_state: DaemonTokenState = {
+			current_token: generate_daemon_token(),
+			previous_token: null,
+			rotated_at: new Date(),
+			keeper_account_id: null
+		};
+		const server = await create_app_server(
+			await create_config({ daemon_token_state, bootstrap: { mode: 'live', token_store } })
 		);
-		// Can't invoke the callback without a real bootstrap flow, but verify
-		// the route was created (the callback is wired internally)
-		assert.isFalse(callback_registered); // not called at init time
+		try {
+			const res = await server.app.request('/api/account/bootstrap', {
+				method: 'POST',
+				headers: { host: 'localhost', origin: TEST_ORIGIN, 'content-type': 'application/json' },
+				body: JSON.stringify({ token, username: 'keeper', password: 'secure_password_123' })
+			});
+			assert.strictEqual(res.status, 200);
+			const body = (await res.json()) as { account: { id: string } };
+			assert.strictEqual(daemon_token_state.keeper_account_id, body.account.id);
+		} finally {
+			await server.close();
+		}
+	});
+
+	test('assembly resolves the keeper of a daemon-token state that has none', async () => {
+		const daemon_token_state: DaemonTokenState = {
+			current_token: generate_daemon_token(),
+			previous_token: null,
+			rotated_at: new Date(),
+			keeper_account_id: null
+		};
+		const config = await create_config({
+			daemon_token_state,
+			create_route_specs: () => [
+				define_route({
+					method: 'GET',
+					path: '/api/whoami',
+					auth: { account: 'required', actor: 'none' },
+					description: 'The authenticated account and its credential',
+					input: literal(null),
+					output: object({ account_id: string, credential_type: string }),
+					handler: async (route) => {
+						const auth = route.credential;
+						assert.ok(auth);
+						return route_ok({
+							account_id: auth.account.id,
+							credential_type: auth.credential_type
+						});
+					}
+				})
+			]
+		});
+		// a keeper already in the database, as on a restart after bootstrap
+		const { account, actor } = await create_test_account_with_actor(config.backend.deps.db, {
+			username: 'keeper'
+		});
+		await query_create_role_grant(config.backend.deps, {
+			actor_id: actor.id,
+			role: ROLE_KEEPER,
+			granted_by: null
+		});
+		const server = await create_app_server(config);
+		try {
+			assert.strictEqual(daemon_token_state.keeper_account_id, account.id);
+			const res = await server.app.request('/api/whoami', {
+				headers: { host: 'localhost', [DAEMON_TOKEN_HEADER]: daemon_token_state.current_token }
+			});
+			assert.strictEqual(res.status, 200);
+			assert.deepStrictEqual(await res.json(), {
+				account_id: account.id,
+				credential_type: 'daemon_token'
+			});
+		} finally {
+			await server.close();
+		}
 	});
 
 	test('on_effect_error is called when a pending effect rejects', async () => {

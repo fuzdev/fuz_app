@@ -36,9 +36,12 @@ import {
  * Resolve the keeper account ID by querying for the account with an active
  * keeper role_grant.
  *
- * There is exactly one keeper account (the bootstrap account). Runs once
- * at server startup — the result is cached in
- * `DaemonTokenState.keeper_account_id`. The acting actor is resolved
+ * There is exactly one keeper account (the bootstrap account). Run once by
+ * `create_app_server` at assembly for a daemon-token state with no keeper
+ * (and by `start_daemon_token_rotation`) — the result is cached in
+ * `DaemonTokenState.keeper_account_id`, which a live bootstrap sets after its
+ * commit and nothing re-reads per request (a keeper seeded by another process
+ * needs a restart, as on the Rust spine). The acting actor is resolved
  * per-request by the dispatcher's authorization phase (which runs
  * `resolve_acting_actor` against this account id), so multi-actor keeper
  * accounts surface `actor_required` if a daemon caller doesn't pass an
@@ -73,8 +76,9 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  *   at debug as on the Rust spine.
  * - Header present + invalid value (not the current/previous token): soft-fail
  *   discard (pass through, not 401) — same downstream behavior.
- * - Header present + valid + `keeper_account_id` null (still pre-bootstrap
- *   after the lazy refresh): soft-fail discard (pass through, not 503) —
+ * - Header present + valid + `keeper_account_id` null (pre-bootstrap — the
+ *   keeper is resolved at assembly and set by the bootstrap route after its
+ *   commit, never re-read per request): soft-fail discard (pass through, not 503) —
  *   mirrors the Rust spine's `resolve.rs` (`None`), so the request falls
  *   through to anonymous and a daemon-gated action returns
  *   `credential_type_required` downstream.
@@ -89,7 +93,7 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
  * an explicit `acting` value.
  *
  * @param state - the daemon token runtime state
- * @param deps - query dependencies (pool-level db for keeper-account resolution)
+ * @param deps - query dependencies (pool-level db for the keeper's account row)
  * @param log - the logger instance
  * @mutates Hono context - clears `RESOLVED_AUTH_KEY` on entry, then sets it on a valid token
  */
@@ -141,16 +145,9 @@ export const create_daemon_token_middleware = (
 			return;
 		}
 
-		// daemon token valid — resolve keeper account. `start_daemon_token_rotation`
-		// resolves the keeper once at startup, but rotation often starts before the
-		// keeper account exists (e.g. cross-process test harnesses spawn the binary
-		// then POST /bootstrap). Lazily refresh from the DB on the first null hit
-		// so the post-bootstrap state lands without a separate hook.
-		if (!state.keeper_account_id) {
-			state.keeper_account_id = await resolve_keeper_account_id(deps);
-		}
-		// Valid token but no keeper configured (still pre-bootstrap after the lazy
-		// refresh) — soft-fail discard (pass through), not a 503. Mirrors the Rust
+		// Valid token but no keeper configured — soft-fail discard (pass through),
+		// not a 503. The keeper is resolved at assembly and set by the
+		// bootstrap route after its commit; never re-read here. Mirrors the Rust
 		// spine's `resolve.rs`, which returns `None` when the daemon leg can't
 		// resolve a keeper: the request falls through to the next auth leg →
 		// anonymous, so a daemon-gated action returns `credential_type_required`

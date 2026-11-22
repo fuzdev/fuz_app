@@ -50,7 +50,11 @@ export interface DaemonTokenState {
 	previous_token: string | null;
 	/** When the last rotation occurred. */
 	rotated_at: Date;
-	/** The account ID of the keeper (resolved at startup, set by `on_bootstrap`). */
+	/**
+	 * The account ID of the keeper: resolved by `create_app_server` at
+	 * assembly when null (`resolve_keeper_account_id`), set by the bootstrap
+	 * route once its account commits, never re-read per request.
+	 */
 	keeper_account_id: string | null;
 }
 

@@ -235,7 +235,6 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 				mode: 'live',
 				// the hardened read and the burn of the token file
 				token_store: create_file_bootstrap_token_store(runtime, bootstrap_token_path)
-				// on_bootstrap: async (created) => { /* optional post-bootstrap work */ },
 				// route_prefix: '/api/account',  // default
 			}
 		: { mode: 'disabled' },

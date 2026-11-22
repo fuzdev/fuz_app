@@ -276,5 +276,5 @@ header, or field, update the echo routes and mocks in
 ## Consumer Patterns
 
 - Full-stack web app — Auth, admin routes, route specs, SSE, db routes, env, static, create_db, UI components
-- Local daemon (PGlite) — Full auth stack + admin routes, bootstrap with `on_bootstrap`. See ./docs/local-daemon.md
+- Local daemon (PGlite) — Full auth stack + admin routes, bootstrap. See ./docs/local-daemon.md
 - Action-oriented app — Action specs, action codegen, runtime deps

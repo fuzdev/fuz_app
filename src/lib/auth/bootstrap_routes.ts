@@ -11,11 +11,8 @@ import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { SessionOptions } from './session_cookie.ts';
-import {
-	bootstrap_account,
-	read_bootstrap_token,
-	type BootstrapAccountCreated
-} from './bootstrap_account.ts';
+import { bootstrap_account, read_bootstrap_token } from './bootstrap_account.ts';
+import type { DaemonTokenState } from './daemon_token.ts';
 import type { BootstrapTokenStore } from './bootstrap_token_store.ts';
 import { bootstrap_route_shape } from './bootstrap_route_schema.ts';
 import type { Db } from '../db/db.ts';
@@ -44,19 +41,11 @@ export interface BootstrapStatus {
 }
 
 /**
- * Called after a successful bootstrap has committed, with what it created.
- * Use for app-specific post-bootstrap work like generating API tokens. It
- * gets no request context: the response — its session cookie included — is
- * the route's. A throw is logged and the bootstrap still succeeds, since it
- * has already committed. Twin of the Rust `BootstrapKeeperResolved`.
- */
-export type OnBootstrap = (created: BootstrapAccountCreated) => Promise<void>;
-
-/**
  * Per-factory configuration for bootstrap route specs.
  *
- * `bootstrap_status` is runtime state (a mutable ref), not a dep or options value —
- * it is passed through so the route handler can flip it.
+ * `bootstrap_status` and `daemon_token_state` are runtime state (mutable refs),
+ * not deps or options values — passed through so the route handler can flip
+ * the one and set the other's keeper.
  */
 export interface BootstrapRouteOptions {
 	session_options: SessionOptions<string>;
@@ -68,8 +57,14 @@ export interface BootstrapRouteOptions {
 	 * server does.
 	 */
 	token_store: BootstrapTokenStore | null;
-	/** Called after a successful bootstrap commits. */
-	on_bootstrap?: OnBootstrap;
+	/**
+	 * The daemon-token state whose `keeper_account_id` a successful bootstrap
+	 * sets to the new account once it has committed, so the keeper's daemon
+	 * token authenticates from the next request; `null` when the server takes
+	 * no daemon token. `create_app_server` passes its own. Twin of the Rust
+	 * `BootstrapOptions.on_keeper_resolved`, which the spine wires the same way.
+	 */
+	daemon_token_state: DaemonTokenState | null;
 	/**
 	 * Rate limiter for bootstrap attempts, keyed by client IP. Pass `null` to
 	 * disable. Its own instance, not login's: bootstrap is one-shot and its
@@ -183,7 +178,7 @@ export const create_bootstrap_route_specs = (
 		session_options,
 		bootstrap_status,
 		token_store,
-		on_bootstrap,
+		daemon_token_state,
 		bootstrap_ip_rate_limiter
 	} = options;
 
@@ -280,13 +275,15 @@ export const create_bootstrap_route_specs = (
 
 				// the session was minted, and its cookie line formatted, in the
 				// transaction; the line rides the success
-				const { account, actor, role_grants, set_cookie } = result;
-				if (on_bootstrap) {
-					try {
-						await on_bootstrap({ account, actor, role_grants });
-					} catch (err) {
-						deps.log.error(`on_bootstrap callback failed: ${to_error_message(err)}`);
-					}
+				const { account, actor, set_cookie } = result;
+				// the new keeper, set only now that its account has committed, so
+				// the daemon leg never resolves to a row a rollback could undo
+				if (daemon_token_state) {
+					daemon_token_state.keeper_account_id = account.id;
+					// the Rust spine's `DaemonTokenKeeperResolved` line
+					deps.log.info('daemon token: keeper account set by bootstrap', {
+						account_id: account.id
+					});
 				}
 
 				return route_ok(

@@ -90,9 +90,8 @@ const setup_default_mocks = () => {
 	mock_query_actor_by_id.mockImplementation(async () => actor);
 	mock_query_active_actors_by_account.mockImplementation(async () => [actor]);
 	mock_query_role_grant_find_active_for_actor.mockImplementation(async () => role_grants);
-	// Default the lazy-keeper-refresh lookup to a resolvable keeper so tests
-	// that don't care about the refresh path get the happy default. Tests
-	// that need the null-keeper case override explicitly.
+	// a keeper the database holds — what `resolve_keeper_account_id` answers,
+	// and what the middleware must not read per request
 	mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => 'acct-keeper');
 };
 
@@ -417,79 +416,32 @@ describe('create_daemon_token_middleware', () => {
 		);
 	});
 
-	test('no keeper_account_id soft-fails (pass-through) when lazy refresh also yields null', async () => {
-		// A valid token with no keeper configured (still pre-bootstrap after the
-		// lazy refresh) is a soft-fail discard — pass through with no identity set,
-		// not a 503. Mirrors the Rust spine's `resolve.rs` (`None`): the request
-		// falls through to anonymous and a daemon-gated action returns
-		// `credential_type_required` downstream. Explicit null on the lazy-refresh
-		// lookup so the no-keeper path is exercised under known preconditions rather
-		// than via `vi.fn()`'s default undefined.
-		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
-
+	test('no keeper_account_id soft-fails (pass-through), the keeper never re-read', async () => {
+		// A valid token with no keeper (pre-bootstrap) is a soft-fail discard —
+		// pass through with no identity set, not a 503. Mirrors the Rust spine's
+		// `resolve.rs` (`None`): the request falls through to anonymous and a
+		// daemon-gated action returns `credential_type_required` downstream. The
+		// keeper is set by the bootstrap route after its commit, never re-read
+		// here — even when the database holds one (seeded out of process), as on
+		// the Rust spine, where such a seed needs a restart.
 		const state = create_state({ keeper_account_id: null });
 		const app = create_daemon_app(state);
 
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
-		});
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.strictEqual(body.context, null);
-		assert.strictEqual(body.credential_type, null);
-	});
-
-	test('lazy refresh: null state + keeper now exists → 200, mutates state.keeper_account_id', async () => {
-		// Covers the rotation-starts-before-bootstrap path: rotation initialized
-		// with `keeper_account_id: null`, then bootstrap landed the keeper. The
-		// middleware should self-heal on the first authenticated daemon-token
-		// request without an explicit `on_bootstrap` hook.
-		const state = create_state({ keeper_account_id: null });
-		const app = create_daemon_app(state);
-
-		const res = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
-		});
-		assert.strictEqual(res.status, 200);
-		const body = await res.json();
-		assert.ok(body.context);
-		assert.strictEqual(body.context.account_id, 'acct-keeper');
-		assert.strictEqual(body.credential_type, 'daemon_token');
-		// State is mutated so subsequent requests don't re-query.
-		assert.strictEqual(state.keeper_account_id, 'acct-keeper');
-		assert.strictEqual(mock_query_role_grant_find_account_id_for_role.mock.calls.length, 1);
-	});
-
-	test('lazy refresh: soft-fail (no keeper) → keeper lands → 200 (second request)', async () => {
-		// First request fires before the keeper exists: refresh returns null, so
-		// the token soft-fails (200 + null context, falls through to anonymous).
-		// Second request fires after bootstrap: refresh now returns the keeper id,
-		// 200 + keeper context. Re-queries every request until a keeper resolves.
-		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
-
-		const state = create_state({ keeper_account_id: null });
-		const app = create_daemon_app(state);
-
-		const res1 = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
-		});
-		assert.strictEqual(res1.status, 200);
-		const body1 = await res1.json();
-		assert.strictEqual(body1.context, null);
-		assert.strictEqual(body1.credential_type, null);
+		for (let i = 0; i < 2; i++) {
+			const res = await app.request('/test', {
+				headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
+			});
+			assert.strictEqual(res.status, 200);
+			const body = await res.json();
+			assert.strictEqual(body.context, null);
+			assert.strictEqual(body.credential_type, null);
+		}
 		assert.strictEqual(state.keeper_account_id, null);
-
-		// Bootstrap lands; the keeper now exists.
-		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => 'acct-keeper');
-
-		const res2 = await app.request('/test', {
-			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
-		});
-		assert.strictEqual(res2.status, 200);
-		const body = await res2.json();
-		assert.ok(body.context);
-		assert.strictEqual(body.context.account_id, 'acct-keeper');
-		assert.strictEqual(state.keeper_account_id, 'acct-keeper');
+		assert.strictEqual(
+			mock_query_role_grant_find_account_id_for_role.mock.calls.length,
+			0,
+			'the keeper is never looked up per request'
+		);
 	});
 
 	test('the session and bearer legs after it skip, so neither credential is looked up', async () => {

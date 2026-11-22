@@ -461,7 +461,7 @@ Wire bootstrap through the top-level `bootstrap` slot on
 `default_in_process_suite_options`, which flows it to both the surface spec
 and the live app:
 
-- **`{mode: 'live', token_store, on_bootstrap?}`** — production-shaped
+- **`{mode: 'live', token_store}`** — production-shaped
   wiring. The in-process suites exercise the route's presence and its
   denials: the test keeper's creation flips `bootstrap_lock` as a production
   bootstrap does, so a bootstrap attempt answers 403

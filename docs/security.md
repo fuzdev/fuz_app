@@ -223,8 +223,9 @@ legitimate operator.
   as unavailable with an error, and a lock read that fails stops the boot
 - **The lock race loser** answers 403 `already_bootstrapped` and closes its
   window, with no audit row and no limiter charge, on both spines
-- **`on_bootstrap` error isolation**: Callback failures are caught and logged
-  without preventing the bootstrap success response
+- **The keeper is set after the commit**: a successful bootstrap sets the
+  daemon-token keeper only once its account has committed, so a rolled-back
+  bootstrap leaves no daemon token resolving to an account that never landed
 - **Input validation**: Bootstrap username uses the `Username` schema (same
   constraints as signup), not a weaker `min(1)` check. The token is at most
   `BOOTSTRAP_TOKEN_LENGTH_MAX` (4096) UTF-16 code units, the token file's cap:

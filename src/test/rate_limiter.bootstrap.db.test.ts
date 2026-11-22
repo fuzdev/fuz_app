@@ -3,8 +3,8 @@
  *
  * Uses a real in-memory database so `bootstrap_account` runs fully.
  * Focuses on verifying that the bootstrap handler correctly integrates
- * with the RateLimiter, plus the handler's validation, callback, and
- * success-audit behaviour.
+ * with the RateLimiter, plus the handler's validation, the daemon-token
+ * keeper it sets after its commit, and its success-audit behaviour.
  *
  * @module
  */
@@ -18,7 +18,8 @@ import { Hono } from 'hono';
 import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
-import { create_bootstrap_route_specs, type OnBootstrap } from '#lib/auth/bootstrap_routes.ts';
+import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
+import { generate_daemon_token, type DaemonTokenState } from '#lib/auth/daemon_token.ts';
 import {
 	create_file_bootstrap_token_store,
 	type BootstrapTokenStore
@@ -94,7 +95,8 @@ const create_bootstrap_app = async (
 		Promise.resolve(new TextEncoder().encode('wrong_token_wrong_token_wrong_token'))
 	),
 	extra?: {
-		on_bootstrap?: OnBootstrap;
+		/** The daemon-token state the route sets the keeper on. Default none. */
+		daemon_token_state?: DaemonTokenState;
 		/** The store's burn. Default a burn that succeeds. */
 		burn_token?: BootstrapTokenStore['burn_token'];
 		/** Build the audit emitter over the test db. Default a no-op emitter. */
@@ -130,7 +132,7 @@ const create_bootstrap_app = async (
 			session_options,
 			bootstrap_status,
 			token_store,
-			on_bootstrap: extra?.on_bootstrap,
+			daemon_token_state: extra?.daemon_token_state ?? null,
 			bootstrap_ip_rate_limiter
 		}
 	);
@@ -611,23 +613,6 @@ describe('bootstrap success audit', () => {
 	});
 });
 
-describe('on_bootstrap callback error handling', () => {
-	test('on_bootstrap failure does not prevent success response', async () => {
-		const read_token = vi
-			.fn()
-			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
-		const on_bootstrap = vi.fn(async () => {
-			throw new Error('callback failed');
-		});
-
-		const { app } = await create_bootstrap_app(null, read_token, { on_bootstrap });
-
-		const res = await bootstrap_request(app);
-		assert.strictEqual(res.status, 200);
-		assert.strictEqual(on_bootstrap.mock.calls.length, 1);
-	});
-});
-
 const MATCHING_TOKEN = () =>
 	vi.fn(() => Promise.resolve(new TextEncoder().encode('test_token_test_token_test_token_32')));
 
@@ -635,7 +620,10 @@ const MATCHING_TOKEN = () =>
 const create_audited_bootstrap_app = async (
 	limiter: RateLimiter | null,
 	read_token: ReturnType<typeof MATCHING_TOKEN>,
-	extra?: { burn_token?: BootstrapTokenStore['burn_token']; on_bootstrap?: OnBootstrap }
+	extra?: {
+		burn_token?: BootstrapTokenStore['burn_token'];
+		daemon_token_state?: DaemonTokenState;
+	}
 ) => {
 	let audit: AuditEmitter | undefined;
 	const test_app = await create_bootstrap_app(limiter, read_token, {
@@ -654,12 +642,7 @@ const create_audited_bootstrap_app = async (
 
 describe('the session bootstrap mints', () => {
 	test('a success sets the cookie of the session minted in the transaction', async () => {
-		let created: unknown;
-		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
-			on_bootstrap: async (c) => {
-				created = c;
-			}
-		});
+		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN());
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
@@ -672,9 +655,81 @@ describe('the session bootstrap mints', () => {
 			sessions.map((r) => r.account_id),
 			[body.account.id]
 		);
-		// the callback sees what was created, never the session credential
-		assert.ok(created && typeof created === 'object');
-		assert.deepEqual(Object.keys(created).sort(), ['account', 'actor', 'role_grants']);
+	});
+});
+
+const create_keeperless_daemon_token_state = (): DaemonTokenState => ({
+	current_token: generate_daemon_token(),
+	previous_token: null,
+	rotated_at: new Date(),
+	keeper_account_id: null
+});
+
+describe('the daemon-token keeper', () => {
+	test('a successful bootstrap sets the keeper, after its commit', async () => {
+		const daemon_token_state = create_keeperless_daemon_token_state();
+		let gated: GatedDb | undefined;
+		const { app } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			daemon_token_state,
+			wrap_db: (inner) => (gated = create_gated_db(inner)).db
+		});
+		assert.ok(gated);
+		const held = gated.hold_commit();
+
+		const pending = bootstrap_request(app);
+		await held.reached;
+		assert.strictEqual(
+			daemon_token_state.keeper_account_id,
+			null,
+			'nothing is set while the bootstrap is uncommitted'
+		);
+		held.release();
+		const res = await pending;
+		assert.strictEqual(res.status, 200);
+		const body = parse_or_throw(BootstrapOutput, await res.json());
+		assert.strictEqual(daemon_token_state.keeper_account_id, body.account.id);
+	});
+
+	test('a bootstrap whose commit fails leaves the keeper null', async () => {
+		const daemon_token_state = create_keeperless_daemon_token_state();
+		let gated: GatedDb | undefined;
+		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			daemon_token_state,
+			wrap_db: (inner) => (gated = create_gated_db(inner)).db
+		});
+		assert.ok(gated);
+		const held = gated.hold_commit();
+
+		const pending = bootstrap_request(app);
+		await held.reached;
+		held.fail(new Error('commit refused'));
+		const res = await pending;
+		assert.strictEqual(res.status, 500);
+		assert.strictEqual((await db.query('SELECT id FROM account')).length, 0);
+		assert.strictEqual(daemon_token_state.keeper_account_id, null);
+	});
+
+	test('a bootstrap rolled back on its burn leaves the keeper null', async () => {
+		const daemon_token_state = create_keeperless_daemon_token_state();
+		const { app } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			daemon_token_state,
+			burn_token: async () => {
+				throw new Error('EACCES: permission denied');
+			}
+		});
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 500);
+		assert.strictEqual(daemon_token_state.keeper_account_id, null);
+	});
+
+	test('a refused bootstrap leaves the keeper null', async () => {
+		const daemon_token_state = create_keeperless_daemon_token_state();
+		const { app } = await create_bootstrap_app(null, undefined, { daemon_token_state });
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 401);
+		assert.strictEqual(daemon_token_state.keeper_account_id, null);
 	});
 });
 

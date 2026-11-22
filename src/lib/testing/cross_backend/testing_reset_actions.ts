@@ -971,8 +971,8 @@ export const create_testing_actions = (
 
 			// 6. Refresh the daemon-token cache so subsequent daemon-token
 			//    requests resolve to the freshly seeded keeper. The
-			//    middleware's lazy-refresh path only fires when the cached
-			//    id is null, so the reset sets it — after the commit, queued as
+			//    middleware never re-reads the keeper, so the reset sets it —
+			//    after the commit, queued as
 			//    soon as the keeper exists, so a reset that rolls back after it
 			//    (a failing extra seed, a failed COMMIT) leaves the cache on the
 			//    keeper still in the database rather than one that never

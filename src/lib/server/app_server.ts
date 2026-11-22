@@ -42,6 +42,7 @@ import {
 	type RateLimiterOptions
 } from '../rate_limiter.ts';
 import type { DaemonTokenState } from '../auth/daemon_token.ts';
+import { resolve_keeper_account_id } from '../auth/daemon_token_middleware.ts';
 import type { MigrationResult } from '../db/migrate.ts';
 import type { AppBackend } from './app_backend.ts';
 import type { AppServerContext } from './app_server_context.ts';
@@ -72,8 +73,7 @@ import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec
 import {
 	check_bootstrap_status,
 	create_bootstrap_route_specs,
-	type BootstrapStatus,
-	type OnBootstrap
+	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
 import { ERROR_SERVICE_UNAVAILABLE } from '../http/error_schemas.ts';
@@ -149,8 +149,6 @@ export interface BootstrapLiveOptions {
 	token_store: BootstrapTokenStore;
 	/** Route prefix for bootstrap routes. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
-	/** Called after a successful bootstrap commits (see `OnBootstrap`). */
-	on_bootstrap?: OnBootstrap;
 }
 
 /**
@@ -306,7 +304,14 @@ export interface AppServerOptions {
 	 * error map declares its `413` and `400`; with `null` it is absent.
 	 */
 	max_body_size?: number | null;
-	/** Daemon token state for keeper auth. Omit to disable. */
+	/**
+	 * Daemon token state for keeper auth. Omit to disable. A null
+	 * `keeper_account_id` is resolved from the database at assembly (an
+	 * already-bootstrapped server), and a live bootstrap sets it once its
+	 * account commits; the daemon leg never re-reads it per request, so a
+	 * keeper seeded by another process (`seed_dev_account`) needs a restart,
+	 * as on the Rust spine.
+	 */
 	daemon_token_state?: DaemonTokenState;
 
 	/** Bootstrap options. Omit to skip bootstrap status check and routes. */
@@ -1094,6 +1099,25 @@ const assemble_app_server = async (
 		assert_middleware_stack_mounted(stack_specs, middleware_specs);
 	}
 
+	// The daemon-token keeper, after the migrations and before the bootstrap
+	// check, as the Rust spine's boot runs `resolve_keeper_into`: a live
+	// bootstrap sets it on a fresh database once it commits, and this covers
+	// one already bootstrapped. Best-effort, as there: a failed read leaves it
+	// unset, and a keeper-less state authenticates no daemon token (the warn
+	// below has no twin; the Rust spine's failed read is silent).
+	const daemon_token_state = options.daemon_token_state;
+	if (daemon_token_state && daemon_token_state.keeper_account_id === null) {
+		try {
+			const keeper_account_id = await resolve_keeper_account_id(deps);
+			if (keeper_account_id !== null) {
+				daemon_token_state.keeper_account_id = keeper_account_id;
+				log.info('daemon token: keeper account resolved', { account_id: keeper_account_id });
+			}
+		} catch (error) {
+			log.warn('daemon token: resolving the keeper account failed', error);
+		}
+	}
+
 	// Bootstrap status
 	// - undefined / 'disabled': no route mounted; placeholder status.
 	// - 'surface_only': route mounted but permanently unavailable; status placeholder.
@@ -1139,7 +1163,8 @@ const assemble_app_server = async (
 			session_options: options.session_options,
 			bootstrap_status,
 			token_store: options.bootstrap.mode === 'live' ? options.bootstrap.token_store : null,
-			on_bootstrap: options.bootstrap.mode === 'live' ? options.bootstrap.on_bootstrap : undefined,
+			// a successful bootstrap sets its keeper here, after its commit
+			daemon_token_state: options.daemon_token_state ?? null,
 			bootstrap_ip_rate_limiter
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';

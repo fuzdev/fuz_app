@@ -22,7 +22,7 @@ import {
 	ERROR_TOKEN_FILE_UNDELETABLE
 } from '../http/error_schemas.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
-import type { Account, Actor, RoleGrant } from './account_schema.ts';
+import type { Account, Actor } from './account_schema.ts';
 import { query_create_account_with_actor } from './account_queries.ts';
 import { query_create_role_grant } from './role_grant_queries.ts';
 import {
@@ -42,16 +42,11 @@ export interface BootstrapAccountInput {
 	password: string;
 }
 
-/** What a successful bootstrap created. */
-export interface BootstrapAccountCreated {
+/** Successful bootstrap result with the created entities and the new session. */
+export interface BootstrapAccountSuccess {
+	ok: true;
 	account: Account;
 	actor: Actor;
-	role_grants: { keeper: RoleGrant; admin: RoleGrant };
-}
-
-/** Successful bootstrap result with the created entities and the new session. */
-export interface BootstrapAccountSuccess extends BootstrapAccountCreated {
-	ok: true;
 	/**
 	 * The `Set-Cookie` line of the session minted in the bootstrap
 	 * transaction, formatted inside it, for the caller to set on its
@@ -197,7 +192,7 @@ export const read_bootstrap_token = async (
  * @param provided_token - the bootstrap token from the user
  * @param input - username and password
  * @param options - the session cookie configuration
- * @returns the created account, actor, role_grants, and the session's `Set-Cookie` line — or a bootstrap failure
+ * @returns the created account and actor, and the session's `Set-Cookie` line — or a bootstrap failure
  * @mutates `bootstrap_lock` row - flips `bootstrapped` to `true` atomically
  * @mutates `account` / `actor` / `role_grant` / `auth_session` / `audit_log` tables - inserts the bootstrap account, actor, keeper + admin role_grants, session, and success row
  * @mutates `ctx.post_commit_effects` - appends the success row's listener fan-out, discarded on rollback
@@ -254,13 +249,13 @@ export const bootstrap_account = async (
 				password_hash
 			});
 
-			const keeper_role_grant = await query_create_role_grant(tx_ctx, {
+			await query_create_role_grant(tx_ctx, {
 				actor_id: actor.id,
 				role: ROLE_KEEPER,
 				granted_by: null,
 				expires_at: null
 			});
-			const admin_role_grant = await query_create_role_grant(tx_ctx, {
+			await query_create_role_grant(tx_ctx, {
 				actor_id: actor.id,
 				role: ROLE_ADMIN,
 				granted_by: null,
@@ -307,7 +302,6 @@ export const bootstrap_account = async (
 				ok: true as const,
 				account,
 				actor,
-				role_grants: { keeper: keeper_role_grant, admin: admin_role_grant },
 				set_cookie
 			};
 		});

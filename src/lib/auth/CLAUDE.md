@@ -19,7 +19,7 @@ cross-cutting invariants that don't fit on any single symbol.
 The categories are root ../../../CLAUDE.md §AppDeps Vocabulary. What auth adds:
 
 - **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`), the `{log, audit}` shape action factories take; `RouteFactoryDeps` / `AppDeps` satisfy it structurally. The factories whose handlers end credentials or revoke roles (`create_account_actions`, `create_admin_actions`, `create_role_grant_offer_actions`, `create_self_service_role_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer` (`actions/CLAUDE.md` §Connection closer). The pure-read actor factories (`actor_lookup` / `actor_search`) take only `{log}`.
-- **Runtime state** — `bootstrap_status` and `DaemonTokenState` are inline refs, never deps or options.
+- **Runtime state** — `bootstrap_status` and `DaemonTokenState` are inline refs, never deps or options. `DaemonTokenState.keeper_account_id` is resolved by `create_app_server` at assembly when null, and set by the bootstrap route after its commit (and by `_testing_reset`); the daemon leg never re-reads it.
 
 ## Module map
 
@@ -119,7 +119,7 @@ does not compile until it declares its scope. Twin of the Rust
 ### Routes
 
 - `auth/account_routes.ts` — `POST /login`, `/logout`, `/password`, `GET /status`. Rules on `create_account_route_specs`; the close-after-commit split is below.
-- `auth/bootstrap_routes.ts` — `POST /bootstrap`, `check_bootstrap_status` (the boot report), the `BootstrapStatus` ref and `OnBootstrap` (post-commit). The lock-race loser answers with no audit row.
+- `auth/bootstrap_routes.ts` — `POST /bootstrap`, `check_bootstrap_status` (the boot report), the `BootstrapStatus` ref. A success sets the daemon-token keeper (`daemon_token_state`) after its commit. The lock-race loser answers with no audit row.
 - `auth/signup_routes.ts` — `POST /signup`, open or invite-gated; the success row last in its transaction, an unclassified failure a `signup` failure row with reason `internal_error`.
 - `auth/audit_log_routes.ts` — the optional `GET /audit/stream` (SSE); list and history are RPC. Admission is two-phase (register pending, re-read the credential and role grants, admit), so a revocation racing the request opens no stream.
 - `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver`, injected into `apply_route_specs` so `http/` stays auth-agnostic; the one site every route spec passes, so it also refuses a malformed `required_scope` and one on an unrestricted route.

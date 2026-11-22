@@ -650,7 +650,9 @@ export interface SeedDevAccountDeps extends QueryDeps {
  * Flips `bootstrap_lock` in the same transaction as its writes, as a real
  * bootstrap and `bootstrap_test_keeper` do: a database holding an account
  * never reads as open for bootstrap, so the lock stays the single signal
- * production trusts. Seed after bootstrapping, or seed the keeper itself.
+ * production trusts. Seed after bootstrapping, or seed the keeper itself — a
+ * keeper seeded while a server runs reaches its daemon-token leg after a
+ * restart, which resolves the keeper once at startup.
  *
  * Intended for a dev setup task — do not call in production.
  *

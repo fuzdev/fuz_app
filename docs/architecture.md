@@ -329,11 +329,13 @@ availability probe and the request-time token read go through its
 `0644` or symlinked token file reads as bootstrap-unavailable, with the
 reason logged). The Rust spine's twin is its `BootstrapTokenStore` trait.
 
-The `on_bootstrap` callback on `BootstrapRouteOptions` runs after the commit, with
-what was created (`BootstrapAccountCreated` — no request context and no session
-credential), and a throw from it is logged, never failing the bootstrap — use for app-specific post-bootstrap work (e.g., generating an API
-token file for CLI access). `check_bootstrap_status()` caches availability at startup so the status
-endpoint avoids per-request filesystem/DB queries.
+Once the bootstrap commits, the route sets the new account as the keeper on the
+server's `daemon_token_state` (`BootstrapRouteOptions.daemon_token_state`, which
+`create_app_server` passes), so the keeper's daemon token authenticates from the
+next request; the daemon leg never re-reads the keeper, so one seeded by another
+process needs a restart, as on the Rust spine. `check_bootstrap_status()` caches
+availability at startup so the status endpoint avoids per-request
+filesystem/DB queries.
 
 ## App Settings
 

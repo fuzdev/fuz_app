@@ -98,8 +98,10 @@ Local daemons typically use a file-based bootstrap token:
 3. **Bootstrap**: User pastes the token + credentials → account created with keeper and admin role_grants, session cookie set
 4. **Token consumed**: The file is deleted inside the bootstrap transaction, before it commits — bootstrap is one-shot, and the server needs write access to the token's directory
 
-The `on_bootstrap` callback on the bootstrap options runs after the commit,
-with the account, actor and grants that were created. Use it for app-specific setup like generating CLI API tokens.
+A server with a `daemon_token_state` gets the new account as its keeper once
+the bootstrap commits, so the keeper's daemon token authenticates from the next
+request. The daemon leg never re-reads the keeper: one seeded by another process
+(`seed_dev_account`) authenticates after a restart, as on the Rust spine.
 
 ## Testing
 

@@ -272,5 +272,5 @@ timestamps, and expiry for each role_grant event.
 Typical consumer usage of the identity system:
 
 - **Full-stack web app** — bootstrap, keeper/admin roles, API tokens, admin routes, request context
-- **Local daemon** — PGlite, bootstrap with `on_bootstrap`, session cookies, API tokens, CLI adapter. See ./local-daemon.md
+- **Local daemon** — PGlite, bootstrap, session cookies, API tokens, CLI adapter. See ./local-daemon.md
 - **Action-oriented app** — action specs, CLI (runtime, daemon lifecycle)

@@ -262,7 +262,7 @@ export const mint_test_session = async (
  * Bootstrap the test-DB keeper. Direct-query shortcut for the default
  * `create_test_app` path — bootstrap is not what most tests exercise, so
  * we skip the real `bootstrap_account` flow (no audit row, no
- * `on_bootstrap` callback); the cross-backend harness drives the real
+ * keeper set on a daemon-token state); the cross-backend harness drives the real
  * `POST /bootstrap` against every backend it spawns.
  *
  * Flips `bootstrap_lock.bootstrapped = true` so the post-insert DB state
