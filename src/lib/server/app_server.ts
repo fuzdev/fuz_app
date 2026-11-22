@@ -1073,9 +1073,9 @@ const assemble_app_server = async (
 	// The daemon-token keeper, after the migrations and before the bootstrap
 	// check, as the Rust spine's boot runs `resolve_keeper_into`: a live
 	// bootstrap sets it on a fresh database once it commits, and this covers
-	// one already bootstrapped. Best-effort, as there: a failed read leaves it
-	// unset, and a keeper-less state authenticates no daemon token (the warn
-	// below has no twin; the Rust spine's failed read is silent).
+	// one already bootstrapped. Best-effort, as there: a failed read warns
+	// (the same message as the Rust twin's) and leaves it unset, and a
+	// keeper-less state authenticates no daemon token.
 	const daemon_token_state = options.daemon_token_state;
 	if (daemon_token_state && daemon_token_state.keeper_account_id === null) {
 		try {
