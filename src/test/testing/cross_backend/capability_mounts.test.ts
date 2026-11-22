@@ -22,6 +22,7 @@ import {
 	UNPROBED_CAPABILITIES,
 	type CapabilityMountRow
 } from '#lib/testing/cross_backend/capability_mounts.ts';
+import type { TestFixture } from '#lib/testing/cross_backend/setup.ts';
 
 const target = resolve_capability_mounts_target({ base_url: 'http://localhost:1' });
 
@@ -106,5 +107,32 @@ describe('plan_capability_mount_rows', () => {
 		assert.strictEqual(row.mode, 'fail');
 		const error = await row.body(() => Promise.reject(new Error('no backend'))).catch((e) => e);
 		assert.match(String(error), /ws_account_actions is true, but capabilities\.ws is false/);
+	});
+
+	describe("an unmounted route answers the spine's JSON route_not_found", () => {
+		/** The `account_status` control, over a transport answering every request `response`. */
+		const run_control = (response: () => Response): Promise<unknown> => {
+			const row = plan({}).find((r) => r.name.startsWith('account_status control: '));
+			assert.ok(row);
+			const fixture = { fresh_transport: () => () => Promise.resolve(response()) };
+			return row
+				.body(() => Promise.resolve(fixture as unknown as TestFixture))
+				.then(
+					() => null,
+					(e: unknown) => e
+				);
+		};
+
+		test('route_not_found reads as unmounted', async () => {
+			const error = await run_control(() =>
+				Response.json({ error: 'route_not_found' }, { status: 404 })
+			);
+			assert.strictEqual(error, null);
+		});
+
+		test('a bodiless 404 is neither mounted nor unmounted', async () => {
+			const error = await run_control(() => new Response(null, { status: 404 }));
+			assert.match(String(error), /expected 401 \(mounted\) or 404 route_not_found \(unmounted\)/);
+		});
 	});
 });

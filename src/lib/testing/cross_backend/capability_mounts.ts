@@ -16,8 +16,8 @@ import '../assert_dev_env.ts';
  * Each probe is the cheapest honest request — anonymous, so no setup state
  * shapes the answer — and none of them answers a mounted surface with a `404`.
  * An unmounted path under `/api` answers `404`: the spine's JSON
- * `route_not_found`, or no body where a runtime drops a refused upgrade's body
- * or a backend's own fallback answers `/api` paths.
+ * `route_not_found`, or, for a refused upgrade only, no body where the runtime
+ * drops it (`ws_refusal_body`).
  *
  * - **RPC verbs** (`cell_crud`: `cell_create`, `cell_relations`:
  *   `cell_grant_create`) — both spines look a method up before they
@@ -28,8 +28,8 @@ import '../assert_dev_env.ts';
  * - **The fact routes** (`fact_serving`, `fact_serving_admin_hash`) — a
  *   malformed `hash` param: both spines validate a route's params ahead of
  *   auth, so a mounted route answers `400` `invalid_route_params`. (The cell
- *   route's masked `404` for a cell no row names can't tell itself from a
- *   bodiless unmatched `404`.)
+ *   route's masked `404` for a cell no row names can't tell itself from an
+ *   unmatched `404`.)
  * - **`ready`** — `GET /ready` answers `200 {ready: true}`, or `503` with
  *   `schema_drift` / `db_unreachable` (mounted, if drifted — the readiness
  *   suite fails that); unmounted, a `404` (any body — the spine fallback's
@@ -279,14 +279,22 @@ const describe_answer = (status: number, text: string): string =>
 
 /**
  * Whether an answer is an unmatched path's `404` under `/api`: the spine's JSON
- * `route_not_found`, or a bodiless one — what a runtime dropping a refused
- * upgrade's body (`ws_refusal_body`) sends, and a backend whose own fallback
- * answers `/api` paths. No probe's mounted answer is a `404`.
+ * `route_not_found`. No probe's mounted answer is a `404`.
  */
 const is_unmatched_404 = (status: number, text: string): boolean =>
-	status === 404 && (text === '' || error_of(parse_json(text)) === ERROR_ROUTE_NOT_FOUND);
+	status === 404 && error_of(parse_json(text)) === ERROR_ROUTE_NOT_FOUND;
 
-const UNMATCHED_404 = `404 (${ERROR_ROUTE_NOT_FOUND} or no body)`;
+const UNMATCHED_404 = `404 ${ERROR_ROUTE_NOT_FOUND}`;
+
+/**
+ * Whether a refused upgrade is an unmatched path's `404`: `is_unmatched_404`,
+ * or a bodiless one — what a runtime dropping a refused upgrade's body
+ * (`ws_refusal_body`) sends.
+ */
+const is_unmatched_upgrade_404 = (status: number, text: string): boolean =>
+	is_unmatched_404(status, text) || (status === 404 && text === '');
+
+const UNMATCHED_UPGRADE_404 = `404 (${ERROR_ROUTE_NOT_FOUND} or no body)`;
 
 /** An anonymous RPC call: `401` mounted, `method_not_found` unmounted. */
 const rpc_probe = (declared_method: string): MountProbe => ({
@@ -346,7 +354,7 @@ const route_probe = (
 const upgrade_probe = (path_of: (t: CapabilityMountsTarget) => string): MountProbe => ({
 	request: (t, absent) => `anonymous upgrade on ${locate(path_of, t, absent)}`,
 	mounted: '401',
-	unmounted: UNMATCHED_404,
+	unmounted: UNMATCHED_UPGRADE_404,
 	observe: async (_fixture, t, absent) => {
 		const ws_path = locate(path_of, t, absent);
 		let refusal: WsUpgradeRefusedError;
@@ -365,7 +373,7 @@ const upgrade_probe = (path_of: (t: CapabilityMountsTarget) => string): MountPro
 		}
 		const answer = describe_answer(refusal.status, refusal.body);
 		if (refusal.status === 401) return { mounted: true, answer };
-		if (is_unmatched_404(refusal.status, refusal.body)) return { mounted: false, answer };
+		if (is_unmatched_upgrade_404(refusal.status, refusal.body)) return { mounted: false, answer };
 		assert.fail(
 			`upgrade on ${ws_path}: expected a 401 (mounted) or 404 (unmounted) refusal, got ${answer}`
 		);
