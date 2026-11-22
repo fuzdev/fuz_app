@@ -662,13 +662,12 @@ enforcement:
   announced, through the same closer — `create_app_server` registers one on
   `deps.connection_closer`, which holds the registry — by the
   `RevocationScope` the event declares (`audit_event_revocation_scopes`):
-  - `session` (`session_revoke`) — closes only the stream whose `scope`
-    matches the revoked session's hash
+  - `session` (`session_revoke`, `logout`) — closes only the stream whose
+    `scope` matches the revoked or logged-out session's hash
   - `token` (`token_revoke`) — closes only the stream registered under the
     revoked API token's id
   - `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
-    `logout`, `account_delete`, `account_purge`) — closes the target
-    account's streams
+    `account_delete`, `account_purge`) — closes the target account's streams
   - `role` (`role_grant_revoke`) — closes the target account's streams when
     the revoked role is the one the stream requires and the revoked grant was
     global (the stream's role gate admits on global grants only, so a scoped
@@ -697,11 +696,11 @@ enforcement:
 
 The audit log SSE route (`/audit/stream`) registers each stream with
 `scope = session_hash` and `groups = [account_id]` (plus the API token id for
-a bearer, on a route widened to admit one), so `session_revoke` closes only
-that session's streams, while a `role_grant_revoke` of the stream's role and
-the account-wide revocations (`session_revoke_all`, `token_revoke_all`,
-`password_change`, `logout`, an account delete or purge) close every stream
-for the account.
+a bearer, on a route widened to admit one), so `session_revoke` and `logout`
+close only that session's streams, while a `role_grant_revoke` of the stream's
+role and the account-wide revocations (`session_revoke_all`,
+`token_revoke_all`, `password_change`, an account delete or purge) close every
+stream for the account.
 
 ## WebSocket Connection Cap
 
@@ -1085,7 +1084,8 @@ expiry, a raw row delete — is under
 | `account_token_revoke` | the revoked token's connections |
 | `admin_token_revoke_all` | the account's connections |
 | `account_delete`, `account_purge` | the account's connections |
-| `POST /logout`, `POST /password` | the account's connections |
+| `POST /logout` | the logged-out session's connections |
+| `POST /password` | the account's connections |
 | `POST /login`, when the session cap evicts | each evicted session's connections |
 | `account_token_create`, when the token cap evicts | each evicted token's connections |
 | `role_grant_revoke` of a global grant, `self_service_role_set` disabling a role | the account's WebSockets and audit streams gated on that role |

@@ -78,6 +78,7 @@ import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
+	create_realtime_closer,
 	queue_connection_close,
 	type ConnectionCloser,
 	type ConnectionCloseTarget
@@ -135,6 +136,22 @@ const test_roles = create_role_registry([
 	{ name: APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);
 const log = new Logger('test', { level: 'off' });
+
+/** The blake3 hash of the keeper's bootstrapped session — the row its own list marks current. */
+const current_session_hash = async (test_app: TestApp): Promise<string> => {
+	const res = await rpc_call({
+		app: test_app.app,
+		path: RPC_PATH,
+		method: 'account_session_list',
+		headers: test_app.create_session_headers()
+	});
+	assert.ok(res.ok, 'account_session_list');
+	const sessions = (res.result as { sessions: Array<{ id: string; is_current?: boolean }> })
+		.sessions;
+	const current = sessions.filter((s) => s.is_current === true);
+	assert.strictEqual(current.length, 1, 'exactly one current session');
+	return current[0]!.id;
+};
 
 /**
  * The account routes and the account, admin, role-grant-offer, and
@@ -779,7 +796,7 @@ describe_db('connection_closer wiring', (get_db) => {
 	});
 
 	describe('REST routes (logout / password)', () => {
-		test('logout closes the account sockets (account-wide, matching Rust)', async () => {
+		test('logout closes the connections of the session it ends, and no other', async () => {
 			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
@@ -789,6 +806,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				audit_factory: (params) =>
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
+			const session_hash = await current_session_hash(test_app);
 			const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
@@ -798,25 +816,90 @@ describe_db('connection_closer wiring', (get_db) => {
 			});
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(calls.length, 1, 'closer fired once');
-			// The close is ACCOUNT-WIDE — matches the Rust `account_logout`
-			// handler and the sibling `/password` handler. Only the current
-			// session ROW is deleted (token-hash-scoped), but the close is
-			// account-grain — the scope `logout` declares in
-			// `audit_event_revocation_scopes`, so the handler's close and the
-			// audit listeners' converge.
-			assert_close_call(calls[0], { kind: 'account', account_id: test_app.backend.account.id });
-			// Pin `event_type: 'logout'` (NOT `session_revoke`) on the audit row.
-			// The listeners close by the scope the event type declares: a refactor
-			// that emitted `session_revoke` here would narrow the listener close
-			// to one session, and mislabel the row for admin forensics.
+			// Logout ends one credential, its session, so it closes only that
+			// session's connections — the account's other sessions, its API
+			// tokens and the daemon token stay valid, and so do their
+			// connections. The Rust `account_logout` closes the same target.
+			assert_close_call(calls[0], { kind: 'session', session_hash });
+			// The row names the session it ended (`metadata.session_id`, as a
+			// `session_revoke` row does), which is what the audit listeners close
+			// by — the scope `logout` declares in `audit_event_revocation_scopes`
+			// — so the handler's close and theirs converge.
 			const logout_audits = audit_events.filter((e) => e.event_type === 'logout');
 			assert.strictEqual(logout_audits.length, 1, 'logout emits exactly one logout audit row');
+			assert.deepStrictEqual(logout_audits[0]!.metadata, { session_id: session_hash });
 			const stray_session_revoke = audit_events.filter((e) => e.event_type === 'session_revoke');
 			assert.strictEqual(
 				stray_session_revoke.length,
 				0,
 				'logout must NOT emit a session_revoke event — see audit_event_revocation_scopes'
 			);
+			await test_app.cleanup();
+		});
+
+		test("logout's audit row alone closes only its session's connections", async () => {
+			// The handler's own close is turned off (an empty `RealtimeCloser`
+			// on the account routes), so every close here is the revocation guard's, made
+			// on the `logout` row the server announces after the commit — the
+			// backstop for a logout emitted by code that holds no closer.
+			const registry = new ConnectionRegistry({ log });
+			const test_app = await create_test_app({
+				session_options,
+				db: get_db(),
+				// mounting the audit stream registers the guard on the backend's closer
+				app_options: { audit_log_sse: true },
+				create_route_specs: (ctx) => {
+					ctx.deps.connection_closer.add(registry);
+					return [
+						...prefix_route_specs(
+							'/api/account',
+							create_account_route_specs(
+								// an empty fan-out — the handler's close reaches nothing
+								{ ...ctx.deps, connection_closer: create_realtime_closer() },
+								{
+									session_options,
+									login_ip_rate_limiter: ctx.login_ip_rate_limiter,
+									login_account_rate_limiter: ctx.login_account_rate_limiter,
+									login_fail_floor_ms: 0
+								}
+							)
+						),
+						...create_rpc_endpoint({
+							notification_sender: ctx.deps.notification_sender,
+							action_ip_rate_limiter: null,
+							action_account_rate_limiter: null,
+							path: RPC_PATH,
+							actions: create_account_actions(ctx.deps),
+							log: ctx.deps.log
+						})
+					];
+				}
+			});
+			const account_id = test_app.backend.account.id;
+			const session_hash = await current_session_hash(test_app);
+			const open = (identity: Parameters<typeof create_test_identity>[0]): FakeWs => {
+				const socket = create_fake_ws();
+				registry.add_connection(socket.ws, create_test_identity(identity));
+				return socket;
+			};
+			const logged_out = open({ account_id, session_hash });
+			const other_session = open({ account_id, session_hash: 'other-session-hash' });
+			const bearer = open({ account_id, api_token_id: 'tok_otherotherot' });
+			const daemon = open({ account_id });
+
+			const res = await test_app.app.request('/api/account/logout', {
+				method: 'POST',
+				headers: test_app.create_session_headers({ 'content-type': 'application/json' }),
+				body: null
+			});
+			assert.strictEqual(res.status, 200);
+
+			assert.deepStrictEqual(logged_out.closes, [
+				{ code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON }
+			]);
+			assert.deepStrictEqual(other_session.closes, [], "another session's socket stays open");
+			assert.deepStrictEqual(bearer.closes, [], 'a bearer socket stays open');
+			assert.deepStrictEqual(daemon.closes, [], 'a daemon-token socket stays open');
 			await test_app.cleanup();
 		});
 
@@ -1443,7 +1526,9 @@ describe_db('connection_closer wiring', (get_db) => {
 					assert.ok(session_id);
 					return {
 						victim: { account_id: keeper_id(h), session_hash: session_id },
-						expected: { kind: 'account', account_id: keeper_id(h) },
+						// the session it ends, never the account: the sibling — another
+						// session of the account — stays open
+						expected: { kind: 'session', session_hash: session_id },
 						committed: async (db) =>
 							!(await exists(db, 'SELECT 1 FROM auth_session WHERE id = $1', [session_id])),
 						act: async () =>

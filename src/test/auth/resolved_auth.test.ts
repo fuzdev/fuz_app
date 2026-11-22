@@ -18,16 +18,18 @@ import {
 	type ResolvedAuth
 } from '#lib/auth/resolved_auth.ts';
 import { token_scope_full, token_scope_methods } from '#lib/auth/token_scope.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
 import { RESOLVED_AUTH_KEY } from '#lib/hono_context.ts';
 import { create_test_account } from '#lib/testing/entities.ts';
 
 const create_context = (vars: Record<string, unknown>): Context =>
 	({ get: (key: string) => vars[key] }) as unknown as Context;
 
+const SESSION_HASH = hash_session_token('session_token_1');
 const session: ResolvedAuth = {
 	credential_type: 'session',
 	account: create_test_account({ id: 'acc_1' }),
-	session_hash: 'hash_1',
+	session_hash: SESSION_HASH,
 	credential_deadline: 1234
 };
 const narrowed_scope = token_scope_methods(['thing_list']);
@@ -81,7 +83,7 @@ describe('resolved_auth_session_hash / resolved_auth_api_token_id', () => {
 			]),
 			[
 				[null, null],
-				['hash_1', null],
+				[SESSION_HASH, null],
 				[null, 'tok_1'],
 				[null, null]
 			]

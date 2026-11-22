@@ -45,11 +45,13 @@ import '../assert_dev_env.ts';
  *    `capabilities.account_lifecycle`) — the keeper soft-deletes a second
  *    admin whose stream is open; the delete revokes its credentials and
  *    closes its stream.
- * 7. **close on the other account-wide revocations** (gated on `rpc_path`;
- *    purge also on `capabilities.account_lifecycle`) — `admin_token_revoke_all`,
- *    `POST /logout`, `POST /password`, and `account_purge` of a second admin
- *    each close its stream — the rows `create_account_revocations` shares with
- *    the WS suite.
+ * 7. **close on the shared revocations** (gated on `rpc_path`; purge also
+ *    on `capabilities.account_lifecycle`) — `admin_token_revoke_all`,
+ *    `POST /password`, and `account_purge` of a second admin each close its
+ *    stream, and its `POST /logout` closes the stream of the session it ends
+ *    while a second session's stream stays open and still receives a
+ *    broadcast — the rows `create_account_revocations` shares with the WS
+ *    suite.
  * 8. **per-session cap** — one stream past `max_per_scope` on one session
  *    closes the oldest (evict-oldest, no final frame) and leaves every other
  *    stream open. With `rpc_path`, each stream is proven admitted as it opens
@@ -644,20 +646,24 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 			}
 		);
 
-		// The account-wide revocations past session revoke-all and delete
-		// (`revocation_drivers.ts`, shared with the WS suite) each close the
-		// target admin's stream. Without `rpc_path` the rows still register, as
-		// skipped cases, and never run — so the empty path is never sent.
+		// The revocations of `revocation_drivers.ts`, shared with the WS suite,
+		// each close the target admin's stream on the session they were sent on.
+		// A session-scoped one (logout) leaves a second session's stream open and
+		// receiving, so a backend closing the whole account on it fails. Without
+		// `rpc_path` the rows still register, as skipped cases, and never run —
+		// so the empty path is never sent.
 		const revocations = create_account_revocations({
 			capabilities,
 			rpc_path: rpc_path ?? '',
 			logout_path,
 			password_path
 		});
-		for (const { label, slug, gate, revoke } of revocations) {
+		for (const { label, slug, gate, closes, revoke } of revocations) {
 			test_if(
 				capabilities.sse && gate && rpc_path !== undefined,
-				`stream closes on ${label} of the subscriber account`,
+				closes === 'session'
+					? `stream closes on ${label} of its session, and the account's other session's stays`
+					: `stream closes on ${label} of the subscriber account`,
 				async () => {
 					const fixture = await setup_test();
 					const target = await fixture.create_account({
@@ -667,13 +673,40 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					});
 					const cookie = target.create_session_headers().cookie;
 					assert.ok(cookie, 'expected a session cookie for the target account');
-					const sse = await open_admitted(fixture, [cookie]);
+					const streams: Array<SseTransport> = [];
 					try {
+						const sse = await open_admitted(fixture, [cookie]);
+						streams.push(sse);
+						let survivor: SseTransport | null = null;
+						if (closes === 'session') {
+							// a second login, a second session of the same account on its own jar
+							const second_transport = await login_fresh_session(fixture, {
+								login_path,
+								username: target.account.username,
+								password: DEFAULT_TEST_PASSWORD,
+								label: 'the second login'
+							});
+							survivor = await open_admitted(
+								fixture,
+								second_transport.cookies(),
+								'second session stream'
+							);
+							streams.push(survivor);
+						}
 						await revoke(fixture, target);
 						const closed = await sse.wait_for_close(2000);
 						assert.ok(closed, `stream did not close within 2s after ${label}`);
+						if (survivor !== null) {
+							// still open, and still broadcast to
+							await read_probe_frame(
+								survivor,
+								fixture.transport,
+								rpc_path!,
+								'second session stream'
+							);
+						}
 					} finally {
-						await sse.close();
+						await Promise.all(streams.map((stream) => stream.close()));
 					}
 				}
 			);

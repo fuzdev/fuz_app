@@ -741,10 +741,10 @@ the twin of the Rust `ConnectionCloseTarget::from_audit_event` — then calls
 (`auth/audit_log_schema.ts`), and a row missing its key (an empty string
 included) maps to nothing:
 
-- `session` (`session_revoke`) → `{kind: 'session', session_hash: metadata.session_id}`
+- `session` (`session_revoke`, `logout`) → `{kind: 'session', session_hash: metadata.session_id}`
 - `token` (`token_revoke`) → `{kind: 'token', api_token_id: metadata.token_id}`
 - `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
-  `logout`, `account_delete`, `account_purge`) →
+  `account_delete`, `account_purge`) →
   `{kind: 'account', account_id: target_account_id ?? account_id}`
 - `role` (`role_grant_revoke`) → `{kind: 'role', account_id: target_account_id ??
   account_id, role: metadata.role}` when the revoked grant was global

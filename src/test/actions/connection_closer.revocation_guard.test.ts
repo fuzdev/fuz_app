@@ -92,13 +92,13 @@ describe('audit_event_revocation_scopes', () => {
 	// invalidates — the twin of the `revocation_scope` column of the Rust
 	// spine's `AUDIT_EVENT_SPECS`. Everything else is `none`.
 	const revoking: Record<string, RevocationScope> = {
-		logout: 'account',
 		password_change: 'account',
 		session_revoke_all: 'account',
 		token_revoke_all: 'account',
 		account_delete: 'account',
 		account_purge: 'account',
 		session_revoke: 'session',
+		logout: 'session',
 		token_revoke: 'token',
 		role_grant_revoke: 'role'
 	};
@@ -136,6 +136,17 @@ describe('to_connection_close_target', () => {
 		assert.deepStrictEqual(
 			to_connection_close_target(
 				create_audit_event({ event_type: 'session_revoke', metadata: { session_id: HASH_A } })
+			),
+			{ kind: 'session', session_hash: HASH_A }
+		);
+		// logout ends the one session it was sent on — never the account
+		assert.deepStrictEqual(
+			to_connection_close_target(
+				create_audit_event({
+					event_type: 'logout',
+					account_id: ACCOUNT_A,
+					metadata: { session_id: HASH_A }
+				})
 			),
 			{ kind: 'session', session_hash: HASH_A }
 		);
@@ -236,6 +247,8 @@ describe('to_connection_close_target', () => {
 			create_audit_event({ event_type: 'session_revoke', metadata: null }),
 			create_audit_event({ event_type: 'session_revoke', metadata: { session_id: '' } }),
 			create_audit_event({ event_type: 'session_revoke', metadata: { session_id: 7 } }),
+			// a logout row with no session id closes nothing — not the account
+			create_audit_event({ event_type: 'logout', account_id: ACCOUNT_A }),
 			create_audit_event({ event_type: 'token_revoke', metadata: {} }),
 			create_audit_event({ event_type: 'token_revoke', metadata: { token_id: '' } }),
 			create_audit_event({ event_type: 'account_delete' }),
@@ -270,39 +283,48 @@ describe('to_connection_close_target', () => {
 	});
 });
 
-describe('create_revocation_guard: session_revoke', () => {
-	test('closes only the socket tied to the revoked session hash', () => {
-		const connection_registry = new ConnectionRegistry();
-		const guard = create_revocation_guard(connection_registry, silent_log);
+describe('create_revocation_guard: session-scoped events', () => {
+	for (const event_type of ['session_revoke', 'logout'] as const) {
+		test(`${event_type} closes only the socket tied to the named session hash`, () => {
+			const connection_registry = new ConnectionRegistry();
+			const guard = create_revocation_guard(connection_registry, silent_log);
 
-		const session_a = create_fake_ws();
-		const session_b = create_fake_ws();
-		const bearer = create_fake_ws();
-		connection_registry.add_connection(
-			session_a.ws,
-			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
-		);
-		connection_registry.add_connection(
-			session_b.ws,
-			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
-		);
-		connection_registry.add_connection(
-			bearer.ws,
-			create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
-		);
+			const session_a = create_fake_ws();
+			const session_b = create_fake_ws();
+			const bearer = create_fake_ws();
+			const daemon = create_fake_ws();
+			connection_registry.add_connection(
+				session_a.ws,
+				create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
+			);
+			connection_registry.add_connection(
+				session_b.ws,
+				create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_A })
+			);
+			connection_registry.add_connection(
+				bearer.ws,
+				create_test_identity({ account_id: ACCOUNT_A, api_token_id: TOKEN_A })
+			);
+			// a daemon-token socket: the account, no session or token
+			connection_registry.add_connection(
+				daemon.ws,
+				create_test_identity({ account_id: ACCOUNT_A })
+			);
 
-		guard(
-			create_audit_event({
-				event_type: 'session_revoke',
-				account_id: ACCOUNT_A,
-				metadata: { session_id: HASH_A }
-			})
-		);
+			guard(
+				create_audit_event({
+					event_type,
+					account_id: ACCOUNT_A,
+					metadata: { session_id: HASH_A }
+				})
+			);
 
-		assert.strictEqual(session_a.closes.length, 1);
-		assert.strictEqual(session_b.closes.length, 0);
-		assert.strictEqual(bearer.closes.length, 0);
-	});
+			assert.strictEqual(session_a.closes.length, 1);
+			assert.strictEqual(session_b.closes.length, 0);
+			assert.strictEqual(bearer.closes.length, 0);
+			assert.strictEqual(daemon.closes.length, 0);
+		});
+	}
 
 	test('no-op when metadata.session_id is missing', () => {
 		const connection_registry = new ConnectionRegistry();
@@ -384,7 +406,6 @@ describe('create_revocation_guard: account-scoped events', () => {
 		'session_revoke_all',
 		'token_revoke_all',
 		'password_change',
-		'logout',
 		'account_delete',
 		'account_purge'
 	] as const;
@@ -530,7 +551,14 @@ describe('create_revocation_guard: safety', () => {
 			create_test_identity({ session_hash: HASH_A, account_id: ACCOUNT_A })
 		);
 
-		guard(create_audit_event({ event_type: 'logout', outcome: 'failure', account_id: ACCOUNT_A }));
+		guard(
+			create_audit_event({
+				event_type: 'logout',
+				outcome: 'failure',
+				account_id: ACCOUNT_A,
+				metadata: { session_id: HASH_A }
+			})
+		);
 		assert.strictEqual(closes.length, 0);
 	});
 
@@ -795,7 +823,7 @@ describe('create_revocation_guard: over a RealtimeCloser', () => {
 			create_test_identity({ session_hash: HASH_B, account_id: ACCOUNT_B })
 		);
 
-		guard(create_audit_event({ event_type: 'logout', account_id: ACCOUNT_A }));
+		guard(create_audit_event({ event_type: 'password_change', account_id: ACCOUNT_A }));
 
 		assert.strictEqual(on_first.closes.length, 1);
 		assert.strictEqual(on_second.closes.length, 1);
@@ -944,12 +972,7 @@ describe('create_revocation_guard: over an SSE registry', () => {
 		assert.ok(!stream.closed);
 	});
 
-	for (const event_type of [
-		'account_delete',
-		'account_purge',
-		'logout',
-		'token_revoke_all'
-	] as const) {
+	for (const event_type of ['account_delete', 'account_purge', 'token_revoke_all'] as const) {
 		test(`${event_type} closes the target account's streams and no other's`, () => {
 			const registry = new SseRegistry<string>();
 			const target = create_mock_stream<string>();
@@ -1283,37 +1306,39 @@ describe('create_revocation_guard: over an SSE registry', () => {
 		assert.strictEqual(registry.count, 1);
 	});
 
-	test('session_revoke closes only the matching session stream', () => {
-		const registry = new SseRegistry<string>();
-		const session_x_stream = create_mock_stream<string>();
-		const session_y_stream = create_mock_stream<string>();
-		// another subscriber for the same account but a different session hash
-		registry.subscribe(session_x_stream, {
-			channels: ['audit_log'],
-			scope: 'session-hash-x',
-			groups: ['account-a']
+	for (const event_type of ['session_revoke', 'logout'] as const) {
+		test(`${event_type} closes only the matching session stream`, () => {
+			const registry = new SseRegistry<string>();
+			const session_x_stream = create_mock_stream<string>();
+			const session_y_stream = create_mock_stream<string>();
+			// another subscriber for the same account but a different session hash
+			registry.subscribe(session_x_stream, {
+				channels: ['audit_log'],
+				scope: 'session-hash-x',
+				groups: ['account-a']
+			});
+			registry.subscribe(session_y_stream, {
+				channels: ['audit_log'],
+				scope: 'session-hash-y',
+				groups: ['account-a']
+			});
+
+			const guard = create_sse_guard(registry, 'admin', silent_log);
+
+			guard(
+				create_test_audit_event({
+					event_type,
+					account_id: 'account-a',
+					outcome: 'success',
+					metadata: { session_id: 'session-hash-x' }
+				})
+			);
+
+			assert.ok(session_x_stream.closed, 'revoked session stream must close');
+			assert.ok(!session_y_stream.closed, 'other session for same account must stay open');
+			assert.strictEqual(registry.count, 1);
 		});
-		registry.subscribe(session_y_stream, {
-			channels: ['audit_log'],
-			scope: 'session-hash-y',
-			groups: ['account-a']
-		});
-
-		const guard = create_sse_guard(registry, 'admin', silent_log);
-
-		guard(
-			create_test_audit_event({
-				event_type: 'session_revoke',
-				account_id: 'account-a',
-				outcome: 'success',
-				metadata: { session_id: 'session-hash-x' }
-			})
-		);
-
-		assert.ok(session_x_stream.closed, 'revoked session stream must close');
-		assert.ok(!session_y_stream.closed, 'other session for same account must stay open');
-		assert.strictEqual(registry.count, 1);
-	});
+	}
 
 	test('session_revoke ignores events with missing session_id metadata', () => {
 		const registry = new SseRegistry<string>();

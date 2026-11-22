@@ -635,9 +635,10 @@ describe('create_app_server.ws_endpoints', () => {
 		);
 	});
 
-	test('the revocation guard: a logout row closes the affected socket', async () => {
+	test('the revocation guard: a logout row closes its session socket, and no other', async () => {
 		// Pairs with the session_revoke test — the one guard dispatches on
-		// each event's revocation scope, and `logout` is account-wide.
+		// each event's revocation scope, and `logout` closes the session its
+		// row names, never the account.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const registry = new ConnectionRegistry();
@@ -651,15 +652,22 @@ describe('create_app_server.ws_endpoints', () => {
 		const account_id: Uuid = create_uuid();
 		const fake_ws = create_fake_ws();
 		registry.add_connection(fake_ws.ws, create_test_identity({ session_hash, account_id }));
+		const other_session = create_fake_ws();
+		registry.add_connection(
+			other_session.ws,
+			create_test_identity({ session_hash: 'session_hash_other', account_id })
+		);
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'logout',
-			account_id
+			account_id,
+			metadata: { session_id: session_hash }
 		});
 		audit.notify(event);
 
 		assert.strictEqual(fake_ws.closes.length, 1);
 		assert.strictEqual(fake_ws.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(other_session.closes.length, 0, "the account's other session stays open");
 	});
 
 	test('audit_log_sse + ws_endpoints co-mount: both register listeners and the guard fires on session_revoke', async () => {
@@ -903,7 +911,7 @@ describe('create_app_server.ws_endpoints', () => {
 			on_b.ws,
 			create_test_identity({ session_hash: 'session_hash_b', account_id })
 		);
-		audit.notify(create_test_audit_event({ event_type: 'logout', account_id }));
+		audit.notify(create_test_audit_event({ event_type: 'password_change', account_id }));
 		assert.strictEqual(on_a.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 		assert.strictEqual(on_b.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
 	});

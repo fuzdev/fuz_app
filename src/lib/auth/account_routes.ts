@@ -271,8 +271,8 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * every account surface serves it, matching the Rust `account_router`.
  * Self-service session/token management is on `auth/account_actions.ts`.
  *
- * `/login` closes the connections of the sessions its cap evicts, and
- * `/logout` and `/password` close the account's, each once its revocation has
+ * `/login` closes the connections of the sessions its cap evicts, `/logout`
+ * those of the session it ends, and `/password` the account's, each once its revocation has
  * committed: `/logout` through the route transaction's post-commit queue
  * (`queue_connection_close`), `/login` and `/password` — which open their own
  * transaction around just their writes — straight after it commits
@@ -471,28 +471,31 @@ export const create_account_route_specs = (
 			// the shape admits only a session credential, so this is its hash
 			// (the Rust `account_logout` reads the same value)
 			const session_hash = resolved_auth_session_hash(route.credential);
-			if (session_hash !== null) {
-				await query_session_revoke_by_hash_unscoped(route, session_hash);
-				// Close this account's live connections once the revoke has
-				// committed — queued, so it never runs before the commit or on
-				// rollback, and it does not depend on the audit row below (written
-				// in the route transaction, so it commits with the revoke). Account-wide (not session-targeted) to match the Rust
-				// `account_logout` handler and the sibling `/password` handler
-				// — logout is a self-initiated account-grain operation. The
-				// audit listeners repeat the same close on the announced
-				// `logout` row; closing is idempotent.
-				queue_connection_close(route, connection_closer, {
-					kind: 'account',
-					account_id: ctx.account.id
-				});
+			if (session_hash === null) {
+				// a 500 with nothing changed, as the Rust handler answers
+				throw new Error('logout: the session gate admitted a caller with no session hash');
 			}
+			await query_session_revoke_by_hash_unscoped(route, session_hash);
+			// Close the live connections of the session this logout ends, once
+			// the revoke has committed — queued, so it never runs before the
+			// commit or on rollback, and it does not depend on the audit row below
+			// (written in the route transaction, so it commits with the revoke).
+			// Only that session's: logout ends one credential, and the account's
+			// other sessions, its API tokens and the daemon token stay valid, so
+			// their connections stay open. The audit listeners repeat the same
+			// close on the announced `logout` row, which names the session;
+			// closing is idempotent. The Rust `account_logout` closes the same.
+			queue_connection_close(route, connection_closer, { kind: 'session', session_hash });
 			// Account-grain operation — no `actor_id` (which actor was
 			// resolved per-request is incidental to "this account ended
-			// its session"). Mirrors `login`.
+			// its session"). Mirrors `login`. `session_id` names the ended
+			// session, as a `session_revoke` row does — what the revocation
+			// guard closes by.
 			await deps.audit.emit(route, {
 				event_type: 'logout',
 				account_id: ctx.account.id,
-				ip: route.client_ip
+				ip: route.client_ip,
+				metadata: { session_id: session_hash }
 			});
 			// the clear rides the success, answered once the revoke and this
 			// row have committed — a rollback clears nothing

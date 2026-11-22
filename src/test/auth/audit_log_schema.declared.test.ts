@@ -32,7 +32,7 @@ const TOKEN = 'tok_abcdefghijkl';
 /** A valid metadata value of each builtin event type. */
 const BASES: Record<AuditEventType, unknown> = {
 	login: { username: 'alice' },
-	logout: null,
+	logout: { session_id: HASH },
 	bootstrap: { error: 'x' },
 	signup: { username: 'alice' },
 	password_change: {},

@@ -124,10 +124,11 @@ export type RevocationScope = 'none' | 'session' | 'token' | 'account' | 'role';
  * until it declares its scope here.
  *
  * A scope other than `none` marks an event whose success invalidates a live
- * connection's credential or access: `logout`, `password_change`,
+ * connection's credential or access: `password_change`,
  * `session_revoke_all`, `token_revoke_all`, `account_delete`, and
- * `account_purge` are account-wide, `session_revoke` and `token_revoke` name
- * the one credential they ended, and `role_grant_revoke` names the lost role.
+ * `account_purge` are account-wide, `session_revoke`, `logout` and
+ * `token_revoke` name the one credential they ended, and `role_grant_revoke`
+ * names the lost role.
  * Granting access revokes nothing, and neither does an event about a subject
  * other than a connection's identity.
  *
@@ -137,7 +138,7 @@ export type RevocationScope = 'none' | 'session' | 'token' | 'account' | 'role';
 export const audit_event_revocation_scopes: Readonly<Record<AuditEventType, RevocationScope>> =
 	Object.freeze({
 		login: 'none',
-		logout: 'account',
+		logout: 'session',
 		bootstrap: 'none',
 		signup: 'none',
 		password_change: 'account',
@@ -256,7 +257,11 @@ export const audit_metadata_schemas = Object.freeze({
 			username: meta(string, { description: 'Username submitted with the login attempt.' })
 		})
 	),
-	logout: literal(null),
+	logout: loose_object({
+		session_id: meta(SessionId, {
+			description: 'Blake3 hash identifying the session row the logout ended.'
+		})
+	}),
 	bootstrap: nullable(
 		loose_object({
 			error: meta(string, { description: 'Error message for a failed bootstrap attempt.' })

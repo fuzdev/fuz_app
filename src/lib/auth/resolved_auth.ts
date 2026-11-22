@@ -19,7 +19,7 @@ import type { Context } from 'hono';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { RESOLVED_AUTH_KEY } from '../hono_context.ts';
 import { query_account_by_id, query_active_actors_by_account } from './account_queries.ts';
-import type { Account } from './account_schema.ts';
+import type { Account, SessionId } from './account_schema.ts';
 import { query_api_token_live_account } from './api_token_queries.ts';
 import {
 	has_any_scoped_role,
@@ -59,7 +59,7 @@ interface ResolvedAuthBase {
 export interface ResolvedSessionAuth extends ResolvedAuthBase {
 	readonly credential_type: 'session';
 	/** Blake3 hash of the session token — the `auth_session.id`. */
-	readonly session_hash: string;
+	readonly session_hash: SessionId;
 }
 
 /** An `Authorization: Bearer` API token — the only credential a scope narrows. */
@@ -110,7 +110,7 @@ export const resolved_auth_scope = (auth: ResolvedAuth | null): TokenScope | nul
  * @param auth - the resolved credential, or `null` for an anonymous caller
  * @returns the `auth_session.id`, or `null`
  */
-export const resolved_auth_session_hash = (auth: ResolvedAuth | null): string | null =>
+export const resolved_auth_session_hash = (auth: ResolvedAuth | null): SessionId | null =>
 	auth?.credential_type === 'session' ? auth.session_hash : null;
 
 /**
@@ -166,10 +166,10 @@ export const get_resolved_auth = (c: Context): ResolvedAuth | null =>
  * - **Every credential** — the account row still exists and is not
  *   soft-deleted.
  *
- * It re-checks the **credential**, not what a revocation chose to close: a
- * `logout` closes every connection of the account but deletes only its own
- * session, so another session's connection opening concurrently passes this
- * check and is refused only if that account-wide close found its pending
+ * It re-checks the **credential**, not what a revocation chose to close: an
+ * `admin_token_revoke_all` closes every connection of the account but deletes
+ * only its API tokens, so a session's connection opening concurrently passes
+ * this check and is refused only if that account-wide close found its pending
  * registration — the same two outcomes an already-open connection has.
  *
  * **No side effects.** Unlike the bearer middleware this never touches

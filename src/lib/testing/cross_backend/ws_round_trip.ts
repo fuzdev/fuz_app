@@ -55,9 +55,12 @@ import '../assert_dev_env.ts';
  * socket:
  * `account_token_revoke` closes the revoked token's bearer socket and leaves
  * a socket on the account's other token open; `admin_token_revoke_all`,
- * `POST /logout`, `POST /password`, and `account_purge` (also gated on
+ * `POST /password`, and `account_purge` (also gated on
  * `capabilities.account_lifecycle`) close the account's bearer and session
- * sockets — the rows `create_account_revocations` shares with the SSE suite;
+ * sockets, and `POST /logout` closes only the socket of the session it ends,
+ * the account's bearer socket and a second session's socket each answering a
+ * request after it — the rows `create_account_revocations` shares with the SSE
+ * suite;
  * and a token the per-account cap evicts (`max_tokens` further mints) has its
  * bearer socket closed. Omit `rpc_path` to skip them
  * (consumers without the standard account and admin actions on their RPC
@@ -123,7 +126,9 @@ import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
 import type { TestAccount } from '../test_app.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
+import { login_fresh_session } from './session_login.ts';
 import {
+	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH
 } from './spine_surface_constants.ts';
@@ -162,6 +167,11 @@ export interface CrossProcessWsTestOptions extends WsEndpointTarget {
 	readonly max_message_bytes?: number;
 	/** REST logout route path, for the logout close case. Default `/api/account/logout`. */
 	readonly logout_path?: string;
+	/**
+	 * REST login route path, for the logout case's second session of the
+	 * account. Default `/api/account/login`.
+	 */
+	readonly login_path?: string;
 	/** REST password-change route path, for its close case. Default `/api/account/password`. */
 	readonly password_path?: string;
 	/**
@@ -201,6 +211,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		rpc_path,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
 		logout_path = SPINE_ACCOUNT_LOGOUT_PATH,
+		login_path = SPINE_ACCOUNT_LOGIN_PATH,
 		password_path = SPINE_ACCOUNT_PASSWORD_PATH,
 		ws_account_roles = []
 	} = options;
@@ -563,9 +574,12 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			}
 		);
 
-		// The account-wide revocations (`revocation_drivers.ts`, shared with the
-		// SSE suite) close the account's connections — its bearer socket, and its
-		// session socket too.
+		// The revocations of `revocation_drivers.ts`, shared with the SSE suite.
+		// An account-wide one closes the account's connections — its bearer
+		// socket, and its session socket too. A session-scoped one (logout)
+		// closes the socket of the session it was sent on, and leaves the
+		// account's bearer socket and another session's socket open, each proven
+		// by a reply after the close.
 		// Without `rpc_path` the rows still register, as skipped cases, and never
 		// run — so the empty path is never sent.
 		const revocations = create_account_revocations({
@@ -574,7 +588,58 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 			logout_path,
 			password_path
 		});
-		for (const { label, slug, gate, revoke } of revocations) {
+		for (const { label, slug, gate, closes, revoke } of revocations) {
+			if (closes === 'session') {
+				test_if(
+					capabilities.ws && gate && rpc_path !== undefined,
+					`${label} closes only its session's socket`,
+					async () => {
+						const fixture = await setup_test();
+						const target = await fixture.create_account({
+							username: `ws_revoke_${slug}`,
+							password_value: DEFAULT_TEST_PASSWORD,
+							roles: [...ws_account_roles]
+						});
+						// a second login, a second session of the same account on its own jar
+						const second = await login_fresh_session(fixture, {
+							login_path,
+							username: target.account.username,
+							password: DEFAULT_TEST_PASSWORD,
+							label: 'the second login'
+						});
+						await with_sockets(
+							[
+								() => open_session(target),
+								() => open_bearer(target.api_token),
+								() =>
+									create_admitted_ws_transport({
+										base_url,
+										ws_path,
+										cookies: second.cookies(),
+										origin: origin ?? base_url
+									})
+							],
+							async (session, bearer, other_session) => {
+								await revoke(fixture, target);
+								await assert_revoked_close(session, `${label} (its session socket)`);
+								// the credentials it didn't end keep their sockets
+								for (const [what, client] of [
+									['bearer socket', bearer],
+									['other session socket', other_session]
+								] as const) {
+									assert.deepStrictEqual(
+										await client.request(2, heartbeat_action_spec.method, {}),
+										{},
+										`${label}: the ${what} still answers`
+									);
+									assert.strictEqual(client.close_code, null, `${label}: the ${what} stays open`);
+								}
+							}
+						);
+					}
+				);
+				continue;
+			}
 			test_if(
 				capabilities.ws && gate && rpc_path !== undefined,
 				`${label} closes the account's bearer and session sockets`,

@@ -666,8 +666,8 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			const { socket, stalled } = await open_stalled(endpoint, c);
 			// the close finds the pending registration while the session row is
-			// still there — an account-wide close from another session's logout
-			// does exactly this. The re-read passes, so only admission can refuse.
+			// still there — an `admin_token_revoke_all` does exactly this. The
+			// re-read passes, so only admission can refuse.
 			assert.strictEqual(endpoint.registry.close_connections({ kind: 'account', account_id }), 1);
 			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'closed at once');
 			stalled.release();

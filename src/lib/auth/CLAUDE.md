@@ -249,9 +249,10 @@ tokens (force re-auth everywhere), then clears the session cookie. Declares
 `credential_types: ['session']` (see ../../../docs/security.md
 §Credential-channel gating).
 
-**The routes close what they revoke, after the commit.** `/logout` and
-`/password` queue an account-wide close, and `/login` queues a session close
-for each session its cap evicted (`queue_connection_close` on
+**The routes close what they revoke, after the commit.** `/password` queues an
+account-wide close, `/logout` a session close for the session it ends (the
+account's other sessions and tokens stay valid, and their connections open),
+and `/login` a session close for each session its cap evicted (`queue_connection_close` on
 `deps.connection_closer`). The queue runs once the route's transaction has
 committed and is dropped if the handler throws.
 

@@ -243,8 +243,8 @@ describe_db('audit log stream admission', (get_db) => {
 
 		const { response, stalled } = await open_stalled(h);
 		// a close reaches the registration while its session row is still there
-		// — an account-wide close from another session's logout does exactly
-		// this. The re-reads pass, so only admission can refuse.
+		// — an `admin_token_revoke_all` does exactly this. The re-reads pass,
+		// so only admission can refuse.
 		assert.strictEqual(
 			h.audit_sse.registry.close_by_identity(h.admin.account.id),
 			1,
