@@ -20,9 +20,8 @@ import type { BurnOutcome, SecureReadOptions } from '../runtime/secure_file.ts';
  * the caller strips one trailing LF and compares in constant time.
  *
  * Twin of the Rust `BootstrapTokenStore` trait, which has no `path`: the Rust
- * boot check (`is_bootstrap_available`) takes the path itself, while
- * `is_bootstrap_available` reads through this store and names the file in its
- * log lines from here.
+ * `is_bootstrap_available` takes the path itself, while the TS one reads
+ * through this store and names the file in its log lines from here.
  */
 export interface BootstrapTokenStore {
 	/** Where the token lives, named in operator log lines — never the token itself. */
