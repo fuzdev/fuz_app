@@ -598,9 +598,9 @@ export interface AppServer {
 	 *    didn't end (a hand mount), with the `service_unavailable` JSON-RPC
 	 *    error — never run against the closing database. The Rust
 	 *    spine waits the same way for an HTTP request already dispatched, but
-	 *    drops a WS message's dispatch with its socket loop: a handler cut off
-	 *    mid-transaction rolls back, one past its commit has its effects
-	 *    drained
+	 *    drops a WS message's dispatch still in its handler with its socket
+	 *    loop, which rolls back; one whose commit has started finishes, its
+	 *    post-commit effects included
 	 * 4. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
 	 *    revocation guard, the audit-log SSE listener), the members it added
@@ -1487,7 +1487,7 @@ const assemble_app_server = async (
 		// touch or post-commit thunk a request or WS message started, is not cut
 		// off by the closing pool — bounded. The Rust spine's drain waits for an
 		// HTTP request already dispatched too, but drops a WS message's dispatch
-		// with its socket loop (`http/CLAUDE.md` §Pending Effects)
+		// still in its handler (`http/CLAUDE.md` §Pending Effects)
 		request_tracker.close();
 		await drain_effects_on_shutdown(request_tracker, deps.audit, shutdown_drain_timeout_ms, log);
 		// then what assembly acquired — the audit listeners and closer members
