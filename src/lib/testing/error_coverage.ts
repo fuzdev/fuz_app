@@ -37,6 +37,11 @@ export interface CoverageFilterOptions {
 	ignore_routes?: Array<string>;
 	/** HTTP status codes to skip. */
 	ignore_statuses?: Array<number>;
+	/**
+	 * Error codes to skip at any status — the codes another suite owns. A code
+	 * names one status (`assert_error_code_status_consistency`).
+	 */
+	ignore_codes?: ReadonlyArray<string>;
 }
 
 /** Internal coverage entry yielded by the shared walk. */
@@ -66,6 +71,7 @@ const walk_coverage = (
 ): Array<CoverageEntry> => {
 	const ignore_routes = new Set(options?.ignore_routes);
 	const ignore_statuses = new Set(options?.ignore_statuses);
+	const ignore_codes: ReadonlySet<string> = new Set(options?.ignore_codes);
 	const entries: Array<CoverageEntry> = [];
 	for (const spec of route_specs) {
 		const route_key = format_route_key(spec);
@@ -73,7 +79,7 @@ const walk_coverage = (
 		// a code with two shapes at one status is one path
 		const seen: Set<string> = new Set();
 		for (const { status, code } of get_route_error_map(collector.route_error_maps, spec).defs) {
-			if (ignore_statuses.has(status)) continue;
+			if (ignore_statuses.has(status) || ignore_codes.has(code)) continue;
 			const status_key = `${spec.method} ${spec.path}:${status}`;
 			const code_key = `${status_key}:${code}`;
 			if (seen.has(code_key)) continue;

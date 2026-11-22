@@ -219,7 +219,7 @@ Every shipped single-backend suite runs from one file,
 `spine_suites.cross.test.ts`: one `describe_spine_cross_suites` call
 (`#lib/testing/cross_backend/spine_suites.ts`) over the spine's surface, every
 audit row held to a closed world (`reject_unknown_audit_metadata_keys`), one
-override (the standard bundle's uncovered-error set, the same on every spine),
+override (`standard_auth`'s uncovered-error set, the same on every spine),
 nothing excluded, and each backend's gated skips declared in `expected_skips`,
 keyed by backend name (`handle.config.name`) rather than read off the
 capabilities — Bun owes the WebSocket case "frames sent with the handshake are
@@ -266,7 +266,8 @@ runs cross-process only:
 | `role_grant_participation` | `cross_backend/conformance_participation.db.test.ts` |
 | `rpc_adversarial` | `describe_rpc_attack_surface_tests` runs the same cases |
 | `simple_request` | `auth/simple_request_parity.db.test.ts` |
-| `standard` | the in-process suites it bundles |
+| `standard` | the in-process suites it runs (`testing/integration_tests.db.test.ts` for the middleware gates) |
+| `standard_auth` | the in-process suites it runs (`testing/integration_tests.db.test.ts`, `cross_backend/admin_integration_spine.db.test.ts`) |
 | `testing_backdoor` | `cross_backend/testing_backdoor_parity.db.test.ts` |
 | `token_lifetime` | `cross_backend/token_lifetime_parity.db.test.ts` |
 | `transport_composition` | `auth/transport_composition_parity.db.test.ts` (the upgrade rows skip) |
@@ -314,7 +315,7 @@ ports and databases). Each `<file>.cross.test.ts` module doc says what it pins.
 
 | project (`npm run …`) | backends | files |
 | --- | --- | --- |
-| `cross_backend_parity` (`test:cross:parity`) | TS spine + `testing_spine_stub`, each on its own Postgres database | `schema_parity` (DDL and migration-tracker identity), `action_manifest_parity`, `differential` (ledger `differential_known_divergences.ts`, database state compared), `transcript_differential`, `conformance_table_copies` (each twin table and `db_invariants.sql` byte-equal to the Rust copy), `lock_pins`, `db_invariants_twin` |
+| `cross_backend_parity` (`test:cross:parity`) | TS spine + `testing_spine_stub`, each on its own Postgres database | `schema_parity` (DDL and migration-tracker identity), `bootstrap_db_state` (the database each keeper bootstrap left, read by the global setup's `after_bootstrap` before any test, since every test's reset reseeds by SQL), `action_manifest_parity`, `differential` (ledger `differential_known_divergences.ts`, database state compared), `transcript_differential`, `conformance_table_copies` (each twin table and `db_invariants.sql` byte-equal to the Rust copy), `lock_pins`, `db_invariants_twin` |
 | `cross_backend_ts_differential` (`test:cross:ts-differential`) | the TS spine on Node and on Bun, `memory://` | `differential_ts`, `transcript_differential_ts` (empty ledgers, no database comparison) |
 | `cross_backend_security` (`test:cross:security`) | TS spine + stub, login and action limiters on, loopback proxy trusted | `login_security`, `ws_action_rate_limit`, `bootstrap_rate_limit` |
 | `cross_backend_timing` (`test:cross:timing`) | TS spine + stub, SSE keep-alive, WS receive timeout and pool checkout bounds shortened | `sse_keep_alive`, `ws_receive_timeout`, `db_checkout_timeout` |

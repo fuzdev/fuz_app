@@ -141,6 +141,19 @@ const SeededAccountShape = object({
 });
 
 /**
+ * Restamps a seeded account's session at the wall clock, run right after the
+ * account is seeded. The reset seeds every account in one transaction, where
+ * `NOW()` is one instant, so the seeded sessions would tie on `created_at` and
+ * a list ordered by it (`admin_session_list`) would break the tie by the
+ * random session hash — a different order per run and per spine. Stamped in
+ * seed order, they list the same on both. The Rust reset runs this statement
+ * byte for byte (`fuz_testing::testing_reset`); the actor twin is
+ * `create_test_extra_actor`.
+ */
+export const RESET_SESSION_CLOCK_STAMP_SQL =
+	'UPDATE auth_session SET created_at = clock_timestamp() WHERE account_id = $1';
+
+/**
  * The `_testing_reset` action spec.
  *
  * Input:
@@ -959,6 +972,7 @@ export const create_testing_actions = (
 				password_value: DEFAULT_TEST_PASSWORD,
 				roles: [...new Set([...DEFAULT_TEST_KEEPER_ROLES, ...(input.extra_keeper_roles ?? [])])]
 			});
+			await ctx.db.query(RESET_SESSION_CLOCK_STAMP_SQL, [keeper.account.id]);
 
 			// 6. Refresh the daemon-token cache so subsequent daemon-token
 			//    requests resolve to the freshly seeded keeper. The
@@ -986,6 +1000,7 @@ export const create_testing_actions = (
 					password_value: spec.password_value ?? DEFAULT_TEST_PASSWORD,
 					roles: spec.roles
 				});
+				await ctx.db.query(RESET_SESSION_CLOCK_STAMP_SQL, [seeded.account.id]);
 				extras.push(seeded);
 			}
 

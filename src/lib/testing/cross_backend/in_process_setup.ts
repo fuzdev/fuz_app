@@ -372,7 +372,7 @@ export interface DefaultInProcessSuiteOptions {
  * Output covers `{setup_test, surface_source, capabilities}` plus every
  * factory input the Tier 1 suites read at their top level
  * (`session_cookie_name`, `create_route_specs`, `rpc_endpoints`), and the
- * integration suite's `base_url` (`null`, no socket) and `max_body_bytes`
+ * middleware-gate suite's `base_url` (`null`, no socket) and `max_body_bytes`
  * (`app_options.max_body_size`, `app_options.host_gate`) — so the call site spreads once and adds
  * only suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
  * `db_factories`, ...).

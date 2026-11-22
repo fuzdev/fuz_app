@@ -3,7 +3,7 @@
  * `describe_spine_cross_suites` call — under each single-backend project, so
  * against the TS spine binaries (Node, Bun) and the Rust
  * `testing_spine_stub`. The spines mount everything, so nothing is excluded,
- * and the two spines agree, so the one override holds the standard bundle's
+ * and the two spines agree, so the one override holds `standard_auth`'s
  * error coverage to the exact set it leaves uncovered on these spines, so a
  * dropped record fails the run. `live_rpc_endpoints`
  * is the spine binary's whole mount, so `rpc_adversarial` also walks the
@@ -61,39 +61,33 @@ if (expected_skips === undefined) {
 }
 
 /**
- * The counted routes' declared errors the standard bundle drives on no spine:
- * the body 400s and the limiters' 429s (limiters are off in these binaries),
- * the credential-type 403s, and the unreadable `Content-Length`, which a
- * socket's HTTP parser answers before the application.
+ * The counted routes' declared errors `standard_auth`'s integration suite
+ * drives on no spine: the body 400s, the limiters' 429s (limiters are off in
+ * these binaries) and the credential-type 403s. The middleware gates' refusals
+ * are the `standard` suite's gate probes', out of this count.
  */
 const SPINE_UNCOVERED_ERRORS: Array<string> = [
 	'POST /api/account/login 400 invalid_request_body',
 	'POST /api/account/login 400 invalid_json_body',
 	'POST /api/account/login 429 rate_limit_exceeded',
-	'POST /api/account/login 400 invalid_content_length',
 	'POST /api/account/logout 403 credential_type_required',
-	'POST /api/account/logout 400 invalid_content_length',
 	'POST /api/account/password 400 invalid_request_body',
 	'POST /api/account/password 400 invalid_json_body',
 	'POST /api/account/password 403 credential_type_required',
 	'POST /api/account/password 429 rate_limit_exceeded',
-	'POST /api/account/password 400 invalid_content_length',
 	'POST /api/account/signup 400 invalid_request_body',
 	'POST /api/account/signup 400 invalid_json_body',
-	'POST /api/account/signup 429 rate_limit_exceeded',
-	'POST /api/account/signup 400 invalid_content_length',
-	'POST /api/rpc 400 invalid_content_length',
-	'GET /api/rpc 400 invalid_content_length'
+	'POST /api/account/signup 429 rate_limit_exceeded'
 ];
 
 describe_spine_cross_suites(handle, {
 	...create_spine_cross_suites_options(),
 	expected_skips,
-	// exactly what the standard bundle leaves uncovered on every spine, so a
+	// exactly what `standard_auth` leaves uncovered on every spine, so a
 	// dropped record or one covered code swapped for another fails; a code the
 	// suite comes to cover leaves this list, and a newly declared one is driven
 	overrides: {
-		standard: {
+		standard_auth: {
 			check_uncovered_errors: (uncovered) => {
 				assert.deepStrictEqual(
 					uncovered.map(({ method, path, status, code }) => `${method} ${path} ${status} ${code}`),

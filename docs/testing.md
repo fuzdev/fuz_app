@@ -734,11 +734,19 @@ your suites mature, or with `min_coverage` on your own
 
 Middleware errors count per route: the origin check's 403, the body limit's
 413 and 400, and the host gate's 403 are declared on every route they apply
-to. The integration suite probes each gate a counted route's error map
-declares (`testing/middleware_gate_probes.ts`), so it needs `base_url` (the
-backend's socket, `null` in-process, which `default_in_process_suite_options`
-gives) and the backend's body caps when they aren't the spine default
-(`max_body_bytes`, `rpc_max_body_bytes`).
+to. The integration suite leaves those out of its count
+(`MIDDLEWARE_GATE_ERROR_CODES`): a suite of their own,
+`describe_middleware_gate_tests` (`testing/middleware_gate_probes.ts`),
+probes each gate a counted route's error map declares. Call it beside the
+integration suite with the same options — it reads `base_url` (the backend's
+socket, `null` in-process, which `default_in_process_suite_options` gives) and
+the backend's body caps when they aren't the spine default
+(`max_body_bytes`, `rpc_max_body_bytes`):
+
+```ts
+describe_standard_integration_tests(suite_options);
+describe_middleware_gate_tests(suite_options);
+```
 
 ## Test Helpers
 
@@ -1054,7 +1062,7 @@ options, each with its rules in its TSDoc there:
   off the declared surface (cell verbs, opt-in resolvers, `_testing_*`
   backdoors), which `rpc_adversarial` then covers too.
 - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to
-  the standard bundle; `rpc_input_overrides` (one valid body per method the
+  the `standard` suite's RPC round trip; `rpc_input_overrides` (one valid body per method the
   generators can't satisfy) also seeds `rpc_adversarial`'s params cases.
 - `rpc_max_body_bytes` / `ws_max_message_bytes` — your caps, when they aren't
   the spine defaults.

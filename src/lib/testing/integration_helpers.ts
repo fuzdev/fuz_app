@@ -18,7 +18,11 @@ import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_METHOD_NOT_ALLOWED,
 	ERROR_ROUTE_NOT_FOUND,
-	NOT_FOUND_TEXT
+	NOT_FOUND_TEXT,
+	REST_FORBIDDEN_HOST,
+	REST_FORBIDDEN_ORIGIN,
+	REST_INVALID_CONTENT_LENGTH,
+	REST_PAYLOAD_TOO_LARGE
 } from '../http/error_schemas.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './test_app.ts';
@@ -119,6 +123,34 @@ export const find_auth_route = (
 		);
 	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
+};
+
+/**
+ * The middleware gates' refusals: the origin check's, the host gate's and the
+ * body limit's. `describe_middleware_gate_tests` probes each on every counted
+ * route that declares it, so the integration suite's coverage leaves them out.
+ */
+export const MIDDLEWARE_GATE_ERROR_CODES: ReadonlyArray<string> = [
+	REST_FORBIDDEN_ORIGIN.code,
+	REST_FORBIDDEN_HOST.code,
+	REST_PAYLOAD_TOO_LARGE.code,
+	REST_INVALID_CONTENT_LENGTH.code
+];
+
+/**
+ * Whether the standard integration suite counts a route: login, logout,
+ * password and signup (when wired), and the shared RPC endpoint — the routes
+ * its error coverage is scoped to and `describe_middleware_gate_tests` probes.
+ * An admin-role route belongs to the admin suite.
+ *
+ * @param spec - the route
+ * @param rpc_path - the RPC endpoint's path
+ */
+export const is_standard_integration_route = (spec: RouteSpec, rpc_path: string): boolean => {
+	if (spec.auth.roles?.includes('admin') ?? false) return false;
+	const rest_suffixes = ['/login', '/logout', '/password', '/signup'];
+	if (rest_suffixes.some((suffix) => spec.path.endsWith(suffix))) return true;
+	return spec.path === rpc_path;
 };
 
 /**

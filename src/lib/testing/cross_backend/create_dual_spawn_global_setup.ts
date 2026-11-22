@@ -39,7 +39,7 @@ import type { TestProject } from 'vitest/node';
 
 import type { BackendConfig } from './backend_config.ts';
 import { bootstrap_backend } from './bootstrap_backend.ts';
-import { serialize_bootstrapped_handle } from './setup.ts';
+import { serialize_bootstrapped_handle, type BootstrappedBackendHandle } from './setup.ts';
 
 export interface DualSpawnGlobalSetupOptions {
 	/**
@@ -62,6 +62,14 @@ export interface DualSpawnGlobalSetupOptions {
 	 * pre-bootstrap window. Omit for none.
 	 */
 	readonly before_bootstrap?: (config: BackendConfig) => Promise<void>;
+	/**
+	 * Run against each backend once its keeper bootstrap has succeeded, before
+	 * the other is spawned and before any test — for a read of what the
+	 * bootstrap wrote, which per-test resets overwrite. `side` names the
+	 * config. A throw tears down every backend spawned so far and fails the
+	 * setup. Omit for none.
+	 */
+	readonly after_bootstrap?: (handle: BootstrappedBackendHandle, side: 'a' | 'b') => Promise<void>;
 }
 
 /**
@@ -70,23 +78,29 @@ export interface DualSpawnGlobalSetupOptions {
 export const create_dual_spawn_global_setup = ({
 	configs,
 	provide_keys = { a: 'parity_handle_a', b: 'parity_handle_b' },
-	before_bootstrap
+	before_bootstrap,
+	after_bootstrap
 }: DualSpawnGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	return async (project) => {
 		const a = await bootstrap_backend(configs.a(), { before_bootstrap });
-		// Tear `a` down if `b` fails to spawn — no orphaned child process.
-		let b: Awaited<ReturnType<typeof bootstrap_backend>>;
+		// Tear down what is up if `b` fails to spawn or either hook throws — no
+		// orphaned child process.
+		let b: BootstrappedBackendHandle | null = null;
 		try {
+			await after_bootstrap?.(a, 'a');
 			b = await bootstrap_backend(configs.b(), { before_bootstrap });
+			await after_bootstrap?.(b, 'b');
 		} catch (err) {
+			await b?.teardown();
 			await a.teardown();
 			throw err;
 		}
+		const spawned_b = b;
 		const provide = project.provide as (key: string, value: unknown) => void;
 		provide(provide_keys.a, serialize_bootstrapped_handle(a));
-		provide(provide_keys.b, serialize_bootstrapped_handle(b));
+		provide(provide_keys.b, serialize_bootstrapped_handle(spawned_b));
 		return async () => {
-			await b.teardown();
+			await spawned_b.teardown();
 			await a.teardown();
 		};
 	};

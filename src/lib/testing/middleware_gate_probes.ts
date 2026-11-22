@@ -24,15 +24,19 @@ import './assert_dev_env.ts';
  * the answer a Bun server gives when a request repeats an equal
  * `Content-Length`, which Bun hands over joined into one value.
  *
- * `describe_standard_integration_tests` runs one per declared gate of each
- * route it counts and records each answer in its error coverage.
+ * `describe_middleware_gate_tests` runs one per declared gate of each route
+ * the standard integration suite counts (`is_standard_integration_route`). It
+ * is a suite of its own, not a group of that one, because over a socket it
+ * writes raw heads: the suites that send only through the fixture transports
+ * stay free of a raw-socket sender.
  *
  * @module
  */
 
-import { assert } from 'vitest';
+import { assert, describe, test } from 'vitest';
 
 import type { RouteMethod, RouteSpec } from '../http/route_spec.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
 import { get_route_error_map, type RouteErrorMap } from '../http/route_errors.ts';
 import { split_route_template } from '../http/route_error_check.ts';
 import {
@@ -42,7 +46,17 @@ import {
 	REST_PAYLOAD_TOO_LARGE,
 	type RestErrorDef
 } from '../http/error_schemas.ts';
-import type { ErrorCoverageCollector } from './error_coverage.ts';
+import { ErrorCoverageCollector } from './error_coverage.ts';
+import {
+	is_standard_integration_route,
+	MIDDLEWARE_GATE_ERROR_CODES
+} from './integration_helpers.ts';
+import {
+	require_rpc_endpoint_path,
+	resolve_rpc_endpoints_for_setup,
+	type RpcEndpointsSuiteOption
+} from './rpc_helpers.ts';
+import type { SetupTest } from './cross_backend/setup.ts';
 import { to_route_content_type } from './schema_generators.ts';
 import { raw_http_send_head } from './transports/raw_http.ts';
 import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from './cross_backend/spine_surface_constants.ts';
@@ -265,4 +279,108 @@ export const assert_middleware_gate_refusal = async (
 		`${label}: answered ${JSON.stringify(body)}`
 	);
 	await collector.assert_and_record(route_specs, probe.method, probe.path, response);
+};
+
+/** Configuration for `describe_middleware_gate_tests`. */
+export interface MiddlewareGateTestOptions {
+	/**
+	 * Per-test fixture-producing function. Read in-process only, once, for the
+	 * transport every probe shares; over a socket the probes need no fixture.
+	 */
+	setup_test: SetupTest;
+	/** App surface: the counted routes and their error maps, middleware included. */
+	surface_source: AppSurfaceSpec;
+	/** The session cookie's name, to resolve factory-form `rpc_endpoints` at setup. */
+	session_cookie_name: string;
+	/** RPC endpoint specs — the endpoint's path is a counted route. */
+	rpc_endpoints: RpcEndpointsSuiteOption;
+	/**
+	 * Base URL the backend is reachable at, or `null` in-process. Over a socket
+	 * the probes write their heads to it (`fetch` replaces a caller's `Host` and
+	 * `Content-Length`); in-process they go through the fixture's transport.
+	 */
+	base_url: string | null;
+	/**
+	 * The backend's request-body cap on every counted route but the RPC
+	 * endpoint, in bytes — the body-limit probe declares one byte more.
+	 *
+	 * @default SPINE_BODY_LIMIT_DEFAULT_BYTES
+	 */
+	max_body_bytes?: number;
+	/**
+	 * The backend's request-body cap on the RPC endpoint, in bytes, when it
+	 * isn't `max_body_bytes`.
+	 */
+	rpc_max_body_bytes?: number;
+}
+
+/**
+ * One test per middleware gate each route the standard integration suite
+ * counts declares in its error map (`plan_middleware_gate_probes`): the origin
+ * check, the host gate, the body limit, and in-process the unreadable length.
+ * Each probe is a bodiless head with no credential that the gate refuses
+ * before auth, rate limiting or body parsing, so the probes leave no state; a
+ * gate a route's map doesn't declare (a carve-out, a backend without the
+ * layer) gets no probe. Each refusal's body is held to the route's map.
+ *
+ * Every gate refusal (`MIDDLEWARE_GATE_ERROR_CODES`) a counted route declares
+ * must have a planned probe — the unreadable length aside over a socket — or
+ * the call throws at collection, so a planner that drops a probe can't pass by
+ * registering fewer tests, whatever a run filters or excludes.
+ *
+ * @param options - the routes, the backend's socket and its caps
+ * @throws Error at setup when `options.rpc_endpoints` names no single endpoint,
+ *   or a declared gate refusal has no planned probe
+ */
+export const describe_middleware_gate_tests = (options: MiddlewareGateTestOptions): void => {
+	const route_specs = options.surface_source.route_specs;
+	const rpc_path = require_rpc_endpoint_path(
+		resolve_rpc_endpoints_for_setup(options.rpc_endpoints, options.session_cookie_name)
+	);
+	const counted_routes = route_specs.filter((s) => is_standard_integration_route(s, rpc_path));
+	const probes = plan_middleware_gate_probes({
+		route_specs: counted_routes,
+		route_error_maps: options.surface_source.route_error_maps,
+		base_url: options.base_url,
+		max_body_bytes: options.max_body_bytes,
+		rpc_path,
+		rpc_max_body_bytes: options.rpc_max_body_bytes
+	});
+	// every gate refusal a counted route declares has a probe planned — checked
+	// at collection, so a planner that drops one fails whatever a run filters or
+	// excludes; the unreadable length goes unprobed over a socket (the module doc)
+	const planned: Set<string> = new Set(
+		probes.map((p) => `${p.method} ${p.path} ${p.expected.status} ${p.expected.code}`)
+	);
+	const unplanned = new ErrorCoverageCollector(options.surface_source.route_error_maps)
+		.uncovered(counted_routes)
+		.filter(
+			({ code }) =>
+				MIDDLEWARE_GATE_ERROR_CODES.includes(code) &&
+				!(options.base_url !== null && code === REST_INVALID_CONTENT_LENGTH.code)
+		)
+		.map(({ method, path, status, code }) => `${method} ${path} ${status} ${code}`)
+		.filter((key) => !planned.has(key));
+	if (unplanned.length > 0) {
+		throw new Error(
+			`describe_middleware_gate_tests: declared gate refusals no probe plans: ${unplanned.join(', ')}`
+		);
+	}
+	describe('middleware gates', () => {
+		const collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
+		// in-process the probes share one fixture's transport, made by the first
+		// to run; over a socket they need none, as they read and write no state
+		let in_process_transport: Promise<MiddlewareGateProbeTransport> | null = null;
+		const get_transport = (): Promise<MiddlewareGateProbeTransport> =>
+			(in_process_transport ??= options
+				.setup_test()
+				.then((fixture) => fixture.fresh_transport({ origin: null })));
+		for (const probe of probes) {
+			test(format_middleware_gate_probe(probe), async () => {
+				const transport = options.base_url === null ? await get_transport() : null;
+				const res = await send_middleware_gate_probe(probe, options.base_url, transport);
+				await assert_middleware_gate_refusal(probe, res, collector, route_specs);
+			});
+		}
+	});
 };

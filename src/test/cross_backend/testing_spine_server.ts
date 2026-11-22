@@ -6,7 +6,7 @@
  * fuz_app spine surface (auth / account / admin / audit + signup +
  * bootstrap) over a real HTTP socket, with `_testing_reset` and a WS
  * endpoint (auto-mounted from `ws_endpoints`), and no consumer domain layer. It exists so the
- * `describe_standard_cross_process_tests` bundle can run against fuz_app's
+ * standard suites (`standard_auth`, `standard`) can run against fuz_app's
  * own TS impl over the wire — making drift in fuz_app's real HTTP path a
  * fuz_app failure rather than only surfacing through a downstream consumer.
  *

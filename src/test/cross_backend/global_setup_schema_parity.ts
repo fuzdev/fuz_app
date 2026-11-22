@@ -17,6 +17,12 @@
  * stub's URL names (`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, else the
  * local default), which keeps the two legs on one server version.
  *
+ * **The bootstrap's write.** Bootstrap is one-shot per backend, and every
+ * test's `_testing_reset` reseeds the keeper by SQL, so what the real
+ * `POST /bootstrap` wrote is read here, right after each backend's bootstrap
+ * (`create_db_state_probe`, the transcript's database read), and provided as
+ * `parity_bootstrap_db_state` for `bootstrap_db_state.cross.test.ts` to diff.
+ *
  * The single-backend `global_setup_*.ts` makers derive one backend per
  * project; these gates need both alive at once. Both run on ports, databases
  * and backend names of their own (`CROSS_PROJECT_RESOURCES`), so this project
@@ -36,6 +42,11 @@
  */
 
 import { create_dual_spawn_global_setup } from '#lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
+import {
+	create_db_state_probe,
+	type DbState,
+	type DbStateMark
+} from '#lib/testing/cross_backend/db_state_diff.ts';
 import { ts_spine_node_backend_config } from '#lib/testing/cross_backend/ts_spine_backend_config.ts';
 import {
 	RUST_SPINE_STUB_DATABASE_URL_ENV,
@@ -78,6 +89,14 @@ const resolve_parity_database_urls = (): { ts: string; stub: string } => {
 	};
 };
 
+/**
+ * The mark the bootstrap read starts from: the audit sequence of a database
+ * nothing has written to, as each backend's is at spawn (the stub wipes its
+ * own, this setup empties the TS spine's), so the read counts every audit
+ * insert the bootstrap spent.
+ */
+const FRESH_DATABASE_MARK: DbStateMark = { audit_seq: 0 };
+
 const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	const database_urls = resolve_parity_database_urls();
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
@@ -89,6 +108,7 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 		label: 'schema parity setup',
 		hint: `or set ${RUST_SPINE_STUB_DATABASE_URL_ENV} to a server both legs can use`
 	});
+	const bootstrap_db_state: Partial<Record<'a' | 'b', DbState>> = {};
 	const dual_spawn = create_dual_spawn_global_setup({
 		configs: {
 			a: () =>
@@ -103,9 +123,24 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 					port: PARITY_STUB.port,
 					database_url: database_urls.stub
 				})
+		},
+		after_bootstrap: async (handle, side) => {
+			const probe = create_db_state_probe(handle);
+			try {
+				bootstrap_db_state[side] = await probe.read(FRESH_DATABASE_MARK);
+			} finally {
+				await probe.close();
+			}
 		}
 	});
-	return dual_spawn(project);
+	const teardown = await dual_spawn(project);
+	const { a, b } = bootstrap_db_state;
+	if (!a || !b) {
+		await teardown();
+		throw new Error('parity setup: a bootstrap database read is missing');
+	}
+	project.provide('parity_bootstrap_db_state', { a, b });
+	return teardown;
 };
 
 export default with_legible_setup_failure('parity', setup);

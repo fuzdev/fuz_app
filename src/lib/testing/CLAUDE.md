@@ -92,6 +92,10 @@ in insert order (lists sort `created_at, id`). The in-process seed and
 `query_create_actor_with_clock_timestamp`, so both spines list them alike.
 `query_admin_account_list` is the exception: it sorts `created_at, name, id`
 to keep one actor per account the same on both backends.
+`_testing_reset` stamps each seeded account's session the same way
+(`RESET_SESSION_CLOCK_STAMP_SQL`, `cross_backend/testing_reset_actions.ts`,
+byte for byte the Rust reset's), so the seeded sessions list in seed order on
+both spines rather than tying on one transaction's `NOW()`.
 
 `create_test_session_row(db, token_hash, account_id, expires_in_seconds)`
 inserts an `auth_session` row expiring that many seconds past the database's
@@ -686,7 +690,7 @@ actions and the builtin `ROLE_ADMIN` only, each factory on fresh accounts
 and calling as one of them, so any consumer mounting
 `create_standard_rpc_actions` can pass it. The fixtures run last on the
 describe's fixture, since they mutate.
-fuz_app wires it through the standard bundle and in the in-process
+fuz_app wires it through the `standard` suite and in the in-process
 `cross_backend/rpc_round_trip_spine.db.test.ts`.
 
 ### `sse_round_trip.ts` — `describe_sse_route_tests`
@@ -815,34 +819,45 @@ cookies + bearer tokens. Its `describe` blocks, by theme:
 9. Token revocation + cross-account isolation
 10. Response body schema validation + error-response information leakage
 11. Signup invite edge cases + expired credential rejection + error-coverage breadth
-12. Middleware gates — one test per gate each counted route's error map declares (`middleware_gate_probes.ts`, below)
 
 An `ErrorCoverageCollector` runs across groups; `afterAll` filters to
 the routes it counts — login, logout, password, signup (when wired) and the
-RPC path — and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
+RPC path (`is_standard_integration_route`, `integration_helpers.ts`) — and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
 excluded because no describe block in this suite drives it — its declared
 codes would always be uncovered. Consumer-specific routes aren't exercised
 here either — they don't count against the baseline. The declared paths are
 the route error maps of `surface_source`, middleware included (the origin
 check's 403, the body limit's 413 and 400, and the host gate's 403 where the
 surface declares it), counted per (route, status, code), so
-every error response a test asserts is recorded, and the middleware-gate group
-probes each gate on each counted route. Override with
+every error response a test asserts is recorded. The gates' own refusals
+(`MIDDLEWARE_GATE_ERROR_CODES`, `integration_helpers.ts`) are left out of the
+count: `describe_middleware_gate_tests` (below) probes them. Override with
 `error_coverage_min?: number` (set to `0` to skip the assertion — useful for
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).
 
-Options: `{setup_test, surface_source, session_cookie_name, rpc_endpoints, base_url,
-max_body_bytes?, rpc_max_body_bytes?, error_coverage_min?,
-check_uncovered_errors?}`; the last is called with the declared paths left
-uncovered before the floor is asserted, which fuz_app's own wirings hold to an
-exact set. `base_url` is the
-backend's socket, `null` in-process (`default_in_process_suite_options` gives
-`null`, and `max_body_bytes` from `app_options.max_body_size`); the caps
+Options: `{setup_test, surface_source, capabilities, session_cookie_name,
+rpc_endpoints, error_coverage_min?, check_uncovered_errors?}`; the last is
+called with the declared paths left uncovered before the floor is asserted,
+which fuz_app's own wirings hold to an exact set.
+
+### `middleware_gate_probes.ts` — `describe_middleware_gate_tests`
+
+`describe_middleware_gate_tests({setup_test, surface_source,
+session_cookie_name, rpc_endpoints, base_url, max_body_bytes?,
+rpc_max_body_bytes?})` — one test per gate each route the integration suite
+counts declares, each refusal's body held to the route's map. Every gate
+refusal (`MIDDLEWARE_GATE_ERROR_CODES`) a counted route declares must have a
+planned probe — the unreadable length aside over a socket — or the call
+throws at collection, so a planner that drops one fails whatever a run
+filters or excludes. A suite of its
+own, beside the integration suite rather than a group of it, because over a
+socket it writes raw heads: the integration suite sends only through the
+fixture transports, so the transcript differential can run it. `base_url` is
+the backend's socket, `null` in-process (`default_in_process_suite_options`
+gives `null`, and `max_body_bytes` from `app_options.max_body_size`); the caps
 default to `SPINE_BODY_LIMIT_DEFAULT_BYTES`, the RPC endpoint's to
 `max_body_bytes`.
-
-### `middleware_gate_probes.ts` — the integration suite's gate probes
 
 `plan_middleware_gate_probes({route_specs, route_error_maps, base_url,
 max_body_bytes?, rpc_path, rpc_max_body_bytes?})` plans one
@@ -883,7 +898,7 @@ from `db_entities.ts`.
 
 Required options: `{setup_test, surface_source, session_cookie_name, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleRegistry, admin_prefix?}`.
 
-fuz_app runs it cross-process through the standard bundle
+fuz_app runs it cross-process through `standard_auth`
 and in-process as a consumer wires it
 (`cross_backend/admin_integration_spine.db.test.ts`) — the in-process fixture's
 `create_account` inserts rows directly, writing no `invite_create` or `signup`
@@ -1066,15 +1081,23 @@ have files of their own.
   backend closes the connection after an oversized-body 413. Bun 1.4.3 is the
   tested floor.
 
-### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
+### `cross_backend/standard_bundle.ts` — `describe_standard_cross_process_tests`
 
-Wires the standard suites that run against a spawned backend in one call:
+Wires the standard suites that run against a spawned backend in one call, in
+two halves, each a registered suite of its own module:
 
-- `integration` — always
-- `admin` — `roles` provided
-- `round_trip` — always
-- `rpc_round_trip` — always
-- `data_exposure` — always
+- `standard_auth.ts` — `describe_standard_auth_cross_tests`: `integration`
+  always, `admin` when `roles` is provided. Every send goes through the
+  fixture transports, so the transcript differential runs it.
+- `standard.ts` — `describe_standard_cross_tests`: the middleware gates
+  (`describe_middleware_gate_tests`), `round_trip`, `rpc_round_trip`,
+  `data_exposure`. The gate probes write raw request heads and the round
+  trips and data exposure build fixtures in `beforeAll`, which keeps it out of
+  the transcript.
+
+`describe_spine_cross_suites` registers the halves apart (`standard_auth`,
+`standard`); the bundle is for a consumer wiring them outside it, and
+`STANDALONE_CROSS_SUITES` names it.
 
 Two in-process suites are omitted by design: `rate_limiting` (needs a fresh
 per-test `TestApp` for tight rate-limiter overrides; the spawned binary has no
@@ -1083,9 +1106,8 @@ the in-process backend exposes; wire-level audit observability lives in the
 consumer's own audit `.cross.test.ts`). The omission rationale lives in the
 module doc once instead of repeating in each consumer's `*.cross.test.ts`.
 
-`base_url` (required — the integration suite's middleware-gate probes write
-to the socket), `max_body_bytes` and `rpc_max_body_bytes` forward to the
-integration suite;
+`base_url` (required — the middleware-gate probes write to the socket),
+`max_body_bytes` and `rpc_max_body_bytes` forward to the gate suite;
 `rpc_success_fixtures`, `rpc_skip_methods` and `rpc_input_overrides`
 forward to the RPC round-trip's `success_fixtures`, `skip_methods` and
 `input_overrides` (`describe_spine_cross_suites` also forwards
@@ -1096,9 +1118,10 @@ round-trip and data exposure, the two that resolve route paths.
 
 Hard-codes the cross-process-safe set with no `skip` knob; if a future
 consumer needs partial opt-out, add the knob then.
-`StandardCrossProcessTestOptions` is the in-process suites' shared options
-minus their in-process-only knobs (`create_route_specs`,
-`rate_limiting_app_options`).
+`StandardCrossProcessTestOptions` is both halves' options
+(`StandardAuthCrossTestOptions`, `StandardCrossTestOptions`): the in-process
+suites' shared options minus their in-process-only knobs
+(`create_route_specs`, `rate_limiting_app_options`).
 
 ### `cross_backend/spine_suites.ts` — `describe_spine_cross_suites`
 
@@ -1109,7 +1132,7 @@ exclude_cases?, expected_skips?, overrides?, suite_roles?, ws_required_roles?, r
 rpc_skip_methods?, rpc_input_overrides?, rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. `rpc_input_overrides`
-reaches the standard bundle's RPC round-trip and `rpc_adversarial`'s
+reaches the `standard` suite's RPC round-trip and `rpc_adversarial`'s
 `input_overrides`, so one valid body per method serves both; a key naming a
 method on neither the declared surface nor `live_rpc_endpoints` throws at
 collection. Without it a consumer writes a file per suite, and a suite added
@@ -1117,12 +1140,14 @@ here never reaches it.
 
 - **The registry.** `SUITE_NAMES` / `SuiteName` — the closed set of suites the
   call runs, each named by its module (`ws_round_trip` is
-  `describe_cross_process_ws_tests`, `standard` the standard bundle).
+  `describe_cross_process_ws_tests`; `standard_auth` and `standard` the two
+  halves of the standard bundle).
   `STANDALONE_CROSS_SUITES` (keyed by the closed `StandaloneSuiteName`) names
   the modules left out, each with why: the
   `differential` (two handles), `login_security` and `ws_action_rate_limit`
   (a backend spawned with live limiters, which the standard suites would
-  exhaust), and the `conformance_table` runner (the consumer's own cases).
+  exhaust), the `conformance_table` runner (the consumer's own cases), and
+  `standard_bundle` (the two standard halves in one call).
   `src/test/testing/cross_backend/spine_suites.test.ts` imports every module
   under `cross_backend/` and holds the two lists to the ones exporting a
   `describe_*` function, whatever the export form (the Bun adapter,
@@ -1138,7 +1163,7 @@ here never reaches it.
   called on its own — the daemon token from the handle, and each suite's
   `setup_test` from `default_cross_process_setup` over the `setup` options
   plus the seeding the suite needs (concatenated): a keeper-only
-  `non_admin_keeper` for the standard bundle's keeper ≠ admin probe, the
+  `non_admin_keeper` for `standard_auth`'s keeper ≠ admin probe, the
   multi-actor keepers of `fact_serving` and `transport_composition`, the
   offer grantor of `role_grant_offer_enumeration`, the `cell_editor` holder of
   `cell_grant_role`. Suites are registered without a wrapping `describe`, so
@@ -1154,7 +1179,7 @@ here never reaches it.
   aren't the spine defaults (`SPINE_BODY_LIMIT_DEFAULT_BYTES`,
   `DEFAULT_WS_MAX_MESSAGE_BYTES`). The first reaches `body_size`,
   `body_size_smuggling`, `transport_composition`'s RPC over-cap row and the
-  standard bundle's middleware-gate probes of the RPC endpoint (each
+  `standard` suite's middleware-gate probes of the RPC endpoint (each
   takes it as `rpc_max_body_bytes`), the second `ws_round_trip`'s
   `max_message_bytes` — one value per limit for every suite probing it.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
@@ -1317,8 +1342,7 @@ fixture). fuz_app's own case files and wiring are
 ### Suite modules
 
 Each `SUITE_NAMES` module in `cross_backend/` exports one
-`describe_<module>_cross_tests(options)`. The exceptions are `standard`
-(`describe_standard_cross_process_tests`), `ws_round_trip`
+`describe_<module>_cross_tests(options)`. The exceptions are `ws_round_trip`
 (`describe_cross_process_ws_tests`), `sse_round_trip`
 (`describe_cross_process_sse_tests`), `peer_ping_ws`
 (`describe_peer_ping_ws_tests`) and `role_grant_offer_notification_ws`
@@ -1375,7 +1399,8 @@ without.
 | `session_cookie_codec` | exactly one accepted spelling of a signed cookie: non-canonical signature or `expires_at` spellings refused | — |
 | `simple_request` | an untyped, CORS-safelisted, or non-JSON `POST` to a JSON route → 415 `unsupported_content_type` | — |
 | `sse_round_trip` | the audit stream: connect, a data frame, a close on each revocation of a stream proven admitted, a session-scoped revoke leaving a sibling session's stream open, a revoke of the gating role's global grant closing the stream and a global revoke of another role leaving it open (scope matching is `ws_role_gated`'s), the per-session stream cap | `sse` (delete and purge also `account_lifecycle`) |
-| `standard` | the `describe_standard_cross_process_tests` bundle: integration, admin, round trip, RPC round trip, data exposure | `account_status` (the status wire-shape case) |
+| `standard` | the standard bundle less its auth suites: the middleware-gate probes of each counted route, round trip, RPC round trip, data exposure | — |
+| `standard_auth` | the standard auth suites: integration, and admin when `roles` is given; run by the transcript differential | `account_status` (the status wire-shape case) |
 | `testing_backdoor` | the backdoor declaration, and every declared `_testing_*` action refusing anonymous, session, and bearer callers | `testing_backdoors` (the declaration) |
 | `token_lifetime` | the API token `lifetime` round trip: ttl mint → `expires_at` on create and list, an eternal control, bad lifetimes → 400, a bearer beside a winning daemon token or a winning session never touched, the request acting as the winner's account; an invalid daemon token falls through to the bearer beside it | — |
 | `token_scope_surface` | the `surface:<name>` half of token scoping: a narrowed bearer refused the audit stream and the bare-hash fact read, anonymous on the status read; scope outranks role | `sse`, `fact_serving_admin_hash`, `account_status` (per case) |
@@ -1526,7 +1551,7 @@ Conventions that hold across them:
   (`ensure_database_for_url`), then the spawn. A second argument
   (`CrossBackendGlobalSetupDeps`) swaps the database creator and the spawn,
   for testing the setup itself.
-- `testing/cross_backend/bootstrap_backend.ts` / `create_dual_spawn_global_setup.ts` — spawn and bootstrap one backend, or two (`provide_keys`); `before_bootstrap(config)` runs once the backend is healthy and before its keeper bootstrap, for a probe of the pre-bootstrap window, and a throw from it tears the backend down and fails the setup.
+- `testing/cross_backend/bootstrap_backend.ts` / `create_dual_spawn_global_setup.ts` — spawn and bootstrap one backend, or two (`provide_keys`); `before_bootstrap(config)` runs once the backend is healthy and before its keeper bootstrap, for a probe of the pre-bootstrap window, and a throw from it tears the backend down and fails the setup. The dual spawn's `after_bootstrap(handle, side)` runs once a backend's bootstrap has succeeded, before any test, for a read of what the bootstrap wrote; a throw tears down every backend spawned so far.
 - `testing/cross_backend/cargo_binary.ts` — `prepare_cargo_binary({workspace_dir,
   package, bin?, profile?})` builds a Cargo binary (`cargo build -p --bin
   --profile`, output inherited, a failed build throws) unless

@@ -24,7 +24,9 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 import {
 	find_auth_route,
 	assert_response_matches_spec,
-	assert_no_error_info_leakage
+	assert_no_error_info_leakage,
+	is_standard_integration_route,
+	MIDDLEWARE_GATE_ERROR_CODES
 } from './integration_helpers.ts';
 import {
 	find_rpc_action,
@@ -62,13 +64,6 @@ import type { SetupTest } from './cross_backend/setup.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { create_test_request_headers, TEST_ORIGIN } from './test_origin.ts';
 import { create_test_raw_api_token } from './entities.ts';
-import {
-	assert_middleware_gate_refusal,
-	format_middleware_gate_probe,
-	plan_middleware_gate_probes,
-	send_middleware_gate_probe,
-	type MiddlewareGateProbeTransport
-} from './middleware_gate_probes.ts';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -122,24 +117,6 @@ export interface StandardIntegrationTestOptions {
 	 */
 	error_coverage_min?: number;
 	/**
-	 * Base URL the backend is reachable at, or `null` in-process. The
-	 * middleware-gate probes write their heads to the socket when there is one
-	 * (`fetch` replaces a caller's `Host` and `Content-Length`), and go through
-	 * the fixture's transport when there isn't.
-	 */
-	base_url: string | null;
-	/**
-	 * The backend's request-body cap on every counted route but the RPC
-	 * endpoint, in bytes — the body-limit probe declares one byte more.
-	 * Default `SPINE_BODY_LIMIT_DEFAULT_BYTES`, the spines' default.
-	 */
-	max_body_bytes?: number;
-	/**
-	 * The backend's request-body cap on the RPC endpoint, in bytes, when it
-	 * isn't `max_body_bytes`.
-	 */
-	rpc_max_body_bytes?: number;
-	/**
 	 * Called once the suite's tests have run, with the declared error paths of
 	 * the counted routes it never observed, before the coverage floor is
 	 * asserted — for a wiring that holds its coverage to an exact set, which
@@ -155,8 +132,10 @@ export interface StandardIntegrationTestOptions {
  * revocation, password change (incl. API token revocation), origin
  * verification, bearer auth (incl. browser context discard on mutations),
  * token revocation, cross-account isolation, expired credential rejection,
- * signup invite edge cases, response body validation, and the middleware
- * gates each counted route's error map declares (`middleware_gate_probes.ts`).
+ * signup invite edge cases, and response body validation. The middleware
+ * gates each counted route's error map declares are
+ * `describe_middleware_gate_tests`' (`middleware_gate_probes.ts`), a suite of
+ * their own since over a socket they write raw request heads.
  *
  * Each test group asserts that required routes exist, failing with a descriptive
  * message if the consumer's route specs are misconfigured.
@@ -199,15 +178,10 @@ export const describe_standard_integration_tests = (
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
 
-		// the auth routes this suite drives: login / logout / password, signup
-		// (when wired), and the shared RPC endpoint — admin-role routes belong to
-		// the admin suite
-		const is_suite_auth_route = (s: RouteSpec): boolean => {
-			if (s.auth.roles?.includes('admin') ?? false) return false;
-			const rest_suffixes = ['/login', '/logout', '/password', '/signup'];
-			if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
-			return s.path === rpc_path;
-		};
+		// the auth routes this suite drives — admin-role routes belong to the
+		// admin suite
+		const is_suite_auth_route = (s: RouteSpec): boolean =>
+			is_standard_integration_route(s, rpc_path);
 
 		afterAll(() => {
 			// Scope coverage to auth routes this suite actually exercises:
@@ -221,8 +195,11 @@ export const describe_standard_integration_tests = (
 			// the admin suite instead.
 			const auth_routes = route_specs.filter(is_suite_auth_route);
 			const scoped_routes = auth_routes.length > 0 ? auth_routes : route_specs;
-			options.check_uncovered_errors?.(error_collector.uncovered(scoped_routes));
+			// the middleware gates' refusals are `describe_middleware_gate_tests`'
+			const filter = { ignore_codes: MIDDLEWARE_GATE_ERROR_CODES };
+			options.check_uncovered_errors?.(error_collector.uncovered(scoped_routes, filter));
 			assert_error_coverage(error_collector, scoped_routes, {
+				...filter,
 				min_coverage: options.error_coverage_min ?? DEFAULT_INTEGRATION_ERROR_COVERAGE
 			});
 		});
@@ -946,49 +923,52 @@ export const describe_standard_integration_tests = (
 		// --- 8. Cross-account isolation ---
 
 		describe('cross-account isolation', () => {
-			test('non-admin cannot access admin routes', async () => {
-				const fixture = await options.setup_test();
+			// admin routes are optional in the base suite — admin-specific coverage
+			// lives in describe_standard_admin_integration_tests.
+			//
+			// Pick an admin REST route where a clean role-denial 403 is
+			// reachable: account-grain (`actor: 'none'`, so the authorization
+			// phase doesn't first demand an acting actor → `actor_required`)
+			// and input/param/query-free (params and query still validate ahead
+			// of the auth phase — only body validation moved behind the gates,
+			// per the 401 → authz → 403 → 429 → 400 order). Admin surfaces are
+			// RPC-first now; a consumer may expose no such REST route (fuz_app
+			// itself, zzz) — then this REST-era check isn't registered and RPC denial
+			// is covered by `describe_rpc_attack_surface_tests`.
+			const admin_route = route_specs.find(
+				(s) =>
+					(s.auth.roles?.includes('admin') ?? false) &&
+					s.auth.actor === 'none' &&
+					!s.input &&
+					!s.params &&
+					!s.query
+			);
+			// registered only where such a route exists: a plain skip would leave the
+			// transcript differential's run partial (its stale-ledger check unjudged),
+			// and a gated one would owe every consumer an `expected_skips` entry
+			if (admin_route) {
+				test('non-admin cannot access admin routes', async () => {
+					const fixture = await options.setup_test();
 
-				// admin routes are optional in the base suite — admin-specific coverage
-				// lives in describe_standard_admin_integration_tests.
-				//
-				// Pick an admin REST route where a clean role-denial 403 is
-				// reachable: account-grain (`actor: 'none'`, so the authorization
-				// phase doesn't first demand an acting actor → `actor_required`)
-				// and input/param/query-free (params and query still validate ahead
-				// of the auth phase — only body validation moved behind the gates,
-				// per the 401 → authz → 403 → 429 → 400 order). Admin surfaces are
-				// RPC-first now; a consumer may expose no such REST route (fuz_app
-				// itself, zzz) — then this REST-era check is a no-op and RPC denial
-				// is covered by `describe_rpc_attack_surface_tests`.
-				const admin_route = route_specs.find(
-					(s) =>
-						(s.auth.roles?.includes('admin') ?? false) &&
-						s.auth.actor === 'none' &&
-						!s.input &&
-						!s.params &&
-						!s.query
-				);
-				if (!admin_route) return;
-
-				// Probe with a freshly-created account — it holds no admin role
-				// (the keeper fixture behind `create_session_headers` does, so it
-				// would pass the gate).
-				const non_admin = await fixture.create_account({ username: 'non_admin_admin_probe' });
-				const res = await fixture.transport(admin_route.path, {
-					method: admin_route.method,
-					headers: { cookie: `${cookie_name}=${non_admin.session_cookie}` }
+					// Probe with a freshly-created account — it holds no admin role
+					// (the keeper fixture behind `create_session_headers` does, so it
+					// would pass the gate).
+					const non_admin = await fixture.create_account({ username: 'non_admin_admin_probe' });
+					const res = await fixture.transport(admin_route.path, {
+						method: admin_route.method,
+						headers: { cookie: `${cookie_name}=${non_admin.session_cookie}` }
+					});
+					assert.strictEqual(res.status, 403);
+					await error_collector.assert_and_record(
+						route_specs,
+						admin_route.method,
+						admin_route.path,
+						res
+					);
+					const body = await res.json();
+					assert.strictEqual(body.error, 'insufficient_permissions');
 				});
-				assert.strictEqual(res.status, 403);
-				await error_collector.assert_and_record(
-					route_specs,
-					admin_route.method,
-					admin_route.path,
-					res
-				);
-				const body = await res.json();
-				assert.strictEqual(body.error, 'insufficient_permissions');
-			});
+			}
 
 			test("user A cannot revoke user B's sessions", async () => {
 				const fixture = await options.setup_test();
@@ -1424,38 +1404,6 @@ export const describe_standard_integration_tests = (
 					await error_collector.assert_and_record(route_specs, 'POST', route.path, res);
 				}
 			});
-		});
-
-		// --- 12c. Middleware gates: each counted route's declared gates refuse ---
-
-		describe('middleware gates', () => {
-			// One probe per gate each counted route's error map declares — the
-			// origin check, the Rust spine's host gate, the body limit — each a
-			// bodiless head with no credential that the gate refuses before auth,
-			// rate limiting or body parsing. A gate the map doesn't declare on a
-			// route (a carve-out, a backend without the layer) gets no probe.
-			const probes = plan_middleware_gate_probes({
-				route_specs: route_specs.filter(is_suite_auth_route),
-				route_error_maps: options.surface_source.route_error_maps,
-				base_url: options.base_url,
-				max_body_bytes: options.max_body_bytes,
-				rpc_path,
-				rpc_max_body_bytes: options.rpc_max_body_bytes
-			});
-			// in-process the probes share one fixture's transport, made by the first
-			// to run; over a socket they need none, as they read and write no state
-			let in_process_transport: Promise<MiddlewareGateProbeTransport> | null = null;
-			const get_transport = (): Promise<MiddlewareGateProbeTransport> =>
-				(in_process_transport ??= options
-					.setup_test()
-					.then((fixture) => fixture.fresh_transport({ origin: null })));
-			for (const probe of probes) {
-				test(format_middleware_gate_probe(probe), async () => {
-					const transport = options.base_url === null ? await get_transport() : null;
-					const res = await send_middleware_gate_probe(probe, options.base_url, transport);
-					await assert_middleware_gate_refusal(probe, res, error_collector, route_specs);
-				});
-			}
 		});
 
 		// --- 13. Password change revokes API tokens ---

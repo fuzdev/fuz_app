@@ -1,8 +1,8 @@
 /**
  * In-process leg of the standard admin integration suite over the spine
  * surface, wired the way a consumer wires it (`default_in_process_suite_options`
- * plus `roles`). The cross-process leg is `spine_suites.cross.test.ts`, through the
- * standard bundle; this leg holds the suite to the in-process fixture, whose
+ * plus `roles`). The cross-process leg is `spine_suites.cross.test.ts`, through
+ * `standard_auth`; this leg holds the suite to the in-process fixture, whose
  * `create_account` inserts rows directly rather than signing up.
  *
  * @module

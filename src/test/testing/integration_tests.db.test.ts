@@ -35,6 +35,7 @@ interface TestApp {
 	request: (input: string, init: RequestInit) => Promise<Response> | Response;
 }
 import { describe_standard_integration_tests } from '#lib/testing/integration.ts';
+import { describe_middleware_gate_tests } from '#lib/testing/middleware_gate_probes.ts';
 import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 
@@ -127,6 +128,16 @@ describe_standard_integration_tests({
 		);
 	}
 });
+
+// --- Run the middleware-gate probes over the same routes ---
+
+describe_middleware_gate_tests(
+	default_in_process_suite_options({
+		session_cookie_name: SESSION_COOKIE_NAME,
+		create_route_specs: test_route_factory,
+		rpc_endpoints: test_rpc_endpoints
+	})
+);
 
 // --- Standalone tests for the helpers ---
 

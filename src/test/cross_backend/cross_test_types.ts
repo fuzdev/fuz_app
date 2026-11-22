@@ -10,6 +10,7 @@
  * @module
  */
 
+import type { DbState } from '#lib/testing/cross_backend/db_state_diff.ts';
 import type { SerializableBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 
 import type { BootstrapTokenProbe } from './bootstrap_token_probe.ts';
@@ -21,6 +22,10 @@ declare module 'vitest' {
 		// back, and whether the keeper bootstrap burned the file
 		// (`bootstrap_token_probe.ts`), asserted by `bootstrap_token.cross.test.ts`
 		bootstrap_token_probe: BootstrapTokenProbe;
+		// what each parity backend's keeper bootstrap left in its database, read
+		// before any test (`global_setup_schema_parity.ts`), diffed by
+		// `bootstrap_db_state.cross.test.ts`
+		parity_bootstrap_db_state: { a: DbState; b: DbState };
 		// The dual-spawn security project (`global_setup_login_security.ts`)
 		// provides both backends' handles — `a` = TS spine (node), `b` = Rust
 		// `testing_spine_stub`, both with the login and action limiters enabled +

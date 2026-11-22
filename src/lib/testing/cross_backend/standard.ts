@@ -1,60 +1,27 @@
 import '../assert_dev_env.ts';
 
 /**
- * One call wiring the standard suites that run against a spawned backend —
- * the ones whose option shape is `{setup_test, surface_source, capabilities, ...}`
- * and whose bodies fire requests through `fixture.transport` rather than
- * touching the in-process `Backend`. Consumers wire one call against a
- * spawned binary instead of repeating the sibling calls per file.
- *
- * **Suites included** — always run:
- *
- * - `describe_standard_integration_tests`
- * - `describe_round_trip_validation`
- * - `describe_rpc_round_trip_tests`
- * - `describe_data_exposure_tests`
- *
- * **Gated on `roles`** — included when the consumer supplies a
- * `RoleRegistry`:
- *
- * - `describe_standard_admin_integration_tests`
- *
- * **Suites omitted** — the ones that don't survive a process boundary,
- * documented here so per-consumer files don't have to repeat the
- * bookkeeping:
- *
- * - `describe_rate_limiting_tests` — builds a fresh `TestApp` per test to
- *   inject tight per-test rate-limiter overrides. That path requires
- *   in-process construction of `Backend` + rate limiter; the spawned
- *   binary has neither knob nor restart-per-test budget.
- * - `describe_audit_completeness_tests` — reaches into FK-structural
- *   introspection that only the in-process backend exposes. Wire-level
- *   audit observability lives in the consumer's own audit `.cross.test.ts`
- *   driving `audit_log_list` / `audit_log_role_grant_history`.
+ * The standard suites against a spawned backend that fuz_app's transcript
+ * differential can't run: `describe_middleware_gate_tests`, whose probes write
+ * raw request heads over a socket, and `describe_round_trip_validation`,
+ * `describe_rpc_round_trip_tests` and `describe_data_exposure_tests`, which
+ * build fixtures outside a test. The standard auth suites, which it can, are
+ * `standard_auth.ts`; `describe_standard_cross_process_tests`
+ * (`standard_bundle.ts`) runs both in one call.
  *
  * @module
  */
 
-import type { RoleRegistry } from '../../auth/role_schema.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
-import { describe_standard_integration_tests } from '../integration.ts';
-import { describe_standard_admin_integration_tests } from '../admin_integration.ts';
+import { describe_middleware_gate_tests } from '../middleware_gate_probes.ts';
 import { describe_round_trip_validation } from '../round_trip.ts';
 import { describe_rpc_round_trip_tests, type RpcSuccessFixtures } from '../rpc_round_trip.ts';
 import { describe_data_exposure_tests } from '../data_exposure.ts';
 import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
-import type { BackendCapabilities } from './capabilities.ts';
-import type { UncoveredEntry } from '../error_coverage.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import type { RouteParamValues } from '../schema_generators.ts';
-
-/**
- * Configuration for `describe_standard_cross_process_tests`.
- *
- * The in-process suites' shared options minus their in-process-only knobs
- * (`create_route_specs`, `rate_limiting_app_options`).
- */
-export interface StandardCrossProcessTestOptions {
+/** Configuration for `describe_standard_cross_tests`. */
+export interface StandardCrossTestOptions {
 	/** Per-test fixture-producing function. */
 	setup_test: SetupTest;
 	/**
@@ -62,59 +29,27 @@ export interface StandardCrossProcessTestOptions {
 	 * in-process and cross-process tests.
 	 */
 	surface_source: AppSurfaceSpec;
-	/**
-	 * Backend capability declarations. Forwarded to the one bundled suite
-	 * that gates on them (`describe_standard_integration_tests`); the other
-	 * suites in the bundle read no flags and take no capability field.
-	 */
-	capabilities: BackendCapabilities;
-	/** The session cookie's name — read for the session cookie and the factory-form `rpc_endpoints` resolution. */
+	/** The session cookie's name — read for the factory-form `rpc_endpoints` resolution. */
 	session_cookie_name: string;
-	/**
-	 * RPC endpoint specs — required. The standard integration tests drive
-	 * `account_verify`, `account_session_*`, `account_token_*` through the
-	 * RPC surface (and admin tests, when wired, drive role_grant grant/revoke
-	 * through it too).
-	 */
+	/** RPC endpoint specs — the RPC round trip drives every method on them. */
 	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
-	 * Role registry from `create_role_registry()`.
-	 * When provided, the admin integration suite is included.
-	 */
-	roles?: RoleRegistry;
-	/**
-	 * Path prefix where admin routes are mounted.
-	 * Default `'/api/admin'`.
-	 */
-	admin_prefix?: string;
-	/**
-	 * Forwarded to `describe_standard_integration_tests` — overrides the
-	 * default error-coverage threshold on the scoped REST surface. Set to
-	 * `0` to skip the assertion entirely.
-	 */
-	error_coverage_min?: number;
-	/**
 	 * Base URL the spawned backend is reachable at. Forwarded to
-	 * `describe_standard_integration_tests`, whose middleware-gate probes write
-	 * their request heads to the socket.
+	 * `describe_middleware_gate_tests`, whose probes write their request heads
+	 * to the socket.
 	 */
 	base_url: string;
 	/**
-	 * Forwarded to `describe_standard_integration_tests` — the backend's
+	 * Forwarded to `describe_middleware_gate_tests` — the backend's
 	 * request-body cap on every counted route but the RPC endpoint, when it
 	 * isn't the spine default.
 	 */
 	max_body_bytes?: number;
 	/**
-	 * Forwarded to `describe_standard_integration_tests` — the backend's
+	 * Forwarded to `describe_middleware_gate_tests` — the backend's
 	 * request-body cap on the RPC endpoint, when it isn't `max_body_bytes`.
 	 */
 	rpc_max_body_bytes?: number;
-	/**
-	 * Forwarded to `describe_standard_integration_tests` — called with the
-	 * declared error paths of its counted routes it never observed.
-	 */
-	check_uncovered_errors?: (uncovered: Array<UncoveredEntry>) => void;
 	/**
 	 * Forwarded to `describe_round_trip_validation` as `skip_routes`
 	 * (`'METHOD /path'` keys). For consumer REST routes whose responses
@@ -174,24 +109,18 @@ export interface StandardCrossProcessTestOptions {
 }
 
 /**
- * Run the cross-process standard test bundle — integration, admin (when
- * `roles` provided), round trip, RPC round trip, data exposure. See the
- * module doc for the suites omitted from this bundle and why.
+ * Run the standard suites the transcript can't — the middleware-gate probes,
+ * round trip, RPC round trip, data exposure.
  */
-export const describe_standard_cross_process_tests = (
-	options: StandardCrossProcessTestOptions
-): void => {
-	describe_standard_integration_tests({
+export const describe_standard_cross_tests = (options: StandardCrossTestOptions): void => {
+	describe_middleware_gate_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
 		session_cookie_name: options.session_cookie_name,
 		rpc_endpoints: options.rpc_endpoints,
-		error_coverage_min: options.error_coverage_min,
 		base_url: options.base_url,
 		max_body_bytes: options.max_body_bytes,
-		rpc_max_body_bytes: options.rpc_max_body_bytes,
-		check_uncovered_errors: options.check_uncovered_errors
+		rpc_max_body_bytes: options.rpc_max_body_bytes
 	});
 	describe_round_trip_validation({
 		setup_test: options.setup_test,
@@ -215,14 +144,4 @@ export const describe_standard_cross_process_tests = (
 		skip_routes: options.data_exposure_skip_routes,
 		param_values: options.param_values
 	});
-	if (options.roles) {
-		describe_standard_admin_integration_tests({
-			setup_test: options.setup_test,
-			surface_source: options.surface_source,
-			session_cookie_name: options.session_cookie_name,
-			roles: options.roles,
-			rpc_endpoints: options.rpc_endpoints,
-			admin_prefix: options.admin_prefix
-		});
-	}
 };

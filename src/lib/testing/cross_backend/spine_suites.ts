@@ -45,7 +45,7 @@ import '../assert_dev_env.ts';
  *   built on a derived value. A required option the merge leaves `undefined`
  *   throws at collection.
  * - `rpc_success_fixtures` / `rpc_skip_methods` / `rpc_input_overrides` go to
- *   the standard bundle's RPC round-trip; `rpc_input_overrides` also seeds
+ *   the `standard` suite's RPC round-trip; `rpc_input_overrides` also seeds
  *   `rpc_adversarial`'s params cases (each override is the valid base they
  *   break one field of). A key naming a method on neither the declared surface
  *   nor `live_rpc_endpoints` throws at collection.
@@ -253,10 +253,11 @@ import {
 	describe_cross_process_sse_tests,
 	type CrossProcessSseTestOptions
 } from './sse_round_trip.ts';
+import { describe_standard_cross_tests, type StandardCrossTestOptions } from './standard.ts';
 import {
-	describe_standard_cross_process_tests,
-	type StandardCrossProcessTestOptions
-} from './standard.ts';
+	describe_standard_auth_cross_tests,
+	type StandardAuthCrossTestOptions
+} from './standard_auth.ts';
 import {
 	describe_testing_backdoor_cross_tests,
 	type TestingBackdoorCrossTestOptions
@@ -302,7 +303,8 @@ import { DB_INVARIANTS_EXCLUDE_ALL, type DbInvariantExclusions } from '../db_inv
 /**
  * Every shipped suite `describe_spine_cross_suites` runs, each named by its
  * module under `testing/cross_backend/` (`ws_round_trip` is
- * `describe_cross_process_ws_tests`, `standard` the standard bundle). Closed: a
+ * `describe_cross_process_ws_tests`; `standard_auth` and `standard` the two
+ * halves of the standard bundle, its auth suites and the rest). Closed: a
  * guard test holds it, with `STANDALONE_CROSS_SUITES`, to every module that
  * exports a `describe_*` suite, so a new suite fails until it is registered.
  */
@@ -347,6 +349,7 @@ export const SUITE_NAMES = [
 	'simple_request',
 	'sse_round_trip',
 	'standard',
+	'standard_auth',
 	'testing_backdoor',
 	'token_lifetime',
 	'token_scope_surface',
@@ -364,7 +367,11 @@ export type SuiteName = (typeof SUITE_NAMES)[number];
 
 /** A shipped suite module `describe_spine_cross_suites` leaves out. */
 export type StandaloneSuiteName =
-	'conformance_table' | 'differential' | 'login_security' | 'ws_action_rate_limit';
+	| 'conformance_table'
+	| 'differential'
+	| 'login_security'
+	| 'standard_bundle'
+	| 'ws_action_rate_limit';
 
 /**
  * The shipped suite modules `describe_spine_cross_suites` leaves out, each with
@@ -378,7 +385,9 @@ export const STANDALONE_CROSS_SUITES: Readonly<Record<StandaloneSuiteName, strin
 		'needs a backend spawned with the login limiters enabled, which the standard suites would exhaust',
 	ws_action_rate_limit:
 		'needs a backend spawned with the action limiters enabled, which the standard suites would exhaust',
-	conformance_table: "a runner over the consumer's own cases, not a suite"
+	conformance_table: "a runner over the consumer's own cases, not a suite",
+	standard_bundle:
+		'runs `standard_auth` and `standard` in one call, which the registry runs as two suites'
 };
 
 /**
@@ -480,7 +489,8 @@ export interface SuiteOptionsMap {
 	session_cookie_codec: SessionCookieCodecCrossTestOptions;
 	simple_request: SimpleRequestCrossTestOptions;
 	sse_round_trip: CrossProcessSseTestOptions;
-	standard: StandardCrossProcessTestOptions;
+	standard: StandardCrossTestOptions;
+	standard_auth: StandardAuthCrossTestOptions;
 	testing_backdoor: TestingBackdoorCrossTestOptions;
 	token_lifetime: TokenLifetimeCrossTestOptions;
 	token_scope_surface: TokenScopeSurfaceCrossTestOptions;
@@ -573,11 +583,11 @@ export interface SpineSuiteRoles {
 
 /** Options for `describe_spine_cross_suites`. */
 export interface SpineCrossSuitesOptions {
-	/** The declared surface — the standard bundle and `rpc_adversarial` enumerate it. */
+	/** The declared surface — `standard_auth`, `standard` and `rpc_adversarial` enumerate it. */
 	readonly surface_source: AppSurfaceSpec;
-	/** The session cookie's name, for the standard bundle. */
+	/** The session cookie's name, for `standard_auth` and `standard`. */
 	readonly session_cookie_name: string;
-	/** The backend's RPC endpoints, for the standard bundle. */
+	/** The backend's RPC endpoints, for `standard_auth` and `standard`. */
 	readonly rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
 	 * The RPC endpoints the backend live-mounts, for the methods it keeps off
@@ -587,7 +597,7 @@ export interface SpineCrossSuitesOptions {
 	 * still runs once, from the declared surface.
 	 */
 	readonly live_rpc_endpoints?: RpcEndpointsSuiteOption;
-	/** The backend's role registry; given, the standard bundle runs its admin suite. */
+	/** The backend's role registry; given, `standard_auth` runs its admin suite. */
 	readonly roles?: RoleRegistry;
 	/**
 	 * Setup options every suite's `setup_test` starts from — a signup path the
@@ -638,8 +648,8 @@ export interface SpineCrossSuitesOptions {
 	 * The backend's request-body cap on `rpc_path`, in bytes, when it isn't the
 	 * spine default (`SPINE_BODY_LIMIT_DEFAULT_BYTES`): the boundary
 	 * `body_size`, `body_size_smuggling`, `transport_composition`'s RPC
-	 * over-cap row and the standard bundle's body-limit probe of the RPC
-	 * endpoint probe.
+	 * over-cap row and `standard`'s body-limit probe of the RPC endpoint
+	 * probe.
 	 */
 	readonly rpc_max_body_bytes?: number;
 	/**
@@ -648,12 +658,12 @@ export interface SpineCrossSuitesOptions {
 	 * `ws_round_trip`'s oversized-message case sends past.
 	 */
 	readonly ws_max_message_bytes?: number;
-	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_success_fixtures`). */
+	/** Forwarded to `standard` (`StandardCrossTestOptions.rpc_success_fixtures`). */
 	readonly rpc_success_fixtures?: RpcSuccessFixtures;
-	/** Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_skip_methods`). */
+	/** Forwarded to `standard` (`StandardCrossTestOptions.rpc_skip_methods`). */
 	readonly rpc_skip_methods?: Array<string>;
 	/**
-	 * Forwarded to the standard bundle (`StandardCrossProcessTestOptions.rpc_input_overrides`)
+	 * Forwarded to `standard` (`StandardCrossTestOptions.rpc_input_overrides`)
 	 * and to `rpc_adversarial` (`RpcAdversarialCrossTestOptions.input_overrides`),
 	 * where each override seeds the method's params cases. Those cases are sent
 	 * as a single-actor principal, so an override omits `acting`. A key naming a
@@ -1228,6 +1238,28 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	standard: {
+		derive: (c) => ({
+			setup_test: c.setup(),
+			surface_source: c.options.surface_source,
+			session_cookie_name: c.options.session_cookie_name,
+			rpc_endpoints: c.options.rpc_endpoints,
+			rpc_success_fixtures: c.options.rpc_success_fixtures,
+			rpc_skip_methods: c.options.rpc_skip_methods,
+			rpc_input_overrides: c.options.rpc_input_overrides,
+			base_url: c.config.base_url,
+			rpc_max_body_bytes: c.options.rpc_max_body_bytes
+		}),
+		describe: describe_standard_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
+		required: {
+			setup_test: true,
+			surface_source: true,
+			session_cookie_name: true,
+			rpc_endpoints: true,
+			base_url: true
+		}
+	},
+	standard_auth: {
 		// a keeper-only account for the admin suite's keeper ≠ admin probe —
 		// `ROLE_KEEPER` is bootstrap-only, so it is seeded at reset
 		derive: (c) => ({
@@ -1238,22 +1270,16 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			capabilities: c.config.capabilities,
 			session_cookie_name: c.options.session_cookie_name,
 			rpc_endpoints: c.options.rpc_endpoints,
-			roles: c.options.roles,
-			rpc_success_fixtures: c.options.rpc_success_fixtures,
-			rpc_skip_methods: c.options.rpc_skip_methods,
-			rpc_input_overrides: c.options.rpc_input_overrides,
-			base_url: c.config.base_url,
-			rpc_max_body_bytes: c.options.rpc_max_body_bytes
+			roles: c.options.roles
 		}),
-		describe: describe_standard_cross_process_tests,
-		transcript: TRANSCRIPT_RAW_SOCKET,
+		describe: describe_standard_auth_cross_tests,
+		transcript: 'http',
 		required: {
 			setup_test: true,
 			surface_source: true,
 			session_cookie_name: true,
 			rpc_endpoints: true,
-			capabilities: true,
-			base_url: true
+			capabilities: true
 		}
 	},
 	testing_backdoor: {

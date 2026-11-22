@@ -28,6 +28,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, assert, afterAll } from 'vitest';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import { ROLE_ADMIN, type RoleRegistry } from '../auth/role_schema.ts';
@@ -118,7 +119,7 @@ export interface StandardAdminIntegrationTestOptions {
 	rpc_endpoints: RpcEndpointsSuiteOption;
 	/**
 	 * Path prefix where admin routes are mounted (e.g., `'/api/admin'`).
-	 * Used by the 401/403 error-coverage probe to scope to fuz_app admin
+	 * Used by the 401 error-coverage probe to scope to fuz_app admin
 	 * routes only, avoiding app-specific admin-gated routes that may use
 	 * stub deps. Default `'/api/admin'`.
 	 */
@@ -145,7 +146,7 @@ const pick_grantable_role = (
  *
  * Exercises account listing, role_grant grant/revoke (via RPC), session
  * management, token management, audit log reads, admin-to-admin
- * isolation, and 401/403 error-coverage on the admin REST surface.
+ * isolation, and 401 error-coverage on the admin REST surface.
  * Output-schema conformance is not in scope — see the module docstring
  * for the suites that cover it.
  *
@@ -1122,30 +1123,46 @@ export const describe_standard_admin_integration_tests = (
 
 		// --- 8a. Error coverage: unauthenticated access to admin routes ---
 
-		describe('error coverage breadth', () => {
-			test('exercises 401/403 on admin routes for error coverage', async () => {
-				const fixture = await options.setup_test();
-				// `/api/admin` is nearly empty — admin reads and mutations live
-				// on the RPC endpoint behind spec-level role auth. The path-prefix carve is still the right scope here
-				// because error coverage is tracked against REST `RouteSpec`s,
-				// not RPC method specs (`describe_rpc_round_trip_tests` covers
-				// the admin RPC surface separately).
-				const prefix = options.admin_prefix ?? '/api/admin';
-				const admin_routes = route_specs.filter(
-					(s) => s.path.startsWith(prefix) && (s.auth.roles?.includes('admin') ?? false)
-				);
+		// `/api/admin` is nearly empty — admin reads and mutations live
+		// on the RPC endpoint behind spec-level role auth. The path-prefix carve is still the right scope here
+		// because error coverage is tracked against REST `RouteSpec`s,
+		// not RPC method specs (`describe_rpc_round_trip_tests` covers
+		// the admin RPC surface separately).
+		const prefix = options.admin_prefix ?? '/api/admin';
+		const admin_routes = route_specs.filter(
+			(s) =>
+				s.path.startsWith(prefix) &&
+				(s.auth.roles?.includes('admin') ?? false) &&
+				// params and query validate ahead of the 401 (the route pipeline's
+				// order), so a route is driven only when the bare request passes them:
+				// no params, and a query that takes none (the audit stream's optional
+				// `acting`)
+				!s.params &&
+				(!s.query || parse(s.query, {}).ok)
+		);
+		// registered only where such routes exist, the describe too (an empty one
+		// fails the run): a plain skip would leave the transcript differential's
+		// run partial (its stale-ledger check unjudged), and a gated one would owe
+		// every consumer an `expected_skips` entry
+		if (admin_routes.length > 0) {
+			describe('error coverage breadth', () => {
+				test('exercises 401 on admin routes for error coverage', async () => {
+					const fixture = await options.setup_test();
 
-				// Hit admin routes without auth to exercise 401 error schemas.
-				for (const route of admin_routes) {
-					const res = await fixture.transport(route.path, {
-						method: route.method,
-						headers: { host: 'localhost', 'content-type': to_route_content_type(route) }
-					});
-					if (res.status === 401 || res.status === 403) {
+					// Hit admin routes without auth to exercise 401 error schemas — a
+					// fresh transport, since the fixture's carries the keeper's cookie
+					const transport = fixture.fresh_transport();
+					for (const route of admin_routes) {
+						const res = await transport(route.path, {
+							method: route.method,
+							headers: { host: 'localhost', 'content-type': to_route_content_type(route) }
+						});
+						// no credential: every admin route answers 401 before authorization
+						assert.strictEqual(res.status, 401, `${route.method} ${route.path}`);
 						await error_collector.assert_and_record(route_specs, route.method, route.path, res);
 					}
-				}
+				});
 			});
-		});
+		}
 	});
 };

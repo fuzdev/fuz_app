@@ -17,6 +17,9 @@ vi.mock('#lib/testing/admin_integration.ts', () => ({
 	describe_standard_admin_integration_tests: () => {}
 }));
 vi.mock('#lib/testing/rpc_round_trip.ts', () => ({ describe_rpc_round_trip_tests: () => {} }));
+vi.mock('#lib/testing/middleware_gate_probes.ts', () => ({
+	describe_middleware_gate_tests: () => {}
+}));
 vi.mock('#lib/testing/round_trip.ts', () => ({
 	describe_round_trip_validation: (options: Record<string, unknown>) => {
 		calls.round_trip.push(options);
@@ -31,7 +34,7 @@ vi.mock('#lib/testing/data_exposure.ts', () => ({
 import {
 	describe_standard_cross_process_tests,
 	type StandardCrossProcessTestOptions
-} from '#lib/testing/cross_backend/standard.ts';
+} from '#lib/testing/cross_backend/standard_bundle.ts';
 import type { RouteParamValues } from '#lib/testing/schema_generators.ts';
 
 describe('describe_standard_cross_process_tests', () => {

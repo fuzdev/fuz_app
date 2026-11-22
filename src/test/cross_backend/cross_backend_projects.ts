@@ -113,6 +113,7 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
 		include: [
 			'src/test/cross_backend/schema_parity.cross.test.ts',
+			'src/test/cross_backend/bootstrap_db_state.cross.test.ts',
 			'src/test/cross_backend/action_manifest_parity.cross.test.ts',
 			'src/test/cross_backend/differential.cross.test.ts',
 			'src/test/cross_backend/conformance_table_copies.cross.test.ts',

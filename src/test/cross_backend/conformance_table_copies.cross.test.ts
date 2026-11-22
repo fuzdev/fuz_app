@@ -6,7 +6,9 @@
  * other. The database invariant statement rides along: `db_invariants.sql` is
  * generated here (`db_invariants.gen.sql.ts`) and embedded by the Rust
  * spine's `_testing_db_invariants`, so an invariant added here fails until
- * the regenerated file is copied over.
+ * the regenerated file is copied over. So do the SQL statements the two
+ * resets share as constants (`TWIN_SQL_CONSTANTS`), each read out of the
+ * Rust source as a plain string literal.
  *
  * It reads the Cargo workspace the Rust stub is built from
  * (`resolve_rust_spine_stub_workspace_dir`), so it runs under the dual-spawn
@@ -23,6 +25,7 @@ import { describe, test, assert } from 'vitest';
 import { CREDENTIAL_CONFORMANCE_URL } from '#lib/testing/cross_backend/credential_conformance.ts';
 import { REQUEST_HEADER_CONFORMANCE_URL } from '#lib/testing/cross_backend/request_header_conformance.ts';
 import { REQUEST_TARGET_CONFORMANCE_URL } from '#lib/testing/cross_backend/request_target_conformance.ts';
+import { RESET_SESSION_CLOCK_STAMP_SQL } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 
 import { resolve_rust_spine_stub_workspace_dir } from './global_setup_helpers.ts';
 
@@ -66,6 +69,44 @@ describe('conformance table copies', () => {
 				readFileSync(ts_url).equals(readFileSync(rust_copy)),
 				`${name} differs from ${rust_copy} — copy the edited file over the other`
 			);
+		}
+	);
+});
+
+/** A SQL statement both spines hold as a constant: the TS value, and the Rust `const` naming it. */
+interface TwinSqlConstant {
+	readonly name: string;
+	readonly ts_value: string;
+	readonly rust_path: string;
+}
+
+const TWIN_SQL_CONSTANTS: ReadonlyArray<TwinSqlConstant> = [
+	{
+		name: 'RESET_SESSION_CLOCK_STAMP_SQL',
+		ts_value: RESET_SESSION_CLOCK_STAMP_SQL,
+		rust_path: 'crates/fuz_testing/src/testing_reset.rs'
+	}
+];
+
+/**
+ * The value of `const <name>: &str = "...";` in Rust source — a plain string
+ * literal with no escapes, which is all a shared statement needs; anything
+ * else is refused rather than read wrong.
+ */
+const read_rust_str_const = (source: string, name: string): string | null => {
+	const match = new RegExp(`const ${name}: &str =\\s*"([^"\\\\]*)";`).exec(source);
+	return match ? match[1]! : null;
+};
+
+describe('shared SQL constants', () => {
+	test.each(TWIN_SQL_CONSTANTS)(
+		'the Rust spine holds $name byte for byte',
+		({ name, ts_value, rust_path }) => {
+			const rust_file = join(resolve_rust_spine_stub_workspace_dir(), rust_path);
+			assert.ok(existsSync(rust_file), `the Rust source of ${name} is missing: ${rust_file}`);
+			const rust_value = read_rust_str_const(readFileSync(rust_file, 'utf8'), name);
+			assert.ok(rust_value !== null, `no plain-literal \`const ${name}: &str\` in ${rust_file}`);
+			assert.strictEqual(rust_value, ts_value, `${name} differs from ${rust_file}`);
 		}
 	);
 });
