@@ -19,6 +19,13 @@
  * one file at a time, with no concurrent tests, so A finishes before B starts.
  * A test side B runs that side A didn't record fails there.
  *
+ * With `compare_db_state`, each test also compares the databases the two
+ * backends are left in (`create_db_state_probe`, read directly — both must be
+ * on PostgreSQL the test process reaches): side A's `afterEach` stores its
+ * normalized state beside the transcript, and side B's diffs against it, the
+ * differences named under `db.` (`[db]` in a failure) for the ledger to
+ * match by `path` (a row with `where` matches no database difference).
+ *
  * Known differences are a ledger of the transcript's own
  * (`TranscriptKnownDivergence`), matched by path within an entry. A closing
  * test fails when a test ran on one side and not the other (filtered runs
@@ -46,6 +53,13 @@ import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backe
 import { describe_cookie_attributes_cross_tests } from '#lib/testing/cross_backend/cookie_attributes.ts';
 import { differential_path_covers } from '#lib/testing/cross_backend/differential_normalize.ts';
 import { describe_identity_parity_cross_tests } from '#lib/testing/cross_backend/identity_parity.ts';
+import {
+	create_db_state_probe,
+	diff_db_states,
+	type DbState,
+	type DbStateMark,
+	type DbStateProbe
+} from '#lib/testing/cross_backend/db_state_diff.ts';
 import { describe_role_grant_offer_lifecycle_cross_tests } from '#lib/testing/cross_backend/role_grant_offer_lifecycle.ts';
 import {
 	default_cross_process_setup,
@@ -109,7 +123,12 @@ export interface TranscriptDifferentialOptions {
 	 * written without it.
 	 */
 	readonly dump_dir?: string;
+	/** Compare the database each test leaves too (module doc). */
+	readonly compare_db_state?: boolean;
 }
+
+/** The `index` of a database difference, which belongs to no entry. */
+const DB_DIFF_INDEX = -1;
 
 const is_deep_equal = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
 
@@ -194,6 +213,8 @@ interface StoredTranscript {
 	readonly history_clean: boolean;
 	/** `seq_base` less the previous `seq_base` on side A, `null` for the first. */
 	readonly seq_step: TranscriptSeqBase | null;
+	/** The database the test left, with `compare_db_state`. */
+	readonly db_state: DbState | null;
 }
 
 /**
@@ -229,6 +250,13 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 			describe(title, () => {
 				let root: Task | null = null;
 				let current: Array<TranscriptEntry> | null = null;
+				const probe: DbStateProbe | null = options.compare_db_state
+					? create_db_state_probe(side.handle)
+					: null;
+				let mark: DbStateMark | null = null;
+				afterAll(async () => {
+					await probe?.close();
+				});
 				const setup = (): SetupTest =>
 					record_setup_test(
 						default_cross_process_setup(side.handle, { reject_unknown_audit_metadata_keys: true }),
@@ -245,12 +273,15 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					registered[side.name] = tests.length;
 					running[side.name] = tests.filter(will_run).map((t) => key_below(t, suite));
 				});
-				beforeEach(() => {
+				beforeEach(async () => {
 					current = [];
+					mark = probe ? await probe.mark() : null;
 				});
-				afterEach((ctx) => {
+				afterEach(async (ctx) => {
 					const entries = current;
 					current = null;
+					const db_state = probe && mark ? await probe.read(mark) : null;
+					mark = null;
 					if (!entries || !root) return;
 					const key = key_below(ctx.task, root);
 					const history_clean = !failed_so_far[side.name];
@@ -267,7 +298,7 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					if (seq_base) last_seq_base[side.name] = seq_base.value;
 					if (side === a) {
 						assert.ok(!stored_a.has(key), `transcript: test key recorded twice: ${key}`);
-						stored_a.set(key, { transcript, history_clean, seq_step });
+						stored_a.set(key, { transcript, history_clean, seq_step, db_state });
 						return;
 					}
 					assert.ok(!normalized_b.has(key), `transcript: test key recorded twice: ${key}`);
@@ -294,6 +325,12 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					) {
 						diffs.push({ index: seq_a.index, path: 'seq_step', a: seq_a.value, b: seq_b.value });
 					}
+					// the database differences carry no entry, `DB_DIFF_INDEX`
+					if (other.db_state && db_state) {
+						for (const d of diff_db_states(other.db_state, db_state)) {
+							diffs.push({ ...d, index: DB_DIFF_INDEX });
+						}
+					}
 					const row_covers = (row: TranscriptKnownDivergence, d: TranscriptDiff): boolean =>
 						covers(row, key, d, entries_a[d.index], entries_b[d.index]);
 					for (const row of ledger) {
@@ -302,16 +339,19 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					const unlisted = diffs.filter((d) => !ledger.some((row) => row_covers(row, d)));
 					const problems: Array<string> = [];
 					if (unlisted.length > 0) {
-						const first = unlisted[0]!.index;
+						const first = unlisted.find((d) => d.index !== DB_DIFF_INDEX)?.index;
 						problems.push(
 							`${a.name} and ${b.name} answered differently:\n` +
 								unlisted
 									.map(
 										(d) =>
-											`  [${d.index}] ${d.path}: ${a.name}=${format_value(d.a)} ${b.name}=${format_value(d.b)}`
+											`  [${d.index === DB_DIFF_INDEX ? 'db' : d.index}] ${d.path}: ` +
+											`${a.name}=${format_value(d.a)} ${b.name}=${format_value(d.b)}`
 									)
 									.join('\n') +
-								`\nfirst differing entry [${first}]:\n  ${a.name}: ${JSON.stringify(entries_a[first])}\n  ${b.name}: ${JSON.stringify(entries_b[first])}`
+								(first === undefined
+									? ''
+									: `\nfirst differing entry [${first}]:\n  ${a.name}: ${JSON.stringify(entries_a[first])}\n  ${b.name}: ${JSON.stringify(entries_b[first])}`)
 						);
 					}
 					if (unlisted.some((d) => d.path === 'seq_step')) {

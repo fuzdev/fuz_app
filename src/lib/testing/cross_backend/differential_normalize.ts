@@ -238,6 +238,27 @@ const diff_values = (path: string, a: unknown, b: unknown, out: Array<Differenti
 };
 
 /**
+ * Every place two JSON values differ, one entry per leaf path under `path`,
+ * by the rules `DifferentialDiff` describes — what
+ * `diff_differential_responses` runs over two bodies, for comparing any other
+ * normalized value the same way.
+ *
+ * @param path - the root path the entries are named under
+ * @param a - one side's value
+ * @param b - the other's
+ * @returns the differences, empty when the values are equal
+ */
+export const diff_differential_values = (
+	path: string,
+	a: unknown,
+	b: unknown
+): Array<DifferentialDiff> => {
+	const out: Array<DifferentialDiff> = [];
+	diff_values(path, a, b, out);
+	return out;
+};
+
+/**
  * Every place two normalized responses differ, in a stable order: status,
  * then header names, then the session cookie's effect, then the body
  * depth-first with keys sorted. Empty when the responses are equal.

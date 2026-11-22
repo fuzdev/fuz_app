@@ -301,6 +301,7 @@ export const create_signup_route_specs = (
 
 					await deps.audit.emit(route, {
 						event_type: 'signup',
+						actor_id: result.actor.id,
 						account_id: result.account.id,
 						ip: route.client_ip,
 						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }

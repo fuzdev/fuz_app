@@ -402,7 +402,8 @@ field a loose output schema passes on one spine, shows up as a difference.
   headers each server sets its own way); values are never compared —
   `set-cookie` carries a fresh credential, and the contract header values are
   the conformance table's `expect.headers` + no-fingerprint floor.
-  `diff_differential_responses(a, b)` → `DifferentialDiff[]`, one per leaf
+  `diff_differential_responses(a, b)` → `DifferentialDiff[]`
+  (`diff_differential_values(path, a, b)` the same leaf diff over any value), one per leaf
   path (`status`, `headers.<name>`, `session_cookie`, `body.error.data.reason`; an object one
   side lacks diffs key by key, and an empty one against a missing one at its
   own path), `differential_path_covers(covered, path)`,
@@ -411,7 +412,9 @@ field a loose output schema passes on one spine, shows up as a difference.
   `describe_differential_conformance_tests({cases, backends: [a, b],
   surface_source, rpc_endpoints, live_rpc_endpoints?, session_options,
   principals?, known_divergences?, suite_name?})`, each backend `{name,
-  setup_test, ws?}`; methods resolve as the table resolves them
+  setup_test, ws?, db_state?}`; `db_state` on both (on one alone,
+  registration throws) also compares the database each case leaves, its
+  differences joining the answer's under `db.` (below); methods resolve as the table resolves them
   (`resolve_conformance_rpc_endpoints`).
   `ws` on both runs the cases over their WebSocket endpoints, filtered by
   `is_ws_conformance_case`, with the ledger checked against what is left; on
@@ -441,13 +444,33 @@ field a loose output schema passes on one spine, shows up as a difference.
   the static half is `check_known_divergence_ledger(cases, ledger)`, exported
   for checking a ledger without a backend. No other ignore path exists.
 
+- `cross_backend/db_state_diff.ts` — the database a case leaves.
+  `create_db_state_probe(handle)` → `{mark, read, close}` over the backend's
+  own `DATABASE_URL` (PostgreSQL the test process reaches, else it throws):
+  `mark` reads the audit sequence before the fixture, `read` drains the
+  backend's audit writes (`_testing_drain_effects`) and reads every
+  `DB_STATE_TABLES` row as JSON. `normalize_db_state` numbers ids
+  (`<id:n>`, `<tok:n>`) and generated usernames (`<username:n>`,
+  `GENERATED_USERNAME_PATTERN` from `setup.ts`) by a canonical walk — tables
+  in order, rows sorted by a key holding no unnumbered id (audit rows by
+  `seq`), columns and JSON keys sorted — so a reference inside `metadata`
+  compares; tokens and digests become constants, timestamps their dense
+  rank over the dump (`<t:n>`, `null` kept), `seq` an offset from the
+  dump's smallest, and `audit_seq_advance` how far the sequence moved since
+  the mark (a rolled-back insert spends a value). `diff_db_states(a, b)`
+  lists the differences as `db.<table>[i].<column>…` and
+  `db.audit_seq_advance`. Rows compare by position, so a missing row shifts
+  its table.
+
 fuz_app runs it under the `cross_backend_parity` project
 (`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`
 in `src/test/cross_backend/`): every `conformance_*_cases.ts` array plus the
 generated auth rows (over the live mount too, so the cell verbs, the actor
 resolvers and the `_testing_*` backdoors are compared), TS spine vs
 `testing_spine_stub`, both on Postgres so no engine difference reads as a body
-difference. The same cases run again over
+difference and the test process reads both databases, so every case also
+compares the state it leaves (`compare_db_state` on
+`describe_spine_differential_suites`). The same cases run again over
 WS, against `differential_ws_known_divergences` (the HTTP ledger without its
 header row). The multi-actor `conformance_acting_cases.ts` rows run with the
 generated rows on a keeper seeded with `extra_actors`, over both transports.
@@ -459,7 +482,9 @@ backends and their ledgers. fuz_app also holds two TS runtimes to each other
 with it: the `cross_backend_ts_differential` project
 (`differential_ts.cross.test.ts`) dual-spawns the TS spine binary on Node and
 on Bun, both on `memory://`, against an empty ledger — both run under `DEV`,
-so the DEV-only rows show on both sides and differ nowhere. It needs no Rust
+so the DEV-only rows show on both sides and differ nowhere. Both run on
+`memory://`, a database only the binary itself reaches, so no database state
+is compared there. It needs no Rust
 or Postgres and runs in the `cross-ts` CI job.
 
 ## Assertions, coverage, helpers

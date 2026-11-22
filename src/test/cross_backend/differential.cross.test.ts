@@ -11,9 +11,14 @@
  * alone fails here. Tracked differences are the ledger in
  * `differential_known_divergences.ts`.
  *
+ * Each case also compares the databases the two spines are left in
+ * (`compare_db_state`), read directly; the ledger names those differences
+ * under `db.`.
+ *
  * Runs under the dual-spawn `cross_backend_parity` project (`parity_handle_a`
  * = TS, `parity_handle_b` = Rust), both spines on Postgres, so no engine
- * difference can show up as a body difference.
+ * difference can show up as a body difference, and the test process reads
+ * both databases.
  *
  * @module
  */
@@ -34,6 +39,7 @@ describe_spine_differential_suites({
 		{ name: 'ts', handle: parity.a },
 		{ name: 'rust', handle: parity.b }
 	],
+	compare_db_state: true,
 	known_divergences: {
 		http: differential_known_divergences,
 		ws: differential_ws_known_divergences,

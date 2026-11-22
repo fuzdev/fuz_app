@@ -28,6 +28,14 @@ import '../assert_dev_env.ts';
  * letting a server choose would read as a `content-encoding` and `vary`
  * difference on every case.
  *
+ * With a `db_state` probe on both backends (`create_db_state_probe`), each
+ * case also compares what it left in the databases: each probe marks the
+ * audit sequence before the case's fixture and reads the normalized state
+ * after its answer (`normalize_db_state`), and the two states' differences
+ * join the answer's under `db.` (`diff_db_states`), so a write one backend
+ * makes and the other doesn't fails the case like an answer would. Both
+ * backends must then be on PostgreSQL the test process reaches.
+ *
  * A difference that is tracked and accepted goes in the **known-divergence
  * ledger** (`KnownDivergence`), matched by case names or by methods, naming
  * the paths that differ (`what_differs`), each optionally with the value each
@@ -49,7 +57,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { assert, describe, test } from 'vitest';
+import { afterAll, assert, describe, test } from 'vitest';
 
 import type { AppSurfaceSpec } from '../../http/surface.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
@@ -69,6 +77,7 @@ import {
 	type DifferentialDiff,
 	type DifferentialResponse
 } from './differential_normalize.ts';
+import { diff_db_states, type DbState, type DbStateProbe } from './db_state_diff.ts';
 import type { SetupTest } from './setup.ts';
 import type { WsEndpointTarget } from './ws_endpoint.ts';
 
@@ -95,6 +104,13 @@ export interface DifferentialBackend {
 	 * suite throws at registration.
 	 */
 	readonly ws?: WsEndpointTarget;
+	/**
+	 * Reads the backend's database around each case, so the states the two
+	 * backends are left in are compared too (module doc). Set on both or
+	 * neither — set on one alone, the suite throws at registration. The suite
+	 * closes it once its cases have run.
+	 */
+	readonly db_state?: DbStateProbe;
 }
 
 /**
@@ -133,7 +149,8 @@ export interface KnownDivergencePath {
  *
  * `what_differs` lists the normalized-response paths that differ
  * (`DifferentialDiff.path` — `status`, `headers.<name>`, `session_cookie`,
- * `body.error.data.reason`), each optionally with the value each side shows
+ * `body.error.data.reason`, and with `db_state` probes the database's,
+ * `db.audit_log[0].metadata.reason`), each optionally with the value each side shows
  * (`KnownDivergencePath`). A matched case may differ there and nowhere else.
  * An entry naming cases must still differ on each of them; one naming
  * methods, on at least one of its cases.
@@ -284,14 +301,21 @@ export const describe_differential_conformance_tests = (
 				`'${(a.ws ? a : b).name}' does — set ws on both backends or neither.`
 		);
 	}
+	if ((a.db_state === undefined) !== (b.db_state === undefined)) {
+		throw new Error(
+			`differential: backend '${(a.db_state ? b : a).name}' has no db_state probe while ` +
+				`'${(a.db_state ? a : b).name}' does — set db_state on both backends or neither.`
+		);
+	}
 	const over_ws = a.ws !== undefined;
 	const cases = over_ws ? options.cases.filter(is_ws_conformance_case) : options.cases;
 
 	const send = async (
 		backend: DifferentialBackend,
 		c: ConformanceCase
-	): Promise<DifferentialResponse> =>
-		normalize_differential_response(
+	): Promise<{ response: DifferentialResponse; db_state: DbState | null }> => {
+		const mark = backend.db_state ? await backend.db_state.mark() : null;
+		const response = normalize_differential_response(
 			await send_conformance_case(c, {
 				fixture: await backend.setup_test(),
 				surface_source,
@@ -302,8 +326,14 @@ export const describe_differential_conformance_tests = (
 			}),
 			options.session_options.cookie_name
 		);
+		const db_state = backend.db_state && mark ? await backend.db_state.read(mark) : null;
+		return { response, db_state };
+	};
 
 	describe(options.suite_name ?? 'differential conformance', () => {
+		afterAll(async () => {
+			await Promise.all([a.db_state?.close(), b.db_state?.close()]);
+		});
 		// per entry: the cases it matched, the ones that ran to a diff, and
 		// whether any of them showed it
 		const matched = new Map<KnownDivergence, Set<string>>();
@@ -321,8 +351,11 @@ export const describe_differential_conformance_tests = (
 					? `${c.name} [known: ${known.map((d) => d.tracking_id).join(', ')}]`
 					: c.name;
 			test(label, async () => {
-				const [response_a, response_b] = await Promise.all([send(a, c), send(b, c)]);
-				const diffs = diff_differential_responses(response_a, response_b);
+				const [sent_a, sent_b] = await Promise.all([send(a, c), send(b, c)]);
+				const diffs = diff_differential_responses(sent_a.response, sent_b.response);
+				if (sent_a.db_state && sent_b.db_state) {
+					diffs.push(...diff_db_states(sent_a.db_state, sent_b.db_state));
+				}
 				for (const d of known) {
 					const names = ran.get(d) ?? new Set();
 					names.add(c.name);

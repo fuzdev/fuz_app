@@ -1050,11 +1050,22 @@ describe_db('invite + signup integration', (get_db) => {
 				{ username: 'audituser', password: 'securepassword123' },
 				create_test_request_headers()
 			);
-			// Check audit log
-			const rows = await get_db().query<{ event_type: string; metadata: unknown }>(
-				`SELECT event_type, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
+			// Check audit log: the row names the new account and its actor
+			const rows = await get_db().query<{
+				event_type: string;
+				account_id: string | null;
+				actor_id: string | null;
+				metadata: unknown;
+			}>(
+				`SELECT event_type, account_id, actor_id, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
+			const [actor] = await get_db().query<{ id: string; account_id: string }>(
+				`SELECT a.id, a.account_id FROM actor a JOIN account c ON c.id = a.account_id WHERE c.username = 'audituser'`
+			);
+			assert.ok(actor);
+			assert.strictEqual(rows[0]!.account_id, actor.account_id);
+			assert.strictEqual(rows[0]!.actor_id, actor.id);
 			const metadata = rows[0]!.metadata as any;
 			assert.strictEqual(metadata.open_signup, true);
 			assert.strictEqual(metadata.username, 'audituser');

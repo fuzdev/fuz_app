@@ -352,7 +352,11 @@ conformance case (the `conformance_*_cases.ts` arrays, participation's with its
 WS, and the multi-actor `acting` rows on both) to both and asserts the
 normalized answers equal via `describe_differential_conformance_tests` —
 status, header names, the session cookie's effect and the whole body, so an extra field one spine sends,
-or a body difference on a row pinned by status alone, fails. Tracked
+or a body difference on a row pinned by status alone, fails. Each case also
+compares the databases the two spines are left in, read directly
+(`db_state_diff.ts`; differences under `db.`), so a write one spine makes and
+the other doesn't — an audit field, a rolled-back insert — fails though no
+answer shows it. Tracked
 differences live in `differential_known_divergences.ts`, each with its
 tracking id and the paths it differs at, and the ledger's closing test fails
 on an entry that no longer differs; and
@@ -376,7 +380,8 @@ project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`
 brings up the TS spine binary on Node and on Bun, both on `memory://`,
 providing `ts_differential_handle_a`/`_b`) runs
 `differential_ts.cross.test.ts`, the same suites between the two runtimes
-with an empty ledger — the TS-vs-Rust rows are TS-against-Rust differences,
+with an empty ledger and no database comparison (`memory://` is the binary's
+own) — the TS-vs-Rust rows are TS-against-Rust differences,
 and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
@@ -390,7 +395,8 @@ got: `transcript_differential.cross.test.ts` (TS spine against
 `cross_backend_ts_differential`, empty ledger). Every request and answer of a
 test is recorded, `create_account`'s own included (`transcript_record.ts`),
 and side B's `afterEach` diffs the test's two normalized transcripts
-(`transcript_normalize.ts`), so a status beside an asserted reason, a body
+(`transcript_normalize.ts`) — under `cross_backend_parity`, the two
+databases the test left too (`compare_db_state`, `[db]` in a failure) — so a status beside an asserted reason, a body
 field no assertion reads, or a cookie beside the one a test checks is held
 equal across backends with no edit to the suite.
 

@@ -12,6 +12,11 @@
  * on a keeper seeded with a second actor, on both transports; the
  * participation cases run with their `role_holder` seed.
  *
+ * With `compare_db_state`, every case also compares the databases the two
+ * backends are left in (`create_db_state_probe`) — both must then be on
+ * PostgreSQL the test process reaches, so the TS-vs-TS pair on `memory://`
+ * leaves it off.
+ *
  * @module
  */
 
@@ -29,6 +34,7 @@ import {
 	spine_rpc_endpoints,
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
+import { create_db_state_probe } from '#lib/testing/cross_backend/db_state_diff.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
 
@@ -68,6 +74,8 @@ export interface SpineDifferentialLedgers {
 export interface DescribeSpineDifferentialOptions {
 	readonly backends: readonly [SpineDifferentialBackend, SpineDifferentialBackend];
 	readonly known_divergences?: SpineDifferentialLedgers;
+	/** Compare each case's database state too (module doc). */
+	readonly compare_db_state?: boolean;
 }
 
 /**
@@ -117,13 +125,17 @@ export const describe_spine_differential_suites = (
 	// the same fixture options as the single-backend conformance legs
 	const a_setup = default_cross_process_setup(a.handle);
 	const b_setup = default_cross_process_setup(b.handle);
+	// one probe per backend, shared by every suite; each suite closes it after
+	// its cases and the next reopens it
+	const a_db = options.compare_db_state ? { db_state: create_db_state_probe(a.handle) } : {};
+	const b_db = options.compare_db_state ? { db_state: create_db_state_probe(b.handle) } : {};
 
 	describe_differential_conformance_tests({
 		...shared,
 		cases,
 		backends: [
-			{ name: a.name, setup_test: a_setup },
-			{ name: b.name, setup_test: b_setup }
+			{ name: a.name, setup_test: a_setup, ...a_db },
+			{ name: b.name, setup_test: b_setup, ...b_db }
 		],
 		known_divergences: ledgers.http,
 		suite_name: `differential conformance (${pair})`
@@ -133,8 +145,8 @@ export const describe_spine_differential_suites = (
 		...shared,
 		cases,
 		backends: [
-			{ name: a.name, setup_test: a_setup, ws: ws_target(a.handle) },
-			{ name: b.name, setup_test: b_setup, ws: ws_target(b.handle) }
+			{ name: a.name, setup_test: a_setup, ws: ws_target(a.handle), ...a_db },
+			{ name: b.name, setup_test: b_setup, ws: ws_target(b.handle), ...b_db }
 		],
 		known_divergences: ledgers.ws,
 		suite_name: `differential conformance over WS (${pair})`
@@ -149,8 +161,8 @@ export const describe_spine_differential_suites = (
 		...shared,
 		cases: multi_actor_cases,
 		backends: [
-			{ name: a.name, setup_test: a_multi_actor_setup },
-			{ name: b.name, setup_test: b_multi_actor_setup }
+			{ name: a.name, setup_test: a_multi_actor_setup, ...a_db },
+			{ name: b.name, setup_test: b_multi_actor_setup, ...b_db }
 		],
 		suite_name: `differential multi-actor conformance (${pair})`
 	});
@@ -159,8 +171,8 @@ export const describe_spine_differential_suites = (
 		...shared,
 		cases: multi_actor_cases,
 		backends: [
-			{ name: a.name, setup_test: a_multi_actor_setup, ws: ws_target(a.handle) },
-			{ name: b.name, setup_test: b_multi_actor_setup, ws: ws_target(b.handle) }
+			{ name: a.name, setup_test: a_multi_actor_setup, ws: ws_target(a.handle), ...a_db },
+			{ name: b.name, setup_test: b_multi_actor_setup, ws: ws_target(b.handle), ...b_db }
 		],
 		suite_name: `differential multi-actor conformance over WS (${pair})`
 	});
@@ -173,8 +185,16 @@ export const describe_spine_differential_suites = (
 		...shared,
 		cases: conformance_participation_cases,
 		backends: [
-			{ name: a.name, setup_test: default_cross_process_setup(a.handle, participation_setup) },
-			{ name: b.name, setup_test: default_cross_process_setup(b.handle, participation_setup) }
+			{
+				name: a.name,
+				setup_test: default_cross_process_setup(a.handle, participation_setup),
+				...a_db
+			},
+			{
+				name: b.name,
+				setup_test: default_cross_process_setup(b.handle, participation_setup),
+				...b_db
+			}
 		],
 		principals: { role_holder: PARTICIPATION_HOLDER_USERNAME },
 		known_divergences: ledgers.participation,
