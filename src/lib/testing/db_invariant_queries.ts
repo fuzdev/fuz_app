@@ -30,15 +30,35 @@ import './assert_dev_env.ts';
  *
  * **Order against a removal.** Where both spines audit the row's creation
  * (`role_grant_offer_create` with `metadata.offer_id`, `invite_create` with
- * `metadata.invite_id`), the removal's audit `seq` is compared with the
- * creation row's — exact, whatever the clocks. Otherwise (credentials, and
- * rows written without the action, as the in-process fixture writes them)
- * the timestamps are compared, and a removal in the same clock tick as the
- * creation counts as after it: the database clock may tick in milliseconds
- * (pglet), and a creation tied with the removal that should have ended it is
- * the leak the check exists for, while the opposite order — a removal, an
- * undelete, and a fresh creation in one tick — is not a sequence the tests
- * drive.
+ * `metadata.invite_id`, `token_create` with `metadata.token_id`), the
+ * removal's audit `seq` is compared with the creation row's — exact, whatever
+ * the clocks: the creation row is written under the account lock the removal
+ * takes, in the creating transaction. Otherwise (sessions, and rows written
+ * without the action, as the in-process fixture writes them) the timestamps
+ * are compared, and a removal in the same clock tick as the creation counts as
+ * after it: the database clock may tick in milliseconds (pglet), and a
+ * creation tied with the removal that should have ended it is the leak the
+ * check exists for, while the opposite order — a removal, an undelete, and a
+ * fresh creation in one tick — is not a sequence the tests drive.
+ *
+ * **The long-transaction walk.** A timestamp is its transaction's start
+ * (`created_at` defaults to `NOW()`), not when the row was written, so a
+ * timestamp comparison misflags one legal sequence: a login's transaction
+ * begins, a delete and then an undelete of its account commit, and only then
+ * does the login take the account lock, find the account live, and insert —
+ * a session minted after the undelete, its `created_at` before the delete.
+ * Nothing drives it: the login must stall between its transaction's start and
+ * the account lock while two admin actions commit, which only a test stalling
+ * the login's connection between its `BEGIN` and its lock statement could
+ * arrange, on Postgres, and none does. Sessions keep this false positive:
+ * their creation is audited by `login` (or `signup`, `bootstrap`), whose rows
+ * carry no `session_id` to order by, and adding one would change an audit
+ * shape on both spines — not taken. An API token minted by
+ * `account_token_create` is ordered by its `token_create` row, so the walk
+ * can't misflag one — nor could it reach one: that mint re-reads its
+ * authorizing session under the account lock, and a delete revokes every
+ * session. A token minted without that row (a fixture, a consumer's own mint)
+ * falls back to `created_at`.
  *
  * Not invariants, by design: the role grants of a tombstoned actor (kept
  * through delete and undelete, inert while no credential authenticates) and
@@ -101,6 +121,13 @@ const SHARED_CTES_SQL = `
 		FROM invite i
 		LEFT JOIN actor a ON a.id = i.created_by
 		WHERE i.claimed_at IS NULL
+	),
+	token_issued AS (
+		SELECT t.id, t.account_id, t.created_at,
+			(SELECT MIN(al.seq) FROM audit_log al
+				WHERE al.event_type = 'token_create' AND al.outcome = 'success'
+				  AND al.metadata->>'token_id' = t.id) AS create_seq
+		FROM api_token t
 	)`;
 
 /**
@@ -149,7 +176,8 @@ export interface DbInvariant {
 	/**
 	 * Selects one row per violation, with the identity needed to debug it. May
 	 * read the shared CTEs (`role_param`, `removal`, `offer_party`,
-	 * `invite_issuer`); the role parameters are read through `role_param`.
+	 * `invite_issuer`, `token_issued`); the role parameters are read through
+	 * `role_param`.
 	 */
 	readonly sql: string;
 }
@@ -282,6 +310,10 @@ export const DB_INVARIANTS = [
 				'account_purge'
 			])}`
 	},
+	// A token is ordered by its `token_create` row's `seq`, a session by its
+	// `created_at` — which misflags a login whose transaction began before a
+	// delete and an undelete it then waited out; the module doc's
+	// long-transaction walk says why that is legal, undriven, and kept.
 	{
 		name: 'credential_outlived_account_removal',
 		columns: ['kind', 'id', 'account_id'],
@@ -290,9 +322,9 @@ export const DB_INVARIANTS = [
 			FROM auth_session s
 			WHERE ${removed_after_sql('s.account_id', 's.created_at', null, ['account_delete'])}
 			UNION ALL
-			SELECT 'api_token' AS kind, t.id, t.account_id
-			FROM api_token t
-			WHERE ${removed_after_sql('t.account_id', 't.created_at', null, ['account_delete'])}`
+			SELECT 'api_token' AS kind, ti.id, ti.account_id
+			FROM token_issued ti
+			WHERE ${removed_after_sql('ti.account_id', 'ti.created_at', 'ti.create_seq', ['account_delete'])}`
 	}
 ] as const satisfies ReadonlyArray<DbInvariant>;
 

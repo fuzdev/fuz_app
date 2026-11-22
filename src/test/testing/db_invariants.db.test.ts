@@ -42,12 +42,15 @@ const insert_session = async (db: Db, account_id: string, created_at = 'NOW()'):
 	);
 };
 
-const insert_token = async (db: Db, account_id: string, created_at = 'NOW()'): Promise<void> => {
-	await db.query(
+const insert_token = async (db: Db, account_id: string, created_at = 'NOW()'): Promise<string> => {
+	const [row] = await db.query<{ id: string }>(
 		`INSERT INTO api_token (id, account_id, name, token_hash, scope, created_at)
-		 VALUES ('tok_' || gen_random_uuid()::text, $1, 't', 'h', '{"kind":"full"}'::jsonb, ${created_at})`,
+		 VALUES ('tok_' || gen_random_uuid()::text, $1, 't', gen_random_uuid()::text, '{"kind":"full"}'::jsonb, ${created_at})
+		 RETURNING id`,
 		[account_id]
 	);
+	assert.ok(row);
+	return row.id;
 };
 
 const insert_offer = async (
@@ -83,11 +86,11 @@ const insert_invite = async (
 	return row.id;
 };
 
-/** The successful `*_create` audit row of an offer or invite, as both spines write it. */
+/** The successful `*_create` audit row of an offer, invite or API token, as both spines write it. */
 const insert_create_row = async (
 	db: Db,
-	event_type: 'role_grant_offer_create' | 'invite_create',
-	key: 'offer_id' | 'invite_id',
+	event_type: 'role_grant_offer_create' | 'invite_create' | 'token_create',
+	key: 'offer_id' | 'invite_id' | 'token_id',
 	id: string,
 	account: TestAccountWithActor
 ): Promise<void> => {
@@ -374,6 +377,38 @@ describe_db('db_invariants', (get_db) => {
 			[a.account.id]
 		);
 		await insert_removal(db, a, { created_at: `'2026-01-01T00:00:00Z'` });
+		assert.deepStrictEqual(await broken(db), ['credential_outlived_account_removal']);
+	});
+
+	test('credential_outlived_account_removal — a token ordered by audit seq when it has a create row', async () => {
+		const db = get_db();
+		const token_id = await insert_token(db, a.account.id);
+		// the clocks say the delete came first; the create row's `seq` says the
+		// token did, and `seq` is what counts
+		await insert_removal(db, a, { created_at: HOUR_AGO });
+		assert.deepStrictEqual(await broken(db), []);
+		await insert_create_row(db, 'token_create', 'token_id', token_id, a);
+		await insert_removal(db, a, { created_at: HOUR_AGO });
+		assert.deepStrictEqual(await broken(db), ['credential_outlived_account_removal']);
+	});
+
+	test('credential_outlived_account_removal — a token minted after an undelete by a transaction begun before the delete', async () => {
+		const db = get_db();
+		// the long-transaction walk: the delete (and the undelete) commit while
+		// the mint waits on the account lock, so the token's `created_at` — its
+		// transaction's start — precedes the delete, and its create row follows it
+		await insert_removal(db, a, { created_at: HOUR_AGO });
+		const token_id = await insert_token(db, a.account.id, `NOW() - INTERVAL '2 hours'`);
+		await insert_create_row(db, 'token_create', 'token_id', token_id, a);
+		assert.deepStrictEqual(await broken(db), []);
+		// a failed mint's row orders nothing
+		const failed_id = await insert_token(db, b.account.id, `NOW() - INTERVAL '2 hours'`);
+		await insert_removal(db, b, { created_at: HOUR_AGO });
+		await db.query(
+			`INSERT INTO audit_log (event_type, outcome, account_id, metadata)
+			 VALUES ('token_create', 'failure', $1, jsonb_build_object('token_id', $2::text))`,
+			[b.account.id, failed_id]
+		);
 		assert.deepStrictEqual(await broken(db), ['credential_outlived_account_removal']);
 	});
 
