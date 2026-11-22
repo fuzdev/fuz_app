@@ -397,20 +397,21 @@ own) — the TS-vs-Rust rows are TS-against-Rust differences,
 and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
-**Transcript differential.** Both dual-spawn projects also run the imperative
-suites `cookie_attributes`, `identity_parity`, `account_lifecycle` and
-`role_grant_offer_lifecycle` once per backend and compare what each sent and
-got: `transcript_differential.cross.test.ts` (TS spine against
+**Transcript differential.** Both dual-spawn projects also run the suites the
+registry marks `transcript: 'http'` — `account_lifecycle`,
+`cookie_attributes`, `identity_parity` and `role_grant_offer_lifecycle` — once
+per backend and compare what each sent and got:
+`transcript_differential.cross.test.ts` (TS spine against
 `testing_spine_stub`, under `cross_backend_parity`, ledger
 `transcript_known_divergences.ts`) and
 `transcript_differential_ts.cross.test.ts` (Node against Bun, under
 `cross_backend_ts_differential`, empty ledger). Every request and answer of a
 test is recorded, `create_account`'s own included (`transcript_record.ts`),
 and side B's `afterEach` diffs the test's two normalized transcripts
-(`transcript_normalize.ts`) — under `cross_backend_parity`, the two
-databases the test left too (`compare_db_state`, `[db]` in a failure) — so a status beside an asserted reason, a body
-field no assertion reads, or a cookie beside the one a test checks is held
-equal across backends with no edit to the suite.
+(`transcript_normalize.ts`) — under `cross_backend_parity`, the two databases
+the test left too (`compare_db_state`, `[db]` in a failure) — so a status
+beside an asserted reason, a body field no assertion reads, or a cookie beside
+the one a test checks is held equal across backends with no edit to the suite.
 
 - **Compared**: status, whole bodies, request and response header names, and
   the values of `COMPARED_HEADER_VALUES`; from `Set-Cookie`, the session
@@ -434,9 +435,14 @@ instead and doesn't make the run partial. A failure lands on side B's copy of th
 `[entry] path: a=… b=…` lines with the first differing entry in full, or as
 `transcripts stop lining up at entry [n]`. Set
 `FUZ_TEST_TRANSCRIPT_DUMP_DIR=<dir>` for `raw.json`, `transcripts.json` (what
-was diffed) and `stats.json`. A suite joins by being added to
-`describe_suites` in `transcript_differential.ts`, which repeats the options
-`SUITE_ENTRIES` derives for it.
+was diffed) and `stats.json`. A suite joins by marking its registry entry
+`transcript: 'http'` (`SpineSuiteTranscript` in
+`#lib/testing/cross_backend/spine_suites.ts`, where every other suite is
+`{excluded: reason}`): the transcript registers the `'http'` suites
+(`TRANSCRIPT_SUITES`) through `register_spine_suites` with
+`create_spine_cross_suites_options()` (`spine_cross_suites_options.ts`, which
+`spine_suites.cross.test.ts` spreads too) and `record_setup_test` as the setup
+wrapper, so each suite runs with the options the one call derives.
 
 Three more files, `login_security.cross.test.ts`,
 `ws_action_rate_limit.cross.test.ts` and `bootstrap_rate_limit.cross.test.ts`

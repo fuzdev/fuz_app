@@ -1429,7 +1429,24 @@ here never reaches it.
   all), so a new suite fails until it is registered or stated standalone; the
   dispatch table
   is a `Record<SuiteName, …>`, so a registered name without an entry fails
-  typecheck.
+  typecheck. The same file holds §Suite modules' table to one row per suite
+  in `SUITE_NAMES` order.
+- **Other runners over the registry.** `register_spine_suites(handle,
+  options, {names?, wrap_setup_test?})` (`@internal`) is the one call over
+  the suites `names` lists (run in `SUITE_NAMES` order), each `setup_test`
+  passed through `wrap_setup_test`; `describe_spine_cross_suites` is it with
+  every suite and no wrapper. An `exclude` or override for a suite outside
+  `names` throws as dead unless a listed suite reads it (the mount suite reads
+  its probes' siblings, `ws_role_gated` and `ready`), an `exclude_cases` entry
+  outside it always; the wrapper runs after the override merge, so a setup an
+  override supplies is wrapped too. Each entry's required
+  `transcript` (`SpineSuiteTranscript`, read with
+  `get_spine_suite_transcript`) says whether fuz_app's transcript
+  differential runs it: `'http'` when every request goes through the fixture
+  transports the transcript records, else `{excluded: reason}` (WebSockets,
+  raw sockets, the audit stream, or not yet triaged). The transcript registers
+  the `'http'` suites through `register_spine_suites` with its recorder as
+  the wrapper (../../test/CLAUDE.md §Cross-backend self-tests).
 - **Options from the handle.** Paths, cookie name and capabilities come from
   `handle.config` — `to_cross_suite_options(handle)`, exported for a suite
   called on its own — the daemon token from the handle, and each suite's
@@ -1852,11 +1869,9 @@ without.
 | `cell_ref_admission` | possession-gated fact refs: one refusal for stored and unstored hashes, holders by upload, clones per row, the admin bypass, the ref grammar | `fact_serving` (grant, item, clone cases also `cell_relations`) |
 | `cell_relations` | grant / field / item / clone / audit verbs, the relation-read visibility filter (a child the reader can't view is absent, never an edge), a clone dropping children its cloner can't view | `cell_relations` |
 | `cookie_attributes` | the session `Set-Cookie`: `HttpOnly; Secure; SameSite=Strict; Path=/` + `Max-Age` on login, none on a failed login, `Max-Age=0` with the same flags on logout | — |
-| `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
 | `credential_conformance` | every row of `credential_conformance.json` through `_testing_credential_read`: how the backend reads the session cookie, the bearer and the daemon token out of a request's header lines, and the lines it refuses as no header lines | `_testing_credential_read` |
 | `credential_conformance_wire` | raw socket: each row's header lines sent as an RPC `POST` and as a WebSocket upgrade — which credential authenticated (the account `account_verify` answers) and the exact clearing `Set-Cookie`, or none; the clear's scope, its order ahead of a login's new cookie, and a minted cookie authenticating as sent | `ws` (the upgrade leg; with `ws_account_actions` an accepted upgrade also answers `account_verify` on the socket, naming the credential) |
-| `request_header_conformance_wire` | raw socket: each row of `request_header_conformance.json` sent as an RPC `POST` and as a WebSocket upgrade — an empty, repeated or off-grammar `Origin`, `Host` or `Content-Type` refused with its code, any `Origin` or `Referer` line discarding a bearer or daemon token, the gates' order; the accounts and raw sends shared with the credential wire suite (`credential_wire.ts`). Assumes the backend's own origin allowed (`overrides` names another) | `ws` (the upgrade leg), `ws_refusal_body`, `ws_upgrade_runtime_refusals` (per row), `host_gate` (the rows the host gate refuses) |
-| `request_target_conformance_wire` | raw socket: each `wire` row of `request_target_conformance.json` sent as written — an escape that doesn't decode refused in each surface's shape (the RPC `GET`'s `invalid_request` envelope, 400 `invalid_query_params` on a REST query and the WS upgrade, 400 `invalid_route_params` on a path param, always JSON), the decodable controls echoed exactly, a route that reads no query refusing nothing in it; and the routing rows — a method a routed path doesn't serve → 405 with `Allow` (compared as a set, absent on a gate's refusal) and `method_not_allowed`, an unmatched path → `route_not_found` under `/api/` and the plain-text 404 elsewhere, an encoded or doubled-slash spelling of a routed path unrouted, dot segments per `runtime_resolves_dot_segments`. A row's `requires` is a list of capabilities and each requirement set is its own test, skipped when the backend doesn't declare it | `ws`, `sse`, `account_status`, `fact_serving`, `fact_serving_admin_hash`, `spine_fallback` (per row), `ws_refusal_body`, `runtime_resolves_dot_segments` |
+| `credential_deadline` | a socket on a session or an API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its credential's expiry; an audit stream on a session ends there | `ws`, `sse`; `_testing_shorten_credential_expiry` |
 | `credential_header_robustness` | raw socket: an oversized or control-character credential header never escalates, smuggles a request, desyncs, or wedges the server (a duplicated one is `credential_conformance_wire`'s) | — |
 | `fact_serving` | `GET /api/cells/:cell_id/facts/:hash` per reference, the hardening headers, bodyless masked 404s; the admin-only `GET /api/facts/:hash` | `fact_serving` (bare-hash cases also `fact_serving_admin_hash`) |
 | `identity_parity` | `Username` / `UsernameProvided` / `Email` end to end: login canonicalization, username-or-email login, login input validation, ASCII-only creation, the `USERNAME_LENGTH_MIN`..`USERNAME_LENGTH_MAX` edges, email format — each by error reason | — |
@@ -1866,6 +1881,8 @@ without.
 | `peer_ping_ws` | the server→client `peer/ping` round trip and its negatives (unsolicited response, id isolation, timeout, wrong shape, client error, no transport over HTTP) | `peer_request` |
 | `query_shape` | duplicate-key, unknown-key, and phase-order query semantics on the status route, the RPC `GET`, and the bare-hash fact route | `account_status`, `fact_serving_admin_hash` (per case) |
 | `ready` | anonymous `GET /ready` → `200 {ready: true}` over the committed `expected_schema.json` | `ready` |
+| `request_header_conformance_wire` | raw socket: each row of `request_header_conformance.json` sent as an RPC `POST` and as a WebSocket upgrade — an empty, repeated or off-grammar `Origin`, `Host` or `Content-Type` refused with its code, any `Origin` or `Referer` line discarding a bearer or daemon token, the gates' order; the accounts and raw sends shared with the credential wire suite (`credential_wire.ts`). Assumes the backend's own origin allowed (`overrides` names another) | `ws` (the upgrade leg), `ws_refusal_body`, `ws_upgrade_runtime_refusals` (per row), `host_gate` (the rows the host gate refuses) |
+| `request_target_conformance_wire` | raw socket: each `wire` row of `request_target_conformance.json` sent as written — an escape that doesn't decode refused in each surface's shape (the RPC `GET`'s `invalid_request` envelope, 400 `invalid_query_params` on a REST query and the WS upgrade, 400 `invalid_route_params` on a path param, always JSON), the decodable controls echoed exactly, a route that reads no query refusing nothing in it; and the routing rows — a method a routed path doesn't serve → 405 with `Allow` (compared as a set, absent on a gate's refusal) and `method_not_allowed`, an unmatched path → `route_not_found` under `/api/` and the plain-text 404 elsewhere, an encoded or doubled-slash spelling of a routed path unrouted, dot segments per `runtime_resolves_dot_segments`. A row's `requires` is a list of capabilities and each requirement set is its own test, skipped when the backend doesn't declare it | `ws`, `sse`, `account_status`, `fact_serving`, `fact_serving_admin_hash`, `spine_fallback` (per row), `ws_refusal_body`, `runtime_resolves_dot_segments` |
 | `role_grant_offer_enumeration` | `role_grant_offer_accept`'s deliberate split: a nonexistent offer → 404 `role_grant_offer_not_found`, a sibling actor's on the caller's own account → 403 `role_grant_offer_actor_mismatch` | — |
 | `role_grant_offer_lifecycle` | a decline or retract by a non-party → 404 identical to a missing offer; of a decided offer → 400 `role_grant_offer_terminal`; an accept after a decline or a retract the same, granting nothing, and a replayed accept answering the first grant; one audit row per success, none per refusal; lost grantor authority supersedes pending offers; a recipient's delete supersedes every pending offer to it, and an offer to a deleted account or actor answers as one to a missing one | — |
 | `role_grant_offer_notification_ws` | each offer and role-grant notification strict-parsed against its params schema — a revoke's supersedes reaching every party's socket, and (with `account_lifecycle`) a delete's and a purge's reaching the live parties while the removed account's socket closes having heard nothing — the target socket hearing exactly the expected notifications once each, in order, and a bystander socket that must receive nothing, both behind a `heartbeat` barrier | `ws` |

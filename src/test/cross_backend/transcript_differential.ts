@@ -1,5 +1,7 @@
 /**
- * The transcript differential: imperative cross suites run once per backend,
+ * The transcript differential: the cross suites whose registry entry is
+ * marked `transcript: 'http'` (`TRANSCRIPT_SUITES`), run once per backend
+ * through `register_spine_suites` with the spine's own options,
  * every request and answer recorded (`transcript_record.ts`), and each
  * test's two transcripts normalized and diffed (`transcript_normalize.ts`).
  *
@@ -52,8 +54,6 @@ import { join } from 'node:path';
 
 import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, test } from 'vitest';
 
-import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backend/account_lifecycle.ts';
-import { describe_cookie_attributes_cross_tests } from '#lib/testing/cross_backend/cookie_attributes.ts';
 import {
 	assert_declared_skip_reasons,
 	DECLARED_SKIPS_CHECK_NAME,
@@ -62,7 +62,6 @@ import {
 	type CollectedTest
 } from '#lib/testing/cross_backend/declared_skips.ts';
 import { differential_path_covers } from '#lib/testing/cross_backend/differential_normalize.ts';
-import { describe_identity_parity_cross_tests } from '#lib/testing/cross_backend/identity_parity.ts';
 import {
 	create_db_state_probe,
 	diff_db_states,
@@ -70,13 +69,15 @@ import {
 	type DbStateMark,
 	type DbStateProbe
 } from '#lib/testing/cross_backend/db_state_diff.ts';
-import { describe_role_grant_offer_lifecycle_cross_tests } from '#lib/testing/cross_backend/role_grant_offer_lifecycle.ts';
+import type { ReconstructedBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 import {
-	default_cross_process_setup,
-	type ReconstructedBootstrappedBackendHandle,
-	type SetupTest
-} from '#lib/testing/cross_backend/setup.ts';
+	get_spine_suite_transcript,
+	register_spine_suites,
+	SUITE_NAMES,
+	type SuiteName
+} from '#lib/testing/cross_backend/spine_suites.ts';
 
+import { create_spine_cross_suites_options } from './spine_cross_suites_options.ts';
 import {
 	diff_transcripts,
 	normalize_transcript,
@@ -214,24 +215,10 @@ const will_run = (test: Task): boolean => test.mode === 'run' || test.mode === '
 const test_failed = (task: Task): boolean =>
 	task.result?.state === 'fail' || (task.result?.errors?.length ?? 0) > 0;
 
-/** The imperative suites, with the options `SUITE_ENTRIES` derives for each. */
-const describe_suites = (
-	handle: ReconstructedBootstrappedBackendHandle,
-	setup: () => SetupTest
-): void => {
-	const { config } = handle;
-	describe_cookie_attributes_cross_tests({ setup_test: setup(), cookie_name: config.cookie_name });
-	describe_identity_parity_cross_tests({ setup_test: setup() });
-	describe_account_lifecycle_cross_tests({
-		setup_test: setup(),
-		capabilities: config.capabilities,
-		rpc_path: config.rpc_path
-	});
-	describe_role_grant_offer_lifecycle_cross_tests({
-		setup_test: setup(),
-		rpc_path: config.rpc_path
-	});
-};
+/** The suites the transcript runs: every registry entry marked `transcript: 'http'`. */
+export const TRANSCRIPT_SUITES: ReadonlyArray<SuiteName> = SUITE_NAMES.filter(
+	(name) => get_spine_suite_transcript(name) === 'http'
+);
 
 /** Side A's record of one test. */
 interface StoredTranscript {
@@ -245,7 +232,7 @@ interface StoredTranscript {
 }
 
 /**
- * Register the imperative suites once per side and the closing check.
+ * Register the transcript suites once per side and the closing check.
  *
  * @param options - the two backends and the ledger
  */
@@ -290,12 +277,6 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 				afterAll(async () => {
 					await probe?.close();
 				});
-				const setup = (): SetupTest =>
-					record_setup_test(
-						default_cross_process_setup(side.handle, { reject_unknown_audit_metadata_keys: true }),
-						() => current,
-						side.handle.config.base_url
-					);
 
 				// vitest passes the suite a hook is registered on as the second argument,
 				// and requires the first be destructured
@@ -409,7 +390,13 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 					assert.ok(problems.length === 0, `transcript: ${key}\n${problems.join('\n')}`);
 				});
 
-				describe_suites(side.handle, setup);
+				// the suites as `spine_suites.cross.test.ts` runs them, each
+				// `setup_test` recording
+				register_spine_suites(side.handle, create_spine_cross_suites_options(), {
+					names: TRANSCRIPT_SUITES,
+					wrap_setup_test: (setup_test) =>
+						record_setup_test(setup_test, () => current, side.handle.config.base_url)
+				});
 			});
 		}
 

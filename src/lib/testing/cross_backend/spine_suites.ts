@@ -669,6 +669,15 @@ interface SuiteContext {
 	readonly options: SpineCrossSuitesOptions;
 	/** A `setup_test` from the base setup options plus this suite's seeding. */
 	readonly setup: (seed?: CrossProcessSetupOptions) => SetupTest;
+	/**
+	 * The registration's setup wrapper, applied after the override merge to
+	 * every slot a derived setup filled (`derived_setups`, what `setup`
+	 * returned) — so a setup an override puts there is wrapped too.
+	 */
+	readonly wrap_setup_test: {
+		readonly wrap: (setup_test: SetupTest) => SetupTest;
+		readonly derived_setups: WeakSet<SetupTest>;
+	} | null;
 	/** `{base_url, ws_path}` when the backend mounts WS, for suites whose socket cases are optional. */
 	readonly ws: { readonly base_url: string; readonly ws_path: string } | undefined;
 	/**
@@ -694,7 +703,32 @@ interface SuiteEntry<K extends SuiteName> {
 	 * whole suite, with a reason naming it.
 	 */
 	readonly backdoors?: ReadonlyArray<TestingBackdoorMethod>;
+	/** Whether fuz_app's transcript differential runs the suite (`SpineSuiteTranscript`). */
+	readonly transcript: SpineSuiteTranscript;
 }
+
+/**
+ * Whether fuz_app's transcript differential — the suites run once per backend,
+ * every request and answer recorded and compared — runs a suite: `'http'`
+ * when every request it sends goes through the fixture transports the
+ * transcript records, else excluded with why.
+ *
+ * @internal Read by fuz_app's transcript differential — not stable API.
+ */
+export type SpineSuiteTranscript = 'http' | { readonly excluded: string };
+
+const TRANSCRIPT_WEBSOCKET: SpineSuiteTranscript = {
+	excluded: 'opens WebSockets, whose frames the transcript does not record'
+};
+const TRANSCRIPT_RAW_SOCKET: SpineSuiteTranscript = {
+	excluded: 'sends on raw sockets, outside the fixture transports the transcript records'
+};
+const TRANSCRIPT_SSE: SpineSuiteTranscript = {
+	excluded: 'reads the audit event stream, which the transcript records unread'
+};
+const TRANSCRIPT_UNTRIAGED: SpineSuiteTranscript = {
+	excluded: 'HTTP only, but not yet run under the transcript with its differences triaged'
+};
 
 /**
  * The roles of `ws_required_roles` the keeper must be seeded with so its
@@ -711,6 +745,15 @@ const MOUNT_PROBE_SIBLING_PATHS = [
 	{ flag: 'ws_role_gated', suite: 'ws_role_gated', option: 'gated_ws_path' },
 	{ flag: 'ready', suite: 'ready', option: 'ready_path' }
 ] as const;
+
+/**
+ * The suites whose `exclude` and `overrides` entries a suite reads beside its
+ * own — the mount suite reads each probe's sibling — so a registration
+ * running the reader without them still reads those entries.
+ */
+const SIBLING_READS: Readonly<Partial<Record<SuiteName, ReadonlyArray<SuiteName>>>> = {
+	capability_mounts: MOUNT_PROBE_SIBLING_PATHS.map(({ suite }) => suite)
+};
 
 /**
  * A note for each mount probe whose sibling suite the call excludes: the probe
@@ -740,16 +783,19 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	account_lifecycle: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_account_lifecycle_cross_tests,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	actor_lookup: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_actor_lookup_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	app_settings: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_app_settings_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	body_size: {
@@ -760,6 +806,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_body_size_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { setup_test: true, base_url: true }
 	},
 	body_size_smuggling: {
@@ -769,6 +816,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_body_size_smuggling_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { base_url: true }
 	},
 	capability_mounts: {
@@ -795,16 +843,19 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			path_notes: to_sibling_path_notes(c)
 		}),
 		describe: describe_capability_mounts_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	cell_crud: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_crud_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_gated_create: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_gated_create_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_grant_role: {
@@ -819,31 +870,37 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			};
 		},
 		describe: describe_cell_grant_role_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_grant_steward: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_grant_steward_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_moderate: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_moderate_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_ref_admission: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_ref_admission_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_relations: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_relations_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	cookie_attributes: {
 		derive: (c) => ({ setup_test: c.setup(), cookie_name: c.config.cookie_name }),
 		describe: describe_cookie_attributes_cross_tests,
+		transcript: 'http',
 		required: { setup_test: true, cookie_name: true }
 	},
 	credential_deadline: {
@@ -857,6 +914,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_credential_deadline_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true },
 		backdoors: ['_testing_shorten_credential_expiry']
 	},
@@ -869,6 +927,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_credential_conformance_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, cookie_name: true, cookie_keys: true, daemon_token: true },
 		backdoors: ['_testing_credential_read']
 	},
@@ -888,6 +947,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_credential_conformance_wire_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: {
 			setup_test: true,
 			capabilities: true,
@@ -903,6 +963,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_credential_header_robustness_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { base_url: true }
 	},
 	fact_serving: {
@@ -912,21 +973,25 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			setup_test_multi_actor: c.setup({ extra_actors: ['second_persona'] })
 		}),
 		describe: describe_fact_serving_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	identity_parity: {
 		derive: (c) => ({ setup_test: c.setup() }),
 		describe: describe_identity_parity_cross_tests,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	origin: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_origin_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	origin_conformance: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_origin_conformance_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true },
 		backdoors: ['_testing_origin_check']
 	},
@@ -937,6 +1002,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			base_url: c.config.base_url
 		}),
 		describe: describe_origin_scope_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { setup_test: true, capabilities: true }
 	},
 	peer_ping_ws: {
@@ -947,16 +1013,19 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_peer_ping_ws_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	query_shape: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_query_shape_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	ready: {
 		derive: (c) => ({ setup_test: c.setup(), capabilities: c.config.capabilities }),
 		describe: describe_ready_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	request_header_conformance_wire: {
@@ -972,6 +1041,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_request_header_conformance_wire_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: {
 			setup_test: true,
 			capabilities: true,
@@ -994,6 +1064,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			sse_path: c.config.sse_path
 		}),
 		describe: describe_request_target_conformance_wire_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	role_grant_offer_enumeration: {
@@ -1007,6 +1078,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_role_grant_offer_enumeration_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	role_grant_offer_lifecycle: {
@@ -1016,6 +1088,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_role_grant_offer_lifecycle_cross_tests,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	role_grant_offer_notification_ws: {
@@ -1028,6 +1101,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			scoped_role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_role_grant_offer_notification_ws_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	role_grant_participation: {
@@ -1037,11 +1111,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_role_grant_participation_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	role_grant_role_grammar: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_role_grant_role_grammar_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	rooms_ws: {
@@ -1053,6 +1129,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_rooms_ws_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	rpc_adversarial: {
@@ -1066,6 +1143,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			input_overrides: c.options.rpc_input_overrides
 		}),
 		describe: describe_rpc_adversarial_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, surface_source: true }
 	},
 	session_cap: {
@@ -1077,6 +1155,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_account_roles: c.options.ws_required_roles
 		}),
 		describe: describe_session_cap_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true }
 	},
 	session_cookie_codec: {
@@ -1087,11 +1166,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_session_cookie_codec_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, cookie_name: true, cookie_keys: true }
 	},
 	simple_request: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_simple_request_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	sse_round_trip: {
@@ -1103,6 +1184,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_cross_process_sse_tests,
+		transcript: TRANSCRIPT_SSE,
 		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	standard: {
@@ -1124,6 +1206,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_standard_cross_process_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: {
 			setup_test: true,
 			surface_source: true,
@@ -1136,16 +1219,19 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	testing_backdoor: {
 		derive: (c) => ({ ...rpc_gated(c), ws: c.ws }),
 		describe: describe_testing_backdoor_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true }
 	},
 	token_lifetime: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_token_lifetime_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true }
 	},
 	token_scope_surface: {
 		derive: (c) => ({ ...rpc_gated(c), sse_path: c.config.sse_path }),
 		describe: describe_token_scope_surface_cross_tests,
+		transcript: TRANSCRIPT_UNTRIAGED,
 		required: { setup_test: true, capabilities: true }
 	},
 	transport_composition: {
@@ -1158,6 +1244,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_max_body_bytes: c.options.rpc_max_body_bytes
 		}),
 		describe: describe_transport_composition_cross_tests,
+		transcript: TRANSCRIPT_RAW_SOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true }
 	},
 	ws_connection_cap: {
@@ -1168,6 +1255,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_ws_connection_cap_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	ws_envelope: {
@@ -1178,6 +1266,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_ws_envelope_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	ws_inbound_dispatch: {
@@ -1188,6 +1277,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			ws_path: c.config.ws_path
 		}),
 		describe: describe_ws_inbound_dispatch_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	},
 	ws_outbound_overflow: {
@@ -1199,6 +1289,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_ws_outbound_overflow_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true },
 		backdoors: ['_testing_flood_notifications']
 	},
@@ -1215,6 +1306,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			scoped_role: SPINE_PARTICIPANT_ROLE
 		}),
 		describe: describe_ws_role_gated_cross_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: {
 			setup_test: true,
 			capabilities: true,
@@ -1236,6 +1328,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			max_message_bytes: c.options.ws_max_message_bytes
 		}),
 		describe: describe_cross_process_ws_tests,
+		transcript: TRANSCRIPT_WEBSOCKET,
 		required: { setup_test: true, capabilities: true, base_url: true, ws_path: true }
 	}
 };
@@ -1281,16 +1374,31 @@ const merge_setup_options = (
 export const get_spine_suite_backdoors = (name: SuiteName): ReadonlyArray<TestingBackdoorMethod> =>
 	SUITE_ENTRIES[name].backdoors ?? [];
 
+/**
+ * Whether fuz_app's transcript differential runs `name` — the transcript's
+ * suite list is the `'http'` ones.
+ *
+ * @param name - the suite
+ * @returns its `SuiteEntry.transcript`
+ * @internal Read by fuz_app's transcript differential — not stable API.
+ */
+export const get_spine_suite_transcript = (name: SuiteName): SpineSuiteTranscript =>
+	SUITE_ENTRIES[name].transcript;
+
 const is_suite_name = (name: string): name is SuiteName =>
 	(SUITE_NAMES as ReadonlyArray<string>).includes(name);
 
 /**
  * Each suite whose backdoors `declared` lacks, with the generated reason it is
- * skipped — the suites whose every case drives a backdoor (`SuiteEntry.backdoors`).
+ * skipped — the suites of `run` whose every case drives a backdoor (`SuiteEntry.backdoors`).
  */
-const to_backdoor_skips = (declared: ReadonlyArray<string>): Map<SuiteName, string> => {
+const to_backdoor_skips = (
+	declared: ReadonlyArray<string>,
+	run: ReadonlySet<SuiteName>
+): Map<SuiteName, string> => {
 	const skips: Map<SuiteName, string> = new Map();
 	for (const name of SUITE_NAMES) {
+		if (!run.has(name)) continue;
 		const missing = get_spine_suite_backdoors(name).filter((m) => !declared.includes(m));
 		if (missing.length > 0) {
 			skips.set(
@@ -1314,8 +1422,27 @@ const validate_spine_cross_suites_options = (
 	options: SpineCrossSuitesOptions,
 	declared: ReadonlyArray<string>,
 	backdoor_skips: ReadonlyMap<SuiteName, string>,
-	capabilities: BackendCapabilities
+	capabilities: BackendCapabilities,
+	run: ReadonlySet<SuiteName>
 ): void => {
+	// an entry for a suite the registration neither runs nor reads beside one it
+	// runs (`SIBLING_READS`) would be ignored silently; a case exclusion is read
+	// only by its own suite
+	const read: Set<SuiteName> = new Set(run);
+	for (const name of run) for (const sibling of SIBLING_READS[name] ?? []) read.add(sibling);
+	for (const [field, names, live] of [
+		['exclude', Object.keys(options.exclude ?? {}), read],
+		['overrides', Object.keys(options.overrides ?? {}), read],
+		['exclude_cases', Object.keys(options.exclude_cases ?? {}), run]
+	] as const) {
+		for (const name of names) {
+			if (is_suite_name(name) && !live.has(name)) {
+				throw new Error(
+					`describe_spine_cross_suites: ${field} names '${name}', which the registration doesn't run`
+				);
+			}
+		}
+	}
 	if (options.rpc_input_overrides?.size) {
 		// a key the round-trip (the declared surface) and `rpc_adversarial` (that
 		// and the live mount) both lack would be ignored silently — a typo
@@ -1530,7 +1657,54 @@ const merge_suite_options = <K extends SuiteName>(
 	const override: SuiteOverride<K> | undefined = context.options.overrides?.[name];
 	const patch = typeof override === 'function' ? override(derived) : override;
 	check_unexcludable_override(name, patch, derived);
-	return { ...derived, ...patch };
+	const merged = { ...derived, ...patch };
+	return context.wrap_setup_test
+		? wrap_setup_slots(derived, merged, context.wrap_setup_test)
+		: merged;
+};
+
+/**
+ * Wrap every setup in `merged` at a slot where `derived` held one `setup`
+ * returned — top-level (`setup_test`, `setup_test_multi_actor`) or one object
+ * down (`multi_actor.setup_test`) — whether the derived setup is still there
+ * or an override replaced it. Only an object directly holding a derived setup
+ * is rebuilt; every other value passes through as the same instance (a `Map`,
+ * a class instance, the declared surface). A setup an override adds at a key
+ * the derive never filled, or deeper than one object level, isn't wrapped.
+ */
+const wrap_setup_slots = <T>(
+	derived: T,
+	merged: T,
+	{
+		wrap,
+		derived_setups
+	}: {
+		readonly wrap: (setup_test: SetupTest) => SetupTest;
+		readonly derived_setups: WeakSet<SetupTest>;
+	},
+	depth = 0
+): T => {
+	const is_derived_setup = (v: unknown): boolean =>
+		typeof v === 'function' && derived_setups.has(v as SetupTest);
+	const out: Record<string, unknown> = { ...(merged as Record<string, unknown>) };
+	for (const [key, held] of Object.entries(derived as Record<string, unknown>)) {
+		const value = out[key];
+		if (is_derived_setup(held)) {
+			if (typeof value === 'function') out[key] = wrap(value as SetupTest);
+		} else if (
+			depth === 0 &&
+			held !== null &&
+			typeof held === 'object' &&
+			!Array.isArray(held) &&
+			Object.values(held).some(is_derived_setup) &&
+			value !== null &&
+			typeof value === 'object' &&
+			!Array.isArray(value)
+		) {
+			out[key] = wrap_setup_slots(held, value, { wrap, derived_setups }, depth + 1);
+		}
+	}
+	return out as T;
 };
 
 const run_suite = <K extends SuiteName>(name: K, context: SuiteContext): void => {
@@ -1678,35 +1852,71 @@ export const register_spine_case_exclusions = (
 };
 
 /**
- * Run every shipped single-backend cross suite against one spawned backend —
- * see the module doc for what the options add and what stays outside.
+ * What `register_spine_suites` registers beyond `describe_spine_cross_suites`'s defaults.
+ *
+ * @internal Used by fuz_app's transcript differential — not stable API.
+ */
+export interface SpineSuiteRegistration {
+	/**
+	 * The suites to register, run in `SUITE_NAMES` order whatever the order
+	 * given; default every suite. An `exclude` or override naming a suite
+	 * outside it is refused as dead unless a listed suite reads it beside its
+	 * own (the mount suite reads its probes' siblings), and an `exclude_cases`
+	 * entry outside it always is.
+	 */
+	readonly names?: ReadonlyArray<SuiteName>;
+	/**
+	 * Wraps every suite's `setup_test` — the transcript differential's
+	 * recorder — after its override merge, so a setup an override supplies is
+	 * wrapped too; also the multi-actor setups a suite derives. A setup an
+	 * override adds at a key the derive never filled, or deeper than one object
+	 * level, isn't wrapped.
+	 */
+	readonly wrap_setup_test?: (setup_test: SetupTest) => SetupTest;
+}
+
+/**
+ * `describe_spine_cross_suites` over a chosen set of suites, each suite's
+ * `setup_test` passed through a wrapper — so another runner over the suites
+ * (fuz_app's transcript differential) builds every suite's options as the
+ * one call does and can't drift from it.
  *
  * @param handle - the backend, as `inject_backend_handle()` returns it
- * @param options - the declared surface, plus excludes, case exclusions and overrides
- * @throws Error - on an exclude or `expected_skips` entry with no reason, an unknown suite name, a suite
- *   both excluded and overridden, an excluded `UNEXCLUDABLE_SPINE_SUITES` suite
- *   (or one of its cases, or an override changing the declaration it checks), an exclude,
- *   override or `exclude_cases` entry for a suite that skips itself or isn't
- *   run, a backend not declaring `SPINE_SUITES_REQUIRED_BACKDOORS` (or
- *   `_testing_db_invariants` without `setup.exclude_db_invariants.all`, or
- *   `_testing_put_fact` with `fact_serving`, or `_testing_room_evict` with
- *   `rooms`), or a suite missing an input the
- *   handle doesn't carry
+ * @param options - as `describe_spine_cross_suites` takes them
+ * @param registration - the suites to register and the setup wrapper
+ * @throws Error - as `describe_spine_cross_suites`, and on an empty, unknown
+ *   or repeated name, or an `exclude`, override or `exclude_cases` entry for a
+ *   suite the registration neither runs nor reads
+ * @internal Used by `describe_spine_cross_suites` and fuz_app's transcript differential — not stable API.
  */
-export const describe_spine_cross_suites = (
+export const register_spine_suites = (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: SpineCrossSuitesOptions
+	options: SpineCrossSuitesOptions,
+	registration: SpineSuiteRegistration
 ): void => {
+	const run = to_registered_names(registration.names);
 	const config = to_cross_suite_options(handle);
 	const declared: ReadonlyArray<string> = config.capabilities.testing_backdoors;
-	const backdoor_skips = to_backdoor_skips(declared);
-	validate_spine_cross_suites_options(options, declared, backdoor_skips, config.capabilities);
+	const backdoor_skips = to_backdoor_skips(declared, run);
+	validate_spine_cross_suites_options(options, declared, backdoor_skips, config.capabilities, run);
+	const derived_setups: WeakSet<SetupTest> = new WeakSet();
 	const merged: Map<SuiteName, unknown> = new Map();
 	const context: SuiteContext = {
 		handle,
 		config,
 		options,
-		setup: (seed) => default_cross_process_setup(handle, merge_setup_options(options.setup, seed)),
+		setup: (seed) => {
+			const setup_test = default_cross_process_setup(
+				handle,
+				merge_setup_options(options.setup, seed)
+			);
+			derived_setups.add(setup_test);
+			return setup_test;
+		},
+		wrap_setup_test:
+			registration.wrap_setup_test === undefined
+				? null
+				: { wrap: registration.wrap_setup_test, derived_setups },
 		ws: config.capabilities.ws ? { base_url: config.base_url, ws_path: config.ws_path } : undefined,
 		merged: <K extends SuiteName>(name: K): SuiteOptionsMap[K] => {
 			if (!merged.has(name)) merged.set(name, merge_suite_options(name, context));
@@ -1717,9 +1927,14 @@ export const describe_spine_cross_suites = (
 	// suite a test belongs to
 	const collector = TestRunner.getCurrentSuite();
 	const ranges: Array<SuiteTaskRange> = [];
-	const skipped: Array<[string, string]> = Object.entries(options.exclude ?? {});
+	// an exclude of a suite the registration only reads (`SIBLING_READS`) shows
+	// no skip: the suite wasn't to run here anyway
+	const excluded_run: Array<[string, string]> = Object.entries(options.exclude ?? {}).filter(
+		([name]) => run.has(name as SuiteName)
+	);
+	const skipped: Array<[string, string]> = [...excluded_run];
 	for (const name of SUITE_NAMES) {
-		if (options.exclude?.[name] !== undefined) continue;
+		if (!run.has(name) || options.exclude?.[name] !== undefined) continue;
 		const skip = backdoor_skips.get(name);
 		if (skip !== undefined) {
 			skipped.push([name, skip]);
@@ -1740,13 +1955,53 @@ export const describe_spine_cross_suites = (
 	if (options.expected_skips !== undefined) {
 		// an exclude is its suite's declaration; a backdoor skip is owed one
 		const excluded = Object.fromEntries(
-			Object.entries(options.exclude ?? {}).map(([name, reason]) => [
+			excluded_run.map(([name, reason]) => [
 				`${SPINE_SUITES_SKIPPED_TITLE} > ${name}: ${reason}`,
 				reason
 			])
 		);
 		check_declared_skips({ ...excluded, ...options.expected_skips });
 	}
+};
+
+/** The suites a registration runs, refusing an empty, unknown or repeated name. */
+const to_registered_names = (
+	names: ReadonlyArray<SuiteName> | undefined
+): ReadonlySet<SuiteName> => {
+	if (names === undefined) return new Set(SUITE_NAMES);
+	if (names.length === 0) throw new Error('register_spine_suites: names is empty');
+	const run: Set<SuiteName> = new Set();
+	for (const name of names) {
+		if (!is_suite_name(name)) {
+			throw new Error(`register_spine_suites: names lists unknown suite '${name}'`);
+		}
+		if (run.has(name)) throw new Error(`register_spine_suites: names lists '${name}' twice`);
+		run.add(name);
+	}
+	return run;
+};
+
+/**
+ * Run every shipped single-backend cross suite against one spawned backend —
+ * see the module doc for what the options add and what stays outside.
+ *
+ * @param handle - the backend, as `inject_backend_handle()` returns it
+ * @param options - the declared surface, plus excludes, case exclusions and overrides
+ * @throws Error - on an exclude or `expected_skips` entry with no reason, an unknown suite name, a suite
+ *   both excluded and overridden, an excluded `UNEXCLUDABLE_SPINE_SUITES` suite
+ *   (or one of its cases, or an override changing the declaration it checks), an exclude,
+ *   override or `exclude_cases` entry for a suite that skips itself or isn't
+ *   run, a backend not declaring `SPINE_SUITES_REQUIRED_BACKDOORS` (or
+ *   `_testing_db_invariants` without `setup.exclude_db_invariants.all`, or
+ *   `_testing_put_fact` with `fact_serving`, or `_testing_room_evict` with
+ *   `rooms`), or a suite missing an input the
+ *   handle doesn't carry
+ */
+export const describe_spine_cross_suites = (
+	handle: ReconstructedBootstrappedBackendHandle,
+	options: SpineCrossSuitesOptions
+): void => {
+	register_spine_suites(handle, options, {});
 };
 
 /** The `describe` holding one skipped test per suite the call leaves out. */

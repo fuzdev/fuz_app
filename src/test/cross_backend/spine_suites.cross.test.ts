@@ -13,9 +13,10 @@
  * Each backend declares the cases it skips (`EXPECTED_SKIPS`), so a skip
  * no backend owes fails the run.
  *
- * The audit-reading suites hold every row to a closed world
- * (`reject_unknown_audit_metadata_keys`), so neither spine can add an
- * undeclared metadata key.
+ * The options beside those are `create_spine_cross_suites_options`, shared
+ * with the transcript differential: among them, the audit-reading suites hold
+ * every row to a closed world (`reject_unknown_audit_metadata_keys`), so
+ * neither spine can add an undeclared metadata key.
  *
  * Spine-specific extras stay in files of their own: the conformance runner
  * over fuz_app's case files (`conformance.cross.test.ts`,
@@ -28,18 +29,11 @@
 
 import { assert } from 'vitest';
 
-import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
-import { create_spine_rpc_success_fixtures } from '#lib/testing/cross_backend/rpc_success_fixtures.ts';
-import {
-	create_spine_surface_spec,
-	spine_rpc_endpoints,
-	spine_roles,
-	spine_session_options
-} from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { describe_spine_cross_suites } from '#lib/testing/cross_backend/spine_suites.ts';
 
 import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
+import { create_spine_cross_suites_options } from './spine_cross_suites_options.ts';
 
 const handle = inject_backend_handle();
 
@@ -93,13 +87,7 @@ const SPINE_UNCOVERED_ERRORS: Array<string> = [
 ];
 
 describe_spine_cross_suites(handle, {
-	surface_source: create_spine_surface_spec(),
-	session_options: spine_session_options,
-	rpc_endpoints: spine_rpc_endpoints,
-	live_rpc_endpoints: create_spine_live_rpc_endpoints(),
-	roles: spine_roles,
-	rpc_success_fixtures: create_spine_rpc_success_fixtures(),
-	setup: { reject_unknown_audit_metadata_keys: true },
+	...create_spine_cross_suites_options(),
 	expected_skips,
 	// exactly what the standard bundle leaves uncovered on every spine, so a
 	// dropped record or one covered code swapped for another fails; a code the

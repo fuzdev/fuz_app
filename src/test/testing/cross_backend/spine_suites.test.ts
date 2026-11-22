@@ -6,6 +6,8 @@ import {
 	check_unexcludable_override,
 	describe_spine_cross_suites,
 	get_spine_suite_backdoors,
+	get_spine_suite_transcript,
+	register_spine_suites,
 	SPINE_SUITES_REQUIRED_BACKDOORS,
 	STANDALONE_CROSS_SUITES,
 	SUITE_NAMES,
@@ -15,7 +17,11 @@ import {
 } from '#lib/testing/cross_backend/spine_suites.ts';
 import type { BackendCapabilities } from '#lib/testing/cross_backend/capabilities.ts';
 import type { CapabilityMountsCrossTestOptions } from '#lib/testing/cross_backend/capability_mounts.ts';
-import type { ReconstructedBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
+import type { RpcAdversarialCrossTestOptions } from '#lib/testing/cross_backend/rpc_adversarial.ts';
+import type {
+	ReconstructedBootstrappedBackendHandle,
+	SetupTest
+} from '#lib/testing/cross_backend/setup.ts';
 import {
 	TESTING_BACKDOOR_METHODS,
 	type TestingBackdoorMethod
@@ -29,6 +35,15 @@ vi.mock('#lib/testing/cross_backend/capability_mounts.ts', async (import_origina
 	...(await import_original<typeof import('#lib/testing/cross_backend/capability_mounts.ts')>()),
 	describe_capability_mounts_cross_tests: (options: CapabilityMountsCrossTestOptions) => {
 		mount_suite_options.push(options);
+	}
+}));
+
+// the options `rpc_adversarial` registers with, for the setup-wrapper tests
+const adversarial_suite_options: Array<RpcAdversarialCrossTestOptions> = vi.hoisted(() => []);
+vi.mock('#lib/testing/cross_backend/rpc_adversarial.ts', async (import_original) => ({
+	...(await import_original<typeof import('#lib/testing/cross_backend/rpc_adversarial.ts')>()),
+	describe_rpc_adversarial_cross_tests: (options: RpcAdversarialCrossTestOptions) => {
+		adversarial_suite_options.push(options);
 	}
 }));
 
@@ -112,6 +127,180 @@ describe('the spine suite registry', () => {
 		for (const [name, reason] of Object.entries(STANDALONE_CROSS_SUITES)) {
 			assert.ok(reason.trim().length > 0, name);
 		}
+	});
+
+	test("testing/CLAUDE.md's suite table has one row per suite, in SUITE_NAMES order", () => {
+		const doc = readFileSync(
+			fileURLToPath(new URL('../../../lib/testing/CLAUDE.md', import.meta.url)),
+			'utf8'
+		);
+		const header = '| suite | pins | gate |';
+		const start = doc.indexOf(`\n${header}\n`);
+		assert.ok(start !== -1, `no table headed '${header}'`);
+		const rows: Array<string> = [];
+		for (const line of doc
+			.slice(start + header.length + 2)
+			.split('\n')
+			.slice(1)) {
+			if (!line.startsWith('|')) break;
+			const name = /^\| `(\w+)` \|/.exec(line)?.[1];
+			assert.ok(name, `a suite table row names no suite: ${line}`);
+			rows.push(name);
+		}
+		assert.deepEqual(rows, [...SUITE_NAMES], 'order the rows as SUITE_NAMES, one per suite');
+	});
+});
+
+describe('the spine suite transcript classification', () => {
+	test('every suite the transcript leaves out states why', () => {
+		for (const name of SUITE_NAMES) {
+			const transcript = get_spine_suite_transcript(name);
+			if (transcript === 'http') continue;
+			assert.ok(transcript.excluded.trim().length > 0, name);
+		}
+	});
+
+	test('the transcript runs at least one suite', () => {
+		assert.ok(SUITE_NAMES.some((name) => get_spine_suite_transcript(name) === 'http'));
+	});
+});
+
+describe('register_spine_suites names', () => {
+	// validation runs before any suite registers, so a stub handle and surface do
+	const handle = {
+		config: { capabilities: { testing_backdoors: [] }, env: {} }
+	} as unknown as ReconstructedBootstrappedBackendHandle;
+	const register =
+		(names: ReadonlyArray<SuiteName>, options: Partial<SpineCrossSuitesOptions> = {}) =>
+		() =>
+			register_spine_suites(handle, options as SpineCrossSuitesOptions, { names });
+
+	test('an empty, unknown or repeated name is refused', () => {
+		assert.throws(register([]), /names is empty/);
+		assert.throws(
+			register(['not_a_suite' as SuiteName]),
+			/names lists unknown suite 'not_a_suite'/
+		);
+		assert.throws(register(['ready', 'ready']), /names lists 'ready' twice/);
+	});
+
+	test('an exclude, override or exclude_cases entry for a suite outside names is refused', () => {
+		assert.throws(
+			register(['ready'], { exclude: { origin: 'no origin' } }),
+			/exclude names 'origin', which the registration doesn't run/
+		);
+		assert.throws(
+			register(['ready'], { overrides: { origin: {} } }),
+			/overrides names 'origin', which the registration doesn't run/
+		);
+		assert.throws(
+			register(['ready'], { exclude_cases: { origin: { a: 'b' } } }),
+			/exclude_cases names 'origin', which the registration doesn't run/
+		);
+	});
+
+	test('a suite outside names that skips itself for a backdoor is not reported', () => {
+		// `credential_conformance` skips itself on this backend, so an exclude of
+		// it is refused as redundant when it runs — and as dead when it doesn't
+		assert.throws(
+			register(['credential_conformance'], { exclude: { credential_conformance: 'x' } }),
+			/is redundant — the suite skips itself/
+		);
+		assert.throws(
+			register(['ready'], { exclude: { credential_conformance: 'x' } }),
+			/which the registration doesn't run/
+		);
+	});
+});
+
+describe('register_spine_suites setup wrapper', () => {
+	// each registration throws at its suite's required check, after the
+	// override merge and the wrapping
+	const capabilities = {
+		ws: false,
+		testing_backdoors: TESTING_BACKDOOR_METHODS
+	} as unknown as BackendCapabilities;
+	const handle = {
+		config: { capabilities, env: {}, cookie_name: 'fuz_session', rpc_path: '/api/rpc' }
+	} as unknown as ReconstructedBootstrappedBackendHandle;
+	const wrapped_with = (
+		name: SuiteName,
+		overrides: SpineCrossSuitesOptions['overrides'],
+		thrown: RegExp
+	): Array<unknown> => {
+		const wrapped: Array<unknown> = [];
+		assert.throws(
+			() =>
+				register_spine_suites(handle, { overrides } as SpineCrossSuitesOptions, {
+					names: [name],
+					wrap_setup_test: (setup_test) => {
+						wrapped.push(setup_test);
+						return setup_test;
+					}
+				}),
+			thrown
+		);
+		return wrapped;
+	};
+
+	test('a derived setup is wrapped once', () => {
+		const wrapped = wrapped_with('session_cookie_codec', undefined, /needs `cookie_keys`/);
+		assert.strictEqual(wrapped.length, 1);
+		assert.strictEqual(typeof wrapped[0], 'function');
+	});
+
+	test('a setup an override supplies is wrapped, by value and by function', () => {
+		const supplied = (() => {}) as unknown as SetupTest;
+		for (const override of [{ setup_test: supplied }, () => ({ setup_test: supplied })]) {
+			const wrapped = wrapped_with(
+				'session_cookie_codec',
+				{ session_cookie_codec: override },
+				/needs `cookie_keys`/
+			);
+			assert.deepStrictEqual(wrapped, [supplied]);
+		}
+	});
+
+	test('an option holding no derived setup passes through the wrapping untouched', () => {
+		const rpc_input_overrides = new Map([['gizmo_get', { id: 'seeded' }]]);
+		const surface_source = {
+			surface: { rpc_endpoints: [{ path: '/api/rpc', methods: [{ name: 'gizmo_get' }] }] }
+		} as unknown as SpineCrossSuitesOptions['surface_source'];
+		adversarial_suite_options.length = 0;
+		register_spine_suites(
+			handle,
+			{ surface_source, rpc_input_overrides } as unknown as SpineCrossSuitesOptions,
+			{ names: ['rpc_adversarial'], wrap_setup_test: (setup_test) => setup_test }
+		);
+		const [options] = adversarial_suite_options;
+		assert.ok(options, 'rpc_adversarial registered');
+		// the same instances — a rebuilt Map is an empty object, a rebuilt
+		// object loses its identity and prototype
+		assert.strictEqual(options.input_overrides, rpc_input_overrides);
+		assert.strictEqual(options.surface_source, surface_source);
+	});
+
+	test('the multi-actor setups a suite derives are wrapped, a nested one too', () => {
+		// a cleared capabilities, and no base_url on the config, throw at the
+		// required check
+		assert.strictEqual(
+			wrapped_with(
+				'fact_serving',
+				{ fact_serving: { capabilities: undefined } },
+				/needs `capabilities`/
+			).length,
+			2
+		);
+		const supplied = (() => {}) as unknown as SetupTest;
+		const wrapped = wrapped_with(
+			'transport_composition',
+			{
+				transport_composition: (d) => ({ multi_actor: { ...d.multi_actor, setup_test: supplied } })
+			},
+			/needs `base_url`/
+		);
+		assert.strictEqual(wrapped.length, 2);
+		assert.ok(wrapped.includes(supplied));
 	});
 });
 
@@ -642,6 +831,41 @@ describe('describe_spine_cross_suites unexcludable overrides', () => {
 			gated_ws_path: '/api/gated/ws',
 			ready_path: '/ready'
 		});
+	});
+
+	test("a registration running the mount suite alone reads its siblings' entries", () => {
+		const register = (options: Partial<SpineCrossSuitesOptions>) => () =>
+			register_spine_suites(handle, options as SpineCrossSuitesOptions, {
+				names: ['capability_mounts']
+			});
+		// the sibling overrides reach the probes, not refused as dead
+		mount_suite_options.length = 0;
+		register({
+			overrides: {
+				ws_role_gated: { gated_ws_path: '/api/admin/ws' },
+				ready: { ready_path: '/readyz' }
+			}
+		})();
+		assert.strictEqual(mount_suite_options[0]?.gated_ws_path, '/api/admin/ws');
+		assert.strictEqual(mount_suite_options[0]?.ready_path, '/readyz');
+		// a sibling's exclude reaches the probe's note, and shows no skip of its
+		// own (registering one inside this test would throw)
+		mount_suite_options.length = 0;
+		register({ exclude: { ready: 'no /ready' } })();
+		assert.deepStrictEqual(Object.keys(mount_suite_options[0]?.path_notes ?? {}), ['ready']);
+		// a suite nothing run reads, and a sibling's case exclusions, are dead
+		assert.throws(
+			register({ overrides: { origin: {} } }),
+			/overrides names 'origin', which the registration doesn't run/
+		);
+		assert.throws(
+			register({ exclude: { origin: 'no origin' } }),
+			/exclude names 'origin', which the registration doesn't run/
+		);
+		assert.throws(
+			register({ exclude_cases: { ready: { a: 'b' } } }),
+			/exclude_cases names 'ready', which the registration doesn't run/
+		);
 	});
 
 	test("an excluded sibling's probe failure names the remedy", () => {
