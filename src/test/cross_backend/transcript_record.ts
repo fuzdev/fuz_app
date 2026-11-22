@@ -19,6 +19,11 @@
  *   appear in a later response, and a signup or login that answers
  *   differently would go unseen.
  *
+ * The wrapped `setup_test` builds its fixture only inside a test's window,
+ * counted there (`fixtures_built`), so a fixture shared across tests can't
+ * send into whichever window is open, and a test that built none has no
+ * fixture to send through.
+ *
  * The patch is also the tripwire: while a window is open, any other untagged
  * `fetch`, to any origin, is a send the transcript can't see — listed in the
  * window's `unrecorded` for the registration to fail the test with — unless
@@ -36,6 +41,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { API_TOKEN_PREFIX, is_api_token_shaped } from '#lib/auth/api_token.ts';
 import type { SetupTest, TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import type { FetchTransport } from '#lib/testing/transports/fetch_transport.ts';
 
@@ -49,6 +55,12 @@ export interface TranscriptEntry {
 		readonly path: string;
 		/** Sorted lowercased header names. */
 		readonly header_names: ReadonlyArray<string>;
+		/**
+		 * The public id of the API token an `Authorization: Bearer` header
+		 * carries (`to_bearer_token_id`), absent with none — what the
+		 * normalizer reads the request's own token touch by.
+		 */
+		readonly bearer_token_id?: string;
 		/** Parsed JSON when the body text parses, else the text, `null` with none. */
 		readonly body: unknown;
 	};
@@ -81,6 +93,36 @@ const parse_text = (text: string): unknown => {
 
 const header_names = (headers: Headers): Array<string> => [...headers.keys()].sort();
 
+/** The length of an API token id's random part, the token's own first characters. */
+const API_TOKEN_ID_BODY_LENGTH = 12;
+
+/**
+ * The public id of the API token an `Authorization: Bearer` header carries,
+ * as both spines mint it — `tok_` and the token's first twelve random
+ * characters (`generate_api_token`, the Rust `fuz_auth` twin) — or `null`
+ * for no header, another scheme, or a value not token-shaped.
+ *
+ * @param headers - the request's headers
+ */
+export const to_bearer_token_id = (headers: Headers): string | null => {
+	const value = headers.get('authorization');
+	if (value === null || !value.startsWith('Bearer ')) return null;
+	const token = value.slice('Bearer '.length);
+	if (!is_api_token_shaped(token)) return null;
+	return `tok_${token.slice(API_TOKEN_PREFIX.length, API_TOKEN_PREFIX.length + API_TOKEN_ID_BODY_LENGTH)}`;
+};
+
+/** The request fields every recorded entry derives from its headers. */
+const request_header_fields = (
+	headers: Headers
+): { header_names: Array<string>; bearer_token_id?: string } => {
+	const bearer_token_id = to_bearer_token_id(headers);
+	return {
+		header_names: header_names(headers),
+		...(bearer_token_id !== null && { bearer_token_id })
+	};
+};
+
 const read_response = async (res: Response): Promise<NonNullable<TranscriptEntry['response']>> => {
 	const content_type = res.headers.get('content-type') ?? '';
 	return {
@@ -111,6 +153,8 @@ export interface TranscriptWindow {
 	/** The backend the test runs against; stripped from the paths `create_account` sends. */
 	readonly base_url: string;
 	readonly entries: Array<TranscriptEntry>;
+	/** How many fixtures the test built through the wrapped `setup_test`. */
+	fixtures_built: number;
 	/**
 	 * The sends the recording couldn't see — `METHOD url` for an untagged
 	 * `fetch` outside `create_account`, `WebSocket url` / `EventSource url` for
@@ -155,7 +199,7 @@ const require_window = (what: string): TranscriptWindow => {
 export const open_transcript_window = (base_url: string): void => {
 	if (!originals) throw new Error('transcript: the fetch patch is not installed');
 	if (open_window) throw new Error('transcript: a window is already open');
-	open_window = { base_url, entries: [], unrecorded: [] };
+	open_window = { base_url, entries: [], fixtures_built: 0, unrecorded: [] };
 };
 
 /**
@@ -233,7 +277,7 @@ export const install_transcript_fetch_patch = (): void => {
 				via: 'create_account',
 				method: request.method,
 				path,
-				header_names: header_names(request.headers),
+				...request_header_fields(request.headers),
 				body
 			},
 			response: null
@@ -275,7 +319,7 @@ export const record_transport = (transport: FetchTransport): FetchTransport => {
 			request: {
 				method: (init.method ?? 'GET').toUpperCase(),
 				path: url,
-				header_names: header_names(headers),
+				...request_header_fields(headers),
 				body: request_body(init.body)
 			},
 			response: null
@@ -292,14 +336,16 @@ export const record_transport = (transport: FetchTransport): FetchTransport => {
 
 /**
  * Wrap a `SetupTest` so the fixture it returns records into the open window,
- * its `create_account` included (needs `install_transcript_fetch_patch`).
+ * its `create_account` included (needs `install_transcript_fetch_patch`), and
+ * counts in the window's `fixtures_built`.
  *
  * @param setup_test - the per-test fixture producer
- * @returns the recording producer
+ * @returns the recording producer, which throws outside a test's window
  */
 export const record_setup_test =
 	(setup_test: SetupTest): SetupTest =>
 	async (): Promise<TestFixture> => {
+		require_window('a fixture was built').fixtures_built++;
 		const fixture = await setup_test();
 		return {
 			...fixture,

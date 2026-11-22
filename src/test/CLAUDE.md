@@ -398,9 +398,10 @@ and the DEV-only ones show on both sides, since both binaries run under
 `DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
 
 **Transcript differential.** Both dual-spawn projects also run the suites the
-registry marks `transcript: 'http'` — `account_lifecycle`,
-`cookie_attributes`, `identity_parity` and `role_grant_offer_lifecycle` — once
-per backend and compare what each sent and got:
+registry marks `transcript: 'http'` — every suite that sends only HTTP through
+the fixture, `credential_conformance` aside (its header lines carry each
+backend's own credentials re-spelled inside strings, `embedded_secrets`) —
+once per backend and compare what each sent and got:
 `transcript_differential.cross.test.ts` (TS spine against
 `testing_spine_stub`, under `cross_backend_parity`, ledger
 `transcript_known_divergences.ts`) and
@@ -421,7 +422,10 @@ the one a test checks is held equal across backends with no edit to the suite.
   and that smallest one's step from the previous test's.
 - **Erased**: ids, tokens and hashes (positional placeholders numbered
   across the whole test), framing headers, cookie values, a timestamp shift
-  under half a minute.
+  under half a minute, and an API token's touch (`last_used_at`,
+  `last_used_ip`) in the answer to the request that token authenticates
+  (`OWN_TOUCH`) — the touch runs concurrently with that request on both
+  spines; a later request reads it settled and compares it.
 - **Not seen**: a request no suite sends, a relation between two answers of
   one backend, a bug both backends share, any untagged `fetch` whose body is a
   JSON-RPC call of a `_testing_*` backdoor (what the fixture sends on its own
@@ -433,18 +437,21 @@ the one a test checks is held equal across backends with no edit to the suite.
   `beforeEach` until it finishes — strips the tag; an untagged `fetch` to any
   origin outside `create_account`'s async context, or a `WebSocket` (an
   `EventSource` where defined) constructed, fails the test naming it, as does
-  a test that passed with none of its own requests recorded
-  (`find_recording_problems`; `create_account`'s don't count, a skipped or
-  failed test is exempt), so a broken recording can't pass on two empty
-  transcripts. The test is judged in an `onTestFinished` registered from the
-  `beforeEach`, which runs whatever an `afterEach` throws. What reaches neither
+  a test that built a fixture and passed with none of its own requests
+  recorded (`find_recording_problems`; `create_account`'s don't count, a
+  skipped or failed test is exempt), so a broken recording can't pass on two
+  empty transcripts. A fixture is built only inside a test's window (the
+  wrapped `setup_test` throws outside one), so a test that built none — a
+  check over the suite's own cases — has nothing to send through. The test is
+  judged in an `onTestFinished` registered from the `beforeEach`, which runs
+  whatever an `afterEach` throws. What reaches neither
   `fetch` nor the global constructors — the `ws` library, raw sockets — is kept
   out by `transcript_census.test.ts` (a plain `gro test`), which walks each
   suite's value imports: an `'http'` suite reaches no sender (the raw-socket,
   WebSocket and event-stream transports, the modules built on them, `ws` or a
   socket builtin); a suite excluded as `websocket`, `raw_socket` or `sse`
-  reaches a sender of its kind, and an `untriaged` one none. The walk fails
-  closed — a package it doesn't know, a relative import of neither `.ts` nor
+  reaches a sender of its kind, and an `embedded_secrets` one none. The walk
+  fails closed — a package it doesn't know, a relative import of neither `.ts` nor
   `.json`, a computed `import()` or `require()` throws.
 
 Entries align on method, path and JSON-RPC method; the diff stops at the

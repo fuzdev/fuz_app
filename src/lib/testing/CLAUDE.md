@@ -1445,9 +1445,11 @@ here never reaches it.
   differential runs it: `'http'` when every request goes through the fixture
   transports the transcript records, else `{excluded: {kind, reason}}`, the
   kind (`SpineSuiteTranscriptExclusionKind`) one of `websocket`,
-  `raw_socket`, `sse` — sends the recording can't see — or `untriaged` (HTTP
-  only, its differences not yet triaged); fuz_app's import census holds each
-  kind to what the suite's module reaches. The transcript registers
+  `raw_socket`, `sse` — sends the recording can't see — or
+  `embedded_secrets` (HTTP only, but its requests carry the backend's own
+  credentials re-spelled inside strings, which no placeholder recognizes:
+  `credential_conformance`); fuz_app's import census holds each kind to what
+  the suite's module reaches. The transcript registers
   the `'http'` suites through `register_spine_suites` with its recorder as
   the wrapper (../../test/CLAUDE.md §Cross-backend self-tests).
 - **Options from the handle.** Paths, cookie name and capabilities come from

@@ -28,6 +28,13 @@
  *   run (the per-test reset deletes rows without restarting the sequence), so
  *   the registration compares its step from the previous test's — the rows
  *   written between the two — while neither side has failed a test.
+ * - **a token's touch, read by its own request** — in the answer to a request
+ *   carrying an API token, that token's row (`id` the request's
+ *   `bearer_token_id`) has its `last_used_at` and `last_used_ip` read as
+ *   `OWN_TOUCH`. The bearer leg's touch runs concurrently with the request it
+ *   authenticates, on both spines, so whether that request's own read sees
+ *   it is promised by neither; a later request reads it settled, since both
+ *   test binaries settle an answer's writes before answering, and compares.
  * - **uppercase UUIDs in requests** — a suite sending `id.toUpperCase()`
  *   sends a value the normalizer doesn't recognize; it becomes `upper:` plus
  *   the lowercase form, which then shares the id's placeholder. Responses are
@@ -113,6 +120,28 @@ const visit_value = (
 };
 
 const is_audit_row = (o: Record<string, unknown>): boolean => 'seq' in o && 'event_type' in o;
+
+/** What a token row's touch fields read as in the answer to the request the token authenticates. */
+export const OWN_TOUCH = '<own_touch>';
+
+/** The touch fields a token row carries. */
+const TOKEN_TOUCH_FIELDS = ['last_used_at', 'last_used_ip'] as const;
+
+/**
+ * `o` with its touch fields read as `OWN_TOUCH` when it is the row of the
+ * token `token_id` — any touch the row holds, settled or not: the touch of
+ * the request itself races its answer on both spines, and the database diff
+ * compares the settled touch.
+ */
+const erase_own_touch = (
+	o: Record<string, unknown>,
+	token_id: string | undefined
+): Record<string, unknown> => {
+	if (token_id === undefined || o.id !== token_id || !('last_used_at' in o)) return o;
+	const out = { ...o };
+	for (const field of TOKEN_TOUCH_FIELDS) if (field in out) out[field] = OWN_TOUCH;
+	return out;
+};
 
 const lower_request_uuids = (s: string): string =>
 	s.replace(UPPER_UUID_PATTERN, (m) => `upper:${m.toLowerCase()}`);
@@ -228,7 +257,9 @@ export const normalize_transcript = (
 				mask_cookie_value
 			),
 			set_cookie_names: e.response.set_cookies.map(cookie_name_of).sort(),
-			body: map_value(e.response.body, on_response_string, relative_seq)
+			body: map_value(e.response.body, on_response_string, (o) =>
+				relative_seq(erase_own_touch(o, e.request.bearer_token_id))
+			)
 		}
 	}));
 	const normalized = normalize_differential_response(

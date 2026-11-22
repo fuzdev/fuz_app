@@ -710,12 +710,15 @@ interface SuiteEntry<K extends SuiteName> {
 /**
  * Why fuz_app's transcript differential leaves a suite out: it opens
  * WebSockets, sends on raw sockets, or reads the audit event stream — sends
- * the recording can't see — or it is HTTP only and not yet triaged. fuz_app's
- * import census holds each kind to what the suite's module reaches.
+ * the recording can't see — or it is HTTP only but its requests carry each
+ * backend's own secrets re-spelled inside strings (`embedded_secrets`), which
+ * no normalization places. fuz_app's import census holds each kind to what
+ * the suite's module reaches.
  *
  * @internal Read by fuz_app's transcript differential — not stable API.
  */
-export type SpineSuiteTranscriptExclusionKind = 'websocket' | 'raw_socket' | 'sse' | 'untriaged';
+export type SpineSuiteTranscriptExclusionKind =
+	'websocket' | 'raw_socket' | 'sse' | 'embedded_secrets';
 
 /**
  * Whether fuz_app's transcript differential — the suites run once per backend,
@@ -750,12 +753,6 @@ const TRANSCRIPT_SSE: SpineSuiteTranscript = {
 	excluded: {
 		kind: 'sse',
 		reason: 'reads the audit event stream, which the transcript records unread'
-	}
-};
-const TRANSCRIPT_UNTRIAGED: SpineSuiteTranscript = {
-	excluded: {
-		kind: 'untriaged',
-		reason: 'HTTP only, but not yet run under the transcript with its differences triaged'
 	}
 };
 
@@ -818,13 +815,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	actor_lookup: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_actor_lookup_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	app_settings: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_app_settings_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	body_size: {
@@ -878,13 +875,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	cell_crud: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_crud_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_gated_create: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_gated_create_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_grant_role: {
@@ -899,31 +896,31 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			};
 		},
 		describe: describe_cell_grant_role_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_grant_steward: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_grant_steward_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_moderate: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_moderate_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_ref_admission: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_ref_admission_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cell_relations: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_cell_relations_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	cookie_attributes: {
@@ -956,7 +953,16 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_credential_conformance_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: {
+			excluded: {
+				kind: 'embedded_secrets',
+				reason:
+					"its header lines carry the backend's own credentials re-spelled inside strings — " +
+					'signed under its cookie keys with a per-run expiry, percent-encoded, tampered — ' +
+					'which no placeholder recognizes; every answer is a `_testing_credential_read` ' +
+					'reading the suite already holds to the shared table'
+			}
+		},
 		required: { setup_test: true, cookie_name: true, cookie_keys: true, daemon_token: true },
 		backdoors: ['_testing_credential_read']
 	},
@@ -1002,7 +1008,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			setup_test_multi_actor: c.setup({ extra_actors: ['second_persona'] })
 		}),
 		describe: describe_fact_serving_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	identity_parity: {
@@ -1014,13 +1020,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	origin: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_origin_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	origin_conformance: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_origin_conformance_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true },
 		backdoors: ['_testing_origin_check']
 	},
@@ -1048,13 +1054,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	query_shape: {
 		derive: (c) => rpc_gated(c),
 		describe: describe_query_shape_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	ready: {
 		derive: (c) => ({ setup_test: c.setup(), capabilities: c.config.capabilities }),
 		describe: describe_ready_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	request_header_conformance_wire: {
@@ -1107,7 +1113,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_role_grant_offer_enumeration_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	role_grant_offer_lifecycle: {
@@ -1140,13 +1146,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_role_grant_participation_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	role_grant_role_grammar: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_role_grant_role_grammar_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	rooms_ws: {
@@ -1172,7 +1178,7 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			input_overrides: c.options.rpc_input_overrides
 		}),
 		describe: describe_rpc_adversarial_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, surface_source: true }
 	},
 	session_cap: {
@@ -1195,13 +1201,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			rpc_path: c.config.rpc_path
 		}),
 		describe: describe_session_cookie_codec_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, cookie_name: true, cookie_keys: true }
 	},
 	simple_request: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_simple_request_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	sse_round_trip: {
@@ -1254,13 +1260,13 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 	token_lifetime: {
 		derive: (c) => ({ setup_test: c.setup(), rpc_path: c.config.rpc_path }),
 		describe: describe_token_lifetime_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true }
 	},
 	token_scope_surface: {
 		derive: (c) => ({ ...rpc_gated(c), sse_path: c.config.sse_path }),
 		describe: describe_token_scope_surface_cross_tests,
-		transcript: TRANSCRIPT_UNTRIAGED,
+		transcript: 'http',
 		required: { setup_test: true, capabilities: true }
 	},
 	transport_composition: {

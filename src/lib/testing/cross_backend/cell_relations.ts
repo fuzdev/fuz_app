@@ -34,7 +34,8 @@ import '../assert_dev_env.ts';
  *   out-of-range or mistyped `limit` (`0`, `-1`, `1.5`, past the max, `null`,
  *   a string) is `invalid_params` in every direction, and the reverse lists
  *   read oldest edge first.
- * - **items** — `cell_item_insert` at fractional-index positions, forward
+ * - **items** — `cell_item_insert` at fractional-index positions (generated
+ *   without jitter, so every run and both backends send one key sequence), forward
  *   (lex-ordered) + reverse `cell_item_list`, `cell_item_move`, idempotent
  *   `cell_item_delete`; an insert or a move onto a taken position →
  *   `invalid_params` `cell_item_position_taken`, leaving the rows as they were.
@@ -136,8 +137,8 @@ const wire_children = async (
 	pub_child: string,
 	priv_child: string
 ): Promise<void> => {
-	const pos_a = fractional_index_between(null, null);
-	const pos_b = fractional_index_between(pos_a, null);
+	const pos_a = fractional_index_between(null, null, { jitter: false });
+	const pos_b = fractional_index_between(pos_a, null, { jitter: false });
 	expect_output(
 		await cross_rpc_call(
 			t,
@@ -545,7 +546,7 @@ export const describe_cell_relations_cross_tests = (
 				const hub = await make();
 				const parent = await make();
 				const source = await make();
-				const positions = fractional_indices_between(null, null, inbound);
+				const positions = fractional_indices_between(null, null, inbound, { jitter: false });
 				for (let i = 0; i < inbound; i++) {
 					expect_output(
 						await cross_rpc_call(
@@ -634,7 +635,7 @@ export const describe_cell_relations_cross_tests = (
 				const source = await make('public');
 				const parent = await make('public');
 				const padding = CELL_RELATION_LIST_LIMIT_DEFAULT + 1;
-				const positions = fractional_indices_between(null, null, padding + 1);
+				const positions = fractional_indices_between(null, null, padding + 1, { jitter: false });
 				for (let i = 0; i <= padding; i++) {
 					const end = await make(i < padding ? 'private' : 'public');
 					const name = `link_${String(i).padStart(3, '0')}`;
@@ -805,7 +806,7 @@ export const describe_cell_relations_cross_tests = (
 				const child_a = await make();
 				const child_b = await make();
 
-				const pos_a = fractional_index_between(null, null);
+				const pos_a = fractional_index_between(null, null, { jitter: false });
 				const ins_a = expect_output(
 					await cross_rpc_call(
 						t,
@@ -818,7 +819,7 @@ export const describe_cell_relations_cross_tests = (
 				);
 				assert.strictEqual(ins_a.item.child_id, child_a);
 
-				const pos_b = fractional_index_between(pos_a, null);
+				const pos_b = fractional_index_between(pos_a, null, { jitter: false });
 				expect_output(
 					await cross_rpc_call(
 						t,
@@ -850,7 +851,7 @@ export const describe_cell_relations_cross_tests = (
 				);
 
 				// Move child_b ahead of child_a.
-				const new_pos = fractional_index_between(null, pos_a);
+				const new_pos = fractional_index_between(null, pos_a, { jitter: false });
 				const moved = expect_output(
 					await cross_rpc_call(
 						t,
@@ -907,8 +908,8 @@ export const describe_cell_relations_cross_tests = (
 				const child_a = await make();
 				const child_b = await make();
 				const child_c = await make();
-				const pos_a = fractional_index_between(null, null);
-				const pos_b = fractional_index_between(pos_a, null);
+				const pos_a = fractional_index_between(null, null, { jitter: false });
+				const pos_b = fractional_index_between(pos_a, null, { jitter: false });
 				for (const [child_id, position] of [
 					[child_a, pos_a],
 					[child_b, pos_b]
@@ -984,7 +985,7 @@ export const describe_cell_relations_cross_tests = (
 				const source = await make('orig');
 				const child = await make('child');
 				const field_target = await make('target');
-				const child_pos = fractional_index_between(null, null);
+				const child_pos = fractional_index_between(null, null, { jitter: false });
 				expect_output(
 					await cross_rpc_call(
 						t,

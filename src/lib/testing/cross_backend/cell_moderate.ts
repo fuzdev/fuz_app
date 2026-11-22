@@ -809,8 +809,8 @@ export const describe_cell_moderate_cross_tests = (
 					),
 					CellCreateOutput
 				);
-				const pos_a = fractional_index_between(null, null);
-				const pos_b = fractional_index_between(pos_a, null);
+				const pos_a = fractional_index_between(null, null, { jitter: false });
+				const pos_b = fractional_index_between(pos_a, null, { jitter: false });
 				for (const [child_id, position] of [
 					[post.cell.id, pos_a],
 					[react.cell.id, pos_b]

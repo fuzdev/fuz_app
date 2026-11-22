@@ -15,6 +15,7 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS
 } from '#lib/http/error_schemas.ts';
+import { JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST } from '#lib/http/jsonrpc.ts';
 
 import type { TranscriptKnownDivergence } from './transcript_differential.ts';
 
@@ -34,5 +35,13 @@ export const transcript_known_divergences: ReadonlyArray<TranscriptKnownDivergen
 			]
 		},
 		what_differs: [{ path: 'response.body.issues', b: undefined }]
+	},
+	{
+		tracking_id: 'ts-dev-rpc-issues',
+		reason:
+			'TS keeps the validation issues on a JSON-RPC schema refusal — `invalid_params`, and ' +
+			'`invalid_request` on a malformed envelope — in DEV only (`dev_only`); Rust never sends them',
+		where: { status: 400, rpc_code: [JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST] },
+		what_differs: [{ path: 'response.body.error.data.issues', b: undefined }]
 	}
 ];

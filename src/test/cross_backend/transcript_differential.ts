@@ -24,10 +24,12 @@
  *
  * Each side also fails its own copy of a test that sent past the recording
  * (an untagged `fetch` to any origin, or a `WebSocket` constructed — the
- * tripwire in `transcript_record.ts`) or that passed with none of its own
- * requests recorded, so a recording that broke can't pass by comparing two
- * empty transcripts (`find_recording_problems`). What reaches neither is kept
- * out of the transcript suites by the import census
+ * tripwire in `transcript_record.ts`) or that built a fixture and passed with
+ * none of its own requests recorded, so a recording that broke can't pass by
+ * comparing two empty transcripts (`find_recording_problems`); a test that
+ * built no fixture — a check over the suite's own cases — sends nothing.
+ * What reaches neither is kept out of the transcript suites by the import
+ * census
  * (`transcript_census.test.ts`).
  *
  * With `compare_db_state`, each test also compares the databases the two
@@ -211,10 +213,12 @@ export type TranscriptTestOutcome = 'pass' | 'fail' | 'skip';
 
 /**
  * What a test's recording says is wrong with it, beside any difference: a
- * send the transcript couldn't see, or — for a test that passed — none of its
- * own sends recorded (`create_account`'s don't count), so the diff would
- * hold nothing the suite sent equal. A failed or skipped test is already
- * accounted for.
+ * send the transcript couldn't see, or — for a test that passed having built
+ * a fixture — none of its own sends recorded (`create_account`'s don't
+ * count), so the diff would hold nothing the suite sent equal. A test that
+ * built no fixture has nothing to send through (a check over the suite's own
+ * cases), and any send it makes is the tripwire's. A failed or skipped test
+ * is already accounted for.
  *
  * @param window - the test's closed window
  * @param outcome - how the test ended
@@ -232,7 +236,11 @@ export const find_recording_problems = (
 				window.unrecorded.map((send) => `  ${send}`).join('\n')
 		);
 	}
-	if (outcome === 'pass' && !window.entries.some((e) => e.request.via === undefined)) {
+	if (
+		outcome === 'pass' &&
+		window.fixtures_built > 0 &&
+		!window.entries.some((e) => e.request.via === undefined)
+	) {
 		problems.push(
 			'recorded none of its own requests, so its transcript compares nothing the suite sent — ' +
 				'a transcript suite test sends through the fixture'

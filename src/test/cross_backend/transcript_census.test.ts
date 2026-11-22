@@ -1,8 +1,9 @@
 /**
  * The transcript differential's import census: no suite the registry marks
  * `transcript: 'http'` reaches, through its module's value imports, a way of
- * sending the recording can't see, and each suite excluded for what it sends
- * reaches a sender of that kind.
+ * sending the recording can't see, each suite excluded for what it sends
+ * reaches a sender of that kind, and one excluded for what its HTTP traffic
+ * carries (`HTTP_ONLY_KINDS`) reaches none.
  *
  * The recording wraps the fixture transports and patches `fetch` and the
  * global `WebSocket` (`transcript_record.ts`), so its tripwire catches those
@@ -35,8 +36,21 @@ import { TRANSCRIPT_SUITES } from './transcript_differential.ts';
 
 const LIB_DIR = fileURLToPath(new URL('../../lib/', import.meta.url));
 
-/** The kinds of send the recording can't see — every exclusion kind but `untriaged`. */
-type SendKind = Exclude<SpineSuiteTranscriptExclusionKind, 'untriaged'>;
+/**
+ * The exclusion kinds that name no sender: the suite sends only over HTTP,
+ * through the fixture, and is left out for what its traffic carries.
+ */
+const HTTP_ONLY_KINDS = [
+	'embedded_secrets'
+] as const satisfies ReadonlyArray<SpineSuiteTranscriptExclusionKind>;
+
+/** The kinds of send the recording can't see — every exclusion kind but `HTTP_ONLY_KINDS`. */
+type SendKind = Exclude<SpineSuiteTranscriptExclusionKind, (typeof HTTP_ONLY_KINDS)[number]>;
+
+const is_http_only_kind = (
+	kind: SpineSuiteTranscriptExclusionKind
+): kind is (typeof HTTP_ONLY_KINDS)[number] =>
+	(HTTP_ONLY_KINDS as ReadonlyArray<string>).includes(kind);
 
 /**
  * The `src/lib` modules that send off the fixture transports, or are built to
@@ -236,15 +250,15 @@ describe('the transcript import census', () => {
 		);
 	});
 
-	test('every excluded suite reaches what its kind says, and an untriaged one nothing', () => {
+	test('every excluded suite reaches what its kind says, and an HTTP-only one nothing', () => {
 		const problems: Array<string> = [];
 		for (const name of SUITE_NAMES) {
 			const transcript = get_spine_suite_transcript(name);
 			if (transcript === 'http') continue;
 			const { kind } = transcript.excluded;
 			const hits = find_unrecordable(suite_module(name));
-			if (kind === 'untriaged') {
-				problems.push(...hits.map((hit) => `untriaged, yet ${format_hit(name, hit)}`));
+			if (is_http_only_kind(kind)) {
+				problems.push(...hits.map((hit) => `excluded as '${kind}', yet ${format_hit(name, hit)}`));
 			} else if (!hits.some((hit) => hit.kinds.includes(kind))) {
 				problems.push(
 					`${name}: excluded as '${kind}', yet reaches no ${kind} sender` +

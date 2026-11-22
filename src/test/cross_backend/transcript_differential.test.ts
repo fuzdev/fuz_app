@@ -9,14 +9,17 @@ import {
 	find_recording_problems,
 	type TranscriptEntryWhere
 } from './transcript_differential.ts';
+import { normalize_transcript, OWN_TOUCH } from './transcript_normalize.ts';
 import {
 	close_transcript_window,
 	install_transcript_fetch_patch,
 	open_transcript_window,
 	record_setup_test,
 	record_transport,
+	to_bearer_token_id,
 	TRANSCRIPT_RECORDED_HEADER,
 	uninstall_transcript_fetch_patch,
+	type TranscriptEntry,
 	type TranscriptWindow
 } from './transcript_record.ts';
 
@@ -83,6 +86,7 @@ describe('find_recording_problems', () => {
 	const window = (overrides: Partial<TranscriptWindow>): TranscriptWindow => ({
 		base_url: 'http://localhost:1',
 		entries: [],
+		fixtures_built: 1,
 		unrecorded: [],
 		...overrides
 	});
@@ -92,6 +96,16 @@ describe('find_recording_problems', () => {
 		// `create_account`'s sends are the fixture's, not the test's
 		assert.strictEqual(find_recording_problems(window({ entries: [minted] }), 'pass').length, 1);
 		assert.deepEqual(find_recording_problems(window({ entries: [minted, own] }), 'pass'), []);
+	});
+
+	test('a passing test that built no fixture had nothing to send through', () => {
+		assert.deepEqual(find_recording_problems(window({ fixtures_built: 0 }), 'pass'), []);
+		// what it sends anyway is the tripwire's
+		const unrecorded = ['GET /api/rpc'];
+		assert.strictEqual(
+			find_recording_problems(window({ fixtures_built: 0, unrecorded }), 'pass').length,
+			1
+		);
 	});
 
 	test('a failed or skipped test that recorded nothing is already accounted for', () => {
@@ -233,6 +247,32 @@ describe('the transcript fetch patch', () => {
 		assert.deepEqual(window.unrecorded, ['GET /api/rpc']);
 	});
 
+	test('a fixture is counted in the window it is built in, and refused outside one', async () => {
+		const fixture = {
+			transport: create_fetch_transport({ base_url: BASE_URL }),
+			fresh_transport: () => create_fetch_transport({ base_url: BASE_URL })
+		} as unknown as TestFixture;
+		const setup_test = record_setup_test(async () => fixture);
+		await setup_test();
+		await setup_test();
+		assert.strictEqual(close_transcript_window()?.fixtures_built, 2);
+		let error: unknown;
+		await setup_test().catch((e: unknown) => (error = e));
+		assert.ok(error instanceof Error && error.message.includes('outside a recording test'));
+	});
+
+	test("a recorded request names its bearer token's public id", async () => {
+		const token = `secret_fuz_token_${'Ab1_-'.repeat(8)}xyz`;
+		const transport = record_transport(create_fetch_transport({ base_url: BASE_URL }));
+		await transport('/api/rpc', { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+		await transport('/api/rpc', { method: 'POST' });
+		const window = close_transcript_window();
+		assert.deepEqual(
+			window?.entries.map((e) => e.request.bearer_token_id),
+			['tok_Ab1_-Ab1_-Ab', undefined]
+		);
+	});
+
 	test('with no window open, a send passes through untouched', async () => {
 		close_transcript_window();
 		await fetch(`${BASE_URL}/api/rpc`);
@@ -268,5 +308,74 @@ describe('uninstalling the transcript patch', () => {
 			if (initial) Object.defineProperty(globalThis, 'EventSource', initial);
 			else delete (globalThis as { EventSource?: unknown }).EventSource;
 		}
+	});
+});
+
+describe('to_bearer_token_id', () => {
+	const of = (authorization?: string) =>
+		to_bearer_token_id(new Headers(authorization === undefined ? {} : { authorization }));
+
+	test("a token's public id is `tok_` and its first twelve random characters", () => {
+		assert.strictEqual(
+			of(`Bearer secret_fuz_token_${'a'.repeat(12)}${'b'.repeat(31)}`),
+			'tok_aaaaaaaaaaaa'
+		);
+	});
+
+	test('no header, another scheme or a value not token-shaped names none', () => {
+		assert.strictEqual(of(), null);
+		assert.strictEqual(of(`Basic secret_fuz_token_${'a'.repeat(43)}`), null);
+		assert.strictEqual(of('Bearer secret_fuz_token_short'), null);
+	});
+});
+
+describe('normalize_transcript: a token touch read by its own request', () => {
+	const token_row = (id: string, last_used_at: string | null) => ({
+		id,
+		last_used_at,
+		last_used_ip: last_used_at && '127.0.0.1',
+		created_at: '2026-01-01T00:00:00Z'
+	});
+	const list = (bearer_token_id: string | undefined, tokens: Array<unknown>): TranscriptEntry => ({
+		request: {
+			method: 'POST',
+			path: '/api/rpc',
+			header_names: ['authorization'],
+			...(bearer_token_id !== undefined && { bearer_token_id }),
+			body: null
+		},
+		response: {
+			status: 200,
+			headers: {},
+			set_cookies: [],
+			body: { result: { tokens } }
+		}
+	});
+	const tokens_of = (entries: Array<TranscriptEntry>, index: number) =>
+		(
+			normalize_transcript(entries, 'fuz_session').entries[index] as {
+				response: { body: { result: { tokens: Array<Record<string, unknown>> } } };
+			}
+		).response.body.result.tokens;
+
+	test("the token's own row reads its touch as OWN_TOUCH, touched or not", () => {
+		const own = 'tok_aaaaaaaaaaaa';
+		for (const last_used_at of [null, '2026-01-01T00:00:00Z']) {
+			const [row] = tokens_of([list(own, [token_row(own, last_used_at)])], 0);
+			assert.strictEqual(row!.last_used_at, OWN_TOUCH);
+			assert.strictEqual(row!.last_used_ip, OWN_TOUCH);
+		}
+	});
+
+	test("another token's row, and every row of a request with no token, compares", () => {
+		const own = 'tok_aaaaaaaaaaaa';
+		const other = 'tok_bbbbbbbbbbbb';
+		const [, row] = tokens_of(
+			[list(own, [token_row(own, null), token_row(other, '2026-01-01T00:00:00Z')])],
+			0
+		);
+		assert.strictEqual(row!.last_used_ip, '127.0.0.1');
+		const [untouched] = tokens_of([list(undefined, [token_row(own, null)])], 0);
+		assert.strictEqual(untouched!.last_used_at, null);
 	});
 });

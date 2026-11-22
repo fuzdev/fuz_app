@@ -192,7 +192,9 @@ export const query_role_grant_find_active_role_for_actor = async (
 };
 
 /**
- * Find all active (non-revoked, non-expired) role_grants for an actor.
+ * Find all active (non-revoked, non-expired) role_grants for an actor, oldest
+ * first, grants of one instant (bootstrap's keeper and admin) by role, scope
+ * and id — the admin account list's order, and the Rust twin's.
  */
 export const query_role_grant_find_active_for_actor = async (
 	deps: QueryDeps,
@@ -202,7 +204,7 @@ export const query_role_grant_find_active_for_actor = async (
 		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant
 		 WHERE actor_id = $1
 		   AND ${role_grant_active_sql('')}
-		 ORDER BY role_grant.created_at`,
+		 ORDER BY role_grant.created_at, role_grant.role, role_grant.scope_id, role_grant.id`,
 		[actor_id]
 	);
 };
