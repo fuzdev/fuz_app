@@ -152,8 +152,6 @@ export const format_audit_metadata = (
 	switch (event_type) {
 		case 'login':
 			return metadata.username ? `user: ${metadata.username as string}` : '';
-		case 'logout':
-			return '';
 		case 'bootstrap':
 			return metadata.error ? `error: ${metadata.error as string}` : '';
 		case 'signup':
@@ -168,6 +166,7 @@ export const format_audit_metadata = (
 			return metadata.sessions_revoked != null
 				? `${metadata.sessions_revoked as number} sessions revoked`
 				: '';
+		case 'logout':
 		case 'session_revoke':
 			return metadata.session_id
 				? `session: ${truncate_middle(metadata.session_id as string, 12)}`

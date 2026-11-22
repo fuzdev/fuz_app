@@ -15,7 +15,8 @@ import {
 	API_TOKEN_PREFIX,
 	generate_api_token,
 	hash_api_token,
-	is_api_token_shaped
+	is_api_token_shaped,
+	to_api_token_id
 } from '#lib/auth/api_token.ts';
 import { create_test_raw_api_token } from '#lib/testing/entities.ts';
 
@@ -142,6 +143,27 @@ describe('is_api_token_shaped', () => {
 			assert.ok(!is_api_token_shaped(value), JSON.stringify(value));
 		});
 	}
+});
+
+describe('to_api_token_id', () => {
+	test('is `tok_` and the first twelve characters of the body', () => {
+		const token = `${API_TOKEN_PREFIX}${'a'.repeat(12)}${'b'.repeat(API_TOKEN_BODY_LENGTH - 12)}`;
+		assert.strictEqual(to_api_token_id(token), 'tok_aaaaaaaaaaaa');
+	});
+
+	test("is every generated token's id", () => {
+		for (let i = 0; i < 200; i++) {
+			const { token, id } = generate_api_token();
+			assert.strictEqual(to_api_token_id(token), id);
+		}
+	});
+
+	test('throws on a value not token-shaped', () => {
+		assert.throws(() => to_api_token_id(''));
+		assert.throws(() => to_api_token_id(API_TOKEN_PREFIX));
+		assert.throws(() => to_api_token_id(create_test_raw_api_token().slice(0, -1)));
+		assert.throws(() => to_api_token_id(`x${create_test_raw_api_token()}`));
+	});
 });
 
 describe('create_test_raw_api_token', () => {

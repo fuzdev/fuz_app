@@ -85,7 +85,7 @@ const API_TOKEN_IS_LIVE = '(expires_at IS NULL OR expires_at > NOW())';
  * Store a new API token (the hash, not the raw token).
  *
  * @param deps - query dependencies
- * @param id - the public token id (e.g. `tok_abc123`)
+ * @param id - the public token id (e.g. `tok_abC0_d-3xyzA`)
  * @param account_id - the owning account
  * @param name - human-readable name
  * @param token_hash - blake3 hash of the raw token
@@ -194,7 +194,7 @@ export const query_api_token_touch = async (
  * admitted with, and nothing rewrites the column after the mint.
  *
  * @param deps - query dependencies
- * @param id - the public token id (e.g. `tok_abc123`)
+ * @param id - the public token id (e.g. `tok_abC0_d-3xyzA`)
  * @returns the owning account id, or `undefined` when the token is gone or expired
  */
 export const query_api_token_live_account = async (

@@ -303,7 +303,16 @@ describe('format_audit_metadata', () => {
 		assert.strictEqual(format_audit_metadata('login', {}), '');
 	});
 
-	test('logout returns empty', () => {
+	test('logout truncates session_id, as session_revoke does', () => {
+		const metadata = { session_id: 'abcdef1234567890abcdef1234567890' };
+		assert.strictEqual(format_audit_metadata('logout', metadata), 'session: abcdef…67890');
+		assert.strictEqual(
+			format_audit_metadata('logout', metadata),
+			format_audit_metadata('session_revoke', metadata)
+		);
+	});
+
+	test('logout returns empty without session_id', () => {
 		assert.strictEqual(format_audit_metadata('logout', {}), '');
 	});
 

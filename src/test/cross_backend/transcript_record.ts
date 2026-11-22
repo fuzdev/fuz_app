@@ -10,14 +10,16 @@
  *   `Origin` and `Cookie` the transport adds inside are not seen. Each send
  *   is tagged with `TRANSCRIPT_RECORDED_HEADER`, which the `fetch` patch
  *   strips before it leaves.
- * - `create_account` sends its invite, signup, login and token mint on
- *   transports of its own, which no wrapper reaches. The call is wrapped
- *   instead and, in its async context (`AsyncLocalStorage`), the `fetch`
- *   patch records what reaches the wire, so those entries carry the
- *   transport-added header names too. They are marked
- *   `via: 'create_account'`. Without them a minted account's ids would first
- *   appear in a later response, and a signup or login that answers
- *   differently would go unseen.
+ * - The fixture's helpers that send (`TranscriptFixtureHelper`:
+ *   `create_account` and the dead-credential mints) send on transports of
+ *   their own, which no wrapper reaches. Each call is wrapped instead and, in
+ *   its async context (`AsyncLocalStorage`), the `fetch` patch records what
+ *   reaches the wire — a `_testing_*` call aside — so those entries carry the
+ *   transport-added header names too. They are marked `via` with the
+ *   helper's name. Without them a minted account's ids would first appear in
+ *   a later response, a signup or login that answers differently would go
+ *   unseen, and a suite using a dead-credential principal would trip the
+ *   tripwire below.
  *
  * The wrapped `setup_test` builds its fixture only inside a test's window,
  * counted there (`fixtures_built`), so a fixture shared across tests can't
@@ -41,15 +43,15 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { API_TOKEN_PREFIX, is_api_token_shaped } from '#lib/auth/api_token.ts';
+import { is_api_token_shaped, to_api_token_id } from '#lib/auth/api_token.ts';
 import type { SetupTest, TestFixture } from '#lib/testing/cross_backend/setup.ts';
 import type { FetchTransport } from '#lib/testing/transports/fetch_transport.ts';
 
 /** One request and its answer, as the suite sent and read them. */
 export interface TranscriptEntry {
 	readonly request: {
-		/** Absent for the suite's own requests; `'create_account'` for the fixture's mint. */
-		readonly via?: 'create_account';
+		/** Absent for the suite's own requests; the fixture helper that sent it otherwise. */
+		readonly via?: TranscriptFixtureHelper;
 		readonly method: string;
 		/** The path and query, never the absolute URL, whose port differs per backend. */
 		readonly path: string;
@@ -93,13 +95,9 @@ const parse_text = (text: string): unknown => {
 
 const header_names = (headers: Headers): Array<string> => [...headers.keys()].sort();
 
-/** The length of an API token id's random part, the token's own first characters. */
-const API_TOKEN_ID_BODY_LENGTH = 12;
-
 /**
  * The public id of the API token an `Authorization: Bearer` header carries,
- * as both spines mint it — `tok_` and the token's first twelve random
- * characters (`generate_api_token`, the Rust `fuz_auth` twin) — or `null`
+ * as both spines mint it (`to_api_token_id`) — or `null`
  * for no header, another scheme, or a value not token-shaped.
  *
  * @param headers - the request's headers
@@ -109,7 +107,7 @@ export const to_bearer_token_id = (headers: Headers): string | null => {
 	if (value === null || !value.startsWith('Bearer ')) return null;
 	const token = value.slice('Bearer '.length);
 	if (!is_api_token_shaped(token)) return null;
-	return `tok_${token.slice(API_TOKEN_PREFIX.length, API_TOKEN_PREFIX.length + API_TOKEN_ID_BODY_LENGTH)}`;
+	return to_api_token_id(token);
 };
 
 /** The request fields every recorded entry derives from its headers. */
@@ -169,8 +167,20 @@ export interface TranscriptWindow {
  */
 let open_window: TranscriptWindow | null = null;
 
-/** Set inside a wrapped `create_account` call's async context. */
-const in_create_account: AsyncLocalStorage<true> = new AsyncLocalStorage();
+/**
+ * The `TestFixture` helpers that send on transports of their own, each call
+ * recorded in its async context with `via` its name. `record_setup_test`
+ * wraps every one, so a required `mint_*` helper added to `TestFixture` fails
+ * typecheck there until it is wrapped; a sending helper by any other name
+ * trips the tripwire instead.
+ */
+export type TranscriptFixtureHelper = Extract<
+	keyof TestFixture,
+	'create_account' | `mint_${string}`
+>;
+
+/** The helper whose call's async context a send is in, if any. */
+const in_fixture_helper: AsyncLocalStorage<TranscriptFixtureHelper> = new AsyncLocalStorage();
 
 /** The globals the patch replaces. */
 const PATCHED_GLOBALS = ['fetch', 'WebSocket', 'EventSource'] as const;
@@ -239,9 +249,9 @@ const wrap_socket_constructor = <T extends object>(name: string, target: T): T =
 
 /**
  * Patch `globalThis.fetch` (and `WebSocket`, and `EventSource` where defined)
- * for the transcript: a tagged send has its tag stripped; inside a
- * `create_account` call every send is recorded; with a window open, any
- * other send — a `_testing_*` call aside — is listed in its `unrecorded`.
+ * for the transcript: a tagged send has its tag stripped; a `_testing_*`
+ * call is never recorded; inside a fixture helper's call every other send is
+ * recorded; with a window open, any other send is listed in its `unrecorded`.
  * With no window open everything passes straight through. Pair with
  * `uninstall_transcript_fetch_patch`.
  */
@@ -266,15 +276,17 @@ export const install_transcript_fetch_patch = (): void => {
 		if (!window) return inner(request);
 		const body = parse_text(await request.clone().text());
 		const path = to_path(request.url, window.base_url);
-		if (!in_create_account.getStore()) {
-			if (!is_backdoor_call(body)) window.unrecorded.push(`${request.method} ${path}`);
+		if (is_backdoor_call(body)) return inner(request);
+		const via = in_fixture_helper.getStore();
+		if (via === undefined) {
+			window.unrecorded.push(`${request.method} ${path}`);
 			return inner(request);
 		}
 		if (!request.headers.has('accept-encoding'))
 			request.headers.set('accept-encoding', IDENTITY_ENCODING['accept-encoding']);
 		const entry: TranscriptEntry = {
 			request: {
-				via: 'create_account',
+				via,
 				method: request.method,
 				path,
 				...request_header_fields(request.headers),
@@ -336,8 +348,9 @@ export const record_transport = (transport: FetchTransport): FetchTransport => {
 
 /**
  * Wrap a `SetupTest` so the fixture it returns records into the open window,
- * its `create_account` included (needs `install_transcript_fetch_patch`), and
- * counts in the window's `fixtures_built`.
+ * its `TranscriptFixtureHelper`s included (needs
+ * `install_transcript_fetch_patch`), and counts in the window's
+ * `fixtures_built`.
  *
  * @param setup_test - the per-test fixture producer
  * @returns the recording producer, which throws outside a test's window
@@ -347,13 +360,23 @@ export const record_setup_test =
 	async (): Promise<TestFixture> => {
 		require_window('a fixture was built').fixtures_built++;
 		const fixture = await setup_test();
+		const in_helper = <T>(helper: TranscriptFixtureHelper, call: () => Promise<T>): Promise<T> => {
+			require_window(helper);
+			return in_fixture_helper.run(helper, call);
+		};
+		const helpers: Pick<TestFixture, TranscriptFixtureHelper> = {
+			create_account: (o) => in_helper('create_account', () => fixture.create_account(o)),
+			mint_expired_session: () =>
+				in_helper('mint_expired_session', () => fixture.mint_expired_session()),
+			mint_revoked_session: () =>
+				in_helper('mint_revoked_session', () => fixture.mint_revoked_session()),
+			mint_revoked_token: () => in_helper('mint_revoked_token', () => fixture.mint_revoked_token()),
+			mint_expired_token: () => in_helper('mint_expired_token', () => fixture.mint_expired_token())
+		};
 		return {
 			...fixture,
 			transport: record_transport(fixture.transport),
 			fresh_transport: (o) => record_transport(fixture.fresh_transport(o)),
-			create_account: (o) => {
-				require_window('create_account');
-				return in_create_account.run(true, () => fixture.create_account(o));
-			}
+			...helpers
 		};
 	};

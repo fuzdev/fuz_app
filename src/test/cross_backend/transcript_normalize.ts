@@ -6,10 +6,10 @@
  * normalizer (`normalize_differential_response`) as one synthetic body, so a
  * placeholder is stable across requests: an id one response mints and a
  * later request echoes keeps one `<uuid:n>`, numbered from where it first
- * appears — the account mints `create_account` sends included. Ahead of it,
- * pre-passes rewrite what that normalizer would number or leave raw but
- * which, across one transcript rather than one response, varies per backend
- * run:
+ * appears — what the fixture helpers send included (`create_account`, the
+ * dead-credential mints). Ahead of it, pre-passes rewrite what that
+ * normalizer would number or leave raw but which, across one transcript
+ * rather than one response, varies per backend run:
  *
  * - **timestamps** — every `ISO8601_SECONDS` match becomes its offset from
  *   the transcript's anchor, the earliest timestamp any response carries,

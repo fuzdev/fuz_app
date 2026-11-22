@@ -247,6 +247,57 @@ describe('the transcript fetch patch', () => {
 		assert.deepEqual(window.unrecorded, ['GET /api/rpc']);
 	});
 
+	test("the dead-credential mints' sends are recorded as the fixture's, a backdoor call not at all", async () => {
+		const send = (path: string, body: unknown = {}) =>
+			fetch(`${BASE_URL}${path}`, { method: 'POST', body: JSON.stringify(body) });
+		const fixture = {
+			transport: create_fetch_transport({ base_url: BASE_URL }),
+			fresh_transport: () => create_fetch_transport({ base_url: BASE_URL }),
+			mint_expired_session: async () => {
+				await send('/api/rpc', { jsonrpc: '2.0', id: 1, method: '_testing_mint_session' });
+				return 'c=expired';
+			},
+			mint_revoked_session: async () => {
+				await send('/api/account/login');
+				await send('/api/rpc', { jsonrpc: '2.0', id: 1, method: 'account_session_revoke' });
+				return 'c=revoked';
+			},
+			mint_revoked_token: async () => {
+				await send('/api/rpc', { jsonrpc: '2.0', id: 1, method: 'account_token_revoke' });
+				return 'revoked_token';
+			},
+			mint_expired_token: async () => {
+				await send('/api/rpc', {
+					jsonrpc: '2.0',
+					id: 1,
+					method: '_testing_shorten_credential_expiry'
+				});
+				return 'expired_token';
+			}
+		} as unknown as TestFixture;
+		const recording = await record_setup_test(async () => fixture)();
+		assert.strictEqual(await recording.mint_expired_session(), 'c=expired');
+		assert.strictEqual(await recording.mint_revoked_session(), 'c=revoked');
+		assert.strictEqual(await recording.mint_revoked_token(), 'revoked_token');
+		assert.strictEqual(await recording.mint_expired_token(), 'expired_token');
+		// the principal's own request, as a conformance row sends it
+		await recording.transport('/api/rpc', { method: 'POST', headers: { cookie: 'c=revoked' } });
+		const window = close_transcript_window();
+		assert.ok(window);
+		assert.deepEqual(window.unrecorded, []);
+		assert.deepEqual(
+			window.entries.map((e) => [e.request.via, e.request.path]),
+			[
+				['mint_revoked_session', '/api/account/login'],
+				['mint_revoked_session', '/api/rpc'],
+				['mint_revoked_token', '/api/rpc'],
+				[undefined, '/api/rpc']
+			]
+		);
+		assert.deepEqual(find_recording_problems(window, 'pass'), []);
+		assert.strictEqual(sent.length, 6);
+	});
+
 	test('a fixture is counted in the window it is built in, and refused outside one', async () => {
 		const fixture = {
 			transport: create_fetch_transport({ base_url: BASE_URL }),

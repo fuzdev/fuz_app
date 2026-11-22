@@ -214,7 +214,7 @@ export type TranscriptTestOutcome = 'pass' | 'fail' | 'skip';
 /**
  * What a test's recording says is wrong with it, beside any difference: a
  * send the transcript couldn't see, or — for a test that passed having built
- * a fixture — none of its own sends recorded (`create_account`'s don't
+ * a fixture — none of its own sends recorded (a fixture helper's don't
  * count), so the diff would hold nothing the suite sent equal. A test that
  * built no fixture has nothing to send through (a check over the suite's own
  * cases), and any send it makes is the tripwire's. A failed or skipped test
