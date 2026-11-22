@@ -224,8 +224,9 @@ export const testing_reset_action_spec = {
  * Covered: every `emit` that ran before the drain was dispatched, and any
  * started while it waits. A write that starts after the drain resolves is
  * not — nor, on TS, the bearer leg's token touch, which rides its request's
- * `pending_effects`. The Rust spine spawns its touch on the same tracker as
- * its audit writes, so its drain awaits that too.
+ * `pending_effects`, nor a message's post-commit effects. The Rust spine
+ * spawns its touch and every dispatch's post-commit fan-out on the same
+ * tracker as its audit writes, so its drain awaits those too.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
