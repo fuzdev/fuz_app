@@ -1,9 +1,10 @@
 /**
- * Stateless capabilities bundle for fuz_app backends.
+ * Capabilities bundle for fuz_app backends.
  *
  * `AppDeps` is the central dependency injection type — injectable and swappable
  * per environment (production vs test). Does not contain config (static values)
- * or runtime state (mutable refs).
+ * or app runtime state (mutable refs like `bootstrap_status`); the audit emitter
+ * and the realtime fan-outs hold only their registered members.
  *
  * @module
  */
@@ -19,10 +20,12 @@ import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_clo
 import type { RealtimeNotificationSender } from '../actions/notification_sender.ts';
 
 /**
- * Stateless capabilities bundle for fuz_app backends.
+ * Capabilities bundle for fuz_app backends.
  *
- * Injectable and swappable per environment (production vs test).
- * Does not contain config (static values) or runtime state (mutable refs).
+ * Injectable and swappable per environment (production vs test). Does not
+ * contain config (static values) or app runtime state (mutable refs like
+ * `bootstrap_status`); the audit emitter and the realtime fan-outs hold only
+ * their registered members.
  */
 export interface AppDeps {
 	/** HMAC-SHA256 cookie signing keyring. */
