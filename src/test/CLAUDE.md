@@ -42,20 +42,12 @@ fuz_app's own suites reach a database two ways:
   `#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
   defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`.
 
-Lock and ordering tests only real Postgres can show — the in-memory drivers
-have one connection and serialize every transaction — run only with
-`TEST_DATABASE_URL` (CI sets it; a local `gro check` without it skips them):
-`auth/credential_mint_race.db.test.ts` (a mint and a password change or
-delete wait on each other's account-row lock),
-`auth/account_delete.races.db.test.ts` (an offer or invite create across a
-delete, the last-admin guard's order), `auth/password_change.race.db.test.ts`,
-`auth/connection_closer.admission.db.test.ts`,
-`auth/cleanup.sessions.refused_commit.db.test.ts`,
-`auth/session_sweep.order.db.test.ts` (the expiry sweep's id order),
-`auth/role_grant_offer.lock_order.db.test.ts` (the accept's account locks and
-the offer-row id order of every bulk offer write). Each
-module doc names its Postgres-only half. A change to a row lock, a locking
-read or a `RETURNING` order runs them locally first — and
+Postgres-only tests — lock and ordering behavior the in-memory drivers can't
+show (one connection, every transaction serialized), among others — are built
+on a fixture's `pg_factory` (`create_db_fixture.ts`) and run only with
+`TEST_DATABASE_URL` (CI sets it; a local `gro check` without it skips them);
+each module doc names its Postgres-only half. A change to a row lock, a
+locking read or a `RETURNING` order runs them locally first, and
 `npm run test:cross:parity`, whose `lock_pins.cross.test.ts` holds the same
 locks on both spines (below).
 
@@ -138,18 +130,10 @@ Key helpers:
 - `create_account({username?, password_value?, roles?})` — create additional accounts for multi-account tests
 - `assert_response_matches_spec(route_specs, method, path, response, route_error_maps?)` — validate response body against the route's output, or its error map at the status
 
-**WASM caching**: the in-memory factories built from one loaded copy of
-`db.ts` share a single WASM instance per driver (pglet-wasm, PGlite) via its
-module-level cache — under the `db` project's `isolate: false` +
-`fileParallelism: false` that is every DB test file in the run. Every
-`factory.create()` resets the schema (`reset_public_schema`) instead of paying
-the WASM cold start again. `create_test_app` and
-`create_test_app_server` use this cache internally when no `db` is provided.
-
-`create_test_app` builds a fresh Hono app each call — middleware closures
-bind to the server's deps (db, keyring, etc.), so reuse across
-servers is unsafe. Hono assembly is cheap (~10-50ms); the WASM database
-cache is where the real savings are.
+**WASM caching**: the in-memory factories share one WASM instance per driver
+across the `db` project's run (../lib/testing/CLAUDE.md §Database).
+`create_test_app` builds a fresh Hono app per call, since middleware closures
+bind to the server's deps.
 
 ## Composable Test Suites
 
@@ -166,13 +150,12 @@ of what gets wired:
 - `describe_audit_completeness_tests` — requires `rpc_endpoints`
 
 Opt-in action bundles — those not folded into `create_standard_rpc_actions`
-(today `self_service_role_actions`, `actor_lookup_actions`, and
-`actor_search_actions`) — get zero adversarial and round-trip coverage
-from the two RPC suites above unless they ship their own
-`<module>.rpc_suites.db.test.ts` mounting the `create_*_actions(...)`
-factory on the RPC endpoint and calling `describe_rpc_attack_surface_tests`
-plus `describe_rpc_round_trip_tests`. See the existing
-`src/test/auth/*.rpc_suites.db.test.ts` files as templates.
+(`self_service_role_actions`, `actor_lookup_actions`, `actor_search_actions`)
+— get no adversarial or round-trip coverage from the two RPC suites above
+unless they ship their own `<module>.rpc_suites.db.test.ts` mounting the
+`create_*_actions(...)` factory on the RPC endpoint and calling
+`describe_rpc_attack_surface_tests` plus `describe_rpc_round_trip_tests`. The
+existing `src/test/auth/*.rpc_suites.db.test.ts` files are templates.
 
 ### Spine live-method coverage gate (`cross_backend/spine_method_coverage`)
 
@@ -200,7 +183,15 @@ the test helpers' route list.
 ## Mocking
 
 - DI via small `*Deps` interfaces — `create_stub_app_deps()` for auth deps with safe defaults
-- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it, whose `hold_begin()` holds the next transaction before it begins (so a test lands a commit between a handler's authorization and its first statement — `auth/credential_mint_race.db.test.ts`) — then `release()`s it, or `fail(error)`s it so the transaction call rejects before its callback runs, as a refused `BEGIN` does (`auth/rest_audit_in_transaction.db.test.ts`, signup's pre-transaction failure row), and whose `hold_commit()` holds the next transaction open after its callback returns, before it commits — then `release()`s it, or `fail(error)`s it so the transaction rolls back and its call rejects, which is what a caller sees when a `COMMIT` fails (`auth/cleanup.sessions.db.test.ts` drives the session sweep's close-on-failed-commit branch with it on every driver; `auth/cleanup.sessions.refused_commit.db.test.ts` has a deferred constraint trigger refuse the `COMMIT` itself, real Postgres only). The stall seams for tests that need something to happen *between* two of a request's database steps (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window; `auth/connection_closer.admission.db.test.ts` holds a revocation uncommitted and opens a connection in the window — real Postgres only, since the connection's re-read needs a second database connection). `open_transactions()` counts the transactions open right now, which is how `auth/connection_closer.db.test.ts` asserts on any driver that a close ran after its commit. Production takes no seam for it. Its `refuse_in_transaction(match, error)` throws `error` for the next statement inside a transaction whose SQL matches, as a refused statement does (`auth/session_cookie_commit.db.test.ts` fails a logout's audit insert with it, `auth/rest_audit_in_transaction.db.test.ts` the login, password and signup success rows, `rate_limiter.bootstrap.db.test.ts` bootstrap's).
+- `create_gated_db(db)` (`gated_db.ts`) — a pass-through `Db` with seams for landing one database event between two of a request's steps; production takes no seam for it.
+
+  | seam | holds | example |
+  | --- | --- | --- |
+  | `stall(match, {skip?})` | one pool-level query in flight | admission suites (a revocation at the credential re-read) |
+  | `hold_begin()` | the next transaction before it begins (`release` / `fail` — a refused `BEGIN`) | `auth/credential_mint_race.db.test.ts`, `auth/rest_audit_in_transaction.db.test.ts` |
+  | `hold_commit()` | the next transaction after its callback, before commit (`release` / `fail`) | `auth/cleanup.sessions.db.test.ts` |
+  | `refuse_in_transaction(match, error)` | throws for the next matching in-transaction statement | `auth/session_cookie_commit.db.test.ts` |
+  | `open_transactions()` | counts open transactions | `auth/connection_closer.db.test.ts` |
 - `http/route_raw_refusals.ts` — the raw answers `prepare_route_response` refuses and some it admits, built fresh per call; shared by `http/route_result.test.ts` and `http/route_result.refusal.db.test.ts`.
 - `create_mock_runtime()` from `#lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
@@ -208,22 +199,8 @@ the test helpers' route list.
 ## fuz_app-specific conventions
 
 - DB tests use `describe_db` wrapper, not raw driver setup
-- `await_pending_effects: true` is set by `create_test_app` — fire-and-forget
-  effects complete before response returns, so tests can assert side effects directly
-- `.db.test.ts` files that exercise audit emits should call
-  `install_audit_drift_guard()` (from `#lib/testing/audit_drift_guard.ts`)
-  at the top of the `describe_db` block. Resets +
-  asserts the `audit_metadata_validation_failures` and
-  `audit_unknown_event_type_failures` counters, and the emitter's
-  write-failure and success-outside-a-transaction counters, per-test —
-  `query_audit_log`'s schema validation and the emitter's pool write are
-  fail-open in production, so regressions that emit undeclared metadata
-  fields or unknown event types, or lose a row the database refused, are
-  silent without this guard; a success row written outside the transaction
-  of its change (an `emit` that throws for it, swallowed, or a success
-  `emit_pool`) fails it too. A test that fails a write on purpose asserts
-  `get_audit_write_failures()` and calls `reset_audit_write_failures()`
-  (`#lib/auth/audit_emitter.ts`) before it ends.
+- `await_pending_effects: true` is set by `create_test_app`
+- `.db.test.ts` files that emit audit rows call `install_audit_drift_guard()` (`#lib/testing/audit_drift_guard.ts`) at the top of the `describe_db` block — audit validation and the emitter's pool write are fail-open in production, so without it a bad row is silent (../lib/testing/CLAUDE.md §`audit_drift_guard.ts`).
 - `seq` follows INSERT order, not commit order: a test that orders audit rows
   by `seq` across concurrent requests orders them by when each INSERT ran.
 
@@ -330,231 +307,53 @@ session-cookie axis — a row that doesn't say otherwise mints and clears
 nothing — with a floor behind it: no response outside 2xx mints a session
 cookie, and a row expecting one is refused when the table is described.
 
-The dual-spawn files — `schema_parity.cross.test.ts`,
-`action_manifest_parity.cross.test.ts`, `differential.cross.test.ts`,
-`lock_pins.cross.test.ts` and `db_invariants_twin.cross.test.ts` — are
-**not** among the single-backend files above: they run under the shared
-dual-spawn `cross_backend_parity` project (`global_setup_schema_parity.ts`
-brings up the TS spine + `testing_spine_stub` together and provides
-`parity_handle_a`/`_b`), so they are excluded from the single-backend
-projects' glob (`DUAL_SPAWN_TESTS` in `cross_backend_projects.ts`). **Both spines run on real Postgres here**, each
-over its own database on one server: the snapshot compares index definitions
-as the engine renders them, and pglet — the TS spine's `memory://` default
-everywhere else — leaves sort direction, `NULLS` placement, operator classes
-and `NULLS NOT DISTINCT` out of `indexdef`, so a pglet leg would report every
-such index as drift. The setup gives each spine its own database
-(`CROSS_PROJECT_RESOURCES`) on the server the stub's URL names
-(`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` moves both), creates them when
-missing, and drops and recreates the TS spine's `public` schema before every spawn (the
-TS binary does not wipe at startup, and bootstrap refuses a database that
-already has an account); an unreachable server fails the project, never skips
-it. `schema_parity.cross.test.ts` diffs the two
-backends' full DDL (auth + cell + fact + the `cell_visibility` enum) via
-`query_schema_snapshot` + `assert_schema_snapshots_equal`, **and**
-their `schema_version` migration identity via `_testing_migration_tracker` +
-`assert_migration_trackers_equal` (the swap-freely gate the snapshot's
-`schema_version` exclusion can't cover); `action_manifest_parity.cross.test.ts`
-diffs the two backends' live RPC method set + per-method auth shape via
-`_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
-method set + every auth axis); `differential.cross.test.ts` sends every
-conformance case (the `conformance_*_cases.ts` arrays, participation's with its
-`role_holder` seed, plus the generated auth rows — over HTTP and again over
-WS, and the multi-actor `acting` rows on both) to both and asserts the
-normalized answers equal via `describe_differential_conformance_tests` —
-status, header names, the session cookie's effect and the whole body, so an extra field one spine sends,
-or a body difference on a row pinned by status alone, fails. Each case also
-compares the databases the two spines are left in, read directly
-(`db_state_diff.ts`; differences under `db.`), so a write one spine makes and
-the other doesn't — an audit field, a column a write sets, a rolled-back
-insert — fails though no answer shows it. For that the TS binary hashes
-passwords as the stub does, Argon2id at test parameters
-(`testing_password_argon2.ts`, twin of `TestingArgon2idHasher`). Tracked
-differences live in `differential_known_divergences.ts`, each with its
-tracking id and the paths it differs at, and the ledger's closing test fails
-on an entry that no longer differs; and
-`conformance_table_copies.cross.test.ts` holds each twin table
-(`credential_conformance.json`, `request_header_conformance.json`,
-`request_target_conformance.json`) and the generated `db_invariants.sql`
-byte-equal to the copy the Rust spine embeds, failing when the checkout the
-stub builds from lacks one; and `db_invariants_twin.cross.test.ts` leaves
-each spine's database breaking several invariants and holds the spine's
-`_testing_db_invariants` answer equal to `query_db_invariant_rows` read
-directly — on the stub, the Rust handler against the TS reader over one state
-— all under `npm run test:cross:parity`.
-`lock_pins.cross.test.ts` is the local gate for the row locks, on both spines
-at once: each case plays the other transaction over a raw `pg` connection,
-sends the request, and asserts the final state — never a wait or a duration;
-its module doc lists the groups. It runs only here, where both spines are on
-Postgres; the single-backend projects exclude it.
-The differential's suite composition is `spine_differential.ts`
-(`describe_spine_differential_suites`), shared with a second dual-spawn
-project: `cross_backend_ts_differential` (`global_setup_ts_differential.ts`
-brings up the TS spine binary on Node and on Bun, both on `memory://`,
-providing `ts_differential_handle_a`/`_b`) runs
-`differential_ts.cross.test.ts`, the same suites between the two runtimes
-with an empty ledger and no database comparison (`memory://` is the binary's
-own) — the TS-vs-Rust rows are TS-against-Rust differences,
-and the DEV-only ones show on both sides, since both binaries run under
-`DEV`. `npm run test:cross:ts-differential`; no Rust, no Postgres.
+**Dual-spawn projects.** Each brings up two backends in one global setup and
+is excluded from the single-backend projects (`DUAL_SPAWN_TESTS` in
+`cross_backend_projects.ts`; `CROSS_PROJECT_RESOURCES` there gives each its
+ports and databases). Each `<file>.cross.test.ts` module doc says what it pins.
 
-**Transcript differential.** Both dual-spawn projects also run the suites the
-registry marks `transcript: 'http'` — every suite that sends only HTTP through
-the fixture, `credential_conformance` aside (its header lines carry each
-backend's own credentials re-spelled inside strings, `embedded_secrets`) —
-once per backend and compare what each sent and got:
-`transcript_differential.cross.test.ts` (TS spine against
-`testing_spine_stub`, under `cross_backend_parity`, ledger
-`transcript_known_divergences.ts`) and
-`transcript_differential_ts.cross.test.ts` (Node against Bun, under
-`cross_backend_ts_differential`, empty ledger). Every request and answer of a
-test is recorded, `create_account`'s own included (`transcript_record.ts`),
-and as each test finishes side B diffs its two normalized transcripts
-(`transcript_normalize.ts`) — under `cross_backend_parity`, the two databases
-the test left too (`compare_db_state`, `[db]` in a failure) — so a status
-beside an asserted reason, a body field no assertion reads, or a cookie beside
-the one a test checks is held equal across backends with no edit to the suite.
+| project (`npm run …`) | backends | files |
+| --- | --- | --- |
+| `cross_backend_parity` (`test:cross:parity`) | TS spine + `testing_spine_stub`, each on its own Postgres database | `schema_parity` (DDL and migration-tracker identity), `action_manifest_parity`, `differential` (ledger `differential_known_divergences.ts`, database state compared), `transcript_differential`, `conformance_table_copies` (each twin table and `db_invariants.sql` byte-equal to the Rust copy), `lock_pins`, `db_invariants_twin` |
+| `cross_backend_ts_differential` (`test:cross:ts-differential`) | the TS spine on Node and on Bun, `memory://` | `differential_ts`, `transcript_differential_ts` (empty ledgers, no database comparison) |
+| `cross_backend_security` (`test:cross:security`) | TS spine + stub, login and action limiters on, loopback proxy trusted | `login_security`, `ws_action_rate_limit`, `bootstrap_rate_limit` |
+| `cross_backend_timing` (`test:cross:timing`) | TS spine + stub, SSE keep-alive, WS receive timeout and pool checkout bounds shortened | `sse_keep_alive`, `ws_receive_timeout`, `db_checkout_timeout` |
 
-- **Compared**: status, whole bodies, request and response header names, and
-  the values of `COMPARED_HEADER_VALUES`; from `Set-Cookie`, the session
-  cookie's effect, its lines with the value masked, and the names of every
-  cookie set; timestamps as minute-rounded offsets from the test's earliest
-  response timestamp; an audit row's `seq` relative to the test's smallest,
-  and that smallest one's step from the previous test's.
-- **Erased**: ids, tokens and hashes (positional placeholders numbered
-  across the whole test), framing headers, cookie values, a timestamp shift
-  under half a minute, and an API token's touch (`last_used_at`,
-  `last_used_ip`) in the answer to the request that token authenticates
-  (`OWN_TOUCH`) — the touch runs concurrently with that request on both
-  spines; a later request reads it settled and compares it.
-- **Not seen**: a request no suite sends, a relation between two answers of
-  one backend, a bug both backends share, any untagged `fetch` whose body is a
-  JSON-RPC call of a `_testing_*` backdoor (what the fixture sends on its own
-  transports — `_testing_reset`, the invariant check — and anything else
-  shaped so), and the entries after a misalignment.
-- **Kept out**: every other send of a transcript test goes through the
-  recording. Recording wrappers tag their sends with
-  `TRANSCRIPT_RECORDED_HEADER`, and the patch — live from each test's
-  `beforeEach` until it finishes — strips the tag; an untagged `fetch` to any
-  origin outside `create_account`'s async context, or a `WebSocket` (an
-  `EventSource` where defined) constructed, fails the test naming it, as does
-  a test that built a fixture and passed with none of its own requests
-  recorded (`find_recording_problems`; `create_account`'s don't count, a
-  skipped or failed test is exempt), so a broken recording can't pass on two
-  empty transcripts. A fixture is built only inside a test's window (the
-  wrapped `setup_test` throws outside one), so a test that built none — a
-  check over the suite's own cases — has nothing to send through. The test is
-  judged in an `onTestFinished` registered from the `beforeEach`, which runs
-  whatever an `afterEach` throws. What reaches neither
-  `fetch` nor the global constructors — the `ws` library, raw sockets — is kept
-  out by `transcript_census.test.ts` (a plain `gro test`), which walks each
-  suite's value imports: an `'http'` suite reaches no sender (the raw-socket,
-  WebSocket and event-stream transports, the modules built on them, `ws` or a
-  socket builtin); a suite excluded as `websocket`, `raw_socket` or `sse`
-  reaches a sender of its kind, and an `embedded_secrets` one none. The walk
-  fails closed — a package it doesn't know, a relative import of neither `.ts` nor
-  `.json`, a computed `import()` or `require()` throws.
+Parity runs on real Postgres because pglet's `indexdef` leaves out index
+modifiers, so a pglet leg would report every such index as drift; the setup
+creates each database when missing (on the server
+`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names), empties the TS spine's
+before every spawn (the TS binary doesn't wipe at startup), and fails the
+project on an unreachable server, never skips it. The TS binary hashes
+passwords as the stub does (`testing_password_argon2.ts`) so database state
+compares. Security and timing are their own projects because a live limiter
+or a short receive timeout would break the standard suites sharing a backend.
+`spine_differential.ts` (`describe_spine_differential_suites`) is the suite
+composition both differential projects share. The in-process limiter and
+proxy paths are `describe_rate_limiting_tests`, the `http/proxy` middleware
+tests and `server/create_app_server_ws_endpoints.dispatch.db.test.ts`.
 
-Entries align on method, path and JSON-RPC method; the diff stops at the
-first entry whose route differs. A closing test fails a test that ran on one
-side only, or was skipped at run time (`ctx.skip`) on one side only — vitest
-reports such a test as skipped and drops what its per-test check threw — and
-on a whole run a ledger row that matched nothing; on a filtered or partly
-skipped run, a skip at run time on both sides included, it skips and says
-which check it left unjudged; a gated skip (`test_if`) is held to
-`expected_skips` on both sides instead and doesn't make the run partial. A ledger row's `where` narrows it to
-entries whose responses on both sides carry one status and error: a REST
-`body_error` code, or a JSON-RPC `rpc_code` with an optional `rpc_reason`
-(`error.data.reason`). A difference fails side B's copy of the test, as
-`[entry] path: a=… b=…` lines with the first differing entry in full, or as
-`transcripts stop lining up at entry [n]`. Set
-`FUZ_TEST_TRANSCRIPT_DUMP_DIR=<dir>` for `raw.json`, `transcripts.json` (what
-was diffed) and `stats.json`. A suite joins by marking its registry entry
-`transcript: 'http'` (`SpineSuiteTranscript` in
-`#lib/testing/cross_backend/spine_suites.ts`, where every other suite is
-`{excluded: reason}`): the transcript registers the `'http'` suites
-(`TRANSCRIPT_SUITES`) through `register_spine_suites` with
-`create_spine_cross_suites_options()` (`spine_cross_suites_options.ts`, which
-`spine_suites.cross.test.ts` spreads too) and `record_setup_test` as the setup
-wrapper, so each suite runs with the options the one call derives.
+**Transcript differential.** Both dual-spawn differential projects also run
+every suite the registry marks `transcript: 'http'` once per backend, record
+each test's requests and answers (`transcript_record.ts`), and diff the two
+normalized transcripts as each test finishes (`transcript_normalize.ts`; under
+`cross_backend_parity`, the databases too) — so what a suite sends and reads
+but doesn't assert is held equal across backends.
+`transcript_differential.cross.test.ts` is TS vs `testing_spine_stub` (ledger
+`transcript_known_divergences.ts`); `transcript_differential_ts.cross.test.ts`
+is Node vs Bun (empty ledger). What is compared, erased and unseen:
+`transcript_normalize.ts`; how a send past the recording fails its test:
+`transcript_record.ts`; the closing checks and `FUZ_TEST_TRANSCRIPT_DUMP_DIR`:
+`transcript_differential.ts`. Senders the patch can't see (`ws`, raw sockets)
+are kept out by `transcript_census.test.ts`, a plain `gro test` over each
+suite's imports. A suite joins by marking its registry entry
+`transcript: 'http'`.
 
-Three more files, `login_security.cross.test.ts`,
-`ws_action_rate_limit.cross.test.ts` and `bootstrap_rate_limit.cross.test.ts`
-(the bootstrap limiter's 429, body and `Retry-After`, on both spines, from
-`bootstrap_rate_limit_probe.ts` — wrong tokens sent before bootstrap from a
-forwarded address no other test uses), run under their own dual-spawn
-`cross_backend_security` project (`global_setup_login_security.ts` brings up
-the TS spine + `testing_spine_stub` with the login limiters and the action
-limiters enabled + the loopback proxy trusted, providing
-`security_handle_a`/`_b` and the action limiters' cap as
-`security_action_rate_limit_max_attempts`). The first drives
-`describe_login_security_cross_tests` against each impl: the per-IP login
-`429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying (every
-header line read — a raw-socket case, given the handle's `base_url`; a
-malformed hop such as `ip:port` stopping the walk, so the request keys on the
-connection IP rather than the client-written entry left of it; an IPv6
-client keyed by its `/64`, its audit rows keeping the full address, and a
-password change from an exhausted `/64` refused), a concurrent burst getting at
-most the cap past the limiter, a concurrent burst of correct logins all
-answering `200` and leaving the account at exactly the session cap (Postgres
-leg only), and the distributed-spray backstop (a success
-must not refund the per-IP budget). The second drives
-`describe_ws_action_rate_limit_cross_tests`: an account-limited action refused
-on the WS call past the cap, a malformed `acting` selector still charged (the
-throttle precedes params validation), one account budget across HTTP RPC and WS, the
-per-IP axis keyed by the forwarded client IP on both transports, an IPv6 one by
-its `/64` (over HTTP), and the account axis at the RPC and WS dispatchers
-(`cell_create`, a consumer-shaped spec, which both spines
-serve on WS — the TS spine mounts its full action set there, as the Rust stub
-serves one registry on both transports) — over a real socket, against limiters each binary builds from
-`FUZ_ACTION_RATE_LIMIT_ENABLED` + `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` and
-shares between its RPC and WS mounts (both binaries parse the flags as a
-stringbool and the cap as a `u32`, refusing garbage at boot). They need a dedicated project because the
-limiters can only be enabled on a backend nothing else shares — the standard
-suites fire many loopback logins and actions a live limiter would throttle — so
-the standard backends keep every limiter null. The stub runs over its own
-database (`CROSS_PROJECT_RESOURCES`), the TS leg on `memory://`.
-`npm run test:cross:security`;
-cross-process only (the in-process limiter + proxy paths already have
-`describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
-assembled-app WS dispatch tests in `server/create_app_server_ws_endpoints.dispatch.db.test.ts`).
-
-`sse_keep_alive.cross.test.ts` and `ws_receive_timeout.cross.test.ts` run
-under the dual-spawn `cross_backend_timing` project
-(`global_setup_timing.ts` brings up the TS spine + `testing_spine_stub` with
-the audit stream's keep-alive interval and the WS receive timeout shortened,
-through `FUZ_AUDIT_SSE_KEEP_ALIVE_MS` + `FUZ_WS_RECEIVE_TIMEOUT_MS`, providing
-`timing_handle_a`/`_b` and both intervals). The first reads an idle audit
-stream's raw bytes — the connect comment then two keep-alives, exactly, on
-both; the second pins a silent admitted socket closed with
-`WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` + its reason no sooner than the timeout,
-and a socket sending heartbeats kept open past twice it. Deadlines are
-generous and far under the defaults, so a spine ignoring the override fails.
-Both spines also boot with the pool checkout bounds shortened
-(`FUZ_DB_CHECKOUT_TIMEOUT_MS`, `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`), and
-`db_checkout_timeout.cross.test.ts` holds each to answering `/health` and
-`/ready`.
-A dedicated project because a short receive timeout would close the standard
-suites' idle sockets. The stub runs over its own
-database (`CROSS_PROJECT_RESOURCES`), the TS leg on `memory://`.
-`npm run test:cross:timing`.
-
-Every fuz_app spine preset advertises `capabilities.sse` and serves
-`/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
-`spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
-`register_audit_sse_listener`. So the SSE cases run on every
-`cross_backend_*` project. Cells live-mount the full
-surface on every backend and stay **off** the declared surface
-(`create_spine_surface_spec`) — like ws/sse — so `cell_crud` + `cell_relations`
-are `true` on every fuz_app spine preset (mount flags have no family default;
-each config states them) and the cell cases run on both TS and Rust; the
-standard bundle's generic round-trip never sees them. The
-in-process counterparts are `auth/cell_crud_parity.db.test.ts` +
-`auth/cell_relations_parity.db.test.ts` (same suites, plain `gro test`, sharing
-the full-surface `create_cell_parity_setup` from `auth/cell_parity_helpers.ts`,
-which migrates the `fuz_cell` namespace and registers `cell_audit_events`, and
-also mounts the standard surface + `_testing_drain_effects` so the clone's
-no-count-leak check reaches `audit_log_list` in-process). The
-backends:
+Cells, facts, rooms, `/ready`, WS and SSE live-mount on every fuz_app spine
+and stay off the declared surface (`create_spine_surface_spec`), so each
+config states their mount flags `true` and those cases run on TS and Rust
+alike; the cell suites' in-process legs share `create_cell_parity_setup`
+(`auth/cell_parity_helpers.ts`). The backends:
 
 - `cross_backend_ts_node` / `cross_backend_ts_bun` —
   `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,bun}.ts`)

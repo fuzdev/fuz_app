@@ -36,10 +36,10 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer` and `notification_sender`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `inflight_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
-- `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin, optional daemon_token, session, request_context, bearer_auth) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
+- `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` with `create_auth_middleware_specs`'s names, paths, order and declared `errors` (pinned against it by `auth/middleware.mounted.test.ts`), each layer its own pass-through handler so `assert_middleware_stack_mounted` tells them apart. A stub declaring more errors than the real layer would widen every route's error map under its path. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
-- `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly, in its order (consumer routes, then bootstrap routes, RPC endpoint routes, and `GET /api/surface`, + stub middleware + surface generation). `GET /api/surface` is listed only with `surface_route: true`, as `create_app_server` mounts it only when opted in — pass the same value to both so the surface-derived suites probe it exactly when the live server serves it. `daemon_token: true` lists the `daemon_token` layer `create_app_server` mounts when given a `daemon_token_state` (`create_test_app` always passes one, and `default_in_process_suite_options` sets it, along with `app_options.surface_route`); `testing/test_app_server.db.test.ts` pins the stub's routes (order, auth, error schemas, applicable middleware) and middleware names against `create_test_app`'s for every `surface_route` setting. Its middleware list mirrors the real one — the body limit's shape at `'*'` (`body_limit_middleware_shape` with a stub handler, left out with `max_body_size: null`), the host gate's (`host_gate_middleware_shape`, left out with `host_gate: false`), a stub `trusted_proxy` spec at `'*'`, then the stub auth stack — so every route's `applicable_middleware` starts with `body_limit`, `host`, `trusted_proxy` (a route outside `/api/*` lists `['body_limit', 'host', 'trusted_proxy', 'origin']`, since the origin check covers every path, and a route under an origin carve-out drops `origin`), as on the live server, and every route's error map carries the limit's 413 and 400, the host gate's 403 `forbidden_host` and the origin check's 403 `forbidden_origin`. `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `allowed_origins?`, `origin_carve_outs?`, `transform_middleware?`, `bootstrap?`, `surface_route?`, `daemon_token?`, `max_body_size?`, `host_gate?`. Throws, like `create_app_server`, on an endpoint path outside `AUTH_MIDDLEWARE_PATH` (`assert_endpoint_in_auth_scope`), on a route that reads or mints a credential outside it (`assert_credential_routes_in_auth_scope`), on an origin carve-out that overlaps that scope (`assert_origin_carve_outs_valid`), and on a `transform_middleware` that moves, drops, duplicates, reorders, wraps, or replaces the stub host gate, proxy or auth spec (`assert_middleware_stack_mounted`); the transform receives shallow copies in a fresh array, so an in-place mutation can't slip past the check. Throws on a `ws_endpoints` spec with no `allowed_origins` of its own when no `allowed_origins` option is given (there is no server list to default from). Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
+- `create_test_app_surface_spec(options)` — the `AppSurfaceSpec` `create_app_server` would build, in its order (consumer routes, bootstrap, RPC endpoints, `GET /api/surface` when `surface_route: true` — pass both the same value), over a stub middleware list mirroring the real one (body limit, host gate, `trusted_proxy`, the stub auth stack). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here; `testing/test_app_server.db.test.ts` pins it against `create_test_app`. It throws where `create_app_server` throws (the assembly asserts of `auth/CLAUDE.md` §Middleware, and a `ws_endpoints` spec with no `allowed_origins` when none is given). Options: `CreateTestAppSurfaceSpecOptions` TSDoc.
 
 Throwing stubs surface mock escape: a test that accidentally reaches into
 stub territory breaks immediately with a label-scoped error rather than
@@ -81,23 +81,17 @@ harness's `connect`, `create_bearer_auth_test_app`'s `pre_context`.
 `query_create_account_with_actor` with default `password_hash` (`'hash'`),
 storing the username lowercased, as every production creation path does and
 the `account_username_lowercase` CHECK requires.
-Returns `{account, actor}`. Replaces the per-file `create_user` /
-`create_test_actor` / `create_test_account` helpers that had accumulated
-across the auth test suite. Use for query-level tests needing real DB rows
+Returns `{account, actor}`. Use for query-level tests needing real DB rows
 but not a full session/token bundle. For tests also needing an API token +
 session cookie + role_grants, use `bootstrap_test_keeper` from `app_server.ts`.
 
-`create_test_extra_actor(db, account_id, name)` adds an actor to an
-account — the multi-actor edge — with `created_at` read from the wall clock
-(`clock_timestamp()`), not the transaction-fixed `NOW()` default. Actor lists
-sort `created_at, id`, so a shared `created_at` would order them by random id;
-seeded through it, the account's first actor sorts first and the extras in
-insert order. `_testing_reset` and the in-process setup seed `extra_actors`
-with it, as the Rust reset does with `query_create_actor_with_clock_timestamp`,
-so both spines list a multi-actor keeper's actors in one order. The exception
-is `query_admin_account_list`, whose actors sort `created_at, name, id`: it
-keeps one actor per account, and a data key ahead of the random id picks the
-same one on two backends holding the same rows (under the same text collation).
+`create_test_extra_actor(db, account_id, name)` adds an actor with
+`created_at` from `clock_timestamp()`, so a multi-actor account's actors list
+in insert order (lists sort `created_at, id`). The in-process seed and
+`_testing_reset` use it, as the Rust reset uses
+`query_create_actor_with_clock_timestamp`, so both spines list them alike.
+`query_admin_account_list` is the exception: it sorts `created_at, name, id`
+to keep one actor per account the same on both backends.
 
 `create_test_session_row(db, token_hash, account_id, expires_in_seconds)`
 inserts an `auth_session` row expiring that many seconds past the database's
@@ -130,8 +124,8 @@ mismatch.
 
 - `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts` and the emitter's write-failure counter (`get_audit_write_failures` in `auth/audit_emitter.ts`). Call once at the top of any `describe_db` block firing audit emits — production validation and the emitter's write are fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field, or losing a row the database refused, is silent. A test that fails a write on purpose resets the counter (`reset_audit_write_failures`) once it has asserted it. It also zero-checks the success-outside-a-transaction counter (`get_audit_success_outside_transaction`; `reset_audit_success_outside_transaction` for a test that writes one on purpose).
 - `assert_audit_event_metadata(event, {reject_unknown_keys?})` — the wire-side twin: parses a read audit row's `metadata` against its builtin event type's `audit_metadata_schemas` entry as declared, so a mistyped, `null`, or missing field fails while a consumer-added key passes (the schemas are fuz_schema `loose_object`s, and a builtin's schema can't be overridden, so added keys are a consumer's only extension path). `reject_unknown_keys` closes the world, each `loose_object`'s `def` spread into an `object`: an undeclared key fails too, for a suite whose backend adds none. The wire schema leaves `metadata` a loose record and only the TS spine validates it, at insert and fail-open, so this is what holds every spine's rows to their event's contract. A consumer-registered event type passes unexamined. `list_audit_events` and the admin suite run it on every row they read, with `reject_unknown_keys` from the fixture's `reject_unknown_audit_metadata_keys` (a setup option on `default_cross_process_setup`, `default_in_process_setup` and `default_in_process_suite_options`); fuz_app's own spine wiring turns it on.
-- `assert_no_audit_drift()` — the zero-check itself, for a test that manages the counters. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes complete by response time.
-- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
+- `assert_no_audit_drift()` — the zero-check itself, for a test that manages the counters. Pair with `await_pending_effects: true`.
+- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
 ### `token_scope_fixtures.ts` — scope documents built to a size
@@ -146,7 +140,7 @@ measures one. Hono-free, imported by the cross-process token suite.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
-- `create_recording_closer()` — `{closer, calls}`; `closer.close_connections(target)` records the `target` and `close_all_connections()` records `{kind: 'all'}` into `calls`, closing nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
+- `create_recording_closer()` — `{closer, calls}`; `closer.close_connections(target)` records the `target` and `close_all_connections()` records `{kind: 'all'}` into `calls`, closing nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true`).
 - `assert_close_call(call, expected)` — pins a recorded close call to `expected` (`assert.deepEqual`); handles the missing-element case.
 - `RecordedClose` — `ConnectionCloseTarget | {kind: 'all'}`.
 - `RecordingCloser` — `{closer, calls}`.
@@ -254,7 +248,7 @@ do, so the returned `account.username` is its lowercase.
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles` (default `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin, as a production bootstrap grants), `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
+- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles` (default `DEFAULT_TEST_KEEPER_ROLES`, keeper and admin, as a production bootstrap grants), `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions`.
 - `CreateTestAppOptions extends TestAppServerOptions` (`test_app.ts`, as `TestAccount`, `TestApp` and `SuiteAppOptions`) — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`), and `exclude_db_invariants?` (§`db_invariant_queries.ts` + `db_invariants.ts`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, assert_db_invariants, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
@@ -267,8 +261,7 @@ rate limiter `null` — a limiter passed through `app_options` wins over the
 mode, so a rate-limit test enables just the one it pins; the mode's stderr
 banner prints once per module instance — once per test file in an isolated
 vitest project, once per run under `isolate: false`, ../../../docs/usage.md §Rate limiters), static daemon token state (no rotation, keeper already set),
-**`await_pending_effects: true`** (fire-and-forget effects complete before
-the response returns so tests can assert on side effects inline), and silent
+`await_pending_effects: true` (§Cross-cutting conventions), and a silent
 logger. Override via `app_options`. `cleanup()` is the assembled server's idempotent
 `close` — it also closes the server's live connections, disposes the
 limiters it built, and removes the audit listeners and closer members it
@@ -279,7 +272,7 @@ write audit rows mid-test. A suite that opts in through `app_options` has the
 schedule stopped by `cleanup()`, which is the assembled server's `close`.
 
 A fresh Hono app is created on every call because middleware closures bind
-to the server's deps (db, keyring). Hono assembly is cheap (~10–50ms);
+to the server's deps (db, keyring). Hono assembly is cheap;
 the WASM caching in `db.ts` is where the real savings are.
 
 ### `auth_apps.ts` — adversarial-auth app factories
@@ -386,126 +379,14 @@ declarations (DDL, the method set), this compares answers. Each impl is the
 oracle for the other — a case the table pins by status alone, or an extra
 field a loose output schema passes on one spine, shows up as a difference.
 
-- `cross_backend/differential_normalize.ts` — `normalize_differential_response({status, headers, set_cookies, body}, session_cookie_name)`
-  → `DifferentialResponse` `{status, body, header_names, session_cookie}`.
-  `session_cookie` is the response's `SessionCookieEffect`, read by the
-  classifier the conformance runner uses (`'unrecognized'` for lines in no
-  known shape), so one spine clearing where the other doesn't, or minting
-  where the other clears, differs at the path `session_cookie` — header
-  names alone can't tell a clear from a mint. Volatile values
-  become positional placeholders per kind (`VOLATILE_VALUE_PATTERNS`: API
-  tokens, `tok_` token ids, lowercase UUIDs, `ISO8601_SECONDS` timestamps,
-  bare 64-hex digests — matched inside any string, object keys included): the
-  first UUID is `<uuid:1>`, a repeat of it `<uuid:1>` again, so identity
-  relations within one response survive while the values differ across
-  backends. Placeholders are positional, not tied to fixture identity, so two
-  ids that appear once each and trade places normalize equal. Only the
-  canonical spelling is placeholdered — an uppercase UUID or a millisecond
-  timestamp stays raw and differs — and a `blake3:` content address is
-  compared verbatim (equal bytes hash equal on both spines). Keys are sorted (and visited
-  in that order when numbering); array order is kept. `header_names` is the
-  sorted name set minus `VOLATILE_HEADER_NAMES` (framing and per-request
-  headers each server sets its own way); values are never compared —
-  `set-cookie` carries a fresh credential, and the contract header values are
-  the conformance table's `expect.headers` + no-fingerprint floor.
-  `diff_differential_responses(a, b)` → `DifferentialDiff[]`
-  (`diff_differential_values(path, a, b)` the same leaf diff over any value), one per leaf
-  path (`status`, `headers.<name>`, `session_cookie`, `body.error.data.reason`; an object one
-  side lacks diffs key by key, and an empty one against a missing one at its
-  own path), `differential_path_covers(covered, path)`,
-  `format_differential_diffs(diffs, labels)`.
-- `cross_backend/differential.ts` —
-  `describe_differential_conformance_tests({cases, backends: [a, b],
-  surface_source, rpc_endpoints, live_rpc_endpoints?, session_options,
-  principals?, known_divergences?, suite_name?})`, each backend `{name,
-  setup_test, ws?, db_state?}`; `db_state` on both (on one alone,
-  registration throws) also compares the database each case leaves, its
-  differences joining the answer's under `db.` (below); methods resolve as the table resolves them
-  (`resolve_conformance_rpc_endpoints`).
-  `ws` on both runs the cases over their WebSocket endpoints, filtered by
-  `is_ws_conformance_case`, with the ledger checked against what is left; on
-  one alone, registration throws. Per case, each backend's own `setup_test`
-  (separate databases and keepers), the principal resolved and the request
-  sent through `send_conformance_case` (`conformance_table.ts`), both answers
-  normalized and diffed. Every HTTP request carries
-  `DIFFERENTIAL_REQUEST_HEADERS` (`accept-encoding: identity`), so a runtime's
-  own compression (for a request accepting gzip, as Node's `fetch` sends by
-  default) never reads as a `content-encoding` / `vary`
-  difference. The per-case `expect` is not asserted —
-  each backend's conformance leg holds it. `KnownDivergence` is the ledger
-  row: `{case_name | method, tracking_id, reason, what_differs}`, the names a
-  string or a list, `what_differs` the diff paths covered (a path covers everything under it; a cookie difference where one side sends no `Set-Cookie` also differs at `headers.set-cookie`, so its entry names both), each a string or a `KnownDivergencePath`
-  `{path, a?, b?}` pinning the value a side shows there (`undefined` for
-  nothing). A pin is compared with the normalized leaf value at the differing
-  path, so a placeholdered value never matches the raw one, an object pin
-  must list its keys sorted, and a parent-path pin never matches. A case may
-  differ at the paths of the entries it matches, with their values, and
-  nowhere else. `xfail_until`'s turns-red semantics clean
-  the ledger: a case a `case_name` entry names must still show it (checked in
-  that case's test), a `method` entry must still show on one of its cases
-  (checked by a closing test once they all ran — a filtered or failed run
-  leaves it unjudged, and the test skips when nothing was judged), and an
-  entry matching no case, or listing a case name that doesn't exist or a
-  method no case sends, fails —
-  the static half is `check_known_divergence_ledger(cases, ledger)`, exported
-  for checking a ledger without a backend. No other ignore path exists.
+- `cross_backend/differential_normalize.ts` — `normalize_differential_response` → `DifferentialResponse` `{status, body, header_names, session_cookie}`: volatile values in their canonical spelling (`VOLATILE_VALUE_PATTERNS`) become positional placeholders, so identity relations inside one response survive; header values are never compared, and the cookie compares as its `SessionCookieEffect`. `diff_differential_responses` → one `DifferentialDiff` per leaf path. The rules are the module's TSDoc.
+- `cross_backend/differential.ts` — `describe_differential_conformance_tests({cases, backends: [a, b], …})`: per case, each backend's own fixture, the request sent through `send_conformance_case`, both answers normalized and diffed (each case's `expect` is its conformance leg's, not asserted here). `ws` on both re-runs the WS-eligible cases over sockets; `db_state` on both also compares the database each case leaves (either on one backend alone throws at registration). The `KnownDivergence` ledger is the only ignore path and turns red like `xfail_until` when an entry stops matching (`check_known_divergence_ledger` is the static half); a pin compares against the normalized value, so it never matches a raw one.
+- `cross_backend/db_state_diff.ts` — `create_db_state_probe(handle)` reads every `public` table but `schema_version` from the backend's own Postgres after draining its audit writes; `normalize_db_state` makes ids, tokens and timestamps comparable; `diff_db_states` names differences `db.<table>[i].<column>`. The normalization rules are the module's TSDoc.
 
-- `cross_backend/db_state_diff.ts` — the database a case leaves.
-  `create_db_state_probe(handle)` → `{mark, read, close}` over the backend's
-  own `DATABASE_URL` (PostgreSQL the test process reaches, else it throws):
-  `mark` reads the audit sequence before the fixture, `read` drains the
-  backend's audit writes (`_testing_drain_effects`) and reads every row of
-  every `public` table but `schema_version` as JSON, the column types from
-  `query_schema_snapshot`, so a new table or column joins under its type's
-  rule. `normalize_db_state` numbers ids (`<id:n>`, `<tok:n>`) and generated
-  usernames (`<username:n>`, `GENERATED_USERNAME_PATTERN` from `setup.ts`)
-  by a canonical walk — tables in `DB_STATE_TABLES` order then by name, rows
-  sorted by `DB_STATE_SORT_KEYS` (each table's natural key — accounts by
-  username, actors by account and name, sessions and tokens by account, cell
-  items by parent and position, facts by hash, audit rows by `seq`) then by
-  the whole row with no unnumbered id, columns and JSON keys sorted — so a
-  reference inside `metadata` compares and sessions and tokens compare as a
-  multiset per account; tokens and digests become constants, a
-  `password_hash` its argon2 parameter prefix, an `expires_at` (column or
-  JSON key) its offset from the row's `created_at` to the minute
-  (`+30d0h0m` — a rank would keep the order and lose the lifetime), other
-  timestamps their dense rank over the dump (`<t:n>`, `null` kept, so one
-  extra instant shifts every later rank), `seq` an offset from the dump's smallest, and
-  `audit_seq_advance` how far the sequence moved since the mark (a
-  rolled-back insert spends a value). Every column of every dumped table
-  compares — the token-use touch included, which the Rust spine's drain
-  awaits and a TS test binary (`await_pending_effects: true`) settles before
-  the response — but `api_token.last_used_at` compares as `<set>` or `null`
-  and joins no rank: the touch runs concurrently with its own request's
-  transaction on both spines, so its order against that request's writes is
-  promised by neither. `diff_db_states(a, b)` lists the differences as
-  `db.<table>[i].<column>…` and `db.audit_seq_advance`. Rows compare by
-  position, so a missing row shifts its table.
-
-fuz_app runs it under the `cross_backend_parity` project
-(`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`
-in `src/test/cross_backend/`): every `conformance_*_cases.ts` array plus the
-generated auth rows (over the live mount too, so the cell verbs, the actor
-resolvers and the `_testing_*` backdoors are compared), TS spine vs
-`testing_spine_stub`, both on Postgres so no engine difference reads as a body
-difference and the test process reads both databases, so every case also
-compares the state it leaves (`compare_db_state` on
-`describe_spine_differential_suites`). The same cases run again over
-WS, against `differential_ws_known_divergences` (the HTTP ledger without its
-header row). The multi-actor `conformance_acting_cases.ts` rows run with the
-generated rows on a keeper seeded with `extra_actors`, over both transports.
-The TS spine runs under `DEV` there, so its DEV-only diagnostics (the
-`issues` on `invalid_params`, the `X-Fuz-Auth-Debug` header) are ledger rows.
-The suite composition is `describe_spine_differential_suites`
-(`src/test/cross_backend/spine_differential.ts`), which takes the two
-backends and their ledgers. fuz_app also holds two TS runtimes to each other
-with it: the `cross_backend_ts_differential` project
-(`differential_ts.cross.test.ts`) dual-spawns the TS spine binary on Node and
-on Bun, both on `memory://`, against an empty ledger — both run under `DEV`,
-so the DEV-only rows show on both sides and differ nowhere. Both run on
-`memory://`, a database only the binary itself reaches, so no database state
-is compared there. It needs no Rust
-or Postgres and runs in the `cross-ts` CI job.
+fuz_app's wiring (TS vs Rust under `cross_backend_parity`, Node vs Bun under
+`cross_backend_ts_differential`, both through
+`describe_spine_differential_suites`): ../../test/CLAUDE.md §Cross-backend
+self-tests.
 
 ## Assertions, coverage, helpers
 
@@ -605,7 +486,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 - `detect_format(field_schema)` — `detect_json_schema_format` over `to_field_json_schema`: the `format`, `'pattern'` for a regex, or `null`.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → `generate_valid_object` against the field schema, so a nested refinement is satisfied too, enums → first entry, records → `{}`, a void field → `undefined`, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix, two `/`-joined segments (an `owner/name` slug). First candidate the field accepts is used.
 - `generate_valid_string_param(field, field_schema)` — a string a URL-sourced field (route param, query value) accepts: the nil UUID for a UUID field, else the first of `test_value`, the generated valid value as a string, `1`, `0`, `true`, `false`, the field's JSON Schema `default` or lower bound as a string, each `min_value` / `max_value` bound anywhere in the schema as an integer (a string parsed into an integer whose range excludes the small candidates, as `db_routes`' `query_int` — bounds past a `transform`, which JSON Schema can't say) and a synthesized string the field accepts; `null` when none does. The params and query case generators build their base from it.
-- `resolve_valid_path(path, params_schema?, param_values?)` — swaps each whole param segment (`:name`, `:name{re}`, optional or not, read as Hono reads a template: `split_route_template` / `parse_route_param`) for a value the params schema accepts; a `:` inside a literal segment (`files:upload`) stays. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`. A value in `param_values` (the route's entry of `RouteParamValues`, `'METHOD /path'` → param name → value, the option the path-resolving suites take) comes first, percent-encoded like the rest. A `:name{re}` param's value, supplied or generated, must match its pattern grouped and anchored, `^(?:re)$` (`compile_route_param_pattern`, over the percent-encoded value the router matches) — Hono's RegExpRouter reading, the stricter of its routers', as TrieRouter leaves a top-level alternation ungrouped — else it throws naming the route and the param and pointing at `param_values`: no value is guessed from the pattern, and no route is skipped silently. A `param_values` entry naming no param of the path throws too, and so does a supplied `''`, `.` or `..` (the URL normalizes it away) or a lone surrogate. Supplied values are always encoded, so a `{re}` needing a literal `/` can't be met by one.
+- `resolve_valid_path(path, params_schema?, param_values?)` — swaps each whole param segment (as Hono reads a template) for a value the params schema accepts: a `param_values` entry (`RouteParamValues`) first, else `test_<name>` where the schema admits it, the nil UUID for a UUID param, or a synthesized value, always percent-encoded. A `:name{re}` param's value must match its pattern (RegExpRouter's reading), else it throws naming the route and pointing at `param_values` — no guess, no silent skip. The other refusals are its TSDoc.
 - `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
 - `generate_valid_object(object_schema, schema) => {value, result}` — required and defaulted fields; when `schema` (refinements included) refuses those, each optional field alone in declaration order, the first that parses; failing that, the optional fields added cumulatively until it parses. Covers a `check` over optional fields (at least one of, exactly one of, both of) at any depth, and, where one optional field suffices, keeps the others (an `acting` declared first) out. Returns the last `parse` result (`GeneratedObject`) and leaves the throw to the caller, which renders its issues with `format_issues` (`schema_issues.ts`).
 - `generate_valid_object_with_field(object_schema, schema, base, field)` — a valid object carrying `field`, built from the valid `base`: `base` itself when it carries the field; else the field joins `base`, with the optional fields `base` omits filled as `generate_valid_object` fills them (a pair rule: `scope_kind` needs `scope_id`); failing that, the field replaces `base`'s optional fields, refilled around it (exactly one of: adding `slug` drops `id`). `null` when no object the generator builds carries the field. The body a single-fault case on a field the base omits changes.
@@ -614,7 +495,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 ### `integration_helpers.ts` — route lookup + body checks
 
 - `find_route_spec(specs, method, path)` — the first spec in list (mount) order whose method and path template match, as Hono dispatches (the hono-free `find_mounted_route`; the DEV check reads Hono's own router), `HEAD` read as `GET`, the path read as the router reads it (the raw pathname, nothing decoded); a template passed as the path (a segment that is `*` or starts with `:`) finds its own spec first, outranking mount order.
-- `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` and throws at runtime on unknown values (only login/logout/password/signup/bootstrap remain on REST).
+- `find_auth_route(specs, suffix, method)` — suffix-ending match for REST auth routes; decouples tests from consumer prefix. `suffix` is typed as `RestAuthRouteSuffix` (`rest_auth_route_suffixes`: login, logout, password, signup, bootstrap) and throws at runtime on unknown values.
 - `assert_response_matches_spec(specs, method, path, response, route_error_maps?)` — 2xx → validates against `spec.output`; an error status (400 and up) → `assert_error_response_declared` against the route's error map — the one in `route_error_maps` (`AppSurfaceSpec.route_error_maps`, middleware included), else the route's own: a status the map lacks throws (`Undeclared error status (S): METHOD path: …`), as does a body off its schema, with the DEV error check's exemptions (500 `internal_error`, 503 `service_unavailable`, a JSON-RPC envelope on a `jsonrpc` route). Non-JSON responses allowed only when no schema applies. The round trips and `ErrorCoverageCollector.assert_and_record` run through it. An answer no route gave — the app's 405 `method_not_allowed`, its JSON `route_not_found` 404, the plain-text `404 Not Found` — fails outright, even where the route declares a 404: a route on the surface that the backend doesn't mount is never a pass.
 - `assert_no_error_info_leakage(body, context)` — rejects field-name patterns (`stack`, `trace`, `sql`, …) + value patterns (`node_modules`, stack-like `at …`, `.ts:NN`).
 - `assert_rate_limit_retry_after_header(response, body)` — `Retry-After` numeric header equals `Math.ceil(body.retry_after)`.
@@ -629,8 +510,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 
 ### `attack_surface.ts` — `describe_standard_attack_surface_tests`
 
-Single-call bundle of 5 top-level groups (10 named tests + every adversarial
-case per route):
+Single-call bundle, every adversarial case per route included. The groups:
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
 2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `rpc/ws surface invariants`, `security policy`.
@@ -666,7 +546,7 @@ accepts (`assert_error_schema_valid`).
 The generators live in the hono-free `adversarial_input_cases.ts`, so the
 cross-process suites reuse them:
 
-- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural (non-object, extra key when the input refuses unknown keys — a fuz_schema `object`), missing required fields, one wrong-type per field, null for required non-nullable, one format violation per constrained field, and boundary cases read from the field's input-side JSON Schema (`to_field_json_schema` — through a transform or pipe, and under a nullable's `anyOf`): the empty string, one under `minLength` (above one; a prefix of the valid value) and one over `maxLength`; below `minimum`, above `maximum`, zero and negative for a positive-only field, and a non-integer for an integer field (half a step from the valid value, inside the range); the empty array, one under `minItems` (above one; the valid value's own items) and one over `maxItems`. A per-field case is emitted only when the field refuses its value (a field whose transform accepts the wrong type, a pattern admitting the violation string, a preprocess that repairs the value: dropped), so no generated case is accidentally valid. Each per-field case is single-fault — valid but for the field it breaks: it changes one field of a valid base (`generate_valid_object`'s, or `options.base` (`InputTestCaseOptions`) for an input whose valid shape the generator can't reach), or, for a field that base omits, of the body `generate_valid_object_with_field` builds around it, so a case can't also break an object-level rule. A field no valid body carries keeps its wrong-type and null cases on the base and gets no format or boundary cases. Either base failing the schema throws, naming `options.label` (the method or route) when given. A per-field case names the field it breaks (`InputTestCase.field`; absent on the whole-body cases). A void or null input gets no cases; any other input that is no object schema throws (`to_body_input`).
+- `generate_input_test_cases(input_schema, options?)` → `InputTestCase[]` — whole-body structural cases, missing required fields, and per field a wrong type, `null`, a format violation and boundary cases read from its input-side JSON Schema (`to_field_json_schema`). Every per-field case is **single-fault** — a valid base (`generate_valid_object`, or `options.base`) with only that field broken — emitted only when the schema refuses it, and names its field (`InputTestCase.field`). A void or null input gets none; any other non-object input throws. The case list is the module's TSDoc.
 - `expected_invalid_reason(input_schema, test_case)` → `string | undefined` — the `data.reason` an RPC refusal of the case owes: the broken field's `invalid_reason` (`schema_meta.ts`), resolved by the same `resolve_invalid_reason` the dispatcher resolves through, or none for an undeclared field or a whole-body case.
 - `generate_params_test_cases(params_schema)` → `ParamsTestCase[]` — format violations only (unconstrained string params accept anything), each one the field refuses.
 - `generate_query_test_cases(query_schema)` → `QueryTestCase[]` — missing required fields the field refuses to go without (a preprocessed field with a default accepts its absence) + format violations the field refuses.
@@ -761,40 +641,22 @@ picks them up separately.
 
 ### `rpc_round_trip.ts` — `describe_rpc_round_trip_tests`
 
-DB-backed round-trip for RPC: one POST test for all methods, one GET test
-for `side_effects: false` methods. Successful responses validate against
-`action.spec.output`; error responses validate as well-formed JSON-RPC error
-envelopes. Three refusals fail instead of passing as an envelope: `method not
-found` (the backend lacks a method the surface declares), a crash — HTTP
-500, the `internal_error` code (-32603), or a ≥500 whose body is no JSON-RPC
-envelope — and a 401 to a non-public call (`assert_rpc_authenticated`): the
-call carried a credential its auth admits, so a 401 means it stopped working.
-A public method may still answer 401 (a wrong-password login), and so may a
-handler naming its own reason (below). A ≥500 carrying a declared code
-(`service_unavailable` 503, `timeout` 504, a consumer code declared with
-`register_jsonrpc_error_code`) is a server condition and passes like a
-4xx. The failure names the method, status, code and message; a non-JSON body
-is reported as text. Options: `{setup_test, surface_source, session_options,
-rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
-`pick_rpc_auth` picks the principal from `method.auth` through
-`pick_auth_principal` (`integration_helpers.ts`, shared with the REST
-round-trip; `AuthPrincipal`): none for a public method, the keeper's daemon
-token when `credential_types` names it, the admin account's session for an
-admin-gated method, the keeper's session for another role, else the authed
-account's session. The request goes through `to_principal_transport`, so a
-spawned backend sees only the picked credential — over the fixture's own
-transport it would discard a daemon token as browser context and answer for
-the keeper's session cookie. A 403 `credential_type_required` therefore fails
-(`is_credential_type_refusal`): the principal was picked because the method
-admits its credential type, so a method no picked principal can reach goes in
-`skip_methods`. The 401 check is `is_unauthenticated_refusal`: a 401
-reading `authentication_required` or naming no reason fails; a handler's own
-401 reason on an authenticated call (`invalid_credentials` for a wrong current
-password) passes. So a handler that answers 401 to a valid credential must name
-its reason — `data.reason` over RPC, the flat `error` over REST: a reason-less
-401 reads as unauthenticated and fails the round-trip. TS's
-`jsonrpc_errors.unauthenticated(message)` sends no `data` unless given one, so
-pass `{reason}` as its second argument.
+DB-backed round trip for RPC: every method over POST, the `side_effects:
+false` ones over GET too; a success parses against `output`, an error must be
+a well-formed envelope. It fails on `method not found`, a crash (500,
+`internal_error`, or a ≥500 that is no envelope), a 403
+`credential_type_required`, and a 401 to a non-public call that reads
+`authentication_required` or names no reason: the principal
+(`pick_auth_principal`, shared with the REST round trip, sent through
+`to_principal_transport` so it carries that credential alone) was picked
+because the method admits its credential. So **a handler answering 401 to a
+valid credential must name its reason** — `data.reason` over RPC (pass
+`{reason}` to `jsonrpc_errors.unauthenticated`), the flat `error` over REST. A
+≥500 carrying a declared code (503 `service_unavailable`, 504 `timeout`, a
+consumer's `register_jsonrpc_error_code`) passes. Options: `{setup_test,
+surface_source, session_options, rpc_endpoints, skip_methods?,
+input_overrides?, success_fixtures?}`; a method no picked principal can reach
+goes in `skip_methods`.
 
 A side-effecting method picked for the authed account runs on a fresh account
 of its own (`round_trip_uses_fresh_account`, keyed on the spec's
@@ -858,8 +720,8 @@ cover real sockets.
 
 Three layers:
 
-1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` over capture arrays `sends` / `closes`, plus `socket` — the fake runtime socket behind `ws.raw`, shaped like Node's `ws`: a `bufferedAmount` the registry's outbound writer reads for backpressure, `stalled` (start it with `{stalled: true}`) to model a client that stopped reading, and `terminate` / `terminated` for the frameless cut; `readyState` reads open until closed or terminated), `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the `ResolvedAuth` the production auth middleware sets (`RESOLVED_AUTH_KEY`, built by `create_test_resolved_auth` — a session's hash as `hash_session_token(auth_session_id)`), because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
-2. **Harness** — `create_ws_test_harness({actions, registry?, receive_timeout?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
+1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` recording `sends` / `closes` over a fake Node-`ws`-shaped `socket` with `bufferedAmount`, `stalled` and `terminate`, for backpressure and frameless-cut tests), `create_fake_hono_context(opts)` (sets the `ResolvedAuth` the auth middleware would — the dispatcher reads it, so a hand-built upgrade context must too), `create_stub_upgrade()` (a stand-in for the runtime's `upgradeWebSocket` that records each upgrade's real `Context`, so an upgrade can run through an assembled app's whole middleware chain — `src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`), `MinimalActionEnvironment`, `dispatch_ws_message`.
+2. **Harness** — `create_ws_test_harness({actions, registry?, receive_timeout?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`; `await harness.connect(identity?)` resolves once the connection is admitted and `on_socket_open` has run. Identities are preset (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read, so tests of the re-read drive `register_action_ws` over a real database (`src/test/actions/register_action_ws.admission.db.test.ts`). Handlers run under the stub db's transaction wrap; domain deps and the audit emitter reach them through the action factory's closure.
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts).
 
 `WsClient` (in `transports/ws_client.ts`):
@@ -885,13 +747,13 @@ waiter on timeout so the `waiters` array doesn't grow.
 
 ### `data_exposure.ts` — `describe_data_exposure_tests`
 
-Six tests in two top-level groups:
+The groups:
 
-1. **schema-level** (3 tests, no DB) — walks JSON Schema representations:
+1. **schema-level** (no DB) — walks JSON Schema representations:
    - `no sensitive fields in any output schema` — `sensitive_field_blocklist`, over every route, RPC method and WS method output, and the params the server pushes over WS (a `remote_notification`'s payload, whose `output` is `s.void`, and the request of a `request_response` with `initiator` `'backend'` or `'both'`)
    - `no admin-only fields in non-admin output schemas` — `admin_only_field_blocklist`, over the route outputs a non-admin reaches; routes only, since the blocklist matches by name and domain RPC/WS outputs carry `created_by`/`updated_by` legitimately. Admin-gated means every role in an any-of `roles` (or a WS endpoint's `required_roles`) is `admin` or `keeper`, or the daemon token is required
    - `no sensitive fields in any error schema`
-2. **runtime** (3 tests, DB-backed via `create_test_app`):
+2. **runtime** (DB-backed via `create_test_app`):
    - `unauthenticated error responses contain no sensitive fields`
    - `admin routes return 403 for non-admin user` — cross-privilege check
    - `all 2xx responses pass field blocklists` — GETs sorted before POSTs so data-returning routes fire before destructive ones (logout, revoke-all) invalidate sessions
@@ -915,7 +777,7 @@ as `'/path method_name'`, and pushed WS params as `'/path method_name params'`
 
 ### `rate_limiting.ts` — `describe_rate_limiting_tests`
 
-Two test groups:
+The groups:
 
 1. IP rate limiting on login — fires `max_attempts + 1` requests; last should be 429 with a `REST_RATE_LIMIT_EXCEEDED` body + valid `Retry-After` header.
 2. Per-account rate limiting on login — same username exhausts the bucket; a different username is not blocked.
@@ -940,8 +802,7 @@ the spread are ignored by the suite.
 ### `integration.ts` — `describe_standard_integration_tests`
 
 Exercises the full stack against a real in-memory database + auth middleware + session
-cookies + bearer tokens. The suite has ~19 `describe` blocks grouped under
-these thematic areas:
+cookies + bearer tokens. Its `describe` blocks, by theme:
 
 1. Login/logout lifecycle
 2. Login response body (strict schema)
@@ -1005,18 +866,12 @@ asserts the declared status and code, then `assert_and_record`s it.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
-7 test groups covering admin surface: account listing, role_grant grant
-lifecycle (via `role_grant_offer_create` + `role_grant_offer_accept` +
-`role_grant_revoke` RPC flows — **not** REST, **not** direct
-`query_accept_offer`; see `auth/CLAUDE.md` for
-`role_grant_offer_action_specs.ts` + `role_grant_offer_actions.ts`),
-session / token management, audit log reads (RPC — every row read is
-parsed by `assert_audit_event_metadata`, closed to undeclared keys when the
-fixture asks, and the completeness test drives login, logout, the offer flow,
-grant + revoke, token create, password change, and — each where the surface
-mounts its actions — token revoke, session revoke, invite create + delete and
-`app_settings_update`), admin-to-admin
-isolation, error coverage, response schema validation.
+Groups: account listing, session and token management, audit log reads (every
+row parsed by `assert_audit_event_metadata`, closed to undeclared keys when the
+fixture asks), the admin audit trail and audit completeness (an optional
+action's case only where the surface mounts it), admin-to-admin isolation,
+error coverage. Role grants go through the RPC offer flow
+(`role_grant_offer_and_accept`), never a direct insert.
 
 The shared `role_grant_offer_and_accept` helper (`role_grant_helpers.ts`)
 composes both RPCs end-to-end and takes
@@ -1057,15 +912,9 @@ actions alongside admin / role-grant-offer — easiest is
 `create_standard_rpc_actions`, which bundles all three. Consumers that only
 wire admin will hit `method not found: account_token_create` on first run.
 
-Error-coverage scope is narrowed to the REST suffixes still on the admin
-surface (`/audit/stream`); the RPC surface is covered by
-`describe_rpc_round_trip_tests`. The scoped REST surface is 0–1 routes —
-when the scoped count is ≤1, the `afterAll` hook logs
-`[error coverage] skipped admin REST coverage assertion — …` and does not
-fail. The 20% `DEFAULT_INTEGRATION_ERROR_COVERAGE` baseline is a REST-era
-threshold; the RPC surface has its own coverage via
-`describe_rpc_round_trip_tests`. TODO: move this error-coverage collector
-to the RPC round-trip suite entirely and delete this skip branch.
+Error coverage counts the admin surface's REST routes alone (`/audit/stream`);
+with one route or none in scope, the floor is skipped with a log line. The RPC
+surface's coverage is `describe_rpc_round_trip_tests`'.
 
 ### `audit_completeness.ts` — `describe_audit_completeness_tests`
 
@@ -1134,7 +983,7 @@ Registry lookups:
 
 ### `rpc_attack_surface.ts` + `rpc_envelope_cases.ts` — `describe_rpc_attack_surface_tests`
 
-3 test groups for JSON-RPC endpoints:
+The groups:
 
 1. **RPC auth enforcement** — per-endpoint, per-method:
    - unauthenticated → `unauthenticated` (code -32001)
@@ -1143,7 +992,7 @@ Registry lookups:
    - **keeper rejects non-daemon credentials** — session and api_token credentials are rejected even when the account has the keeper role (only `daemon_token` passes). The credential-type gate fires before the role gate (see `auth/CLAUDE.md` §Keeper auth shape).
    - correct auth passes — valid params (`input_overrides` or generated) reach the method's handler, a recording stub, at 200
    - GET unauthenticated for `side_effects: false` reads
-2. **RPC adversarial envelopes** — the fixed set `create_rpc_envelope_cases(endpoint, {skip_methods?})` builds, exercising the envelope parse, method lookup, and GET read restriction: non-JSON body → `parse_error`, wrong `jsonrpc` version, missing `jsonrpc` / `method` / `id`, a response-shaped body (`{jsonrpc, id, result}`) → `invalid_request` on `id: null`, batch array, non-object POST `params` → `invalid_request`, unknown method → `method_not_found`, GET missing `method`/`id` → `invalid_request`, a GET query holding an escape that doesn't decode → `invalid_request` on `id: null`, GET invalid-JSON params → `invalid_params`, GET non-object params on **every** read (each of `RPC_NON_OBJECT_PARAMS`: a number, an array, a string, a boolean) → `invalid_params`, GET mutation method → `invalid_request`, plus three ordering cases sent with no credential (an anonymous GET mutation and an anonymous batch, both `invalid_request`, never 401; an anonymous GET with non-object params on a read requiring an identity, the 401 — params validation runs after authorization). Each case is sent by the app its method's auth admits (`select_auth_app`) and pins status, code, echoed `id`, and `data.reason` (exact where the dispatcher sets one, absent otherwise) via `assert_rpc_envelope_refusal`. The cases are data (`RpcEnvelopeCase`) in the hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`; `to_rpc_envelope_request` builds a case's request, and `rpc_get_side_effects_reason(method)` is the GET read restriction's reason.
+2. **RPC adversarial envelopes** — the fixed cases of `create_rpc_envelope_cases(endpoint, {skip_methods?})` (hono-free `rpc_envelope_cases.ts`, shared with the cross-process `describe_rpc_adversarial_cross_tests`): malformed and response-shaped envelopes, batches, unknown methods, the GET read restriction and its query parsing, and anonymous ordering cases (an anonymous GET mutation or batch is `invalid_request`, never 401; params validation runs after authorization). Each is sent by an app its method admits and pinned — status, code, echoed `id`, `data.reason` — by `assert_rpc_envelope_refusal`. The case list is the module's TSDoc.
 3. **RPC adversarial params** — `generate_rpc_params_test_cases(input, options?)` (`rpc_envelope_cases.ts`): `generate_input_test_cases` minus its structural cases (a non-object `params` is refused at the envelope, not at params validation), taking the same `{base?, label?}`. Every case expects 400 `invalid_params` with `data.reason` the broken field's declared `invalid_reason` (`expected_invalid_reason`), absent for an undeclared field. Shared with the cross-process suite. `input_overrides` (method name → valid params) seeds a method's cases from that base; an override its schema refuses throws at collection, naming the method.
 
 Skips silently when `surface.rpc_endpoints` is empty. Uses stub deps — no
@@ -1151,15 +1000,10 @@ DB needed.
 
 Options: `{build: () => AppSurfaceSpec, roles: Array<string>, input_overrides?}`.
 
-**Opt-in bundles need their own per-bundle suite file.** Action bundles not
-folded into `create_standard_rpc_actions` (today `self_service_role_actions`,
-`actor_lookup_actions`, and `actor_search_actions`) get zero adversarial /
-round-trip coverage from `describe_rpc_attack_surface_tests` +
-`describe_rpc_round_trip_tests` unless the consumer ships a
-`<module>.rpc_suites.db.test.ts` mounting the opt-in factory on the RPC
-endpoint and calling both suites. See ../../test/CLAUDE.md §Composable
-Test Suites for the obligation note; existing
-`src/test/auth/*.rpc_suites.db.test.ts` files are templates.
+**Opt-in bundles need their own per-bundle suite file** — an action bundle
+outside `create_standard_rpc_actions` gets no adversarial or round-trip
+coverage until a `<module>.rpc_suites.db.test.ts` mounts it (../../test/CLAUDE.md
+§Composable Test Suites).
 
 ## Cross-cutting conventions
 
@@ -1191,179 +1035,36 @@ have files of their own.
 
 ### Fixture protocol + capabilities
 
-- `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
-  `CreateTestAccountOptions` types (`fixture.create_account` and
-  `fixture.extra_accounts` hand out `TestAccount`s from `app_server.ts`, built
-  by `to_test_account`); the in-process setups live beside it in
-  `testing/cross_backend/in_process_setup.ts`:
-  `default_in_process_setup(options)` (wraps `create_test_app`; pass
-  `migration_namespaces` for suites needing tables beyond the auth-only
-  default — the cell parity suite passes `[CELL_MIGRATION_NS]`, and
-  `create_test_app` provisions a per-test fresh db migrating
-  `[AUTH_MIGRATION_NS, ...migration_namespaces]`), and
-  `default_in_process_suite_options(options)` (emits the full Tier 1 suite
-  options bag: the `{setup_test, surface_source, capabilities}` triple plus
-  `session_options` / `create_route_specs` / `rpc_endpoints` pass-through;
-  call sites pass the output directly or spread it alongside
-  suite-specific extras like `roles`, `skip_routes`, `input_overrides`,
-  `db_factories`). `setup.ts` also exports `BootstrappedBackendHandle` (a
-  `BackendHandle` enriched with the keeper's captured credentials) and
-  `default_cross_process_setup(handle, options?)` — full runtime body.
-  Every per-test invocation unconditionally fires `_testing_reset` over the
-  keeper's daemon-token channel: wipes every auth-namespace row (no
-  keeper-preserve filter), resets `app_settings` + `bootstrap_lock`, and
-  inline-seeds a fresh keeper (`[ROLE_KEEPER, ROLE_ADMIN, ...extra_keeper_roles]`)
-  plus any declared `extra_accounts`; the seeds a backend answers with are
-  matched to the request by username and actor name
-  (`match_testing_reset_seeds`), and a missing, extra, or duplicated one
-  throws naming the backend. The fixture's `account` / `actor` /
-  cookies refresh to the new keeper on every call — in-process and
-  cross-process both run against a freshly bootstrapped keeper per test.
-  `fixture.create_account()` keeps a separate path: keeper-driven
-  `invite_create` (username-scoped) → signup → login → `account_token_create`
-  over the production RPC surface, so the invite-gated mint keeps
-  `open_signup` at its production default (`false`) and the per-test
-  secondary holds real session + bearer credentials.
-  `create_account({roles: [...]})` then drives `role_grant_offer_create`
-  (keeper) + `role_grant_offer_accept` (per-test) for each role — roles
-  whose `RoleSpec.grant_paths` don't include `'admin'` reject loudly at
-  offer-create time (`ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`); those
-  roles must be seeded via `extra_accounts` at bootstrap-equivalent time
-  instead. `create_account({email})` threads an email onto the signup body
-  (the username-scoped invite matches regardless of email), so the account
-  lands with an email set — the hook the username-or-email login parity suite
-  uses; the in-process path sets it directly on the inserted row. Must be a
-  valid, per-test-unique `Email` (the `LOWER(email)` partial-unique index
-  rejects collisions). The signup and login it drives go to the setup's
-  `signup_path` / `login_path` (default `SPINE_ACCOUNT_SIGNUP_PATH` /
-  `SPINE_ACCOUNT_LOGIN_PATH`, from `spine_surface_constants.ts`, which also
-  carries the other account routes, `SPINE_WS_PATH`, and the prefix).
-  Caller-supplied `username`s pass through as given — the database is wiped
-  between tests, so a hardcoded name like `'user_two'` never collides. Every
-  `TestFixture` also exposes
-  `fresh_transport({origin?: string | null})` — cookie-jar-free probe;
-  pass `{origin: null}` for bearer-only paths. It also carries the conformance principals' mints — `mint_expired_session()`, and `mint_revoked_session()` / `mint_revoked_token()` / `mint_expired_token()` for the dead credentials, each proving its credential live through `assert_credential_authenticates` over a cookie-free transport before killing it; in-process they need `account_verify` on the setup's `rpc_endpoints`, and cross-process `mint_expired_token` needs `_testing_shorten_credential_expiry` mounted.
+- `testing/cross_backend/setup.ts` — the fixture protocol: `SetupTest` / `TestFixture` / `CreateTestAccountOptions`, and `default_cross_process_setup(handle, options?)` over a `BootstrappedBackendHandle`; the in-process `default_in_process_setup` (over `create_test_app`; `migration_namespaces` for tables beyond auth) and `default_in_process_suite_options` (the `{setup_test, surface_source, capabilities}` triple plus pass-through options) are `in_process_setup.ts`. Every test starts from a freshly bootstrapped keeper: cross-process by `_testing_reset` over the daemon-token channel (every auth row wiped, the keeper and any `extra_accounts` seeded, the answered seeds matched by `match_testing_reset_seeds`), in-process by a fresh `create_test_app`. `fixture.create_account({roles?, email?})` goes through the production surface — invite, signup, login, `account_token_create`, an offer and accept per role — so a role whose `grant_paths` lacks `'admin'` is seeded through `extra_accounts` instead; an `email` must be per-test unique. The fixture also carries `fresh_transport({origin?})` (no cookie jar; `{origin: null}` for bearer-only paths) and the dead-credential mints the conformance principals use, each proving its credential live before killing it (in-process they need `account_verify` on the setup's `rpc_endpoints`; cross-process `mint_expired_token` needs `_testing_shorten_credential_expiry` mounted).
 
-  **Keeper ≠ admin.** `fixture.account` is the keeper account holding
-  `[ROLE_KEEPER, ROLE_ADMIN]` — the role split mirrors production
-  `bootstrap_account`, cross-process by the reset's seed and in-process by
-  `DEFAULT_TEST_KEEPER_ROLES` (`app_server.ts`), the keeper default of
-  `bootstrap_test_keeper` and so of every in-process builder when `roles` is
-  omitted. `ROLE_KEEPER` does not grant admin reach; bootstrap
-  just happens to land both as separate grants. Probing the separation (a
-  keeper-only account must 403 on admin RPCs) requires declaring
-  `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` — `ROLE_KEEPER`'s
-  `grant_paths` is bootstrap-only, so a post-bootstrap offer/accept can't
-  deliver it.
+  **Keeper ≠ admin.** `fixture.account` holds `[ROLE_KEEPER, ROLE_ADMIN]` as two
+  grants, as a production bootstrap does (in-process,
+  `DEFAULT_TEST_KEEPER_ROLES`); keeper reach is not admin reach. To probe the
+  split, seed `extra_accounts: [{username, roles: [ROLE_KEEPER]}]`
+  (`ROLE_KEEPER` is bootstrap-only).
 
-- `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
-  (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
-  `cell_gated_create` / `account_lifecycle` / `fact_serving` /
-  `fact_serving_admin_hash` / `ready` /
-  `account_status` / `spine_fallback` / `host_gate` / `peer_request` /
-  `ws_handshake_pipelining` / `ws_account_actions` /
-  `ws_role_gated` / `rooms` — each read by `test_if` or a row's `requires` —
-  the non-gating `ws_refusal_body` and `runtime_resolves_dot_segments`, which
-  pick how a case reads its answer, and the list
-  `ws_upgrade_runtime_refusals`, the upgrades the backend's runtime answers
-  before the app runs (`['empty_host']` on `@hono/node-server`, `[]` on Bun
-  and the Rust spine), which the request-header wire suite holds to exactly
-  that answer; `peer_request` (server-initiated requests — the ActionPeer
-  `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
-  (`ConnectionRegistry.request_connection`); a backend states it
-  `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
-  for capability-gated cases (a skipped one registered through
-  `test_skip_gated`, so `check_declared_skips` can hold it to a declaration),
-  and `in_process_capabilities` preset. Only
-  flags a suite reads are capabilities — a wiring fact that gates nothing is
-  not recorded. **Mount flags have no family default**: `MountFlag` names the
-  flags that describe a backend's own mounts (`ws`, `sse`, `cell_crud`,
-  `cell_relations`, `cell_gated_create`, `fact_serving`,
-  `fact_serving_admin_hash`, `ready`,
-  `peer_request`, `ws_account_actions`, `ws_role_gated`, `rooms`), and the family
-  defaults (`ts_default_capabilities` / `rust_default_capabilities`, typed
-  `FamilyDefaultCapabilities`) omit them and the `testing_backdoors` list (the
-  `_testing_*` backdoors the backend mounts, from `TESTING_BACKDOOR_METHODS` —
-  §Testing-backdoor declaration below; `[]` in-process, every one on fuz_app's
-  spine presets), with `capabilities` required on
-  `make_default_{ts,rust}_backend_config` — so a config that leaves one out
-  fails typecheck naming it, rather than silently skipping its suites — and
-  `capability_mounts` probes each one a request observes, so a `false` beside a
-  mounted surface fails too. The
-  family defaults carry the declared surface's mounts (`account_lifecycle`,
-  `account_status`, and `spine_fallback` — an unmatched path outside the auth
-  scope answered by the spine's own fallback, which a backend serving a static
-  or SPA fallback of its own states `false`; and `host_gate`, the DNS-rebinding
-  gate on, which a backend running with it off states `false`) and the
-  runtime-behavior flags
-  (`ws_handshake_pipelining`, `ws_refusal_body`, `ws_upgrade_runtime_refusals`,
-  `runtime_resolves_dot_segments`) of the family's reference runtime — Node for TS, hyper
-  for Rust; a backend on another runtime (Bun) overrides them. `cell_crud`
-  gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
-  parity suite — both `true` on every backend that live-mounts the full cell
-  surface (TS spine binary, in-process app, Rust stub). A backend mounting only
-  plain CRUD would declare `cell_crud: true, cell_relations: false`.
-  `cell_gated_create` gates `describe_cell_gated_create_cross_tests` +
-  `describe_cell_moderate_cross_tests` (the parent-aware-creation-authorizer +
-  `cell_moderate` parity proofs) and, with `cell_relations`,
-  `describe_cell_grant_steward_cross_tests` (the steward-revoke seam: a scoped
-  `participant` grant stewards its scope under the
-  `test_cell_grant_steward_revoke_authorize` policy mounted beside the create
-  one); unlike `cell_crud`/`cell_relations`
-  it is **cross-only** (`false` in-process) — `true` only on the reference
-  spine binaries that live-mount the `test_cell_gated_create_authorize` policy
-  (the TS spine `full_spine_mount` + the Rust `testing_spine_stub`), since the
-  authorizer _behavior_ adds no method/wire shape and so the schema + manifest
-  parity gates are blind to an authorizer divergence (the `cell_moderate`
-  _verb_ it pairs with is on the manifest, separately gated).
-  `rooms` gates `describe_rooms_ws_cross_tests` — **cross-only** too, and for
-  the same reason: its rooms run on the `test_room_authorize` policy, so it is
-  `true` only on a backend mounting the room verbs over that policy and an
-  exclusive registry (the reference spine binaries); a consumer mounting rooms
-  over its own authorizer states `false`.
-  `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
-  `account_delete` / `account_undelete` / `account_purge` parity suite); unlike
-  cells those verbs **are** on the declared surface (in `create_admin_actions`,
-  auto-enumerated for shape/auth) — the flag gates the behavioral parity the
-  generic round-trip can't drive (it can't delete the subject). `true` on every
-  spine. `fact_serving`
-  gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference
-  fact-serving parity suite, incl. the served fact's hardening headers and
-  bodyless masked 404s); like cells it stays off the declared surface and is
-  `true` on every spine that mounts the cell-gated serve route +
-  the `_testing_put_fact` seeder (whose optional `holder` records a
-  `fact_holder` row, so a non-admin can reference what it seeds, and whose
-  optional `external_url` writes a bare external row naming that URL, so the
-  suite can pin that a URL naming another hash's file is refused) — it also
-  gates `describe_cell_ref_admission_cross_tests` (its grant, item, and clone
-  cases with `cell_relations`). `fact_serving_admin_hash`
-  is the admin-only bare-hash route (`GET /api/facts/:hash`), its own flag
-  because a backend can serve the cell-gated route alone: it gates the
-  fact-serving suite's bare-hash cases (with `fact_serving`) and the bare-hash
-  cases of the query-shape and token-scope-surface suites. `ready` gates `describe_ready_cross_tests`
-  (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
-  like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
-  on every spine that live-mounts it over the shared `expected_schema.json`.
-  `account_status` gates the integration suite's `account status response body`
-  case — `GET /api/account/status` is bundled into `create_account_route_specs`,
-  so every spine serves it (`true`); the gate fails loud if a declaring backend
-  doesn't mount it.
-  No flag covers the body-size smuggling probe: every backend closes the
-  connection after an oversized-body 413 (at once on Node, Bun and the Rust
-  spine), so the pipelined request
-  goes unanswered. Bun 1.4.3 is the tested floor — an older Bun kept the
-  connection and served the next request, correctly framed, and fails the probe.
-  `ws_handshake_pipelining` gates the WS round-trip suite's
-  frames-with-the-handshake case (`true` Node/Rust — frames written in the
-  same TCP write as the upgrade request reach the socket; `false` Bun, which
-  answers such a request `400` when the upgrade follows an asynchronous check,
-  as it does behind auth, and `false` in-process, where there is no socket to
-  write raw bytes to).
-  `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
-  fuz_app's own spine presets; a consumer states it like every mount flag) gates the WS
-  round-trip suite's self-revocation case (which requires the reply ahead of
-  the close on every backend) and, with `rpc_path`, its WS-mutation audit case
-  (which calls `_testing_drain_effects`).
+- `testing/cross_backend/capabilities.ts` — `BackendCapabilities`, `test_if(cond, name, fn)` (a skipped case registered through `test_skip_gated`, so `check_declared_skips` holds it to a declaration), `in_process_capabilities`. A flag exists only if a suite reads it. `MountFlag`s and `testing_backdoors` have no family default (`FamilyDefaultCapabilities` omits them, and `capabilities` is required on `make_default_{ts,rust}_backend_config`), so a config leaving one out fails typecheck by name, and `capability_mounts` probes each mount a request observes, so a `false` beside a mounted surface fails too. Each field's TSDoc carries its meaning and what it gates; the table is the map.
+
+  | flags | kind | TS / Rust default | in-process |
+  | --- | --- | --- | --- |
+  | `ws`, `sse`, `cell_crud`, `cell_relations`, `fact_serving`, `fact_serving_admin_hash`, `ready` | mount | none (stated per config) | `true` |
+  | `peer_request`, `ws_account_actions`, `cell_gated_create`, `ws_role_gated`, `rooms` | mount, cross-process only | none | `false` |
+  | `account_lifecycle`, `account_status`, `spine_fallback`, `host_gate` | declared spine surface / config | `true` / `true` | `true` |
+  | `ws_handshake_pipelining` | runtime | `true` (Bun `false`) / `true` | `false` |
+  | `ws_refusal_body` | runtime, not a gate | `false` (Bun `true`) / `true` | `true` |
+  | `ws_upgrade_runtime_refusals` | runtime list | `['empty_host']` (Bun `[]`) / `[]` | `[]` |
+  | `runtime_resolves_dot_segments` | runtime, not a gate | `true` / `false` | `true` |
+  | `testing_backdoors` | list (§Testing-backdoor declaration) | none | `[]` |
+
+  `cell_gated_create` and `rooms` are `true` only on a backend mounting the test
+  policies (`test_cell_gated_create_authorize`, `test_room_authorize`) — the
+  parity gates are blind to an authorizer's behavior. A backend serving its own
+  static or SPA fallback states `spine_fallback: false`; one running with the
+  host gate off, `host_gate: false`.
+
+  No flag covers the body-size smuggling probe (`body_size_smuggling.ts`): every
+  backend closes the connection after an oversized-body 413. Bun 1.4.3 is the
+  tested floor.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1431,27 +1132,7 @@ here never reaches it.
   is a `Record<SuiteName, …>`, so a registered name without an entry fails
   typecheck. The same file holds §Suite modules' table to one row per suite
   in `SUITE_NAMES` order.
-- **Other runners over the registry.** `register_spine_suites(handle,
-  options, {names?, wrap_setup_test?})` (`@internal`) is the one call over
-  the suites `names` lists (run in `SUITE_NAMES` order), each `setup_test`
-  passed through `wrap_setup_test`; `describe_spine_cross_suites` is it with
-  every suite and no wrapper. An `exclude` or override for a suite outside
-  `names` throws as dead unless a listed suite reads it (the mount suite reads
-  its probes' siblings, `ws_role_gated` and `ready`), an `exclude_cases` entry
-  outside it always; the wrapper runs after the override merge, so a setup an
-  override supplies is wrapped too. Each entry's required
-  `transcript` (`SpineSuiteTranscript`, read with
-  `get_spine_suite_transcript`) says whether fuz_app's transcript
-  differential runs it: `'http'` when every request goes through the fixture
-  transports the transcript records, else `{excluded: {kind, reason}}`, the
-  kind (`SpineSuiteTranscriptExclusionKind`) one of `websocket`,
-  `raw_socket`, `sse` — sends the recording can't see — or
-  `embedded_secrets` (HTTP only, but its requests carry the backend's own
-  credentials re-spelled inside strings, which no placeholder recognizes:
-  `credential_conformance`); fuz_app's import census holds each kind to what
-  the suite's module reaches. The transcript registers
-  the `'http'` suites through `register_spine_suites` with its recorder as
-  the wrapper (../../test/CLAUDE.md §Cross-backend self-tests).
+- **Other runners.** `register_spine_suites(handle, options, {names?, wrap_setup_test?})` (`@internal`) runs the listed suites in `SUITE_NAMES` order, each `setup_test` wrapped (after the override merge); `describe_spine_cross_suites` is it over every suite, unwrapped. Each entry's required `transcript` (`SpineSuiteTranscript`) is `'http'` when every send goes through the recorded fixture transports, else `{excluded: {kind, reason}}` (`websocket`, `raw_socket`, `sse`, `embedded_secrets`), each kind held to the module's imports by fuz_app's census (../../test/CLAUDE.md §Cross-backend self-tests).
 - **Options from the handle.** Paths, cookie name and capabilities come from
   `handle.config` — `to_cross_suite_options(handle)`, exported for a suite
   called on its own — the daemon token from the handle, and each suite's
@@ -1482,41 +1163,8 @@ here never reaches it.
   (`testing_backdoor`, which checks the backdoor declaration the gating reads,
   and `capability_mounts`, which checks the mount flags), or a suite already
   skipping itself for an undeclared backdoor throws before anything registers.
-- **Backdoors.** `capabilities.testing_backdoors` must declare
-  `SPINE_SUITES_REQUIRED_BACKDOORS` (`_testing_reset`, every setup's per-test
-  reset, and `_testing_drain_effects`, the audit-read barrier),
-  `_testing_put_fact` when `fact_serving` is declared, and
-  `_testing_room_evict` when `rooms` is; the call throws otherwise. A suite
-  every case of which drives another backdoor (`SuiteEntry.backdoors`:
-  `credential_deadline` → `_testing_shorten_credential_expiry`,
-  `credential_conformance` → `_testing_credential_read`,
-  `origin_conformance` → `_testing_origin_check`, `ws_outbound_overflow` →
-  `_testing_flood_notifications`) skips itself on a backend not declaring it,
-  as a skipped test beside the excludes whose reason names the backdoor; an
-  exclude, override or `exclude_cases` entry for it throws as dead.
-  `spine_suites.test.ts` holds the backdoors each suite module names — quoted
-  `_testing_*` names, `testing_*_action_spec` references, and the
-  `cross_put_fact` / `cross_drain_effects` seeders — to its entry's
-  `backdoors`, the required pair, `_testing_put_fact` under
-  `capabilities.fact_serving`, or `_testing_room_evict` under
-  `capabilities.rooms`; a helper module the suite calls isn't read.
-- **`exclude_cases`** — `SuiteCaseExclusions`, `{[suite]: {[name path]:
-  reason}}`: single tests of a suite that runs, each by its name path (the
-  describe titles and the test name joined with `' > '` — what the reporter
-  prints after the file and any `describe` wrapping the call; a full path, not
-  a leaf name, so a title repeated under two describes names one test). One
-  `beforeEach` on the calling suite (`register_spine_case_exclusions`) skips
-  them at run time with `ctx.skip(reason)`, so the suite files stay as they
-  are and each shows as skipped with its reason; it finds a test's suite
-  from the top-level task ranges each suite registered (read through
-  `TestRunner.getCurrentSuite()` at collection), so an entry matches only
-  below its own suite. A reasonless entry, an empty suite map, or an entry for
-  an unknown, excluded or self-skipping suite, or for a suite in
-  `UNEXCLUDABLE_SPINE_SUITES`, throws at collection; an entry
-  naming no test its suite collected fails the closing test
-  (`check_spine_case_exclusions`, which reads the collected paths, so a
-  filtered run still checks them) — the dead-name check, as the known-divergence
-  ledger has.
+- **Backdoors.** `capabilities.testing_backdoors` must declare `SPINE_SUITES_REQUIRED_BACKDOORS` (`_testing_reset`, `_testing_drain_effects`), plus `_testing_put_fact` with `fact_serving` and `_testing_room_evict` with `rooms`, or the call throws. A suite whose every case drives another backdoor (`SuiteEntry.backdoors`) skips itself, with the reason, on a backend not declaring it — an exclude, override or `exclude_cases` entry for it throws as dead; `spine_suites.test.ts` holds each entry's `backdoors` to the names its module uses.
+- **`exclude_cases`** — `SuiteCaseExclusions`, `{[suite]: {[name path]: reason}}`: single tests of a running suite by full name path (describe titles and test name joined with `' > '`, below the calling suite), skipped at run time with the reason. An entry for an unknown, excluded, self-skipping or unexcludable suite throws at collection; one naming no collected test fails the closing test (`check_spine_case_exclusions`).
 - **`expected_skips`** — `{[name path]: reason}`: the gated skips the backend
   owes — the cases a suite skips because the backend lacks what they gate on
   (`test_if`) and the suites skipped for an undeclared backdoor (their line
@@ -1526,32 +1174,7 @@ here never reaches it.
   `exclude` entry; omitted, no skip is checked. fuz_app's own call keys the
   list by backend name, so a capability flipped by mistake fails rather than
   declaring its own skip.
-- **`overrides`** — `SuiteOverrides`, per suite a `Partial` of its own options
-  (`SuiteOptionsMap`), shallow-merged over the derived ones: a role list, an
-  `xfail`, a narrower capability set, `ws: undefined` to drop optional socket
-  cases (`session_cap` and `testing_backdoor` gate no case on `capabilities.ws`,
-  so `ws` is their only socket switch), `extra_methods` to fire a consumer's own
-  daemon-token seams through `testing_backdoor` (whose
-  `capabilities.testing_backdoors` an override can't change — the call throws
-  unless the merge keeps the backend's list). An override of a suite in
-  `UNEXCLUDABLE_SPINE_SUITES` is held to an allowlist
-  (`check_unexcludable_override`), so an option added later is refused until
-  classified. Any key passes unchanged; beyond that, `testing_backdoor` takes
-  `extra_methods`, and `ws: undefined` to drop its socket cases (never a moved
-  `ws`); `capability_mounts` takes
-  nothing (`capabilities`, `base_url`, `rpc_path`, `ws_path` and `sse_path`
-  only unchanged) — it probes the paths the suites gated on each flag send to,
-  the gated WS and readiness paths read from `ws_role_gated` and `ready` as
-  they run (an override of those moves both; with the sibling excluded, the
-  spine default, and the probe's failure names the remedy), and the account
-  status path the `SPINE_ACCOUNT_STATUS_PATH` `query_shape`,
-  `token_scope_surface` and `request_target_conformance_wire` send to (none
-  takes another). An entry can instead be a function of the derived
-  options returning the patch (`SuiteOverride`), for a change built on a
-  derived value — an `xfail` added to the derived multi-actor setup — so the
-  seeding isn't restated. After the merge, every option the suite's type
-  requires (each entry's `required` set, exhaustive by type) must be neither
-  `undefined` nor `''`, or the call throws at collection naming suite and key.
+- **`overrides`** — `SuiteOverrides`: per suite a `Partial` of its options, or a function of the derived options returning one (`SuiteOverride`), shallow-merged over the derived ones — a role list, an `xfail`, `ws: undefined` to drop optional socket cases. Every option a suite requires must survive the merge non-empty, or the call throws naming suite and key. The unexcludable suites take only what `check_unexcludable_override` allows, so an option added later is refused until classified.
 - **Inputs the handle doesn't carry.** The declared surface is a required
   option. Paths and roles that name the reference spines' mounts (the
   role-gated WS endpoint and its roles) default to the `SPINE_*` constants —
@@ -1622,155 +1245,8 @@ conformance cases assert _expected behavior_ — the security negatives
 (must be refused / must not leak / found-vs-not-found same shape) a
 wire-shape check passes green on even when behavior is wrong.
 
-- `conformance_case.ts` — the `ConformanceCase` type (types only; nothing parses a case):
-  `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status,
-error_reason?, error_code?, fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
-  resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
-  (the REST auth routes), so the case never carries a schema. `as` is the
-  closed `ConformancePrincipal` enum (`keeper` / `daemon` / `invalid_daemon` /
-  `daemon_browser` / `token` / `bearer_browser` / `malformed_bearer` / `scoped_token` / `anonymous` /
-  `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`, and
-  the dead credentials `tampered_cookie` / `wrong_daemon` / `unknown_bearer` /
-  `revoked_session` / `revoked_token` / `expired_token`) —
-  fixture accessors, never inline credential minting.
-  The dead credentials each ride a transport carrying nothing else, and each
-  is well-formed, so the leg that refuses it is the one named:
-  `tampered_cookie` is the keeper's cookie with its MAC changed (present and
-  invalid — refused as anonymous and cleared); `wrong_daemon` a token-shaped
-  `X-Daemon-Token` that is not the server's; `unknown_bearer` a token-shaped
-  bearer no row matches; `revoked_session` a session that verified and was
-  revoked (`fixture.mint_revoked_session()` — its cookie still verifies, so it
-  is not cleared); `revoked_token` (`fixture.mint_revoked_token()`);
-  `expired_token` a token past its `expires_at`
-  (`fixture.mint_expired_token()` — on an account of its own, its expiry
-  pulled in to `EXPIRED_TOKEN_SHORTEN_SECONDS` by the statement
-  `_testing_shorten_credential_expiry` runs, `query_shorten_credential_expiry`,
-  then one wait of `EXPIRED_TOKEN_WAIT_MS`, on both fixtures, so the row is
-  one production could hold). Each of the three mints proves its credential
-  live first — `assert_credential_authenticates`, an `account_verify` over a
-  transport carrying only it — and that its revoke removed a row or its expiry rewrote one, and throws
-  otherwise: revocation is a row delete, so without that a credential that
-  never worked would pass as revoked. Each answers as `anonymous` does, row
-  for row.
-  `invalid_daemon` sends a malformed `X-Daemon-Token` alongside the keeper
-  session cookie over a no-Origin transport: the middleware soft-fail-discards
-  the daemon token (matching the Rust spine's `None`), auth falls through to the
-  session leg, and a daemon-gated action then refuses the session credential
-  with `credential_type_required` — not a hard invalid-token 401 (the session
-  base credential is what makes the credential-type gate, not the auth gate, the
-  refusing layer).
-  `daemon_browser` sends a _valid_ `X-Daemon-Token` in a browser context
-  (default `Origin` present) alongside the keeper session cookie: the middleware
-  discards the header-bearing token as browser context (mirroring the bearer
-  guard + the Rust spine's `is_browser_context`), so auth falls through to the
-  session leg → `credential_type_required`. Unlike `daemon` (no Origin → token
-  honored → 400 confirm guard), the 403 proves a valid token is _dropped_, not
-  honored, when an `Origin` is present.
-  `bearer_browser` is the bearer twin: a _valid_ bearer api-token in a browser
-  context (default `Origin` present), fresh jar (no session) — the bearer
-  middleware discards it, so an authed action 401s, wire-indistinguishable from
-  `anonymous` (pinned by the `bearer_soft_fail` equivalence group). The
-  `token` principal is the honored counterpart (suppresses `Origin`).
-  `malformed_bearer` is the keeper's token minus its last character over a
-  no-Origin, empty-jar transport — refused by the shape precheck before any
-  database work, so it joins `bearer_soft_fail` too.
-  `expired_session` is the keeper behind an expired server-side session
-  (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
-  still-valid signed cookie, so the DB-row expiry gate is what refuses it).
-  `acting` (`ConformanceActingBinding`) has the runner fill `params.acting`
-  with a real actor id: `principal` (the actor of the account the
-  principal's credential names), `extra_actor` (`fixture.extra_actors[0]`),
-  `keeper_actor` (`fixture.actor`, foreign to every non-keeper principal);
-  params must then be an object or omitted, without an `acting` of their own,
-  and a principal presenting no account throws.
-  `error_reason` is the imported
-  `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
-  REST flat-body `error`; the dispatcher's 401 carries
-  `authentication_required`). `error_reason: null` pins a denial with no
-  reason — a handler's bare `forbidden` — as carrying no `data.reason` (RPC
-  only: a REST error body always names its code). On every RPC error row the
-  runner also asserts the JSON-RPC `error.code`: `error_code` when the row
-  names one, else the code the status maps to
-  (`http_status_to_jsonrpc_error_code`) — several codes share a status, so a
-  refusal under another one (`invalid_request` at 400) states it.
-  `check_conformance_cases(cases)` (exported) runs when the table is
-  described and throws on a row that can't mean anything: `error_reason: null`
-  or `error_code` on a REST row, and a status outside 2xx beside a
-  `set_cookie` that mints. `equivalence_group` is the
-  **negative-space** axis: every case tagged with the same group string must
-  produce a **byte-identical** normalized response (`{status, body}`),
-  asserted per impl after the case loop. It promotes a masked pair
-  (wrong-password ≡ account-not-found, found-but-unauthorized ≡ not-found)
-  from "same status + reason" to "wire-indistinguishable", so a prober
-  hitting either spine can't tell the members apart — the twin of the
-  positive `output`-schema parity the runner already enforces. The
-  per-case status/reason assertions stay the non-vacuous positive control
-  (a both-paths-identically-broken group still fails the per-case checks).
-  `headers` is the **header** negative-space axis: a string value pins a
-  header present-and-equal (case-insensitive name), `null` pins it absent.
-  Independent of it, the runner enforces an always-on **no-fingerprint**
-  invariant on _every_ response (`conformance_table.ts` `FINGERPRINT_HEADERS`
-  — `Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both
-  spines, so a framework upgrade adding one can't become a silent
-  backend-fingerprinting oracle).
-  `set_cookie` is the **session cookie** axis, a `SessionCookieEffect`
-  (`session_cookie_effect.ts`): `'none'`, `'clear'` (exactly the clearing
-  line), `'set'` (exactly one minting line), `'clear_then_set'` (a login
-  carrying a stale cookie). **Omitted means `'none'`**, so every row asserts
-  it mints and clears nothing unless it says otherwise. The lines are compared
-  byte for byte with the spine's own formatters
-  (`classify_session_cookie_effect`; lines in no recognised shape fail the
-  row) — so a drift in the TS formatter itself is caught by the Rust legs,
-  `cookie_attributes` and the credential wire suite, which spell the lines
-  themselves. Behind it sits a floor: a response that is not 2xx never mints
-  a session cookie (`assert_session_cookie`, HTTP legs) — a backstop, since a
-  row can't be written expecting a mint on a refusal. Headers are deliberately kept out of the
-  `equivalence_group` `{status, body}` comparison (`Set-Cookie` / `Date` vary).
-- `conformance_table.ts` — `describe_conformance_table_tests({cases,
-setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?,
-session_options, principals?, ws?, suite_name?})`. A case's RPC method
-  resolves from `rpc_endpoints` first, then from `live_rpc_endpoints` — the
-  endpoints the backend live-mounts, for methods kept off the declared surface
-  (cell verbs, opt-in resolvers, `_testing_*` backdoors); a backend's whole
-  live mount is a fine value, since a declared method still resolves from the
-  declared surface. `resolve_conformance_rpc_endpoints({rpc_endpoints,
-  live_rpc_endpoints?, session_options})` (exported) builds that lookup list,
-  for the table and the differential alike. fuz_app's spine value is
-  `create_spine_live_rpc_endpoints()` (`full_spine_mount.ts`), the binary's
-  whole mount built on stub deps for resolution only. Same `{setup_test, surface_source,
-capabilities}` protocol every Tier 1 suite uses, so **one case array runs
-  both transports** — in-process (`gro test`) and cross-process (the gate,
-  each backend's real auth resolution). `resolve_conformance_principal` (`conformance_principal.ts`, apart from the table's WebSocket leg so an HTTP-only suite reaches no socket transport) maps the
-  always-available principals to fixture accessors; `role_holder` /
-  `wrong_role` read a seeded `extra_accounts` username named via
-  `options.principals`. `send_conformance_case(c, {fixture, surface_source, principals?,
-  resolved_rpc_endpoints, request_headers?})` (exported) is the send half — principal resolved,
-  request sent, the raw `{target, status, headers, set_cookies, body}` back
-  unasserted (`set_cookies` every `Set-Cookie` line in order — a headers
-  record folds them; `[]` on the WS leg); the
-  table asserts on it, and the cross-backend differential compares two.
-  `request_headers` go on the HTTP request beneath the principal's (the
-  differential's identity encoding); the WS leg sends none.
-  **WS leg:** `ws: WsEndpointTarget` (`{base_url, ws_path, origin?}`) on
-  either sends each case as one frame on an admitted socket the principal
-  opens — its headers on the upgrade, no `Origin` where the HTTP leg
-  suppresses it, its own actor as `?acting=`. Both spines resolve an actor at
-  the upgrade, refusing a multi-actor account's upgrade without `?acting=`
-  (400 `actor_required`), and per-frame dispatch resolves each frame's
-  `acting` on both. The leg always sends `?acting=`, so it does not cover that
-  upgrade refusal; the front-door table's multi-actor row does. The frame is the envelope the HTTP
-  body is (`serialize_action_result` on TS), so the response reads
-  `{status, headers: {}, body: frame}` with `status` the code's
-  `jsonrpc_error_code_to_http_status` (200 for a result) and every row holds
-  unchanged. What WS loses is headers — the TS DEV-only `X-Fuz-Auth-Debug`
-  among them. `is_ws_conformance_case(c)` (exported) is the filter: RPC, sent
-  `POST`, no header value pinned, a session cookie effect of `'none'`, a
-  principal that can hold a socket — not
-  `anonymous` / `bearer_browser` / `malformed_bearer` / `expired_session` or
-  a dead credential, refused at the upgrade, nor `scoped_token`, refused `surface:ws_upgrade`
-  there (a narrowed bearer can never send a frame, so no per-frame scope row
-  exists; the front-door table pins the upgrade refusal). An equivalence
-  group left with one member on the WS leg is dropped. Cross-process only.
+- `conformance_case.ts` — the `ConformanceCase` type (data, never parsed): `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status, error_reason?, error_code?, fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. `method` resolves its schemas from the live registry (RPC) or the REST auth routes. `as` is a closed `ConformancePrincipal` — fixture accessors, never inline minting; what each principal sends and which leg refuses it is on the type. `acting` (`ConformanceActingBinding`) has the runner fill `params.acting` with a real actor id. Beyond status and reason (`error_reason: null` pins an RPC denial carrying no `data.reason`): `error_code` (else the status's default JSON-RPC code), `equivalence_group` (members answer byte-identical `{status, body}`), `headers` (present-and-equal, or `null` for absent), `set_cookie` (a `SessionCookieEffect`; **omitted means `'none'`**). Always checked: no fingerprint header (`FINGERPRINT_HEADERS`), and no session cookie minted outside 2xx. `check_conformance_cases` refuses a row that can't mean anything.
+- `conformance_table.ts` — `describe_conformance_table_tests({cases, setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?, session_options, principals?, ws?, suite_name?})`, on the Tier 1 fixture protocol, so **one case array runs in-process and cross-process**. Methods resolve from `rpc_endpoints`, then `live_rpc_endpoints` (methods kept off the declared surface; fuz_app's is `create_spine_live_rpc_endpoints()`) — `resolve_conformance_rpc_endpoints`; `send_conformance_case` is the send half the differential shares; `role_holder` / `wrong_role` read an `extra_accounts` username named in `principals`. `ws` (cross-process only) re-sends each case `is_ws_conformance_case` admits as one frame on a socket the principal opens, under the same expectations; an equivalence group left with one member there is dropped.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
   live_rpc_endpoints?, skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
   `RouteAuth`, then each live-mounted one the declared surface lacks
@@ -1924,8 +1400,8 @@ What the suites share:
   `RpcResult` carries the HTTP `status` beside the envelope; a reply that is no
   JSON object throws naming the method, the status and the body's head.
 - **`cross_backend/audit_cross_helpers.ts`** — `list_audit_events(fixture,
-  params, rpc_path?)` drains first (`cross_drain_effects`, which refuses an
-  answer without `tracked: true`), then lists and parses every row's metadata
+  params, rpc_path?)` drains first (`cross_drain_effects`, which refuses any
+  answer but exactly `{ok: true}`), then lists and parses every row's metadata
   (`assert_audit_event_metadata`), so no reader skips the barrier.
   `assert_audit_metadata_fields(fixture, metadata, expected, absent?)` compares
   field by field, so a consumer's added key passes unless the fixture closed
@@ -2114,7 +1590,7 @@ Conventions that hold across them:
   types for the **`on_request`** seam: a responder answers a server-initiated
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
-  (a server-initiated request flows to `messages` as before).
+  (a server-initiated request flows to `messages`).
 - `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs; a refused upgrade rejects with `WsUpgradeRefusedError`, carrying the refusal's `status` and `body`), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON).
   It builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
@@ -2203,197 +1679,41 @@ Conventions that hold across them:
   `*_attack_surface.json` snapshot is an observability artifact for human
   inspection + gen-time drift detection
   (`assert_surface_matches_snapshot`); it is not consumed at test runtime.
-- `testing/cross_backend/testing_reset_actions.ts` —
-  `create_testing_actions(deps, options)` factory returning the
-  `_testing_*` backdoor actions, `_testing_reset` among them. Test binaries
-  register them on their RPC endpoint; `default_cross_process_setup` fires
-  `_testing_reset` unconditionally per test. Its handler first fires the consumer-supplied `reset_state(db)`
-  callback for domain-state reset — before the auth wipe, because domain
-  rows depend on auth rows (a domain table with a restricting FK to `actor`
-  must empty before the actor delete) — then DELETEs every auth-namespace
-  row (no keeper-preserve filter), resets `app_settings` to production
-  defaults, flips `bootstrap_lock.bootstrapped = true`, inline-seeds a fresh
-  keeper via `create_test_account_with_credentials` (same primitive
-  in-process uses, keeping write semantics in parity), queues the refresh
-  of `DaemonTokenState.keeper_account_id` to the new row as a post-commit
-  effect as soon as the keeper exists (so a reset that rolls back — a
-  failing extra seed, a failed commit — leaves the cache on the keeper
-  still in the database, and the next reset can still authenticate), then
-  seeds any `extra_accounts` at the same bootstrap-equivalent step (the
-  only path for roles like `ROLE_KEEPER` whose `grant_paths` is
-  bootstrap-only). `reset_state` is passed the **transactional** `Db` the
-  auth wipe then runs on, so DB-domain consumers (e.g. fuz_forge truncating
-  its cell / fact / file tables) reset on the same connection rather than a
-  separately-pooled one that would deadlock against this open transaction
-  under the in-memory drivers. Auth
-  gates on `credential_types: ['daemon_token']` — effectively keeper-only
-  without forcing the `actor: 'required'` ⟺ `acting?: ActingActor`
-  biconditional. No free-form runtime grant action exists — see the
-  `testing_reset_actions.ts` TSDoc for the audit + WS fan-out rationale
-  that rejected a `_testing_seed_role_grant` shape.
+- `testing/cross_backend/testing_reset_actions.ts` (+ the hono-free `testing_origin_check.ts`, `testing_credential_read.ts`) — the `_testing_*` backdoors, each daemon-token-gated (`credential_types: ['daemon_token']`) and mirrored by a `fuz_testing` spec on the Rust spine. `create_testing_actions(deps, options)` bundles what every test binary mounts; the rest are appended at the full-mount layer (`build_full_spine_rpc_actions`), so a consumer whose Rust binary lacks a mirror keeps an exact action-manifest gate:
 
-  Same module also exports `create_testing_drain_effects_action(audit)` — the
-  `_testing_drain_effects` RPC action (daemon-token-gated, like
-  `_testing_reset`). It awaits `audit.drain_inflight()` so a following
-  `audit_log_list` is authoritative — the deterministic barrier a
-  cross-process audit assertion fires before reading (no poll/sleep). Every
-  emitter counts its pool writes in flight, so the drain always waits on them;
-  the Rust spine spawns its token-use touch on the same tracker, so its drain
-  covers that too (the TS touch rides its request's `pending_effects`). The
-  action answers `{ok: true, tracked: true}` — `tracked` a constant on both
-  spines, kept until consumers are on a release whose `cross_drain_effects`
-  no longer reads it — and `cross_drain_effects` refuses anything else.
-  The barrier is needed whatever the transport: HTTP on either test binary
-  (the TS one's `await_pending_effects: true`, the Rust stub's
-  `await_background_writes_layer`) settles a mutation's writes before
-  responding, but WS replies before its effects flush, so a WS mutation's
-  audit write can still be in flight when its reply arrives. The drain waits
-  until no pool write is in flight — writes started while it waits included
-  — the same wait-for-zero as the Rust spine's `AuditEmitter::drain_inflight`.
-  `create_testing_actions` bundles it over `deps.audit`; suites that mount
-  their own endpoint (e.g. the in-process
-  `account_lifecycle_parity.db.test.ts`) add it directly, so the shared suite
-  body can call the barrier on every backend uniformly.
+  | action | bundled | does |
+  | --- | --- | --- |
+  | `_testing_reset` | yes | the consumer's `reset_state(db)` first, on the same transaction (domain rows depend on auth rows); then every auth row wiped, `app_settings` and `bootstrap_lock` reset, a fresh keeper and any `extra_accounts` seeded through the in-process primitives |
+  | `_testing_drain_effects` | yes | answers `{ok: true}` once no audit pool write is in flight, writes started while it waits included — the barrier before an audit read (WS replies before its effects flush) |
+  | `_testing_db_invariants` | yes | every row breaking a `DB_INVARIANTS` check, read after each test |
+  | `_testing_mint_session` | yes | a backdated session row behind a valid cookie (the `expired_session` principal) |
+  | `_testing_put_fact` | yes | seeds a fact, with an optional holder or external URL |
+  | `_testing_flood_notifications` | yes | queues notifications onto the caller's socket past its outbound budget (`invalid_params` past its caps, `no_connection` over HTTP) |
+  | `_testing_schema_snapshot`, `_testing_migration_tracker` | yes | the parity gates' reads |
+  | `_testing_origin_check`, `_testing_credential_read` | no | the origin matcher and the credential header readers, pure |
+  | `_testing_shorten_credential_expiry` | no | pulls an account's session and token expiries in (shorten-only) |
+  | `_testing_room_evict` | no | the room registry's `evict` |
+  | `_testing_action_manifest` | no | the live registry as an `ActionManifest` |
 
-  Also bundled: `_testing_db_invariants` (`create_testing_db_invariants_action()`,
-  void input, read-only, no audit row) — every row breaking a database
-  invariant, `{rows: [{invariant, row}]}`, what `default_cross_process_setup`
-  checks after each test (§`db_invariant_queries.ts`); the Rust
-  `testing_reset_specs` bundles its twin beside reset and drain, so every
-  `testing_*` server on the spine serves it.
-
-  Also bundled: `_testing_flood_notifications`
-  (`create_testing_flood_notifications_action()`) — queues `count`
-  notifications of `size` payload bytes each (method `_testing_flood`, params
-  `{index, payload}`) onto the caller's own WebSocket connection in one
-  synchronous run and answers `{queued: count}`, so a suite can push a
-  connection's outbound queue past its byte budget from outside. Refused with
-  `invalid_params` past `TESTING_FLOOD_MAX_COUNT`, `TESTING_FLOOD_MAX_SIZE`, or
-  `TESTING_FLOOD_MAX_TOTAL_BYTES` (`count` × `size`), and over HTTP (reason
-  `no_connection` — there is no connection to queue onto). The Rust mirror is
-  `fuz_testing::create_testing_flood_notifications_action_spec`.
-
-  Also bundled: `_testing_mint_session` — mints a backdated-expiry
-  `auth_session` row for an account (via `mint_test_session` in `app_server.ts`)
-  and returns its signed cookie value (future-dated payload). Backs the
-  `expired_session` conformance principal: the backdated DB row + valid cookie
-  payload isolate the authoritative server-side DB-row expiry gate
-  (`query_session_get_valid` — `expires_at > NOW()`), the gate the in-process
-  payload-expiry tests never reached. Daemon-token-gated like its siblings; the
-  Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
-
-  In the hono-free sibling `testing/cross_backend/testing_origin_check.ts`,
-  **not** bundled: `_testing_origin_check`
-  (`create_testing_origin_check_action()`, `run_testing_origin_check(input)`,
-  `TestingOriginCheckInput` / `TestingOriginCheckOutput`) — answers the origin
-  allowlist's parse and request check for one `{patterns, origin}` pair:
-  `{ok: true, allowed}` or `{ok: false, errors: [{index?, kind}]}`. Pure, no
-  database. Kept out of the bundle so a consumer whose Rust binary doesn't
-  mount the mirror (`fuz_testing::create_testing_origin_check_action_spec`)
-  keeps an exact action-manifest gate; the spine binary appends it in
-  `build_full_spine_rpc_actions`.
-
-  In the hono-free sibling `testing/cross_backend/testing_credential_read.ts`,
-  also **not** bundled: `_testing_credential_read`
-  (`create_testing_credential_read_action(deps)`,
-  `run_testing_credential_read(input, deps)`, `TestingCredentialReadInput` /
-  `TestingCredentialReadOutput`) — reads a list of raw header lines as the
-  credential legs would: `{session_cookie: 'absent' | 'invalid' | 'valid',
-  bearer_token, daemon_token}`, the tokens as read or `null`. Pure: it runs
-  the readers of `auth/credential_headers.ts` and the cookie verify, no
-  database, and never the request's own headers. `lines` is capped
-  (`TESTING_CREDENTIAL_READ_LINES_MAX` lines of at most
-  `TESTING_CREDENTIAL_READ_LINE_LENGTH_MAX` characters, the same bounds on
-  the Rust mirror), and every refusal of it — over a cap, or a line that is no
-  header line: a control byte, DEL, a character above U+00FF, no `:` — is
-  `invalid_params` with `ERROR_TESTING_CREDENTIAL_READ_LINE`. Appended in
-  `build_full_spine_rpc_actions`; the Rust mirror is
-  `fuz_testing::create_testing_credential_read_action_spec`.
-
-  Back in `testing_reset_actions.ts`, also **not** bundled:
-  `_testing_shorten_credential_expiry`
-  (`create_testing_shorten_credential_expiry_action()`) — pulls an account's
-  `auth_session` and `api_token` expiries in to `seconds` (1–60) from now,
-  shorten-only (`LEAST`, an eternal token gaining one), answering
-  `{sessions, api_tokens}` counts. Applied before a connection opens, since
-  the deadline is read when the credential resolves. Backs
-  `describe_credential_deadline_cross_tests`; appended in
-  `build_full_spine_rpc_actions` for the same manifest reason as
-  `_testing_origin_check`. The Rust mirror is
-  `fuz_testing::create_testing_shorten_credential_expiry_action_spec`.
-
-  Also not bundled: `_testing_room_evict`
-  (`create_testing_room_evict_action(registry)`, input
-  `{target: TestingRoomEvictTarget, reason}`) — calls the room registry's
-  `evict` and answers its `{seats, watches, pending}` count, so the rooms suite
-  pins eviction without a consumer's domain. It needs the registry the room
-  verbs run on, so the full-mount layer appends it beside them. The Rust mirror
-  is `fuz_testing::create_testing_room_evict_action_spec`.
-
-  Also in `testing_reset_actions.ts` — but **not** bundled by
-  `create_testing_actions` — `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted, ws_only?)`, `ws_only` the WebSocket-only actions it lists as `transport: 'ws'`):
-  dumps the live RPC registry as a normalized `ActionManifest` for the
-  cross-impl manifest-parity gate (see §Cross-impl RPC-manifest parity). It must
-  enumerate _every_ mounted method, which `create_testing_actions` (one
-  sub-factory) can't see, so it's appended at the full-mount layer
-  (`full_spine_mount.ts` `build_full_spine_rpc_actions`), closing over the
-  complete action list plus its own spec. Daemon-token-gated like its siblings;
-  the Rust mirror is `fuz_testing::create_testing_action_manifest_action_spec`.
+  No free-form grant backdoor exists (the module doc says why). The keeper's
+  cached id (`DaemonTokenState.keeper_account_id`) moves to a reset's new keeper
+  only after its commit, so a rolled-back reset leaves the next one able to
+  authenticate.
 
 ### Testing-backdoor declaration + credential gate — `cross_backend/testing_backdoor.ts`
 
 `describe_testing_backdoor_cross_tests({setup_test, capabilities, rpc_path?,
-ws?, extra_methods?})` — the backend's backdoor declaration, then the
-negative-credential parity suite for the `_testing_*` backdoor actions.
-
-**Declaration.** `capabilities.testing_backdoors` lists the backdoors the
-backend mounts, from `TESTING_BACKDOOR_METHODS` (`spine_surface_constants.ts`,
-the one list; `spine_surface_constants.testing_backdoors.test.ts` holds it to
-the `_testing_*` actions fuz_app's spine binary mounts). Each known backdoor
-the list leaves out is sent anonymously and must answer `method_not_found`
-(404): both spines look the method up before they authenticate (the TS
-dispatcher's lookup step, the Rust `perform_action`'s), so an unmounted method
-answers that whatever the credential, and a mounted one a 401. Each declared
-one gets the rows below, whose anonymous row fails as "declared but not
-mounted" on a `method_not_found`. So the declaration can't lie in either
-direction, and the suites gated on it skip only what the backend lacks. A
-declared name outside the known list, or a duplicate, throws at collection.
-The suite runs on every backend, one declaring only the required backdoors
-included — `describe_spine_cross_suites` refuses to exclude it, skip any of
-its cases, or hand it other `capabilities` through `overrides`.
-
-**Credential gate.** For each declared backdoor (the privileged writes, the
-audit barrier, the connection flood, and the introspection reads), and each
-`extra_methods` entry (`TestingBackdoorProbe` `{method, params?}` — a
-consumer's own daemon-token seam, which must start with `_testing_` and not be
-a known backdoor), it fires three principals over real HTTP: **anonymous** →
-401 `unauthenticated`, **session** → 403 `forbidden` `credential_type_required`,
-**bearer** → 403 `forbidden` `credential_type_required` — and, when `ws`
-(`{base_url, ws_path, origin?}`) is passed, sends each on a socket opened with
-the keeper's session cookie, which answers the same `forbidden`
-`credential_type_required` (a socket is no way around the daemon-token channel) —
-proving the daemon-token gate that fences each backdoor action holds end-to-end
-on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
-never enumerates them because they're off the declared surface). Each method is
-sent with **valid** params so each case varies only the credential (validation
-runs after the gates — order is 401 → authz → 403 → 429 → 400); the handler never
-runs. The known backdoors' params are a `Record<TestingBackdoorMethod, …>`, so a
-backdoor added to the list fails typecheck until it has them. Cited property:
-`docs/security.md` §Test Backdoor Actions. The credential rows run
-cross-process only (the `_testing_*` actions are mounted on the spawned binary,
-not the in-process app — like the ws/sse suites); in-process, an app mounting
-none declares none and gets the declaration rows alone, one per known backdoor
-— fuz_app's in-process leg is `cross_backend/testing_backdoor_parity.db.test.ts`,
-while its cross legs declare every backdoor, so they run no declaration row.
-The complement is the
-in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
-asserting each spec declares `credential_types: ['daemon_token']`) + the
-`assert_no_testing_methods` surface invariant. fuz_app's conformance table
-also covers the same gates, through the auth rows it generates over the live
-mount (`live_rpc_endpoints`), which the differential compares across spines;
-this suite stays for consumers whose backends mount the `_testing_*` actions
-without a conformance table over their live mount, and for the declaration
-check.
+ws?, extra_methods?})` holds `capabilities.testing_backdoors` to the backend
+both ways — a known backdoor (`TESTING_BACKDOOR_METHODS`) left out must
+answer `method_not_found` anonymously, a declared one must be mounted — then
+sends every declared backdoor and `extra_methods` probe (each starting
+`_testing_`, never a known backdoor) as anonymous (401), session and bearer
+(403 `credential_type_required`), and on a session socket when `ws` is given,
+with valid params so only the credential varies. It runs on every backend and
+can't be excluded; in-process, an app mounting none gets the declaration rows
+alone. Property: ../../../docs/security.md §Test Backdoor Actions; the
+spec-level complement is `assert_no_testing_methods` and
+`src/test/testing/testing_actions_auth.test.ts`.
 
 ### Limiter-enabled backends — `login_security.ts` + `ws_action_rate_limit.ts`
 
@@ -2412,10 +1732,8 @@ to boot on a cap without the flag.
 Neither suite resets a limiter: each case isolates itself with its own
 forwarded IP or the fresh keeper `_testing_reset` seeds. The IP cases'
 addresses are fixed per process and their buckets outlive the reset, so a
-vitest retry of one fails. fuz_app runs both under the dual-spawn
-`cross_backend_security` project (`npm run test:cross:security`); the
-in-process limiter and proxy paths are `describe_rate_limiting_tests` and the
-proxy middleware tests.
+vitest retry of one fails. fuz_app's wiring: ../../test/CLAUDE.md
+§Cross-backend self-tests.
 
 ### Timing overrides — `timing_env`
 
@@ -2428,16 +1746,10 @@ through `timing_env` (`default_backend_configs.ts`), which sets
 `spine_surface_constants.ts`. Both spine binaries read them as a positive
 integer of ms up to 2³¹ − 1 and refuse to boot on anything else; unset keeps
 the defaults (`SSE_KEEP_ALIVE_INTERVAL_MS`, `DEFAULT_WS_RECEIVE_TIMEOUT`).
-fuz_app's `cross_backend_timing` project shortens both, so its suites watch
-each spine's timers fire within seconds. `db_checkout_timeout_ms` and
-`db_audit_checkout_timeout_ms` set the production pool checkout bounds
-(`FUZ_DB_CHECKOUT_TIMEOUT_MS`, `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`) the same
-way; the timing project boots both spines with them shortened.
-Cross-process only; fuz_app's own wiring is
-`src/test/cross_backend/sse_keep_alive.cross.test.ts`,
-`src/test/cross_backend/ws_receive_timeout.cross.test.ts` and
-`src/test/cross_backend/db_checkout_timeout.cross.test.ts`, under the
-`cross_backend_timing` project.
+`db_checkout_timeout_ms` and `db_audit_checkout_timeout_ms` set the production
+pool checkout bounds (`FUZ_DB_CHECKOUT_TIMEOUT_MS`,
+`FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`) the same way. Cross-process only;
+fuz_app's wiring: ../../test/CLAUDE.md §Cross-backend self-tests.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
@@ -2453,16 +1765,11 @@ re-roll the serve / daemon-info / drain boilerplate:
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, then the WS-only room verbs and `room_notification_actions`, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust — and the stub's RPC dispatcher refuses its `ws_only` room verbs). `options.room_registry` is the registry the room verbs, `_testing_room_evict`, and `_testing_reset` (which clears it) share — the binary builds it with `create_spine_room_registry(connections)` (exclusive, the default bounds; the twin of the stub's `stub_room_registry`) over its WS endpoints' connection registry; omitted, one over a fresh connection registry serves enumeration. Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. `create_spine_live_rpc_endpoints()` wraps the list, built on stub deps, as one endpoint at `SPINE_RPC_PATH` — the `live_rpc_endpoints` value the conformance table, the differential and the auth-row generator resolve off-surface methods from (no handler built there runs).
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `registry` — one member of the backend's `notification_sender`, so each socket hears a notification once), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary (`src/test/cross_backend/testing_spine_server{,_node,_bun}.ts`) is the worked example: one runtime-agnostic `build_spine_app` over `create_app_backend` + `create_app_server`, `build_full_spine_mount`'s lists on one RPC endpoint and two WS endpoints (`/api/ws` and `SPINE_ROLE_GATED_WS_PATH`) sharing one registry, so each socket hears a notification once; `_node` and `_bun` differ only in their adapter. It leaves `auth_cleanup` off, as the Rust stub does — a background pass would delete rows under a running suite; a consumer's binary may schedule it only when nothing its suites seed is already expired (the `expired_session` principal seeds a backdated session row).
 
-The TS spine binary serves the audit stream, `GET /api/admin/audit/stream`:
-`build_spine_app` passes `audit_log_sse: true` and `create_spine_route_specs`
-mounts `create_audit_log_route_specs({stream: ctx.audit_sse})` when
-`ctx.audit_sse` is set (keeps the shared surface snapshot SSE-free, since the surface stub ctx has
-`audit_sse: null`). `capabilities.sse` is a mount flag, so each config states
-it (`ts_spine_backend_config.ts` for the TS spines) and a consumer that doesn't
-wire `audit_log_sse` states `false`. The
-real-HTTP `transports/sse_transport.ts` feeds `describe_cross_process_sse_tests`.
+`capabilities.sse` is a mount flag, so each config states it; a consumer
+binary that doesn't wire `audit_log_sse` states `false`. The real-HTTP
+`transports/sse_transport.ts` feeds `describe_cross_process_sse_tests`.
 
 The auth-cost handling for cross-process testing is consumer-side: each
 consumer ships a separate test binary wiring a fast-params
@@ -2505,13 +1812,7 @@ scenario→task→report adapter over `@fuzdev/fuz_util`'s benchmark library
 (`Benchmark`, `benchmark_stats_compare`, `benchmark_format_markdown`) —
 no stats engine reinvented. fuz_app ships the primitive; consumers wire
 scenarios + the run.
-fuz_app also ships its **own** `npm run benchmark:cross-impl`
-(`src/benchmarks/cross_impl.bench.ts`) on the back of its TS spine binary —
-ts-node + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`
-is set). The two TS runtimes are apples-to-apples with each other (same
-in-memory pglet driver); TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat
-(documented in the run). The artifact (`*.latest.json`) is gitignored.
-
+fuz_app's own run: ../../test/CLAUDE.md §Cross-backend self-tests.
 - `bench/scenario.ts` — `BenchScenario` (`{name, requires?, run}`) +
   `BenchScenarioContext` (pre-authed `transport`, `rpc_path`,
   `capabilities`). The `run` body is the timed task; it `throw`s on a
@@ -2526,8 +1827,7 @@ in-memory pglet driver); TS-vs-Rust carries the pglet-vs-Postgres DB-layer cavea
   bootstraps each backend once (uses `handle.keeper_transport`; **no reset
   in the hot loop**), runs each scenario as a one-task `Benchmark` named by
   the backend, returns `CrossImplBenchResult` (`{backends, scenarios, entries}`).
-  Network-tuned defaults override fuz_util's micro defaults
-  (warmup 20 / min 100 / duration 3000ms).
+  Network-tuned defaults override fuz_util's micro defaults (its TSDoc).
 - `bench/bench_report.ts` — `format_cross_impl_markdown` (per-scenario
   table, backend rows), `compare_cross_impl` (Welch verdict per scenario
   vs a reference backend) + `format_cross_impl_comparison`, and
