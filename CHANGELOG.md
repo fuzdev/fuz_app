@@ -1,5 +1,62 @@
 # @fuzdev/fuz_app
 
+## 0.184.0
+
+### Minor Changes
+
+- break: a bootstrap sets the daemon-token keeper itself; `on_bootstrap` is gone ([479f47f](https://github.com/fuzdev/fuz_app/commit/479f47f))
+  
+  - break: remove `OnBootstrap`, `BootstrapRouteOptions.on_bootstrap`, `BootstrapLiveOptions.on_bootstrap` (`AppServerOptions.bootstrap`) and `BootstrapAccountCreated`; `BootstrapAccountSuccess` no longer carries `role_grants`
+  - break: `BootstrapRouteOptions` takes a required `daemon_token_state: DaemonTokenState | null`; once a bootstrap commits, the route sets its `keeper_account_id` to the new account (`create_app_server` passes its `daemon_token_state`), as the Rust spine's `on_keeper_resolved` wiring does — a rolled-back bootstrap sets nothing
+  - break: the daemon-token middleware no longer re-reads the keeper from the database while `keeper_account_id` is null; `create_app_server` resolves it at assembly for a passed `daemon_token_state` whose keeper is null (as the Rust spine's boot runs `resolve_keeper_into`), and the bootstrap route sets it after its commit, logging the Rust spine's `daemon token: keeper account set by bootstrap` (`_testing_reset` sets it to its fresh keeper), so a keeper seeded by another process (`seed_dev_account`) authenticates by daemon token after a restart, as on the Rust spine
+- break: `describe_capability_mounts_cross_tests` reads an unmounted route's `404` only as the spine's JSON `route_not_found` — a bodiless `404` under `/api` from a backend's own fallback now fails the unmounted control; a refused upgrade may still answer one, as a runtime that drops its body (`ws_refusal_body`) does ([828e507](https://github.com/fuzdev/fuz_app/commit/828e507))
+- break: the bearer and daemon-token legs no longer send the DEV-only `X-Fuz-Auth-Debug` header on a browser-context discard ([bebed98](https://github.com/fuzdev/fuz_app/commit/bebed98))
+  
+  - break: DEV builds no longer send `X-Fuz-Auth-Debug`; a test or tool that read it reads the debug log instead (the line the Rust spine logs)
+  - the two spines now answer a discarded credential identically in DEV too
+- break: remove `create_sse_response` from `realtime/sse.ts` ([328c2d7](https://github.com/fuzdev/fuz_app/commit/328c2d7))
+  
+  - break: a handler outside the route system that answered with `create_sse_response(c, log, options)` defines a route instead — `route.open_sse(options)` (`create_sse_stream`) and `route_sse(stream)`, which builds the response after the commit with `SSE_RESPONSE_HEADERS`; no library code or consumer called it
+  - `create_sse_stream`'s framing, outbound budget, keep-alive and client-disconnect tests now pin it directly; the stream's bytes are unchanged
+- break: `query_create_invite` carries the issuer rule and throws typed errors ([047774b](https://github.com/fuzdev/fuz_app/commit/047774b))
+  
+  - break: `CreateInviteInput.created_by` is a required `Uuid` — an invite always names its issuing actor; a caller that passed `null` passes a real issuer
+  - break: `query_create_invite` locks the issuer's account row (`query_account_lock_live_many`, `FOR SHARE`) and throws `InviteIssuerNotActiveError` when the actor is missing or tombstoned or its account soft-deleted, inserting nothing — a delete in flight is waited for and seen, one after waits and then deletes the invite; run it inside the caller's transaction, before the transaction locks any actor or `role_grant` row (or after locking the issuer's account row itself), the last-admin guard's order
+  - break: a unique violation on the unclaimed-invite indexes throws `InviteDuplicateError` where the raw `23505` database error surfaced; a consumer that matched `is_pg_unique_violation` matches the class
+  - the `invite_create` RPC action's wire and audit rows are unchanged; its handler maps the two errors to the same 401 and 409 `invite_duplicate` it answered
+- fix: `AppServer.close` waits for every request and WS message accepted — handler, then effects — and refuses what arrives after ([cc217ff](https://github.com/fuzdev/fuz_app/commit/cc217ff))
+  
+  - fix: every HTTP request and every WS message accepted for dispatch is held on `AppDeps.request_tracker` from acceptance until its handler has returned and its effect flush has settled, so `AppServer.close` waits for a handler still running when it starts, then for its flush — a WS message's eager `pending_effects` and async post-commit thunks, run after its reply, included — within `shutdown_drain_timeout_ms` and counted in what it logs giving up; before, only the audit emitter's pool writes and an HTTP request's flush already started were waited for
+  - fix: once `AppServer.close` starts draining, a request that arrives is refused, never run against the closing database: HTTP answers 503 `{"error": "service_unavailable"}`, and a WS message on a socket the close-all didn't end (a hand mount) the `service_unavailable` JSON-RPC error (`WS_SHUTTING_DOWN_MESSAGE`)
+  - fix: `_testing_drain_effects` waits for every request's effect flush as well as the audit emitter's writes, repeating until both are empty — a WS message's post-commit thunks and eager `pending_effects` (the bearer token touch among them) still running after its reply, as the Rust spine's drain does; never for a handler still running, its own included
+  - fix: under `await_pending_effects: true` an HTTP request's flush is held too, so a shutdown during one waits for it
+  - feat: `RequestTracker`, `AcceptedRequest`, `create_request_tracker` and `create_request_tracker_view` (`http/pending_effects.ts`): `accept()` holds a request (`null` once closed) and its `finish(flush)` ends it once the flush settles; `close()` refuses later requests; `drain_inflight` / `inflight_count` cover handlers and flushes, `drain_flushes` / `flush_count` the flushes alone — never await `drain_inflight` from inside a request
+  - break: `AppDeps` requires `request_tracker: RequestTracker` — `create_app_backend` creates it; a hand-built `AppDeps` adds `request_tracker: create_request_tracker()`
+  - break: `register_action_ws` requires `request_tracker: RequestTracker | null` — `create_app_server` passes its view of `deps.request_tracker`; a hand mount passes `deps.request_tracker`, or `null` when it owns its shutdown otherwise
+  - break: `drain_effects_on_shutdown` takes a `RequestTracker` (its `drain_inflight` and `inflight_count`) in place of a `Set` of flushes
+  - break: `ShutdownDrainGivenUp.request_flushes` is renamed `requests`, counting requests whose handler or flush still runs, and the give-up log says so
+  - break: `create_testing_drain_effects_action` takes `{request_tracker, audit}` (`TestingDrainEffectsDeps`, which `AppDeps` satisfies) in place of the emitter — pass `ctx.deps`
+- break: the session cookie is a bare `session_cookie_name: string`, in the Rust spine's shape ([2430e7f](https://github.com/fuzdev/fuz_app/commit/2430e7f))
+  
+  - break: `SessionOptions<TIdentity>` is gone — its `encode_identity` / `decode_identity` codec and its `max_age` with it; every `session_options: SessionOptions<string>` option (`AppServerOptions`, `AppServerContext`, `AuthMiddlewareOptions`, the account, signup and bootstrap route options, `BootstrapAccountOptions`, and the testing suites, setups and helpers) is `session_cookie_name: string`; pass the name `create_session_config(name)` was given
+  - break: `create_session_config` and `fuz_session_config` are removed; the default name is `SESSION_COOKIE_NAME` (`'fuz_session'`), as on Rust
+  - break: `session_cookie_header(value, options)` → `sign_session_cookie(keyring, session_token, cookie_name): Promise<string>`, which signs and formats; `clear_session_cookie_header(options)` → `format_session_clear_cookie(cookie_name)`
+  - break: `parse_session`, `process_session_cookie`, `ParsedSession` and `ProcessSessionResult` → `parse_session_from_cookies(cookie_lines, keyring, cookie_name, now_seconds?)`, answering `SessionCookieRead` — `{kind: 'absent'} | {kind: 'invalid'} | {kind: 'valid', cookie: SessionCookie}` with `SessionCookie` `{token, expires_at}`; `get_session_cookie` is removed (read the `Cookie` lines with it)
+  - break: `create_session_cookie_value(keyring, session_token, now_seconds?)` drops its options argument
+  - break: `create_capped_session({deps, account_id, max_sessions?})` takes no keyring or options and returns `{token, evicted}` (`CappedSession.token`, the raw session token) in place of the signed `cookie_value`; the caller signs with `sign_session_cookie`
+  - break: `create_session_middleware(keyring, session_cookie_name)`
+  - break: `check_bootstrap_status` → `is_bootstrap_available(deps, {token_store}): Promise<boolean>` (`CheckBootstrapStatusDeps` → `IsBootstrapAvailableDeps`); `create_app_server` builds the `BootstrapStatus` ref from it
+  - break: `BootstrapAccountSuccess` is `{ok, session_token, account, actor, set_cookie}`, the Rust `BootstrapSuccess`; the `POST /bootstrap` wire body is unchanged
+  - break: `create_app_server` no longer mints a sample cookie at assembly; it refuses a `session_cookie_name` that is no RFC 6265 cookie-name, as before
+  - break (testing): `CreateTestAccountWithCredentialsOptions`, `MintTestSessionOptions`, `TestAppServerOptions` and `CreateTestingActionsOptions` drop their unused session option (`CreateTestAppOptions` declares `session_cookie_name` itself); the `_testing_credential_read` reading schema `SessionCookieRead` is renamed `SessionCookieReadKind`, the name `SessionCookieRead` now `auth/session_cookie.ts`'s
+  - break (testing): `spine_session_options` is removed — the spine binaries use `SESSION_COOKIE_NAME`; `TestingCredentialReadDeps.session_options` → `session_cookie_name` (`create_testing_credential_read_action`)
+  - no wire bytes move: the cookie value, its attributes and `Max-Age` (`SESSION_AGE_MAX`) are as they were
+- feat: `to_api_token_id(token)` in `auth/api_token.ts` derives a raw API token's public id — `API_TOKEN_ID_PREFIX` (`tok_`) and the first `API_TOKEN_ID_BODY_LENGTH` (12) characters of the body — and throws on a value not `is_api_token_shaped`; `generate_api_token` derives its `id` through it, and `API_TOKEN_ID_REGEX` is built from the two constants (the same pattern) ([43746aa](https://github.com/fuzdev/fuz_app/commit/43746aa))
+
+### Patch Changes
+
+- fix: `format_audit_metadata` shows a `logout` row's `metadata.session_id` as `session: <truncated>`, as it does a `session_revoke` row's, where it showed nothing ([43746aa](https://github.com/fuzdev/fuz_app/commit/43746aa))
+
 ## 0.183.0
 
 ### Minor Changes
@@ -88,7 +145,7 @@
   
   - break: `create_test_app` registers the per-test invariant check itself, so a consumer's direct `create_test_app` tests are now checked, not only `default_in_process_setup` fixtures; a test leaving a hand-written state (a tombstone set in SQL, an actor deleted without its account) fails until it passes `exclude_db_invariants: {[name]: reason}`, now an option of `CreateTestAppOptions` (moved up from `InProcessSetupOptions`, which extends it), validated on every call and logged once per distinct set. `TestApp` gains `assert_db_invariants()`; an app built in `beforeAll` registers nothing — check it with `check_db_invariants_after_all(() => test_app)`, or, when the describe closes the app in its own `afterAll`, `check_db_invariants_after_suite(suite, test_app)` inside that hook ahead of the close
   - break: the bootstrapped test keeper holds `ROLE_KEEPER` and `ROLE_ADMIN` when `roles` is omitted (`DEFAULT_TEST_KEEPER_ROLES` in `testing/app_server.ts`), as a production bootstrap grants — in `create_test_app_server`, `bootstrap_test_keeper` and `create_test_app`, not only the in-process setups. A test that passed `roles: [ROLE_ADMIN]` to get an admin keeper can drop it; one that needs a keeper without admin passes `roles: [ROLE_KEEPER]`
-- refactor: `create_test_app` moves out of `testing/app_server.ts` so that module stays vitest-free ([9d5dd05](https://github.com/fuzdev/fuz_app/commit/9d5dd05))
+- `create_test_app` moves out of `testing/app_server.ts` so that module stays vitest-free ([9d5dd05](https://github.com/fuzdev/fuz_app/commit/9d5dd05)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
   
   - break: `create_test_app`, `TestApp`, `TestAccount`, `CreateTestAppOptions`, `CreateTestAppAccountArgs` and `SuiteAppOptions` are imported from `@fuzdev/fuz_app/testing/test_app.ts`; `create_test_app_server`, `bootstrap_test_keeper`, `create_test_account_with_credentials`, `mint_test_session`, `stub_password_deps` and `create_loopback_app_server_options` stay in `testing/app_server.ts`
   - break: `create_describe_db` and `assert_columns_match_live` move from `testing/db.ts` to `testing/describe_db.ts`, so `testing/db.ts` (which `testing/app_server.ts` imports) stays vitest-free too; the factories, `reset_public_schema`, the truncate-table lists and `log_db_factory_status` stay in `testing/db.ts`
