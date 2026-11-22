@@ -1282,7 +1282,9 @@ have files of their own.
   §Testing-backdoor declaration below; `[]` in-process, every one on fuz_app's
   spine presets), with `capabilities` required on
   `make_default_{ts,rust}_backend_config` — so a config that leaves one out
-  fails typecheck naming it, rather than silently skipping its suites. The
+  fails typecheck naming it, rather than silently skipping its suites — and
+  `capability_mounts` probes each one a request observes, so a `false` beside a
+  mounted surface fails too. The
   family defaults carry the declared surface's mounts (`account_lifecycle`,
   `account_status`, and `spine_fallback` — an unmatched path outside the auth
   scope answered by the spine's own fallback, which a backend serving a static
@@ -1449,9 +1451,10 @@ here never reaches it.
   `max_message_bytes` — one value per limit for every suite probing it.
 - **`exclude`** — `{[suite]: reason}`; the reason is required and shows in the
   run as a skipped test. An empty reason, an unknown suite name, a suite
-  both excluded and overridden, `testing_backdoor` (it checks the backdoor
-  declaration the gating reads), or a suite already skipping itself for an
-  undeclared backdoor throws before anything registers.
+  both excluded and overridden, a suite in `UNEXCLUDABLE_SPINE_SUITES`
+  (`testing_backdoor`, which checks the backdoor declaration the gating reads,
+  and `capability_mounts`, which checks the mount flags), or a suite already
+  skipping itself for an undeclared backdoor throws before anything registers.
 - **Backdoors.** `capabilities.testing_backdoors` must declare
   `SPINE_SUITES_REQUIRED_BACKDOORS` (`_testing_reset`, every setup's per-test
   reset, and `_testing_drain_effects`, the audit-read barrier),
@@ -1481,8 +1484,8 @@ here never reaches it.
   from the top-level task ranges each suite registered (read through
   `TestRunner.getCurrentSuite()` at collection), so an entry matches only
   below its own suite. A reasonless entry, an empty suite map, or an entry for
-  an unknown, excluded or self-skipping suite, or for `testing_backdoor`,
-  throws at collection; an entry
+  an unknown, excluded or self-skipping suite, or for a suite in
+  `UNEXCLUDABLE_SPINE_SUITES`, throws at collection; an entry
   naming no test its suite collected fails the closing test
   (`check_spine_case_exclusions`, which reads the collected paths, so a
   filtered run still checks them) — the dead-name check, as the known-divergence
@@ -1494,7 +1497,20 @@ here never reaches it.
   so `ws` is their only socket switch), `extra_methods` to fire a consumer's own
   daemon-token seams through `testing_backdoor` (whose
   `capabilities.testing_backdoors` an override can't change — the call throws
-  unless the merge keeps the backend's list). An entry can instead be a function of the derived
+  unless the merge keeps the backend's list). An override of a suite in
+  `UNEXCLUDABLE_SPINE_SUITES` is held to an allowlist
+  (`check_unexcludable_override`), so an option added later is refused until
+  classified. Any key passes unchanged; beyond that, `testing_backdoor` takes
+  `extra_methods`, and `ws: undefined` to drop its socket cases (never a moved
+  `ws`); `capability_mounts` takes
+  nothing (`capabilities`, `base_url`, `rpc_path`, `ws_path` and `sse_path`
+  only unchanged) — it probes the paths the suites gated on each flag send to,
+  the gated WS and readiness paths read from `ws_role_gated` and `ready` as
+  they run (an override of those moves both; with the sibling excluded, the
+  spine default, and the probe's failure names the remedy), and the account
+  status path the `SPINE_ACCOUNT_STATUS_PATH` `query_shape`,
+  `token_scope_surface` and `request_target_conformance_wire` send to (none
+  takes another). An entry can instead be a function of the derived
   options returning the patch (`SuiteOverride`), for a change built on a
   derived value — an `xfail` added to the derived multi-actor setup — so the
   seeding isn't restated. After the merge, every option the suite's type
@@ -1794,6 +1810,7 @@ without.
 | `app_settings` | an anonymous signup reads `open_signup` fresh after `app_settings_update` | — |
 | `body_size` | the 1 MiB body cap: cap+1 → 413 `payload_too_large`, exactly the cap not size-rejected, an over-cap chunked body → 413, no upload racing the close | — |
 | `body_size_smuggling` | raw socket: an oversized `POST` + a pipelined `GET` → at most one response; `Content-Length` beside `Transfer-Encoding` → close (Bun 1.4.3 is the tested floor) | — |
+| `capability_mounts` | each mount flag a request observes (`ws`, `sse`, `cell_crud`, `cell_relations`, `fact_serving`, `fact_serving_admin_hash`, `ready`, `account_status`, `ws_account_actions`, `ws_role_gated`) probed once and held to its declaration both ways — `true` answers as mounted, `false` as unmounted; each flag's probe again as an unmounted control (its surface moved under `CAPABILITY_MOUNTS_ABSENT`) read as unmounted on every backend; every other flag a skipped test naming why (`UNPROBED_CAPABILITIES`); can't be excluded or overridden; probes the paths the gated suites send to; cross-process only | every probed flag (the declaration) |
 | `cell_crud` | the CRUD lifecycle + authz matrix, each response parsed against its output schema, `cell_list` paging past hidden rows, mistyped `data` | `cell_crud` (clone cases also `cell_relations`) |
 | `cell_gated_create` | the parent-aware `CellCreateAuthorize`: admin-only `space` root, contributions gated by the root's `policy[kind]`, 404 on a hidden parent vs 403 on a visible one, `cell_policy_set` | `cell_gated_create` |
 | `cell_grant_role` | role-shaped `cell_grant`: holder admitted, non-holder excluded, unregistered role refused, the `cell_list shared_with:'me'` role arm | `cell_relations` |

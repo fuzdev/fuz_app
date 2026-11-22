@@ -3,23 +3,35 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
+	check_unexcludable_override,
 	describe_spine_cross_suites,
 	get_spine_suite_backdoors,
 	SPINE_SUITES_REQUIRED_BACKDOORS,
 	STANDALONE_CROSS_SUITES,
 	SUITE_NAMES,
+	UNEXCLUDABLE_SPINE_SUITES,
 	type SpineCrossSuitesOptions,
 	type SuiteName
 } from '#lib/testing/cross_backend/spine_suites.ts';
 import type { BackendCapabilities } from '#lib/testing/cross_backend/capabilities.ts';
+import type { CapabilityMountsCrossTestOptions } from '#lib/testing/cross_backend/capability_mounts.ts';
 import type { ReconstructedBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 import {
 	TESTING_BACKDOOR_METHODS,
 	type TestingBackdoorMethod
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
-// `testing_backdoor` can't be excluded, so the calls below that run one suite
-// alone also reach it — registering nothing keeps them collection-free
+// the `UNEXCLUDABLE_SPINE_SUITES` can't be excluded, so the calls below that
+// run one suite alone also reach them — registering nothing keeps them
+// collection-free; the mount suite's options are recorded for the sibling-path test
+const mount_suite_options: Array<CapabilityMountsCrossTestOptions> = vi.hoisted(() => []);
+vi.mock('#lib/testing/cross_backend/capability_mounts.ts', async (import_original) => ({
+	...(await import_original<typeof import('#lib/testing/cross_backend/capability_mounts.ts')>()),
+	describe_capability_mounts_cross_tests: (options: CapabilityMountsCrossTestOptions) => {
+		mount_suite_options.push(options);
+	}
+}));
+
 vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original) => ({
 	...(await import_original<typeof import('#lib/testing/cross_backend/testing_backdoor.ts')>()),
 	describe_testing_backdoor_cross_tests: () => {}
@@ -210,6 +222,21 @@ describe('describe_spine_cross_suites option validation', () => {
 			/'testing_backdoor' can't be excluded/
 		);
 	});
+
+	test('capability_mounts cannot be excluded, nor one of its cases', () => {
+		assert.throws(
+			call({ exclude: { capability_mounts: 'declares cells off while mounting them' } }),
+			/'capability_mounts' can't be excluded — it checks the capability flags/
+		);
+		assert.throws(
+			call({
+				exclude_cases: {
+					capability_mounts: { 'capability mounts > x': 'mounted under its own auth' }
+				}
+			}),
+			/exclude_cases can't name 'capability_mounts'/
+		);
+	});
 });
 
 /** A stub handle whose backend declares `testing_backdoors`, plus `extra` capabilities. */
@@ -218,7 +245,11 @@ const handle_declaring = (
 	extra: Partial<BackendCapabilities> = {}
 ): ReconstructedBootstrappedBackendHandle =>
 	({
-		config: { capabilities: { ws: false, ...extra, testing_backdoors }, env: {} }
+		config: {
+			capabilities: { ws: false, ...extra, testing_backdoors },
+			env: {},
+			base_url: 'http://localhost:1'
+		}
 	}) as unknown as ReconstructedBootstrappedBackendHandle;
 
 /** The backdoors every one-call backend must declare, and nothing else. */
@@ -316,7 +347,7 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 		const exclude = Object.fromEntries(
 			SUITE_NAMES.filter(
 				(n) =>
-					n !== 'testing_backdoor' &&
+					!(n in UNEXCLUDABLE_SPINE_SUITES) &&
 					![
 						'credential_conformance',
 						'credential_deadline',
@@ -349,7 +380,7 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 		] satisfies Array<ReadonlyArray<TestingBackdoorMethod>>) {
 			assert.throws(
 				with_backdoors(testing_backdoors),
-				/overrides can't change 'testing_backdoor' capabilities.testing_backdoors/,
+				/overrides can't change 'testing_backdoor' capabilities \(testing_backdoors\)/,
 				undefined,
 				testing_backdoors.join(', ')
 			);
@@ -416,7 +447,7 @@ describe('describe_spine_cross_suites required options', () => {
 		testing_backdoors: TESTING_BACKDOOR_METHODS
 	} as unknown as BackendCapabilities;
 	const handle = {
-		config: { capabilities, env: {}, cookie_name: 'fuz_session' }
+		config: { capabilities, env: {}, cookie_name: 'fuz_session', base_url: 'http://localhost:1' }
 	} as unknown as ReconstructedBootstrappedBackendHandle;
 	const only = (
 		name: SuiteName,
@@ -424,7 +455,7 @@ describe('describe_spine_cross_suites required options', () => {
 	): SpineCrossSuitesOptions =>
 		({
 			exclude: Object.fromEntries(
-				SUITE_NAMES.filter((n) => n !== name && n !== 'testing_backdoor').map((n) => [
+				SUITE_NAMES.filter((n) => n !== name && !(n in UNEXCLUDABLE_SPINE_SUITES)).map((n) => [
 					n,
 					'not under test'
 				])
@@ -490,6 +521,235 @@ describe('describe_spine_cross_suites required options', () => {
 		assert.strictEqual(
 			(received as { input_overrides?: unknown }).input_overrides,
 			rpc_input_overrides
+		);
+	});
+});
+
+describe('describe_spine_cross_suites unexcludable overrides', () => {
+	const capabilities = {
+		ws: true,
+		cell_crud: true,
+		testing_backdoors: HARNESS_ONLY
+	} as unknown as BackendCapabilities;
+	const handle_with = (config: Record<string, unknown>) =>
+		({
+			config: { capabilities, env: {}, ...config }
+		}) as unknown as ReconstructedBootstrappedBackendHandle;
+	const handle = handle_with({ base_url: 'http://localhost:1' });
+	// every other suite excluded but the siblings the mount suite reads, so an
+	// override reaches the unexcludable suites alone
+	const exclude = (keep: ReadonlyArray<SuiteName> = []) =>
+		Object.fromEntries(
+			SUITE_NAMES.filter(
+				(n) =>
+					!(n in UNEXCLUDABLE_SPINE_SUITES) &&
+					!keep.includes(n) &&
+					!get_spine_suite_backdoors(n).some((m) => !HARNESS_ONLY.includes(m))
+			).map((n) => [n, 'not under test'])
+		);
+	const call =
+		(
+			overrides: SpineCrossSuitesOptions['overrides'],
+			keep?: ReadonlyArray<SuiteName>,
+			h = handle
+		) =>
+		() =>
+			describe_spine_cross_suites(h, {
+				exclude: exclude(keep),
+				overrides
+			} as SpineCrossSuitesOptions);
+
+	test('an override changing a probed flag is refused', () => {
+		assert.throws(
+			call({
+				capability_mounts: (d) => ({ capabilities: { ...d.capabilities, cell_crud: false } })
+			}),
+			/overrides can't change 'capability_mounts' capabilities \(cell_crud\)/
+		);
+	});
+
+	test('an override moving a backend path the probes hit is refused', () => {
+		for (const [key, value] of [
+			['base_url', 'http://localhost:2'],
+			['rpc_path', '/api/elsewhere/rpc'],
+			['ws_path', '/api/nope'],
+			['sse_path', '/api/nope/stream']
+		] as const) {
+			assert.throws(
+				call({ capability_mounts: { [key]: value } }),
+				new RegExp(`overrides can't change 'capability_mounts' ${key} — `),
+				undefined,
+				key
+			);
+		}
+	});
+
+	test('setup_test and every option off the allowlist are refused on both suites', () => {
+		const setup_test = () => Promise.reject(new Error('elsewhere'));
+		assert.throws(
+			call({ capability_mounts: { setup_test } }),
+			/overrides can't set 'capability_mounts' setup_test — .*; it admits capabilities \(unchanged\)/
+		);
+		assert.throws(
+			call({ testing_backdoor: { setup_test } }),
+			/overrides can't set 'testing_backdoor' setup_test — .*; it admits extra_methods, ws \(unchanged or undefined\), capabilities \(unchanged\), rpc_path \(unchanged\)/
+		);
+		for (const key of ['gated_ws_path', 'ready_path'] as const) {
+			assert.throws(
+				call({ capability_mounts: { [key]: '/elsewhere' } }),
+				new RegExp(`overrides can't set 'capability_mounts' ${key} — `),
+				undefined,
+				key
+			);
+		}
+		assert.throws(
+			call({ testing_backdoor: { rpc_path: '/api/elsewhere/rpc' } }),
+			/overrides can't change 'testing_backdoor' rpc_path — /
+		);
+	});
+
+	test('the mount suite probes the paths ws_role_gated and ready run with', () => {
+		const probed_paths = (
+			overrides: SpineCrossSuitesOptions['overrides'],
+			keep: ReadonlyArray<SuiteName>
+		): { gated_ws_path?: string; ready_path?: string } => {
+			mount_suite_options.length = 0;
+			try {
+				call(overrides, keep)();
+			} catch {
+				// the siblings, run inside a test, refuse to register — after the mount suite did
+			}
+			const [options] = mount_suite_options;
+			assert.ok(options, 'the mount suite registered');
+			return { gated_ws_path: options.gated_ws_path, ready_path: options.ready_path };
+		};
+		assert.deepStrictEqual(
+			probed_paths(
+				{ ws_role_gated: { gated_ws_path: '/api/admin/ws' }, ready: { ready_path: '/readyz' } },
+				['ws_role_gated', 'ready']
+			),
+			{ gated_ws_path: '/api/admin/ws', ready_path: '/readyz' }
+		);
+		// excluded, a sibling runs nothing, and the mount suite takes the spine defaults
+		assert.deepStrictEqual(probed_paths(undefined, []), {
+			gated_ws_path: '/api/gated/ws',
+			ready_path: '/ready'
+		});
+	});
+
+	test("an excluded sibling's probe failure names the remedy", () => {
+		mount_suite_options.length = 0;
+		try {
+			call(undefined, ['ws_role_gated'])();
+		} catch {
+			// the sibling, run inside a test, refuses to register — after the mount suite did
+		}
+		const [options] = mount_suite_options;
+		assert.ok(options);
+		assert.deepStrictEqual(Object.keys(options.path_notes ?? {}), ['ready']);
+		assert.match(
+			options.path_notes?.ready ?? '',
+			/'ready' is excluded, .* un-exclude 'ready' and set it there with `overrides\.ready\.ready_path`/
+		);
+	});
+
+	test('an unexcludable suite missing a required option names only the override remedy', () => {
+		let message = '';
+		try {
+			// no base_url on the config, so the mount suite derives none
+			call(undefined, [], handle_with({}))();
+		} catch (error) {
+			message = String(error);
+		}
+		assert.match(
+			message,
+			/'capability_mounts' needs `base_url`, which neither the handle nor the override gives — pass `overrides\.capability_mounts` with it$/
+		);
+		assert.notMatch(message, /exclude 'capability_mounts'/);
+	});
+});
+
+describe('check_unexcludable_override', () => {
+	const derived = {
+		capabilities: { ws: true, testing_backdoors: ['_testing_reset', '_testing_drain_effects'] },
+		rpc_path: '/api/rpc',
+		base_url: 'http://localhost:1'
+	};
+
+	test('a suite that can be excluded is not checked', () => {
+		check_unexcludable_override('ready', { setup_test: undefined, ready_path: '/x' }, derived);
+	});
+
+	test('free keys take any value, fixed keys their derived value', () => {
+		check_unexcludable_override(
+			'testing_backdoor',
+			{
+				extra_methods: [{ method: '_testing_seam' }],
+				ws: undefined,
+				rpc_path: '/api/rpc',
+				// the same list in another order is the same declaration
+				capabilities: {
+					ws: true,
+					testing_backdoors: ['_testing_drain_effects', '_testing_reset']
+				}
+			},
+			derived
+		);
+		check_unexcludable_override(
+			'capability_mounts',
+			{ base_url: 'http://localhost:1', rpc_path: '/api/rpc' },
+			derived
+		);
+	});
+
+	test('ws on testing_backdoor drops (undefined) or stays, never moves', () => {
+		const with_ws = { ...derived, ws: { base_url: 'http://localhost:1', ws_path: '/api/ws' } };
+		check_unexcludable_override('testing_backdoor', { ws: undefined }, with_ws);
+		check_unexcludable_override(
+			'testing_backdoor',
+			{ ws: { base_url: 'http://localhost:1', ws_path: '/api/ws' } },
+			with_ws
+		);
+		assert.throws(
+			() =>
+				check_unexcludable_override(
+					'testing_backdoor',
+					{ ws: { base_url: 'http://localhost:1', ws_path: '/api/elsewhere/ws' } },
+					with_ws
+				),
+			/overrides can't change 'testing_backdoor' ws \(ws_path\)/
+		);
+	});
+
+	test('any key with its derived value passes, an unlisted one included', () => {
+		check_unexcludable_override(
+			'capability_mounts',
+			{ setup_test: undefined, rpc_path: '/api/rpc' },
+			{ ...derived, setup_test: undefined }
+		);
+	});
+
+	test('a fixed key moved throws, naming what differs', () => {
+		assert.throws(
+			() =>
+				check_unexcludable_override(
+					'testing_backdoor',
+					{ capabilities: { ws: false, testing_backdoors: ['_testing_reset'] } },
+					derived
+				),
+			/overrides can't change 'testing_backdoor' capabilities \(ws, testing_backdoors\)/
+		);
+		assert.throws(
+			() => check_unexcludable_override('capability_mounts', { base_url: undefined }, derived),
+			/overrides can't change 'capability_mounts' base_url — /
+		);
+	});
+
+	test('a key off the allowlist throws on any value but its derived one', () => {
+		assert.throws(
+			() =>
+				check_unexcludable_override('capability_mounts', { gated_ws_path: '/elsewhere' }, derived),
+			/overrides can't set 'capability_mounts' gated_ws_path/
 		);
 	});
 });

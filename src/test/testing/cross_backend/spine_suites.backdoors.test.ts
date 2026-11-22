@@ -14,6 +14,7 @@ import { assert, describe, test, vi } from 'vitest';
 import {
 	describe_spine_cross_suites,
 	SUITE_NAMES,
+	UNEXCLUDABLE_SPINE_SUITES,
 	type SpineCrossSuitesOptions
 } from '#lib/testing/cross_backend/spine_suites.ts';
 import type { BackendCapabilities } from '#lib/testing/cross_backend/capabilities.ts';
@@ -21,6 +22,11 @@ import type { ReconstructedBootstrappedBackendHandle } from '#lib/testing/cross_
 import type { TestingBackdoorCrossTestOptions } from '#lib/testing/cross_backend/testing_backdoor.ts';
 
 const recorded: Array<TestingBackdoorCrossTestOptions> = vi.hoisted(() => []);
+
+vi.mock('#lib/testing/cross_backend/capability_mounts.ts', async (import_original) => ({
+	...(await import_original<typeof import('#lib/testing/cross_backend/capability_mounts.ts')>()),
+	describe_capability_mounts_cross_tests: () => {}
+}));
 
 vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original) => ({
 	...(await import_original<typeof import('#lib/testing/cross_backend/testing_backdoor.ts')>()),
@@ -49,10 +55,9 @@ const handle = {
 describe('a backend declaring only the shared backdoors', () => {
 	describe_spine_cross_suites(handle, {
 		exclude: Object.fromEntries(
-			SUITE_NAMES.filter((n) => !SELF_SKIPPING.includes(n) && n !== 'testing_backdoor').map((n) => [
-				n,
-				'not under test'
-			])
+			SUITE_NAMES.filter(
+				(n) => !SELF_SKIPPING.includes(n) && !(n in UNEXCLUDABLE_SPINE_SUITES)
+			).map((n) => [n, 'not under test'])
 		),
 		// an override keeping the derived capabilities passes through
 		overrides: { testing_backdoor: { extra_methods: [{ method: '_testing_consumer_seam' }] } }

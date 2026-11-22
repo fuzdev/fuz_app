@@ -95,8 +95,6 @@ export interface RequestTargetConformanceWireCrossTestOptions {
 	readonly rpc_path?: string;
 	/** WebSocket endpoint path. Default `SPINE_WS_PATH`. */
 	readonly ws_path?: string;
-	/** Account status route path. Default `SPINE_ACCOUNT_STATUS_PATH`. */
-	readonly account_status_path?: string;
 	/** Login route path, the `POST`-only route. Default `SPINE_ACCOUNT_LOGIN_PATH`. */
 	readonly account_login_path?: string;
 	/** Audit stream path, the SSE route. Default `SPINE_SSE_PATH`. */
@@ -236,7 +234,9 @@ export const describe_request_target_conformance_wire_cross_tests = (
 	const placeholders = {
 		rpc_path: options.rpc_path ?? SPINE_RPC_PATH,
 		ws_path: options.ws_path ?? SPINE_WS_PATH,
-		account_status_path: options.account_status_path ?? SPINE_ACCOUNT_STATUS_PATH,
+		// the spine's, as `query_shape` and `token_scope_surface` send to and the
+		// mount suite probes: the one path `capabilities.account_status` names
+		account_status_path: SPINE_ACCOUNT_STATUS_PATH,
 		account_login_path: options.account_login_path ?? SPINE_ACCOUNT_LOGIN_PATH,
 		sse_path: options.sse_path ?? SPINE_SSE_PATH,
 		health_path: options.health_path ?? '/health'

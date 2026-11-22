@@ -1116,6 +1116,19 @@ capabilities: {
 }
 ```
 
+State each truthfully: the capability-mount suite
+(`describe_capability_mounts_cross_tests`, run by the one call and never
+excludable) probes each mount flag a request can observe — `ws`, `sse`,
+`cell_crud`, `cell_relations`, `fact_serving`, `fact_serving_admin_hash`,
+`ready`, `account_status`, `ws_account_actions`, `ws_role_gated` — and fails a
+`true` the backend doesn't mount and a `false` it does. An unmounted path
+under `/api` must answer `404`, the spine's JSON `route_not_found` or no body,
+and an unmounted readiness path a `404` or a `200` that isn't JSON — the
+suite's unmounted controls send each flag's probe to its surface moved where
+nothing is mounted and fail on any other answer, so a catch-all route under
+`/api` or an RPC dispatcher answering unknown methods fails them, with no
+exclusion.
+
 `testing_backdoors` lists the `_testing_*` backdoors your test binary mounts,
 from `TESTING_BACKDOOR_METHODS` (`spine_surface_constants.ts`) — your own seams
 stay off it. The testing-backdoor suite holds the list to the backend: each
@@ -1300,9 +1313,10 @@ capabilities, so state every mount flag truthfully and the rest follows.
 
 - `exclude` names a suite with a non-empty reason, shown in the run as a
   skipped test; an empty reason, an unknown name, or a suite both excluded and
-  overridden throws, as does excluding `testing_backdoor` (it checks the
-  backdoor declaration) or a suite already skipping itself for an undeclared
-  backdoor.
+  overridden throws, as does excluding a suite in `UNEXCLUDABLE_SPINE_SUITES`
+  — `testing_backdoor` (it checks the backdoor declaration) and
+  `capability_mounts` (it checks the mount flags) — or a suite already
+  skipping itself for an undeclared backdoor.
 - `exclude_cases` names single tests of a suite that runs, by suite, each by
   its name path — the describe titles and the test name joined with `' > '`,
   as the reporter prints them after the file — with a non-empty reason:
@@ -1317,14 +1331,23 @@ capabilities, so state every mount flag truthfully and the rest follows.
   ```
 
   Each is skipped at run time with its reason. An entry for an excluded or
-  self-skipping suite, or for `testing_backdoor` (a declared backdoor failing
-  its credential row is a bug, not a case to skip), throws at collection, and one naming no test the suite
+  self-skipping suite, or for an `UNEXCLUDABLE_SPINE_SUITES` suite (a failing
+  case of either is a wrong declaration or a bug, not a case to skip), throws at collection, and one naming no test the suite
   collected fails the closing check test — so a renamed case can't leave a
   stale entry behind.
 - `overrides` is a shallow merge over a suite's derived options, typed per
   suite (`SuiteOverrides`): a role list, an `xfail` for a tracked divergence, a
-  narrower capability set (not for `testing_backdoor`, whose
-  `capabilities.testing_backdoors` must stay the backend's). An entry can also be a function of the derived
+  narrower capability set. The two unexcludable suites take an allowlist:
+  `testing_backdoor` only `extra_methods` and `ws: undefined` to drop its
+  socket cases (its `capabilities.testing_backdoors` and `rpc_path` must stay
+  the backend's, and `ws` can't move), and
+  `capability_mounts` nothing — it probes the paths the suites gated on each
+  flag send to, so a role-gated WS endpoint or readiness route mounted
+  elsewhere is overridden once, on `ws_role_gated` (`gated_ws_path`) or
+  `ready` (`ready_path`), and both suites follow — with that sibling excluded,
+  the probe sends to the spine default and its failure says so. The account
+  status route is the spine's `/api/account/status` for every suite gated on
+  `account_status`; none takes another path. An entry can also be a function of the derived
   options returning the patch — to add to a derived value (an `xfail` on the
   derived multi-actor setup) without restating it. A required option the
   merge leaves `undefined` throws, naming the suite and key.

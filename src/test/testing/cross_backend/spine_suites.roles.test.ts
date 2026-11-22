@@ -16,6 +16,7 @@ import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	describe_spine_cross_suites,
 	SUITE_NAMES,
+	UNEXCLUDABLE_SPINE_SUITES,
 	type SpineCrossSuitesOptions,
 	type SuiteName
 } from '#lib/testing/cross_backend/spine_suites.ts';
@@ -30,8 +31,13 @@ import type {
 	ReconstructedBootstrappedBackendHandle
 } from '#lib/testing/cross_backend/setup.ts';
 
-// `testing_backdoor` can't be excluded, so it registers beside the suite under
-// test — as nothing, to keep the calls collection-free
+// the `UNEXCLUDABLE_SPINE_SUITES` register beside the suite under test — as
+// nothing, to keep the calls collection-free
+vi.mock('#lib/testing/cross_backend/capability_mounts.ts', async (import_original) => ({
+	...(await import_original<typeof import('#lib/testing/cross_backend/capability_mounts.ts')>()),
+	describe_capability_mounts_cross_tests: () => {}
+}));
+
 vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original) => ({
 	...(await import_original<typeof import('#lib/testing/cross_backend/testing_backdoor.ts')>()),
 	describe_testing_backdoor_cross_tests: () => {}
@@ -50,7 +56,8 @@ const handle = {
 			ws: true,
 			testing_backdoors: TESTING_BACKDOOR_METHODS
 		} as unknown as BackendCapabilities,
-		env: {}
+		env: {},
+		base_url: 'http://localhost:1'
 	}
 } as unknown as ReconstructedBootstrappedBackendHandle;
 
@@ -73,7 +80,7 @@ const derive = (
 			describe_spine_cross_suites(handle, {
 				...options,
 				exclude: Object.fromEntries(
-					SUITE_NAMES.filter((n) => n !== name && n !== 'testing_backdoor').map((n) => [
+					SUITE_NAMES.filter((n) => n !== name && !(n in UNEXCLUDABLE_SPINE_SUITES)).map((n) => [
 						n,
 						'not under test'
 					])

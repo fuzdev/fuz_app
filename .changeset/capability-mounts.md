@@ -1,0 +1,11 @@
+---
+'@fuzdev/fuz_app': minor
+---
+
+break: `describe_spine_cross_suites` probes every observable mount flag, holding `false` to the backend as well as `true`
+
+- feat: `describe_capability_mounts_cross_tests` (`testing/cross_backend/capability_mounts.ts`) probes each mount flag a request can observe — `ws`, `sse`, `cell_crud`, `cell_relations`, `fact_serving`, `fact_serving_admin_hash`, `ready`, `account_status`, `ws_account_actions`, `ws_role_gated` — with one cheap request (anonymous where that tells the two apart) and asserts the observation equals the declaration in both directions; every other capability shows as a skipped test naming why (`UNPROBED_CAPABILITIES`), `ProbedCapability` with `UNPROBED_CAPABILITIES` is exhaustive over `BackendCapabilities` by type, and each flag's probe runs again as an unmounted control (its surface moved under `CAPABILITY_MOUNTS_ABSENT`), holding the classifier to reading an absent surface as unmounted
+- break: the suite is in `SUITE_NAMES` as `capability_mounts`, so every `describe_spine_cross_suites` caller runs it: a flag declared `false` for a surface the backend mounts now fails, as does a `true` for one it doesn't
+- break: a consumer with a catch-all route under `/api` or an RPC dispatcher answering unknown methods (forwarding them) now fails the unmounted controls, with no exclusion — the suite rests on the spine's `404` / `route_not_found` and `method_not_found` for what isn't mounted
+- break: `UNEXCLUDABLE_SPINE_SUITES` names the suites the one call refuses to exclude (by suite or by case) — `testing_backdoor` and now `capability_mounts` — and an override of either is held to an allowlist: any key passes unchanged, and beyond that `testing_backdoor` takes `extra_methods` and `ws: undefined` (dropping its socket cases; a moved `ws` is refused, as is a changed `capabilities` — every flag now, not the backdoor list alone — or `rpc_path`), `capability_mounts` nothing; the mount suite probes the gated WS and readiness paths `ws_role_gated` and `ready` run with
+- break: `describe_request_target_conformance_wire_cross_tests` drops its `account_status_path` option — the account status route is `SPINE_ACCOUNT_STATUS_PATH` there as in `query_shape` and `token_scope_surface`, the three suites gated on `account_status`, and the path the mount suite probes

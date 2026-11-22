@@ -31,7 +31,9 @@ import '../assert_dev_env.ts';
  * **Mount flags have no default.** A flag naming something a backend mounts
  * (a `MountFlag`) is never inherited, nor is the `testing_backdoors` list: the
  * family defaults are `FamilyDefaultCapabilities`, which omits them, so every
- * backend config states each one. The family defaults carry only what the family guarantees — the
+ * backend config states each one, and `describe_capability_mounts_cross_tests`
+ * holds each a request can observe to what the backend mounts, `false` as
+ * much as `true`. The family defaults carry only what the family guarantees — the
  * declared spine surface's mounts, fallback and host gate (`account_lifecycle`,
  * `account_status`, `spine_fallback`, `host_gate`) and the runtime behavior of its
  * reference runtime (`ws_handshake_pipelining`,
