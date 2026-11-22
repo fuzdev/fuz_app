@@ -4,7 +4,11 @@
  * @module
  */
 
-import type { SseStream } from '#lib/realtime/sse.ts';
+import type { Context } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+
+import { create_sse_stream, type SseResponseOptions, type SseStream } from '#lib/realtime/sse.ts';
+import { SSE_RESPONSE_HEADERS } from '#lib/realtime/sse_constants.ts';
 
 /** A mock `SseStream` that records what was sent and whether it was closed. */
 export type MockSseStream<T = unknown> = SseStream<T> & {
@@ -32,4 +36,19 @@ export const create_mock_stream = <T = unknown>(): MockSseStream<T> => {
 		},
 		on_close() {}
 	};
+};
+
+/**
+ * Open a real SSE stream on `c` (`create_sse_stream`) and answer it at once
+ * through the context with `SSE_RESPONSE_HEADERS`, as `apply_route_specs`
+ * answers a route's `route_sse` result — so the stream's own behavior is
+ * pinned with no route around it.
+ */
+export const open_sse_response = <T = unknown>(
+	c: Context,
+	log: Logger,
+	options?: SseResponseOptions
+): { response: Response; stream: SseStream<T> } => {
+	const { stream, body } = create_sse_stream<T>(c, log, options);
+	return { response: c.body(body, 200, SSE_RESPONSE_HEADERS), stream };
 };

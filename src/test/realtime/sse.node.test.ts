@@ -1,6 +1,7 @@
 /**
- * `create_sse_response` over a real Node HTTP server (`@hono/node-server`),
- * against clients that disconnect.
+ * `create_sse_stream` over a real Node HTTP server (`@hono/node-server`),
+ * against clients that disconnect, each stream answered at once as the route
+ * spine answers it (`open_sse_response`).
  *
  * A handler that awaits before it builds its stream — the audit-log route
  * re-reads the credential first — can lose its client in the meantime. The
@@ -12,7 +13,7 @@
  * The control case keeps its client and asserts the stream stays registered.
  * The early-leave case also runs over cleartext HTTP/2, where the adapter's
  * response object is no stream and the connection's state lives on its
- * `Http2Stream`. The streaming cases run over HTTP/1 only: Hono's `streamSSE`
+ * `Http2Stream`. The streaming cases run over HTTP/1 only: `SSE_RESPONSE_HEADERS`
  * sets `Transfer-Encoding: chunked`, which HTTP/2 forbids, so the adapter's
  * `writeHead` throws and no response starts there.
  *
@@ -27,8 +28,9 @@ import { Hono } from 'hono';
 import { serve, type ServerType } from '@hono/node-server';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_sse_response } from '#lib/realtime/sse.ts';
 import { SseRegistry } from '#lib/realtime/sse_registry.ts';
+
+import { open_sse_response } from './sse_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -72,7 +74,7 @@ const start_server = async (transport: Transport): Promise<TestServer> => {
 	app.get('/stream', async (c) => {
 		gate_reached.resolve();
 		await gate.promise;
-		const { response, stream } = create_sse_response(c, log);
+		const { response, stream } = open_sse_response(c, log);
 		const unsubscribe = registry.subscribe(stream);
 		stream.on_close(unsubscribe);
 		response_returned.resolve();
@@ -152,7 +154,7 @@ afterEach(async () => {
 });
 
 describe.each<Transport>(['http1', 'http2'])(
-	'create_sse_response on @hono/node-server over %s',
+	'create_sse_stream on @hono/node-server over %s',
 	(transport) => {
 		test('a client that leaves before the handler returns leaves no stream behind', async () => {
 			const server = (current = await start_server(transport));
@@ -169,7 +171,7 @@ describe.each<Transport>(['http1', 'http2'])(
 	}
 );
 
-describe('create_sse_response on @hono/node-server while streaming', () => {
+describe('create_sse_stream on @hono/node-server while streaming', () => {
 	test('a client that leaves while streaming leaves no stream behind', async () => {
 		const server = (current = await start_server('http1'));
 		const req = open_request('http1', server.port);

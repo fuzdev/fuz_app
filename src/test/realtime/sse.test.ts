@@ -1,5 +1,9 @@
 /**
- * Tests for backend_sse - SSE streaming utilities.
+ * Tests for `realtime/sse.ts`: `create_sse_stream`'s framing, close and
+ * disconnect, outbound budget and keep-alive, each stream answered by
+ * `open_sse_response` as the route spine answers it (the headers a route's
+ * stream is answered with are pinned in `http/route_result.sse.test.ts`), and
+ * `create_validated_broadcaster`.
  *
  * @module
  */
@@ -10,7 +14,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
-	create_sse_response,
 	create_validated_broadcaster,
 	type SseNotification,
 	type EventSpec,
@@ -26,6 +29,8 @@ import {
 } from '#lib/realtime/sse_constants.ts';
 import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
+
+import { open_sse_response } from './sse_test_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -45,28 +50,12 @@ const create_warn_log = (): { warn_log: Logger; warns: Array<Array<unknown>> } =
 	return { warn_log, warns };
 };
 
-describe('create_sse_response', () => {
-	test('returns response with correct SSE headers', async () => {
-		const app = new Hono();
-
-		app.get('/sse', (c) => {
-			const { response } = create_sse_response(c, log);
-			return response;
-		});
-
-		const response = await app.request('/sse');
-
-		assert.strictEqual(response.headers.get('Content-Type'), 'text/event-stream');
-		assert.strictEqual(response.headers.get('Cache-Control'), 'no-cache');
-		assert.strictEqual(response.headers.get('Connection'), 'keep-alive');
-		assert.strictEqual(response.headers.get('Transfer-Encoding'), 'chunked');
-	});
-
+describe('create_sse_stream', () => {
 	test('stream.send serializes data as JSON SSE format', async () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<{ msg: string }>(c, log);
+			const { response, stream } = open_sse_response<{ msg: string }>(c, log);
 			stream.send({ msg: 'hello' });
 			stream.close();
 			return response;
@@ -81,7 +70,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			stream.send('before');
 			stream.close();
 			stream.send('after'); // should be ignored
@@ -97,7 +86,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<number>(c, log);
+			const { response, stream } = open_sse_response<number>(c, log);
 			stream.send(1);
 			stream.send(2);
 			stream.send(3);
@@ -114,7 +103,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.close();
 			stream.close(); // should not throw
 			return response;
@@ -130,7 +119,7 @@ describe('create_sse_response', () => {
 		const calls: Array<string> = [];
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.on_close(() => calls.push('a'));
 			stream.on_close(() => calls.push('b'));
 			stream.close();
@@ -146,7 +135,7 @@ describe('create_sse_response', () => {
 		let call_count = 0;
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.on_close(() => call_count++);
 			stream.close();
 			stream.close();
@@ -162,7 +151,7 @@ describe('create_sse_response', () => {
 		let calls = 0;
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.close();
 			stream.on_close(() => {
 				calls++;
@@ -182,7 +171,7 @@ describe('create_sse_response', () => {
 		const controller = new AbortController();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.on_close(registry.subscribe(stream));
 			return response;
 		});
@@ -204,7 +193,7 @@ describe('create_sse_response', () => {
 		let sent_after_close = false;
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			const unsubscribe = registry.subscribe(stream);
 			stream.on_close(unsubscribe);
 			stream.send('dropped');
@@ -225,7 +214,7 @@ describe('create_sse_response', () => {
 		const registry = new SseRegistry<string>();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			const unsubscribe = registry.subscribe(stream, { channels: ['ch'] });
 			stream.on_close(unsubscribe);
 			stream.send('before');
@@ -245,7 +234,7 @@ describe('create_sse_response', () => {
 		let closed = false;
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.on_close(() => {
 				closed = true;
 			});
@@ -264,7 +253,7 @@ describe('create_sse_response', () => {
 		const calls: Array<string> = [];
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response(c, log);
+			const { response, stream } = open_sse_response(c, log);
 			stream.on_close(() => calls.push('a'));
 			stream.on_close(() => {
 				throw new Error('boom');
@@ -283,7 +272,7 @@ describe('create_sse_response', () => {
 		const registry = new SseRegistry<string>();
 
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			const unsubscribe = registry.subscribe(stream, { channels: ['ch'] });
 			stream.on_close(unsubscribe);
 			stream.close();
@@ -298,7 +287,7 @@ describe('create_sse_response', () => {
 	});
 });
 
-describe('create_sse_response outbound budget', () => {
+describe('create_sse_stream outbound budget', () => {
 	test('the budget is 1 MiB', () => {
 		assert.strictEqual(SSE_OUTBOUND_QUEUE_BYTES, 1024 * 1024);
 	});
@@ -308,7 +297,7 @@ describe('create_sse_response outbound budget', () => {
 		// ten frames a little under a tenth of the budget each, overhead included
 		const payload = 'x'.repeat(100_000);
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			for (let i = 0; i < 10; i++) stream.send(payload);
 			stream.close();
 			return response;
@@ -325,7 +314,7 @@ describe('create_sse_response outbound budget', () => {
 		let closed = 0;
 		let stream_ref!: SseStream<string>;
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, warn_log, {
+			const { response, stream } = open_sse_response<string>(c, warn_log, {
 				account_id: 'acc_1'
 			});
 			stream_ref = stream;
@@ -398,7 +387,7 @@ describe('create_sse_response outbound budget', () => {
 			let closed = 0;
 			let stream_ref!: SseStream<string>;
 			app.get('/sse', (c) => {
-				const { response, stream } = create_sse_response<string>(c, warn_log);
+				const { response, stream } = open_sse_response<string>(c, warn_log);
 				stream_ref = stream;
 				stream.on_close(() => closed++);
 				// nothing has read the connect comment yet
@@ -433,7 +422,7 @@ describe('create_sse_response outbound budget', () => {
 		const app = new Hono();
 		let stream_ref!: SseStream<string>;
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			stream_ref = stream;
 			return response;
 		});
@@ -462,7 +451,7 @@ describe('create_sse_response outbound budget', () => {
 		const closed: Array<string> = [];
 		app.get('/sse/:name', (c) => {
 			const name = c.req.param('name');
-			const { response, stream } = create_sse_response<string>(c, log);
+			const { response, stream } = open_sse_response<string>(c, log);
 			const unsubscribe = registry.subscribe(stream, { channels: ['ch'] });
 			stream.on_close(unsubscribe);
 			stream.on_close(() => closed.push(name));
@@ -644,13 +633,13 @@ describe('create_validated_broadcaster', () => {
 	});
 });
 
-describe('create_sse_response keep-alive', () => {
+describe('create_sse_stream keep-alive', () => {
 	/**
 	 * Open a stream under fake timers and read its body as it arrives. Nothing
 	 * is sent but what the stream writes on its own.
 	 */
 	const open = async (
-		options?: Parameters<typeof create_sse_response>[2],
+		options?: Parameters<typeof open_sse_response>[2],
 		target_log: Logger = log
 	): Promise<{
 		stream: SseStream<string>;
@@ -662,7 +651,7 @@ describe('create_sse_response keep-alive', () => {
 		let stream_ref!: SseStream<string>;
 		let closed = 0;
 		app.get('/sse', (c) => {
-			const { response, stream } = create_sse_response<string>(c, target_log, options);
+			const { response, stream } = open_sse_response<string>(c, target_log, options);
 			stream_ref = stream;
 			stream.on_close(() => closed++);
 			return response;
@@ -742,7 +731,7 @@ describe('create_sse_response keep-alive', () => {
 			let thrown: unknown = null;
 			app.get('/sse', (c) => {
 				try {
-					return create_sse_response(c, log, { keep_alive_ms }).response;
+					return open_sse_response(c, log, { keep_alive_ms }).response;
 				} catch (error) {
 					thrown = error;
 					return c.text('refused', 500);
@@ -782,7 +771,7 @@ describe('create_sse_response keep-alive', () => {
 				const app = new Hono();
 				let closed = 0;
 				app.get('/sse', (c) => {
-					const { response, stream } = create_sse_response<string>(c, warn_log);
+					const { response, stream } = open_sse_response<string>(c, warn_log);
 					stream.on_close(() => closed++);
 					// one synchronous run, so nothing the client could have read is
 					// released: fill the budget to `spare` bytes short of one more

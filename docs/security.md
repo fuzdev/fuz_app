@@ -629,8 +629,8 @@ enforcement:
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the revocation
   itself. No periodic role_grant refresh is needed.
-- **Client disconnect**: `create_sse_stream` (and `create_sse_response` over
-  it) closes its stream when the client disconnects, including one that leaves
+- **Client disconnect**: `create_sse_stream` closes its stream when the
+  client disconnects, including one that leaves
   before the handler returns — a runtime cancels only a body it has started
   sending (how it watches for that on `@hono/node-server` is `realtime/sse.ts`'s
   TSDoc). The audit route registers the stream's close listener before

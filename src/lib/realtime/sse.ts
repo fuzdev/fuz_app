@@ -1,8 +1,9 @@
 /**
  * SSE (Server-Sent Events) streaming utilities for Hono.
  *
- * Provides generic helpers for creating SSE response streams
- * and a notification type aligned with JSON-RPC 2.0.
+ * `create_sse_stream` opens a stream on a request — what a route spec's
+ * `RouteContext.open_sse` gives it, answered by `route_sse` — and
+ * `SseNotification` is the notification shape, aligned with JSON-RPC 2.0.
  *
  * ## Outbound bound
  *
@@ -44,7 +45,6 @@ import {
 	SSE_KEEP_ALIVE_COMMENT,
 	SSE_KEEP_ALIVE_INTERVAL_MS,
 	SSE_OUTBOUND_QUEUE_BYTES,
-	SSE_RESPONSE_HEADERS,
 	validate_sse_keep_alive_ms
 } from './sse_constants.ts';
 
@@ -83,7 +83,7 @@ export interface SseNotification {
 	params: unknown;
 }
 
-/** Options for `create_sse_stream` and `create_sse_response`. */
+/** Options for `create_sse_stream`. */
 export interface SseResponseOptions {
 	/**
 	 * The account the stream belongs to, named in the warning logged when the
@@ -306,32 +306,6 @@ export const create_sse_stream = <T = unknown>(
 	watch_client_disconnect(c, do_close);
 
 	return { stream, body: hono_stream.responseReadable as ReadableStream<Uint8Array> };
-};
-
-/**
- * Create an SSE response for a Hono context: `create_sse_stream`, answered at
- * once through the context with `SSE_RESPONSE_HEADERS` — the response
- * Hono's `streamSSE` builds, so it carries the headers the middleware put on
- * the context. For a handler outside the route-spec system; a route spec opens
- * its stream through `RouteContext.open_sse` instead, which builds the
- * response only when the route answers with it.
- *
- * @param log - logger for serialization and `on_close` listener errors, and
- *   for the warning when the stream ends on its outbound budget
- * @param options - what the overflow warning names, and the keep-alive interval
- * @returns object with the streaming `Response` and an `SseStream` controller
- * @throws Error when `options.keep_alive_ms` is out of range
- *   (`validate_sse_keep_alive_ms`)
- * @mutates `c` - writes `SSE_RESPONSE_HEADERS` on the context's headers
- */
-export const create_sse_response = <T = unknown>(
-	c: Context,
-	log: Logger,
-	options?: SseResponseOptions
-): { response: Response; stream: SseStream<T> } => {
-	const { stream, body } = create_sse_stream<T>(c, log, options);
-	for (const [name, value] of Object.entries(SSE_RESPONSE_HEADERS)) c.header(name, value);
-	return { response: c.newResponse(body), stream };
 };
 
 /** Spec for a push event — declares params schema, description, and channel. */
