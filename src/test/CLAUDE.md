@@ -355,8 +355,10 @@ status, header names, the session cookie's effect and the whole body, so an extr
 or a body difference on a row pinned by status alone, fails. Each case also
 compares the databases the two spines are left in, read directly
 (`db_state_diff.ts`; differences under `db.`), so a write one spine makes and
-the other doesn't — an audit field, a rolled-back insert — fails though no
-answer shows it. Tracked
+the other doesn't — an audit field, a column a write sets, a rolled-back
+insert — fails though no answer shows it. For that the TS binary hashes
+passwords as the stub does, Argon2id at test parameters
+(`testing_password_argon2.ts`, twin of `TestingArgon2idHasher`). Tracked
 differences live in `differential_known_divergences.ts`, each with its
 tracking id and the paths it differs at, and the ledger's closing test fails
 on an entry that no longer differs; and

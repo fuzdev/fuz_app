@@ -448,19 +448,30 @@ field a loose output schema passes on one spine, shows up as a difference.
   `create_db_state_probe(handle)` → `{mark, read, close}` over the backend's
   own `DATABASE_URL` (PostgreSQL the test process reaches, else it throws):
   `mark` reads the audit sequence before the fixture, `read` drains the
-  backend's audit writes (`_testing_drain_effects`) and reads every
-  `DB_STATE_TABLES` row as JSON. `normalize_db_state` numbers ids
-  (`<id:n>`, `<tok:n>`) and generated usernames (`<username:n>`,
-  `GENERATED_USERNAME_PATTERN` from `setup.ts`) by a canonical walk — tables
-  in order, rows sorted by a key holding no unnumbered id (audit rows by
-  `seq`), columns and JSON keys sorted — so a reference inside `metadata`
-  compares; tokens and digests become constants, timestamps their dense
-  rank over the dump (`<t:n>`, `null` kept), `seq` an offset from the
-  dump's smallest, and `audit_seq_advance` how far the sequence moved since
-  the mark (a rolled-back insert spends a value). `diff_db_states(a, b)`
-  lists the differences as `db.<table>[i].<column>…` and
-  `db.audit_seq_advance`. Rows compare by position, so a missing row shifts
-  its table.
+  backend's audit writes (`_testing_drain_effects`) and reads every row of
+  every `public` table but `schema_version` as JSON, the column types from
+  `query_schema_snapshot`, so a new table or column joins under its type's
+  rule. `normalize_db_state` numbers ids (`<id:n>`, `<tok:n>`) and generated
+  usernames (`<username:n>`, `GENERATED_USERNAME_PATTERN` from `setup.ts`)
+  by a canonical walk — tables in `DB_STATE_TABLES` order then by name, rows
+  sorted by `DB_STATE_SORT_KEYS` (each table's natural key — accounts by
+  username, actors by account and name, sessions and tokens by account, cell
+  items by parent and position, facts by hash, audit rows by `seq`) then by
+  the whole row with no unnumbered id, columns and JSON keys sorted — so a
+  reference inside `metadata` compares and sessions and tokens compare as a
+  multiset per account; tokens and digests become constants, a
+  `password_hash` its argon2 parameter prefix, an `expires_at` (column or
+  JSON key) its offset from the row's `created_at` to the minute
+  (`+30d0h0m` — a rank would keep the order and lose the lifetime), other
+  timestamps their dense rank over the dump (`<t:n>`, `null` kept, so one
+  extra instant shifts every later rank), `seq` an offset from the dump's smallest, and
+  `audit_seq_advance` how far the sequence moved since the mark (a
+  rolled-back insert spends a value). `DB_STATE_UNCOMPARED_COLUMNS` names
+  the columns left out, each with its reason — today the token-use touch,
+  which the Rust spine writes on a detached task no drain awaits.
+  `diff_db_states(a, b)` lists the differences as
+  `db.<table>[i].<column>…` and `db.audit_seq_advance`. Rows compare by
+  position, so a missing row shifts its table.
 
 fuz_app runs it under the `cross_backend_parity` project
 (`differential.cross.test.ts`, its ledger `differential_known_divergences.ts`

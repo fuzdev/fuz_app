@@ -18,8 +18,9 @@
  * loader all resolve uniformly.
  *
  * **NEVER ships in a release.** Lives under `src/test/` (excluded from the
- * `dist` package build) and uses `stub_password_deps` — a deterministic
- * non-Argon2 hasher.
+ * `dist` package build) and hashes passwords with
+ * `testing_argon2_password_deps` — Argon2id at weakened test parameters, as
+ * the Rust stub hashes them.
  *
  * @module
  */
@@ -59,7 +60,6 @@ import {
 	type RateLimiterOptions
 } from '#lib/rate_limiter.ts';
 import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
-import { stub_password_deps } from '#lib/testing/app_server.ts';
 import {
 	create_spine_ready_route_spec,
 	create_spine_route_specs,
@@ -80,6 +80,7 @@ import {
 	SPINE_WS_PATH,
 	WS_RECEIVE_TIMEOUT_MS_ENV
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
+import { testing_argon2_password_deps } from './testing_password_argon2.ts';
 import type {
 	BuildTestingAppContext,
 	BuiltTestingApp
@@ -244,7 +245,7 @@ export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerCo
 /**
  * Build the no-domain spine Hono app + close.
  *
- * Uses `stub_password_deps` (fast deterministic hasher), in-memory pglet
+ * Uses `testing_argon2_password_deps` (Argon2id at test parameters), in-memory pglet
  * by default (`DATABASE_URL=memory://`), every rate limiter disabled
  * (`rate_limiters: 'disabled_for_testing'`) unless an env toggle opts the
  * login or action limiters in, and
@@ -275,7 +276,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	const app_backend = await create_app_backend({
 		database_url: env.DATABASE_URL,
 		keyring,
-		password: stub_password_deps,
+		password: testing_argon2_password_deps,
 		audit_factory: cell_audit_factory,
 		// Splice the `fuz_cell` + `fuz_facts` schemas after the builtin auth
 		// namespace so the cell verbs + the fact-serving routes below have their

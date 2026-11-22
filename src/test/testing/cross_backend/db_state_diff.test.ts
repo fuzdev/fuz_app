@@ -82,7 +82,7 @@ describe('normalize_db_state', () => {
 				audit_row({
 					seq: 1,
 					created_at: '2026-11-21T18:00:00.000001+00:00',
-					metadata: { expires_at: '2026-11-22T18:00:00Z' }
+					metadata: { seen_at: '2026-11-22T18:00:00Z' }
 				}),
 				audit_row({ id: UUID_A, seq: 2, created_at: '2026-11-21T18:00:00.000001+00:00' }),
 				audit_row({ id: UUID_B, seq: 3, created_at: '2026-11-21T19:00:00.000002+01:00' })
@@ -94,7 +94,55 @@ describe('normalize_db_state', () => {
 			rows.map((r) => r.created_at),
 			['<t:1>', '<t:1>', '<t:2>']
 		);
-		assert.deepEqual(rows[0]!.metadata, { expires_at: '<t:3>' });
+		assert.deepEqual(rows[0]!.metadata, { seen_at: '<t:3>' });
+	});
+
+	test('an expiry is its offset from its row creation, ranked with nothing', () => {
+		const state = normalize_db_state({
+			columns: {
+				auth_session: {
+					id: 'text',
+					account_id: 'uuid',
+					created_at: 'timestamptz',
+					expires_at: 'timestamptz'
+				},
+				audit_log: AUDIT_COLUMNS
+			},
+			rows: {
+				auth_session: [
+					{
+						id: 'a'.repeat(64),
+						account_id: UUID_A,
+						created_at: '2026-11-21T18:00:00.123456+00:00',
+						expires_at: '2026-12-21T18:00:20.5+00:00'
+					},
+					{
+						id: 'b'.repeat(64),
+						account_id: UUID_B,
+						created_at: '2026-11-21T18:00:01+00:00',
+						expires_at: '2026-11-21T17:59:01+00:00'
+					}
+				],
+				audit_log: [
+					audit_row({
+						created_at: '2026-11-21T18:00:02+00:00',
+						metadata: { expires_at: '2026-11-28T18:00:02Z' }
+					})
+				]
+			},
+			audit_seq_advance: 1
+		});
+		assert.deepEqual(
+			state.tables.auth_session!.map((r) => [r.created_at, r.expires_at]),
+			[
+				['<t:1>', '+30d0h0m'],
+				['<t:2>', '-0d0h1m']
+			]
+		);
+		const audit = state.tables.audit_log![0]!;
+		// the expiries joined no rank, so the audit row's creation is the third instant
+		assert.strictEqual(audit.created_at, '<t:3>');
+		assert.deepEqual(audit.metadata, { expires_at: '+7d0h0m' });
 	});
 
 	test('tokens and digests become constants, token ids and generated usernames placeholders', () => {
@@ -145,5 +193,87 @@ describe('diff_db_states', () => {
 			{ path: 'db.audit_log[0].id', a: '<id:1>', b: '<id:2>' },
 			{ path: 'db.audit_seq_advance', a: 1, b: 2 }
 		]);
+	});
+});
+
+describe('normalize_db_state over the auth tables', () => {
+	const columns = {
+		account: { id: 'uuid', username: 'text', password_hash: 'text', created_at: 'timestamptz' },
+		actor: { id: 'uuid', account_id: 'uuid', name: 'text' },
+		api_token: {
+			id: 'text',
+			account_id: 'uuid',
+			last_used_at: 'timestamptz',
+			last_used_ip: 'text'
+		},
+		audit_log: AUDIT_COLUMNS
+	};
+	const T = '2026-11-21T18:00:00+00:00';
+
+	test('walks accounts before actors before audit rows, so references number alike', () => {
+		const state = normalize_db_state({
+			columns,
+			rows: {
+				audit_log: [audit_row({ id: UUID_D, account_id: UUID_B })],
+				actor: [
+					{ id: UUID_C, account_id: UUID_B, name: 'b' },
+					{ id: UUID_D.replace('2', '7'), account_id: UUID_A, name: 'a' }
+				],
+				account: [
+					{ id: UUID_B, username: 'zed', password_hash: 'x', created_at: T },
+					{ id: UUID_A, username: 'amy', password_hash: 'x', created_at: T }
+				]
+			},
+			audit_seq_advance: 1
+		});
+		assert.deepEqual(
+			state.tables.account!.map((r) => [r.username, r.id]),
+			[
+				['amy', '<id:1>'],
+				['zed', '<id:2>']
+			]
+		);
+		assert.deepEqual(
+			state.tables.actor!.map((r) => [r.account_id, r.name]),
+			[
+				['<id:1>', 'a'],
+				['<id:2>', 'b']
+			]
+		);
+		assert.strictEqual(state.tables.audit_log![0]!.account_id, '<id:2>');
+	});
+
+	test('a password hash keeps its argon2 parameters only', () => {
+		const state = normalize_db_state({
+			columns,
+			rows: {
+				account: [
+					{
+						id: UUID_A,
+						username: 'amy',
+						password_hash: '$argon2id$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$ZGlnZXN0ZGlnZXN0',
+						created_at: T
+					}
+				]
+			},
+			audit_seq_advance: 0
+		});
+		assert.strictEqual(
+			state.tables.account![0]!.password_hash,
+			'$argon2id$v=19$m=8,t=1,p=1$<salt>$<hash>'
+		);
+	});
+
+	test('the uncompared columns are left out', () => {
+		const state = normalize_db_state({
+			columns,
+			rows: {
+				api_token: [
+					{ id: 'tok_abC0_d-3xyzA', account_id: UUID_A, last_used_at: T, last_used_ip: '::1' }
+				]
+			},
+			audit_seq_advance: 0
+		});
+		assert.deepEqual(state.tables.api_token, [{ account_id: '<id:1>', id: '<tok:1>' }]);
 	});
 });

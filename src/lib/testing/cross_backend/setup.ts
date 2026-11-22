@@ -588,10 +588,11 @@ const TokenCreateResponseShape = strip_object({
 let username_counter = 0;
 const PID_BASE36 = process.pid.toString(36);
 /**
- * Matches every username `fixture.create_account()` generates — fresh per
+ * Matches a username `fixture.create_account()` generates — fresh per
  * call, so a cross-backend comparison treats it as a volatile value.
+ * Unanchored and without flags; build a `g` copy to replace every match.
  */
-export const GENERATED_USERNAME_PATTERN = /test_user_[0-9a-z]+_[0-9a-z]+_[0-9a-z]+/g;
+export const GENERATED_USERNAME_PATTERN = /test_user_[0-9a-z]+_[0-9a-z]+_[0-9a-z]+/;
 const generate_default_username = (): string => {
 	const suffix = `_${PID_BASE36}_${Date.now().toString(36)}_${(++username_counter).toString(36)}`;
 	const max_prefix = USERNAME_LENGTH_MAX - suffix.length;
