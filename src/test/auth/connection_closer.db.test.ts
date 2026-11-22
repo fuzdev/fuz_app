@@ -19,22 +19,19 @@
  *    what discriminates there; on real Postgres the pool read does too.
  * 3. A handler that throws closes nothing — its transaction rolled back, so
  *    the revocation never happened.
- * 4. A failed audit INSERT still closes — the close does not ride on the
- *    fail-open audit write. A role-gated socket on a hand-mounted endpoint,
- *    with no revocation guard registered, closes on the handler's close alone.
+ * 4. A failed audit INSERT closes nothing — every revocation's success row is
+ *    written in its transaction, so a refused row rolls the revocation back.
+ *    A role-gated socket on a hand-mounted endpoint, with no revocation guard
+ *    registered, closes on the handler's close alone.
  * 5. The close reaches both transports: a real `ConnectionRegistry`
  *    socket and a real audit-stream `SseRegistry` stream registered
  *    under the revoked identity both end, and a bystander's do not.
  * 6. Failure outcomes (revoked=false from IDOR mismatch or cross-account
  *    probe) close nothing — attackers cannot target arbitrary sessions/tokens
  *    by guessing ids OR by passing real other-account ids.
- * 7. The close does not wait for the audit write either — with the audit
- *    INSERT held in flight, an HTTP revocation's close has run, and a
- *    WebSocket that revoked its own sessions is closed and dispatches nothing
- *    more.
- * 8. An RPC revocation that committed but whose result cannot be serialized
+ * 7. An RPC revocation that committed but whose result cannot be serialized
  *    still closes — the response failure is not read as a rollback.
- * 9. Every test runs under the `beforeEach`/`afterEach` audit-drift
+ * 8. Every test runs under the `beforeEach`/`afterEach` audit-drift
  *    guard at the top of `describe_db`: if any handler emits metadata
  *    that fails `audit_metadata_schemas`, the process-wide counter in
  *    `audit_log_queries.ts` bumps and the after-each assertion fails.
@@ -55,7 +52,6 @@ import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { Hono, type Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
-import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
@@ -103,11 +99,7 @@ import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 import { rpc_call_for_spec, rpc_call } from '#lib/testing/rpc_helpers.ts';
 import { find_auth_route } from '#lib/testing/integration_helpers.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import {
-	create_audit_emitter,
-	get_audit_write_failures,
-	reset_audit_write_failures
-} from '#lib/auth/audit_emitter.ts';
+import { create_audit_emitter, get_audit_write_failures } from '#lib/auth/audit_emitter.ts';
 import {
 	assert_close_call,
 	create_recording_closer
@@ -129,7 +121,7 @@ import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
 import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { describe_db } from '../db_fixture.ts';
-import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
+import { create_gated_db, type GatedDb } from '../gated_db.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
 
 const session_options = create_session_config('test_session');
@@ -143,15 +135,6 @@ const test_roles = create_role_registry([
 	{ name: APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);
 const log = new Logger('test', { level: 'off' });
-
-/** Poll until `predicate` holds, failing with `message` after two seconds. */
-const until = async (predicate: () => boolean, message: string): Promise<void> => {
-	const deadline = Date.now() + 2000;
-	while (!predicate()) {
-		assert.ok(Date.now() < deadline, message);
-		await wait(5);
-	}
-};
 
 /**
  * The account routes and the account, admin, role-grant-offer, and
@@ -1286,11 +1269,6 @@ describe_db('connection_closer wiring', (get_db) => {
 
 		interface Site {
 			name: string;
-			/**
-			 * The route opens its own transaction around just its writes (no route
-			 * transaction), and closes straight after that commits.
-			 */
-			own_transaction?: boolean;
 			max_sessions?: number;
 			max_tokens?: number;
 			/**
@@ -1483,7 +1461,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			},
 			{
 				name: 'POST /password',
-				own_transaction: true,
 				arrange: async (h) => {
 					const [session_id] = await session_ids(h);
 					return {
@@ -1513,7 +1490,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				// connections must end with it
 				name: 'POST /login (cap eviction)',
 				no_revocation_row: true,
-				own_transaction: true,
 				max_sessions: 1,
 				arrange: async (h) => {
 					const [evicted_hash] = await session_ids(h);
@@ -1729,7 +1705,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					await h.test_app.cleanup();
 				});
 
-				test.skipIf(site.own_transaction)('a handler that throws closes nothing', async () => {
+				test('a handler that throws closes nothing', async () => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					h.failing.emit = true;
@@ -1761,24 +1737,6 @@ describe_db('connection_closer wiring', (get_db) => {
 					await h.test_app.cleanup();
 				});
 
-				test.runIf(site.own_transaction)(
-					'a handler that throws after its commit still closes',
-					async () => {
-						const { h, arranged, ...connections } = await arrange_site(site, get_db());
-
-						h.failing.emit = true;
-						assert.strictEqual(await arranged.act(), false, 'the request failed');
-						h.failing.emit = false;
-
-						// the revocation committed before the throw, so the close it owes
-						// has run — a queued one would have been dropped with the throw
-						assert.strictEqual(await arranged.committed(h.db), true, 'the revocation stands');
-						// the throw was the success row's emit, so no row was announced
-						assert_site_closed(h, arranged, connections, true);
-						await h.test_app.cleanup();
-					}
-				);
-
 				test('a close that throws after the commit still answers and still closes the rest', async () => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
@@ -1794,46 +1752,25 @@ describe_db('connection_closer wiring', (get_db) => {
 					await h.test_app.cleanup();
 				});
 
-				test.skipIf(site.own_transaction)(
-					'a failed audit write rolls the revocation back and closes nothing',
-					async () => {
-						const { h, arranged, ...connections } = await arrange_site(site, get_db());
-
-						// the success row is written in the request transaction, so its
-						// INSERT failing fails the handler and takes the revocation with it
-						h.failing.audit_write = true;
-						assert.strictEqual(await arranged.act(), false, 'the request failed');
-						h.failing.audit_write = false;
-						assert.strictEqual(get_audit_write_failures(), 0, 'no pool write was lost');
-
-						assert.deepStrictEqual(h.closes, [], 'no close for a revocation that rolled back');
-						assert.strictEqual(
-							await arranged.committed(h.db),
-							false,
-							'the revocation rolled back with its row'
-						);
-						assert_open(connections.victim, 'victim');
-						assert_open(connections.sibling, 'sibling');
-						assert_open(connections.bystander, 'bystander');
-						await h.test_app.cleanup();
-					}
-				);
-
-				test.runIf(site.own_transaction)('a failed audit write still closes', async () => {
+				test('a failed audit write rolls the revocation back and closes nothing', async () => {
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
+					// the success row is written in the request transaction, so its
+					// INSERT failing fails the handler and takes the revocation with it
 					h.failing.audit_write = true;
-					assert.strictEqual(await arranged.act(), true, 'the audit write is fail-open');
+					assert.strictEqual(await arranged.act(), false, 'the request failed');
 					h.failing.audit_write = false;
-					// the lost row was counted; it was lost on purpose, so clear the
-					// count before the drift guard's after-each check reads it
-					assert.ok(get_audit_write_failures() > 0, 'the failed audit write was counted');
-					reset_audit_write_failures();
+					assert.strictEqual(get_audit_write_failures(), 0, 'no pool write was lost');
 
-					assert.strictEqual(await arranged.committed(h.db), true);
-					// no audit row was written, so no listener ran: the handler's own
-					// close is what ended the connections
-					assert_site_closed(h, arranged, connections, true);
+					assert.deepStrictEqual(h.closes, [], 'no close for a revocation that rolled back');
+					assert.strictEqual(
+						await arranged.committed(h.db),
+						false,
+						'the revocation rolled back with its row'
+					);
+					assert_open(connections.victim, 'victim');
+					assert_open(connections.sibling, 'sibling');
+					assert_open(connections.bystander, 'bystander');
 					await h.test_app.cleanup();
 				});
 			});
@@ -1875,49 +1812,6 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.deepStrictEqual(h.closes, [], 'no close for a scoped grant');
 			assert_open(victim, 'victim');
 			await h.test_app.cleanup();
-		});
-
-		describe('the close does not wait for a pool audit write', () => {
-			// A success row written on the pool — `/password`, which commits its
-			// own transaction and then emits — is eager, so it can still be in
-			// flight once the revocation has committed. A close flushed behind it
-			// would leave the connection open on a credential already gone for
-			// as long as the write takes. The case holds the INSERT and requires
-			// the close while it is held. (A revocation inside a request
-			// transaction writes its row before the commit, so its close never
-			// sits behind it.)
-
-			test('over HTTP, the close has run while the audit INSERT is held', async () => {
-				const h = await create_site_harness(get_db());
-				const account_id = keeper_id(h);
-				const victim = h.connect({ account_id, session_hash: 'held-write-victim' });
-
-				const stalled = h.gated.stall(is_audit_insert);
-				const request = h.test_app.app.request('/api/account/password', {
-					method: 'POST',
-					headers: {
-						...h.test_app.create_session_headers(),
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						current_password: DEFAULT_TEST_PASSWORD,
-						new_password: 'new-test-password-xyz'
-					})
-				});
-				await stalled.reached;
-				try {
-					await until(() => h.closes.length > 0, 'no close while the audit write was held');
-					assert.strictEqual(h.closes.length, 1);
-					assert_close_call(h.closes[0]?.target, { kind: 'account', account_id });
-					assert.strictEqual(h.closes[0]!.open_transactions, 0, 'after the commit');
-					assert.strictEqual(await no_sessions(h.db, account_id), true, 'the revoke committed');
-					assert_closed(victim, 'victim');
-				} finally {
-					stalled.release();
-				}
-				assert.strictEqual((await request).ok, true);
-				await h.test_app.cleanup();
-			});
 		});
 	});
 

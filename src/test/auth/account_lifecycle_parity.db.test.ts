@@ -35,7 +35,7 @@ const setup_test = default_in_process_setup({
 	reject_unknown_audit_metadata_keys: true,
 	session_options: spine_session_options,
 	// tracked so `_testing_drain_effects` awaits the emitter, as on the binaries
-	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, track_inflight: true }),
+	audit_factory: ({ db, log }) => create_audit_emitter({ db, log }),
 	create_route_specs: create_spine_route_specs,
 	rpc_endpoints: (ctx) =>
 		spine_rpc_endpoints(ctx).map((endpoint) => ({

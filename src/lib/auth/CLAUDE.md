@@ -38,7 +38,7 @@ over the pool so rows persist when request transactions roll back. See root
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
 - `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `ApiTokenId` (the public id, `pipe(string, regex(API_TOKEN_ID_REGEX))`, a `@fuzdev/fuz_schema` schema), `hash_api_token`, `generate_api_token`, and the shape precheck `is_api_token_shaped` (`API_TOKEN_REGEX`: the prefix plus exactly `API_TOKEN_BODY_LENGTH` = 43 base64url chars).
 - `auth/daemon_token.ts` — `DaemonToken`, `DAEMON_TOKEN_REGEX` + the shape precheck `is_daemon_token_shaped` (43 base64url chars), `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`.
-- `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected) + `read_bootstrap_token`, the read both it and `check_bootstrap_status` use: the secure read less one trailing LF, a token under `BOOTSTRAP_TOKEN_MIN_BYTES` (32) refused as unreadable with an error log. One transaction holds the whole bootstrap: the lock, the account and grants, the session (`create_capped_session`), and last the burn of the token (`token_store.burn_token`) — a failed burn throws out of the transaction (`BootstrapTokenBurnError`) and answers `token_file_undeletable` with nothing created; the success carries `session_cookie_value`, the signed cookie the route sets. `BootstrapAccountCreated` is what `on_bootstrap` receives.
+- `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected) + `read_bootstrap_token`, the read both it and `check_bootstrap_status` use: the secure read less one trailing LF, a token under `BOOTSTRAP_TOKEN_MIN_BYTES` (32) refused as unreadable with an error log. Takes its deps (`audit` among them) and the request's context (`BootstrapAccountContext`: the pool `db`, the effect queues, `client_ip` — a `RouteContext` satisfies it). One transaction holds the whole bootstrap: the lock, the account and grants, the session (`create_capped_session`) and its `Set-Cookie` line (formatted there, as login and signup format theirs, so a refused value rolls the bootstrap back), the `bootstrap` success audit row, and last the burn of the token (`token_store.burn_token`) — a failed burn throws out of the transaction (`BootstrapTokenBurnError`) and answers `token_file_undeletable` with nothing created; the success carries `set_cookie`, the line the route sets. `BootstrapAccountCreated` is what `on_bootstrap` receives.
 - `auth/bootstrap_token_store.ts` — `BootstrapTokenStore` (`path`, `read_token`, `burn_token`), the one seam to the token file, and `create_file_bootstrap_token_store(deps, path)` over the runtime's secure read and burn. Its read asks the secure read for a single hard link (`require_single_link`): a token file with a second link would outlive its burn under the other name, so it is refused as unreadable, at boot and on a request alike. Twin of the Rust `BootstrapTokenStore` trait, which carries no path (its availability check is handed one).
 
 Cross-cutting notes that don't live on any single symbol:
@@ -129,14 +129,14 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 `audit_factory` callback over `create_audit_emitter`; closes over the pool +
 its registered listeners + optional `AuditLogConfig`. Its methods:
 
-- `emit(ctx, input)` — async, always awaited: a success row inside a request transaction is written in it (a failed INSERT rejects); any other row is a fire-and-forget pool write pushed to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
+- `emit(ctx, input)` — async, always awaited: a success row is written in the request's transaction (a failed INSERT rejects, and so does a success row with no transaction open); a failure row is a fire-and-forget pool write pushed to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events; `input` is an `AuditEmitRoleGrantInput`
-- `emit_pool(input)` — awaitable pool write for code paths without a request transaction (ad-hoc maintenance scripts, a post-commit thunk; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
+- `emit_pool(input)` — awaitable pool write for code paths without a request (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx). Writes, then notifies, whatever the outcome; a success row written here counts toward `get_audit_success_outside_transaction`, which `install_audit_drift_guard` holds at zero
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — listener registration, returning a remover for that registration (idempotent; the same function registered twice is two registrations, each with its own remover). Twin of Rust `fuz_auth` `AuditEmitter::add_listener` in firing order and snapshot-at-notify
 - `listener_count()` — registered-listener count, for tests / diagnostics
-- `drain_inflight()` — test-binary barrier: waits until no `emit` write is in flight, writes started while waiting included. Only an emitter built with `track_inflight: true` tracks; otherwise it resolves at once (production never tracks). Backs `_testing_drain_effects` (twin of Rust `AuditEmitter::drain_inflight` / `new_with_inflight_tracking`)
-- `is_tracking_inflight()` — whether the emitter was built with `track_inflight: true`, i.e. whether `drain_inflight` can wait on anything. `_testing_drain_effects` reports it as `tracked`, and `cross_drain_effects` (every `list_audit_events` read) refuses `false` (twin of Rust `AuditEmitter::is_tracking_inflight`)
+- `drain_inflight()` — waits until no pool write is in flight, writes started while waiting included. Every emitter counts them. `AppServer.close` awaits it, bounded by `shutdown_drain_timeout_ms`, before the database closes; it backs `_testing_drain_effects` (twin of Rust `AuditEmitter::drain_inflight`)
+- `inflight_count()` — pool writes in flight now; what a shutdown that gives up at its bound reports (twin of Rust `AuditEmitter::inflight_count`)
 
 Listeners are closure-private; they change only through `add_listener` and
 its removers. `create_app_server` registers the audit-log SSE listener and the
@@ -149,25 +149,27 @@ the next event, and one removed mid-fan-out still hears the in-flight event
 (converges with the Rust twin's cloned vec).
 
 **Where a row is written.** `emit` is async — always `await` it. A **success**
-row emitted inside a request transaction (`ctx.db.in_transaction`: an action
-with `side_effects`, a route with `transaction: true`) is written in that
-transaction, so the change and its row commit together; a failed INSERT
-rejects `emit` and the handler's transaction rolls back. A **failure** row, and
-a success row with no request transaction open (`/login`, `/password`,
-signup, bootstrap — which emit after their own transaction commits), is a
-fire-and-forget pool write, fail-open (logged, counted by
+row is written in the transaction of the change it reports
+(`ctx.db.in_transaction`: an action with `side_effects`, a route with
+`transaction: true` — `/logout`, `db_admin_row_delete` — or the transaction
+`/login`, `/password`, signup and bootstrap open around just their writes
+through `transaction_with_post_commit_rollback`, the row last before the
+commit), so the change and its row commit together; a failed INSERT rejects
+`emit` and the transaction rolls back. With no transaction open `emit` refuses
+a success row (throws, writes nothing, and counts it for the drift guard). A
+**failure** row is a fire-and-forget pool write, fail-open (logged, counted by
 `get_audit_write_failures`). The Rust spine's split is the same
-(`route_audit_emit`: `emit_in_tx` for an action's success row, `emit` on the
-pool otherwise); the TS `/logout` runs in a route transaction, so its row is
-in-transaction where Rust's is pooled. `db_admin_row_delete` is written on the
-pool after its commit on both twins (TS: `emit_pool` from a post-commit
-thunk).
+(`route_audit_emit`: `emit_in_tx` for every success row, REST and db-admin
+included, `emit` on the pool for failure rows). `seq` follows INSERT order,
+not commit order.
 
 **When listeners hear about a row.** The fan-out depends on the outcome: a
 **failure** row is announced as soon as it is written — the attempt happened
 whatever the transaction does; a **success** row is announced only after the
-request's transaction commits (a thunk on `ctx.post_commit_effects`; after the
-handler returns, on a route without one) and never when the handler throws. The listeners act on a success row — the revocation guards
+request's transaction commits (a thunk on `ctx.post_commit_effects`) and never
+when it rolls back — a handler-owned transaction truncates the queue itself
+(`transaction_with_post_commit_rollback`), so a handler that catches its
+failure and answers a refusal announces nothing. The listeners act on a success row — the revocation guards
 close connections, the audit stream broadcasts it — so announcing one before
 its commit would close while the revoked credential still reads as valid, and
 a rolled-back revocation would close anyway. A route that runs without a
@@ -195,13 +197,17 @@ they track the same config. Sample via `get_*`; `reset_*` are test-only.
 Another counter lives with the emitter (`auth/audit_emitter.ts`,
 `get_audit_write_failures` / `reset_audit_write_failures`): rows the bound
 emitter's pool write failed to insert. That write is fail-open too — logged,
-counted, the request proceeds — so the count is how a lost row is seen.
+counted, the request proceeds — so the count is how a lost row is seen. A
+third, `get_audit_success_outside_transaction` /
+`reset_audit_success_outside_transaction`, counts success rows written
+outside a transaction (`emit` with none open, which also throws, and a success
+`emit_pool`); `install_audit_drift_guard` holds all of them at zero per test.
 
 ### Routes
 
 - `auth/account_routes.ts` — `POST /login` / `/logout` / `/password`, `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25`.
 - `auth/bootstrap_routes.ts` — `POST /bootstrap` + `check_bootstrap_status` (the boot report: the lock read first; a token file left on a bootstrapped database and an unreadable one on an open window each warn; a missing lock row reads unavailable); `BootstrapStatus` runtime ref (`{available}`); `OnBootstrap`, the post-commit callback over what was created. A failed burn answers 500 `token_file_undeletable` with the window left open; the lock race loser closes its window with no audit row and no charge.
-- `auth/signup_routes.ts` — `POST /signup` (open or invite-gated).
+- `auth/signup_routes.ts` — `POST /signup` (open or invite-gated). The `signup` success row is written last in the signup transaction; every unclassified failure writes a `signup` failure row with reason `internal_error` — one before the transaction began (the settings load, the hash, a refused `BEGIN`) carries neither `invite_id` nor `open_signup`, as the Rust spine's pre-transaction row. A failure row's emit that throws is logged, never answered in place of the original error.
 - `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface. Takes `stream: {registry, log}` (an `AuditLogSse` satisfies it). The handler admits the stream in two phases — register pending on the `SseRegistry`, re-read the credential (`revalidate_resolved_auth`) and the acting actor's role grants, admit — so a revocation racing the request opens no stream: 401 / 403 from the re-reads, or a 200 whose body is the connect comment alone when the pending registration was closed.
 - `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic. Maps each `RouteAuth` axis to a guard and is the single site every route spec traverses, so it also carries the two invariants the auth shape alone can't (a `required_scope` that isn't a well-formed capability, and one on an unrestricted route).
 

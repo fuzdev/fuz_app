@@ -802,33 +802,59 @@ describe('DELETE audit emission', () => {
 		parse_or_throw(audit_metadata_schemas.db_admin_row_delete, call.metadata);
 	});
 
-	test('the post-commit flush waits for the row write', async () => {
-		// a pool write that lands a macrotask later, as a real INSERT does —
-		// the flush waits for it only if the thunk returns the write's promise
-		const written: Array<Parameters<DbRouteDeps['audit']['emit_pool']>[0]> = [];
-		const slow_deps: DbRouteDeps = {
+	test('a refused audit write fails the delete and rolls it back', async () => {
+		// the row is written in the route's transaction, after the savepoint's
+		// `try`: a refusal is a 500 that deletes nothing, never a row refusal
+		const refusing_deps: DbRouteDeps = {
 			audit: {
-				emit_pool: async (input) => {
-					await new Promise((resolve) => setTimeout(resolve, 20));
-					written.push(input);
+				emit: async () => {
+					throw new Error('audit insert refused');
 				}
 			}
 		};
 		const result = await db.query<{ id: string }>(
-			`INSERT INTO browse_test (label) VALUES ('awaited') RETURNING id`
+			`INSERT INTO browse_test (label) VALUES ('kept') RETURNING id`
 		);
 		const id = result[0]!.id;
 		const app = create_test_app(
-			create_db_route_specs(slow_deps, {
+			create_db_route_specs(refusing_deps, {
 				db_type: 'pglet-memory',
 				db_name: 'test',
 				browsable_tables: TEST_BROWSABLE
 			})
 		);
 		const res = await app.request(`/tables/browse_test/rows/${id}`, { method: 'DELETE' });
+		assert.strictEqual(res.status, 500);
+		const remaining = await db.query<{ id: string }>(`SELECT id FROM browse_test WHERE id = $1`, [
+			id
+		]);
+		assert.strictEqual(remaining.length, 1, 'the delete rolled back with its audit row');
+	});
+
+	test('the success row is written in the route transaction', async () => {
+		const in_transaction: Array<boolean> = [];
+		const recording_deps: DbRouteDeps = {
+			audit: {
+				emit: async (ctx) => {
+					in_transaction.push(ctx.db.in_transaction);
+				}
+			}
+		};
+		const result = await db.query<{ id: string }>(
+			`INSERT INTO browse_test (label) VALUES ('audited') RETURNING id`
+		);
+		const app = create_test_app(
+			create_db_route_specs(recording_deps, {
+				db_type: 'pglet-memory',
+				db_name: 'test',
+				browsable_tables: TEST_BROWSABLE
+			})
+		);
+		const res = await app.request(`/tables/browse_test/rows/${result[0]!.id}`, {
+			method: 'DELETE'
+		});
 		assert.strictEqual(res.status, 200);
-		assert.strictEqual(written.length, 1, 'the row was written before the response');
-		assert.strictEqual(written[0]!.event_type, 'db_admin_row_delete');
+		assert.deepStrictEqual(in_transaction, [true]);
 	});
 
 	test('the audited id is the canonical PK rendering, not the URL spelling', async () => {

@@ -32,10 +32,12 @@ import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import {
 	create_audit_emitter,
 	get_audit_write_failures,
+	reset_audit_success_outside_transaction,
 	reset_audit_write_failures,
 	type AuditEmitRoleGrantContext
 } from '#lib/auth/audit_emitter.ts';
 import type { Db } from '#lib/db/db.ts';
+import { create_test_audit_event } from '#lib/testing/entities.ts';
 
 const create_ctx = (client_ip = '203.0.113.5'): AuditEmitRoleGrantContext => ({
 	db: { in_transaction: false } as Db,
@@ -178,11 +180,36 @@ describe('assert_no_audit_drift', () => {
 		try {
 			const audit = create_audit_emitter({ db: refusing_db, log: new Logger('test') });
 			// fail-open: the emit itself resolves
-			await audit.emit_pool({ event_type: 'login' });
+			await audit.emit_pool({ event_type: 'login', outcome: 'failure' });
 			assert.throws(assert_no_audit_drift, /failed to write/);
 		} finally {
 			reset_audit_write_failures();
 			error_spy.mockRestore();
+		}
+		assert_no_audit_drift();
+	});
+});
+
+describe('assert_no_audit_drift — a success row outside a transaction', () => {
+	test('fails once one is written on the pool or refused by emit, and passes after the reset', async () => {
+		reset_audit_success_outside_transaction();
+		assert_no_audit_drift();
+		const db = {
+			query: async () => [create_test_audit_event({ event_type: 'login' })]
+		} as unknown as Db;
+		const audit = create_audit_emitter({ db, log: new Logger('test', { level: 'off' }) });
+		try {
+			await audit.emit_pool({ event_type: 'login' });
+			assert.throws(assert_no_audit_drift, /outside a transaction/);
+			reset_audit_success_outside_transaction();
+
+			// refused by `emit` — a caller that swallows the throw is still caught
+			await audit
+				.emit({ db, pending_effects: [], post_commit_effects: [] }, { event_type: 'login' })
+				.catch(() => {});
+			assert.throws(assert_no_audit_drift, /outside a transaction/);
+		} finally {
+			reset_audit_success_outside_transaction();
 		}
 		assert_no_audit_drift();
 	});
@@ -200,7 +227,7 @@ describe('install_audit_drift_guard', () => {
 			db: refusing_db,
 			log: new Logger('test', { level: 'off' })
 		});
-		await audit.emit_pool({ event_type: 'login' });
+		await audit.emit_pool({ event_type: 'login', outcome: 'failure' });
 		assert.ok(get_audit_write_failures() > 0, 'the setup lost a write');
 	});
 

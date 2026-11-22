@@ -17,7 +17,7 @@ import { create_db_route_specs } from '#lib/http/db_routes.ts';
 import { to_wire_issues } from '#lib/schema_issues.ts';
 
 const spec = create_db_route_specs(
-	{ audit: { emit_pool: async () => {} } },
+	{ audit: { emit: async () => {} } },
 	{ db_type: 'pglet-memory', db_name: 'test', browsable_tables: [] }
 ).find((s) => s.method === 'GET' && s.path === '/tables/:name')!;
 const query = spec.query!;

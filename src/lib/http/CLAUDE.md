@@ -685,7 +685,7 @@ interface EmitAfterCommitContext {
 //   post_commit_effects: Array<() => void | Promise<void>>
 ```
 
-- **`pending_effects: Array<Promise<void>>`** — eager. Producers push the in-flight `Promise<void>` for fire-and-forget pool writes already running: audit emits via `AppDeps.audit`, session-touch UPDATE, api-token usage tracking. The pool write is rollback-resilient by virtue of running outside the request transaction; pushing the in-flight handle lets test mode (`await_pending_effects: true`) await it. Drain: `flush_pending_effects(effects, log, on_rejection?)`.
+- **`pending_effects: Array<Promise<void>>`** — eager. Producers push the in-flight `Promise<void>` for fire-and-forget pool writes already running: failure audit rows via `AppDeps.audit`, session-touch UPDATE, api-token usage tracking. The pool write is rollback-resilient by virtue of running outside the request transaction; pushing the in-flight handle lets test mode (`await_pending_effects: true`) await it, and `AppServer.close` awaits the flushes production leaves running, bounded (`shutdown_drain_timeout_ms`). Drain: `flush_pending_effects(effects, log, on_rejection?)`.
 - **`post_commit_effects: Array<() => void | Promise<void>>`** — deferred. Producers go through `emit_after_commit(ctx, fn)` exclusively; raw thunks should not be pushed directly. The flush middleware (in `server/app_server.ts` and the per-message WS dispatcher in `actions/ws_socket_session.ts`) is the only site that invokes each thunk, after the wrapping `db.transaction` resolves. Drain: `flush_post_commit_effects(effects, log)`.
 
 ### Why split
@@ -711,8 +711,12 @@ threw, so a thrown handler (rolling back its transaction) would still fire the
 thunk it queued. So the contract is **two-sided**: both dispatch sites
 (`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
 shared `dispatch_with_post_commit_rollback` helper, which discards
-`post_commit_effects` on a handler throw — `emit_after_commit` thus reads as
-**"run iff the wrapping transaction commits."** The eager `pending_effects`
+`post_commit_effects` on a handler throw, and a `transaction: false` handler
+that opens its own transaction (`/login`, `/password`, signup, bootstrap) runs
+it through `transaction_with_post_commit_rollback`, the same truncation around
+just that transaction — so a handler that catches its transaction's failure
+and answers a refusal still discards what it queued. `emit_after_commit` thus
+reads as **"run iff the wrapping transaction commits."** The eager `pending_effects`
 queue is the deliberate opposite (survives rollback — attempt audits). The full
 two-sided contract + Rust-twin parity note live on the helper's TSDoc in
 `http/pending_effects.ts`.
@@ -761,8 +765,7 @@ Auth-aware variants (account status, bootstrap status) live in `auth/` —
 table browser; the factory is domain-agnostic.
 
 `create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})` —
-`deps` is `DbRouteDeps`, a structural `audit` slice of `AppDeps` declared in
-`http/db_routes.ts` so this directory stays auth-free (`ctx.deps` satisfies it):
+`deps` is `DbRouteDeps`, `{audit: Pick<AuditEmitter, 'emit'>}` (`ctx.deps` satisfies it):
 
 - `GET /health` — connected probe + table count (schema-wide by design — a did-migrations-run diagnostic) + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
 - `GET /tables` — list browsable tables with row counts
@@ -824,11 +827,13 @@ instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
 `can_delete`. `primary_key` stays a truthful report of the key shape; a policy
 exclusion must not masquerade as one.
 
-**Every successful row delete is audited.** The `DELETE` handler defers a
-`deps.audit.emit_pool` call through `emit_after_commit`, so the pool-routed
-row lands iff the delete's transaction commits — the success-only trail can't claim a
-delete that failed at COMMIT (the Rust twin commits before emitting for the
-same reason). Account-grain attribution (the browser's gate is account-grain,
+**Every successful row delete is audited.** The `DELETE` handler writes its
+`db_admin_row_delete` row with `deps.audit.emit` in the route's transaction,
+after the savepoint's `try` (so a refused audit write fails the request rather
+than reading as a row refusal): the row lands iff the delete commits, and a
+refused row rolls the delete back, as on the Rust twin. Remounted with
+`transaction: false`, the handler opens a transaction around just the delete
+and its row (`transaction_with_post_commit_rollback`). Account-grain attribution (the browser's gate is account-grain,
 so no actor is claimed), metadata `{table, pk_column, id}`. Refusals emit
 nothing. The completeness gate covers the event via the
 `db_routes.db.test.ts` emission tests (excluded-with-justification in

@@ -1000,8 +1000,8 @@ flush against other frames: frames on an admitted socket are not serialized
 `onMessage` — `@hono/node-server` doesn't), so a message's effects can still be
 in flight when the caller reads its reply and when the next message
 dispatches. A test that reads the audit log after a WS reply awaits
-`_testing_drain_effects` first, over an emitter built with
-`track_inflight: true` (`src/lib/testing/CLAUDE.md`). The deferred thunks are
+`_testing_drain_effects` first, which awaits the emitter's in-flight writes
+(`src/lib/testing/CLAUDE.md`). The deferred thunks are
 invoked first and the eager writes awaited after, so a revocation's close never
 waits on a slow audit INSERT — held behind one, the socket would stay open on a
 credential already committed gone and dispatch its next frame. The deferred

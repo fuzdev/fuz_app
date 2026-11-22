@@ -75,6 +75,7 @@ import { ERROR_INSUFFICIENT_PERMISSIONS, ERROR_PARAMS_PROTO_KEY } from '#lib/htt
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import type { EffectErrorContext } from '#lib/http/pending_effects.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
 import {
 	create_realtime_closer,
@@ -1562,7 +1563,8 @@ describe('register_action_ws self-revocation', () => {
 
 	/** Mount `revoke_self` and open one socket whose sends and closes land on one timeline. */
 	const open_self_revoking_socket = async (
-		handler: (ctx: ActionContext, registry: ConnectionRegistry) => void | Promise<void>
+		handler: (ctx: ActionContext, registry: ConnectionRegistry) => void | Promise<void>,
+		db: Db = create_stub_db()
 	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
 		const stub = create_stub_upgrade();
 		const { registry } = register_action_ws({
@@ -1583,7 +1585,7 @@ describe('register_action_ws self-revocation', () => {
 					}
 				}
 			],
-			db: create_stub_db(),
+			db,
 			receive_timeout: null,
 			log
 		});
@@ -1636,12 +1638,17 @@ describe('register_action_ws self-revocation', () => {
 			event_type: 'session_revoke',
 			metadata: { session_id: hash_session_token(SESSION_ID) }
 		});
-		const audit = create_audit_emitter({
-			db: {
-				query: () => Promise.resolve([audit_event]),
-				query_one: () => Promise.resolve()
-			} as any,
-			log
+		const audit = create_audit_emitter({ db: create_stub_db(), log });
+		// the action's transaction answers the success row's INSERT
+		const db = new Db({
+			client: { query: async () => ({ rows: [] }) },
+			transaction: async (fn) =>
+				fn(
+					new Db({
+						client: { query: async <T>() => ({ rows: [audit_event] as Array<T> }) },
+						transaction: no_nested_transaction
+					})
+				)
 		});
 		let guarded = false;
 		const { timeline, request } = await open_self_revoking_socket(async (ctx, registry) => {
@@ -1653,7 +1660,7 @@ describe('register_action_ws self-revocation', () => {
 				event_type: 'session_revoke',
 				metadata: { session_id: parse_or_throw(SessionId, hash_session_token(SESSION_ID)) }
 			});
-		});
+		}, db);
 
 		await request();
 

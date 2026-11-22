@@ -611,7 +611,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			},
 			({ db, log }) => {
 				gated = create_gated_db(db);
-				return create_audit_emitter({ db: gated.db, log, track_inflight: true });
+				return create_audit_emitter({ db: gated.db, log });
 			}
 		);
 		const stalled = gated!.stall((sql) => sql.includes('INSERT INTO audit_log'));

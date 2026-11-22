@@ -223,17 +223,12 @@ export const parse_timing_ms_env = (
  * (and `cell_audit_list` reads them back) instead of tripping the
  * unknown-event drift counter. Models a real consumer that spreads
  * `cell_audit_events` into its `create_audit_log_config`.
- *
- * Tracks in-flight writes so `_testing_drain_effects` is a real barrier — a
- * WS mutation is answered before its audit write settles. The Rust stub
- * builds its emitter the same way (`new_with_inflight_tracking`).
  */
 export const cell_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events }),
-		track_inflight: true
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
 	});
 
 /** Resolve `{host, port}` from the runtime's env via `BaseServerEnv`. */

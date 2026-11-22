@@ -18,7 +18,9 @@ import type {} from '#lib/sensitivity.ts';
 
 import {
 	create_audit_emitter,
+	get_audit_success_outside_transaction,
 	get_audit_write_failures,
+	reset_audit_success_outside_transaction,
 	reset_audit_write_failures,
 	type AuditEmitter,
 	type AuditEmitterContext
@@ -45,7 +47,15 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
+/** A failure row — the one an `emit` writes on the pool. */
 const create_input = (): AuditLogInput => ({
+	event_type: 'login',
+	outcome: 'failure',
+	account_id: 'acct-1' as Uuid
+});
+
+/** A success row — written in the request's transaction, so `emit` needs one. */
+const create_success_input = (): AuditLogInput => ({
 	event_type: 'login',
 	outcome: 'success',
 	account_id: 'acct-1' as Uuid
@@ -70,6 +80,10 @@ const create_mock_db = (mock_query?: ReturnType<typeof vi.fn>): Db => {
 	const query = mock_query ?? vi.fn(() => Promise.resolve([FAKE_EVENT]));
 	return { query, query_one: vi.fn() } as any;
 };
+
+/** A mock transaction-scoped `Db`: `in_transaction` answers `true`. */
+const create_mock_tx_db = (mock_query?: ReturnType<typeof vi.fn>): Db =>
+	({ ...(create_mock_db(mock_query) as object), in_transaction: true }) as Db;
 
 const create_ctx = (db: Db = create_mock_db()): AuditEmitterContext => ({
 	db,
@@ -217,13 +231,12 @@ describe('create_audit_emitter — emit', () => {
 				received.push(event);
 			}
 		});
-		const ctx = create_ctx();
+		const ctx = create_ctx(create_mock_tx_db());
 
-		await audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_success_input());
 
-		// the write is eager and has landed…
-		assert.strictEqual(ctx.pending_effects.length, 1);
-		await flush_pending_effects(ctx.pending_effects, log);
+		// the write has landed in the transaction…
+		assert.strictEqual(ctx.pending_effects.length, 0, 'nothing on the pool');
 		await wait();
 		// …but no listener has heard of it: the transaction has not committed
 		assert.strictEqual(received.length, 0);
@@ -242,10 +255,9 @@ describe('create_audit_emitter — emit', () => {
 				received.push(event);
 			}
 		});
-		const ctx = create_ctx();
+		const ctx = create_ctx(create_mock_tx_db());
 
 		await audit.emit(ctx, { event_type: 'logout', account_id: 'acct-1' as Uuid });
-		await flush_pending_effects(ctx.pending_effects, log);
 		await wait();
 
 		assert.strictEqual(received.length, 0);
@@ -254,26 +266,26 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('a success row is never announced when the post-commit queue is discarded', async () => {
-		// a thrown handler: the dispatch site truncates the queue, so the row
-		// (still written — the pool write survives the rollback) reaches no
-		// listener, and no connection closes for a revocation that rolled back
-		const mock_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		// a rolled-back transaction: the dispatch site truncates the queue, so
+		// the row (rolled back with it) reaches no listener, and no connection
+		// closes for a revocation that rolled back
+		const tx_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
 		const received: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({
-			db: create_mock_db(mock_query),
+			db: create_mock_db(),
 			log,
 			on_audit_event: (event) => {
 				received.push(event);
 			}
 		});
-		const ctx = create_ctx();
+		const ctx = create_ctx(create_mock_tx_db(tx_query));
 
-		await audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_success_input());
 		ctx.post_commit_effects.length = 0;
 		await flush_ctx(ctx);
 		await wait();
 
-		assert.strictEqual(mock_query.mock.calls.length, 1, 'the row is written regardless');
+		assert.strictEqual(tx_query.mock.calls.length, 1, 'written in the transaction');
 		assert.strictEqual(received.length, 0);
 	});
 
@@ -292,35 +304,6 @@ describe('create_audit_emitter — emit', () => {
 
 		assert.strictEqual(ctx.post_commit_effects.length, 0, 'nothing is deferred');
 		await flush_pending_effects(ctx.pending_effects, log);
-		assert.strictEqual(received.length, 1);
-	});
-
-	test('the post-commit fan-out waits for a write still in flight', async () => {
-		let resolve_query: ((value: Array<AuditLogEvent>) => void) | undefined;
-		const mock_query = vi.fn(
-			() =>
-				new Promise<Array<AuditLogEvent>>((resolve) => {
-					resolve_query = resolve;
-				})
-		);
-		const received: Array<AuditLogEvent> = [];
-		const audit = create_audit_emitter({
-			db: create_mock_db(mock_query),
-			log,
-			on_audit_event: (event) => {
-				received.push(event);
-			}
-		});
-		const ctx = create_ctx();
-
-		await audit.emit(ctx, create_input());
-		// the commit lands before the audit write does
-		const flushed = flush_post_commit_effects(ctx.post_commit_effects, log);
-		await wait();
-		assert.strictEqual(received.length, 0, 'no row to announce yet');
-
-		resolve_query!([FAKE_EVENT]);
-		await flushed;
 		assert.strictEqual(received.length, 1);
 	});
 
@@ -422,6 +405,7 @@ describe('create_audit_emitter — emit', () => {
 
 			await audit.emit(ctx, {
 				event_type: 'classroom_create',
+				outcome: 'failure',
 				metadata: { ok: true }
 			});
 			await wait();
@@ -449,6 +433,7 @@ describe('create_audit_emitter — emit', () => {
 
 			await audit.emit(ctx, {
 				event_type: 'classroom_create',
+				outcome: 'failure',
 				metadata: { ok: true }
 			});
 			await wait();
@@ -478,6 +463,7 @@ describe('create_audit_emitter — emit', () => {
 
 			await audit.emit(ctx, {
 				event_type: 'classroom_create',
+				outcome: 'failure',
 				metadata: { classroom_id: 'c1', name: 'Period 3' }
 			});
 			await wait();
@@ -485,6 +471,7 @@ describe('create_audit_emitter — emit', () => {
 
 			await audit.emit(ctx, {
 				event_type: 'classroom_create',
+				outcome: 'failure',
 				metadata: { classroom_id: 42, name: 'Period 3' }
 			});
 			await wait();
@@ -513,6 +500,7 @@ describe('create_audit_emitter — emit', () => {
 
 			await audit.emit(ctx, {
 				event_type: 'classroom_create',
+				outcome: 'failure',
 				metadata: { classroom_id: 42, name: 'Period 3' }
 			});
 			await wait();
@@ -640,10 +628,6 @@ describe('create_audit_emitter — a dropped pool write', () => {
 });
 
 describe('create_audit_emitter — routing by outcome and transaction', () => {
-	/** A mock transaction-scoped `Db`: `in_transaction` answers `true`. */
-	const create_mock_tx_db = (mock_query?: ReturnType<typeof vi.fn>): Db =>
-		({ ...(create_mock_db(mock_query) as object), in_transaction: true }) as Db;
-
 	test('a success row inside a transaction is written through the request db, not the pool', async () => {
 		const pool_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
 		const tx_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
@@ -655,7 +639,7 @@ describe('create_audit_emitter — routing by outcome and transaction', () => {
 		});
 		const ctx = create_ctx(create_mock_tx_db(tx_query));
 
-		await audit.emit(ctx, create_input());
+		await audit.emit(ctx, create_success_input());
 
 		assert.strictEqual(tx_query.mock.calls.length, 1, 'written in the transaction');
 		assert.strictEqual(pool_query.mock.calls.length, 0, 'never on the pool');
@@ -672,7 +656,7 @@ describe('create_audit_emitter — routing by outcome and transaction', () => {
 			create_mock_tx_db(vi.fn(() => Promise.reject(new Error('insert refused'))))
 		);
 
-		await assert_rejects(() => audit.emit(ctx, create_input()), /insert refused/);
+		await assert_rejects(() => audit.emit(ctx, create_success_input()), /insert refused/);
 		assert.strictEqual(get_audit_write_failures(), 0);
 		assert.strictEqual(ctx.post_commit_effects.length, 0, 'no fan-out queued');
 	});
@@ -683,24 +667,30 @@ describe('create_audit_emitter — routing by outcome and transaction', () => {
 		const audit = create_audit_emitter({ db: create_mock_db(pool_query), log });
 		const ctx = create_ctx(create_mock_tx_db(tx_query));
 
-		await audit.emit(ctx, { ...create_input(), outcome: 'failure' });
+		await audit.emit(ctx, create_input());
 		await flush_ctx(ctx);
 
 		assert.strictEqual(pool_query.mock.calls.length, 1, 'survives the rollback');
 		assert.strictEqual(tx_query.mock.calls.length, 0);
 	});
 
-	test('a success row with no transaction open is written on the pool', async () => {
+	test('a success row with no transaction open is refused, written nowhere, and counted', async () => {
+		reset_audit_success_outside_transaction();
 		const pool_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
 		const request_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
 		const audit = create_audit_emitter({ db: create_mock_db(pool_query), log });
 		const ctx = create_ctx(create_mock_db(request_query));
+		try {
+			await assert_rejects(() => audit.emit(ctx, create_success_input()), /no transaction open/);
+			await flush_ctx(ctx);
 
-		await audit.emit(ctx, create_input());
-		await flush_ctx(ctx);
-
-		assert.strictEqual(pool_query.mock.calls.length, 1);
-		assert.strictEqual(request_query.mock.calls.length, 0);
+			assert.strictEqual(pool_query.mock.calls.length, 0);
+			assert.strictEqual(request_query.mock.calls.length, 0);
+			assert.strictEqual(ctx.post_commit_effects.length, 0);
+			assert.strictEqual(get_audit_success_outside_transaction(), 1);
+		} finally {
+			reset_audit_success_outside_transaction();
+		}
 	});
 });
 
@@ -715,10 +705,18 @@ describe('create_audit_emitter — emit_pool', () => {
 			}
 		});
 
-		await audit.emit_pool(create_input());
-		assert.strictEqual(received.length, 1);
-		await audit.emit_pool({ ...create_input(), outcome: 'failure' });
-		assert.strictEqual(received.length, 2);
+		reset_audit_success_outside_transaction();
+		try {
+			await audit.emit_pool(create_success_input());
+			assert.strictEqual(received.length, 1);
+			// a success row on the pool is counted for the drift guard
+			assert.strictEqual(get_audit_success_outside_transaction(), 1);
+			await audit.emit_pool(create_input());
+			assert.strictEqual(received.length, 2);
+			assert.strictEqual(get_audit_success_outside_transaction(), 1, 'a failure row is not');
+		} finally {
+			reset_audit_success_outside_transaction();
+		}
 	});
 
 	test('resolves without notifying when the write fails', async () => {
@@ -935,10 +933,10 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 		actor: { id: 'actor-rg' as Uuid }
 	});
 
-	test('delegates to inner emit_pool and pushes onto pending_effects', async () => {
-		const db = create_mock_db();
-		const audit = create_audit_emitter({ db, log });
-		const ctx = { ...create_ctx(), client_ip: '203.0.113.1' };
+	test('delegates to inner emit, a success row written in the transaction', async () => {
+		const db = create_mock_tx_db();
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
+		const ctx = { ...create_ctx(db), client_ip: '203.0.113.1' };
 		const auth = create_auth();
 
 		await audit.emit_role_grant_target(ctx, auth as never, {
@@ -948,8 +946,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 			metadata: { role: 'admin', scope_id: null }
 		});
 
-		assert.strictEqual(ctx.pending_effects.length, 1);
-		await Promise.all(ctx.pending_effects);
+		assert.strictEqual(ctx.pending_effects.length, 0, 'nothing on the pool');
 		// `db.query` is the underlying insert path — one call per emit.
 		assert.strictEqual((db.query as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
@@ -968,7 +965,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 				return inner(ctx, input);
 			}
 		});
-		const ctx = { ...create_ctx(), client_ip: '198.51.100.7' };
+		const ctx = { ...create_ctx(create_mock_tx_db()), client_ip: '198.51.100.7' };
 		const auth = create_auth();
 
 		await audit.emit_role_grant_target(ctx, auth as never, {
@@ -1032,7 +1029,7 @@ describe('create_audit_emitter — emit_decorator', () => {
 			}
 		});
 
-		const ctx = { ...create_ctx(), client_ip: '1.2.3.4' };
+		const ctx = { ...create_ctx(create_mock_tx_db()), client_ip: '1.2.3.4' };
 		await audit.emit_role_grant_target(
 			ctx,
 			{ account: { id: 'a' as Uuid }, actor: { id: 'b' as Uuid } } as never,
@@ -1083,11 +1080,11 @@ describe('create_audit_emitter — drain_inflight', () => {
 		return { promise, done: () => done };
 	};
 
-	test('waits for an in-flight success write', async () => {
+	test('waits for an in-flight emit_pool write', async () => {
 		const { db, gates } = create_gated_db();
-		const audit = create_audit_emitter({ db, log, track_inflight: true });
-		await audit.emit(create_ctx(), create_input());
-		assert.strictEqual(gates.length, 1, 'the write starts at emit time');
+		const audit = create_audit_emitter({ db, log });
+		void audit.emit_pool(create_input());
+		assert.strictEqual(gates.length, 1, 'the write starts at once');
 
 		const drain = start_drain(audit);
 		await wait();
@@ -1103,10 +1100,9 @@ describe('create_audit_emitter — drain_inflight', () => {
 		const audit = create_audit_emitter({
 			db,
 			log,
-			track_inflight: true,
 			on_audit_event: (event) => heard.push(event)
 		});
-		await audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+		await audit.emit(create_ctx(), create_input());
 
 		const drain = start_drain(audit);
 		await wait();
@@ -1120,7 +1116,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 
 	test('resolves at once when nothing is in flight', async () => {
 		const { db, gates } = create_gated_db();
-		const audit = create_audit_emitter({ db, log, track_inflight: true });
+		const audit = create_audit_emitter({ db, log });
 		const drain = start_drain(audit);
 		await wait();
 		assert.ok(drain.done(), 'an empty drain must resolve');
@@ -1137,7 +1133,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 
 	test('waits for a write started while it is waiting', async () => {
 		const { db, gates } = create_gated_db();
-		const audit = create_audit_emitter({ db, log, track_inflight: true });
+		const audit = create_audit_emitter({ db, log });
 		// The first row's fan-out emits a second — an emit that begins only
 		// after the drain started, as one from a post-commit thunk does. A drain
 		// awaiting a snapshot of the first pass would resolve without it.
@@ -1147,7 +1143,7 @@ describe('create_audit_emitter — drain_inflight', () => {
 			chained = true;
 			void audit.emit(create_ctx(), create_input());
 		});
-		await audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+		await audit.emit(create_ctx(), create_input());
 
 		const drain = start_drain(audit);
 		gates[0]!.resolve();
@@ -1159,31 +1155,17 @@ describe('create_audit_emitter — drain_inflight', () => {
 		await drain.promise;
 	});
 
-	test('untracked: resolves at once with a write in flight', async () => {
+	test('inflight_count counts the pool writes still in flight', async () => {
 		const { db, gates } = create_gated_db();
 		const audit = create_audit_emitter({ db, log });
+		assert.strictEqual(audit.inflight_count(), 0);
 		await audit.emit(create_ctx(), create_input());
+		void audit.emit_pool(create_input());
+		assert.strictEqual(audit.inflight_count(), 2);
 
-		const drain = start_drain(audit);
-		await wait();
-		assert.ok(drain.done(), 'an untracked emitter has nothing to wait for');
 		gates[0]!.resolve();
-	});
-
-	test('is_tracking_inflight reports the construction', () => {
-		const { db } = create_gated_db();
-		assert.strictEqual(
-			create_audit_emitter({ db, log, track_inflight: true }).is_tracking_inflight(),
-			true
-		);
-		assert.strictEqual(
-			create_audit_emitter({ db, log, track_inflight: false }).is_tracking_inflight(),
-			false
-		);
-		assert.strictEqual(
-			create_audit_emitter({ db, log }).is_tracking_inflight(),
-			false,
-			'untracked by default'
-		);
+		gates[1]!.resolve();
+		await audit.drain_inflight();
+		assert.strictEqual(audit.inflight_count(), 0);
 	});
 });

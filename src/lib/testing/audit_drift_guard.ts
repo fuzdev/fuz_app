@@ -18,7 +18,9 @@ import {
 	reset_audit_unknown_event_type_failures
 } from '../auth/audit_log_queries.ts';
 import {
+	get_audit_success_outside_transaction,
 	get_audit_write_failures,
+	reset_audit_success_outside_transaction,
 	reset_audit_write_failures,
 	type AuditEmitter
 } from '../auth/audit_emitter.ts';
@@ -32,22 +34,27 @@ import {
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit
  * emission with a metadata shape that fails its `audit_metadata_schemas`
- * entry, an `event_type` not present in the active `AuditLogConfig`, or a
- * row the emitter failed to write.
+ * entry, an `event_type` not present in the active `AuditLogConfig`, a
+ * row the emitter failed to write, or a success row written outside a
+ * transaction (`emit` with none open, or `emit_pool`).
  *
  * The production validation in `query_audit_log` is fail-open — it bumps
  * process-wide counters and proceeds, so a regression that emits an
  * undeclared metadata field or a typo'd event-type lands a row that
  * passes downstream queries but breaks forensics. The emitter's pool write
  * is fail-open too: a refused `INSERT` is logged and counted, the request
- * succeeds, and the row is gone. Tests that exercise audit emits should fail
- * loudly when either happens.
+ * succeeds, and the row is gone. A success row belongs in the transaction of
+ * the change it reports; `emit` refuses one with no transaction open by
+ * throwing, which a caller can swallow, and `emit_pool` writes one on the
+ * pool. Tests that exercise audit emits should fail loudly when any of these
+ * happens.
  *
  * Call at the top of every `describe` / `describe_db` block that fires
  * audit writes through `deps.audit.emit`. Resets counters before each
  * test and asserts zero on completion. A test that makes a write fail on
  * purpose calls `reset_audit_write_failures` (`auth/audit_emitter.ts`) once
- * it has asserted the count.
+ * it has asserted the count, and one that writes a success row outside a
+ * transaction on purpose calls `reset_audit_success_outside_transaction`.
  *
  * Pair with `await_pending_effects: true` (the default for
  * `create_test_app`) so fire-and-forget audit writes have completed by
@@ -58,6 +65,7 @@ export const install_audit_drift_guard = (): void => {
 		reset_audit_metadata_validation_failures();
 		reset_audit_unknown_event_type_failures();
 		reset_audit_write_failures();
+		reset_audit_success_outside_transaction();
 	});
 	afterEach(assert_no_audit_drift);
 };
@@ -84,6 +92,11 @@ export const assert_no_audit_drift = (): void => {
 		get_audit_write_failures(),
 		0,
 		'an audit row failed to write and was lost — the emitter logged the database error'
+	);
+	assert.strictEqual(
+		get_audit_success_outside_transaction(),
+		0,
+		'a success audit row was emitted outside a transaction — write it in the transaction of the change it reports'
 	);
 };
 
@@ -116,7 +129,7 @@ export interface RecordingAuditEmitter {
  * `listener_count` reports, and returns a remover with the production
  * semantics (per registration, idempotent) — registered listeners never fire,
  * since this emitter captures `emit` shapes, not fan-out. `drain_inflight` resolves at once
- * and `is_tracking_inflight` answers `false`: a recorded call writes nothing, so nothing is
+ * and `inflight_count` answers 0: a recorded call writes nothing, so nothing is
  * ever in flight.
  *
  * `emit` AND `emit_pool` both append to `calls`, so a test reads either
@@ -174,7 +187,7 @@ export const create_recording_audit_emitter = (
 		},
 		listener_count: () => listeners.length,
 		drain_inflight: () => Promise.resolve(),
-		is_tracking_inflight: () => false
+		inflight_count: () => 0
 	};
 	return { emitter, calls };
 };

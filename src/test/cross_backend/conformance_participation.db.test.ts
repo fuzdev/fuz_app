@@ -68,7 +68,7 @@ const drained_setup_test = default_in_process_setup({
 			...endpoint,
 			actions: [...endpoint.actions, create_testing_drain_effects_action(ctx.deps.audit)]
 		})),
-	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, track_inflight: true }),
+	audit_factory: ({ db, log }) => create_audit_emitter({ db, log }),
 	extra_accounts
 });
 

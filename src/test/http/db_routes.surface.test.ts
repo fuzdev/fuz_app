@@ -42,7 +42,7 @@ interface SurfaceCapture {
 	diagnostics: Array<AppSurfaceDiagnostic>;
 }
 
-const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit_pool: async () => {} } };
+const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit: async () => {} } };
 
 const capture_surface = () =>
 	generate_app_surface({

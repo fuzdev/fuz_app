@@ -25,7 +25,7 @@ import { create_realtime_notification_sender } from '../actions/notification_sen
 import type { BootstrapServerOptions } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppBackend } from '../server/app_backend.ts';
-import { Db } from '../db/db.ts';
+import { Db, no_nested_transaction } from '../db/db.ts';
 import {
 	attach_route_handler,
 	prefix_route_specs,
@@ -124,12 +124,20 @@ export const stub: any = create_throwing_stub('stub');
  * Returns a real `Db` instance with:
  * - `query` returns empty rows (safety net for unmocked query functions)
  * - `query_one` returns undefined
- * - `transaction(fn)` calls `fn(db)` synchronously (no real transaction)
+ * - `transaction(fn)` calls `fn(tx)` with a stub transaction `Db` (no real
+ *   transaction): it reads as one (`in_transaction`) and refuses a nested
+ *   transaction, as a production transaction `Db` does
  */
 export const create_stub_db = (): Db =>
 	new Db({
 		client: { query: async () => ({ rows: [] }) },
-		transaction: async (fn) => fn(create_stub_db())
+		transaction: async (fn) =>
+			fn(
+				new Db({
+					client: { query: async () => ({ rows: [] }) },
+					transaction: no_nested_transaction
+				})
+			)
 	});
 
 /** Stub handler that answers a 200 `stub` text response, as a raw result. */
@@ -166,7 +174,7 @@ const stub_db = create_noop_stub('stub_db');
  * wires a listener fails loudly instead of silently never firing
  * (`create_recording_audit_emitter` accepts listeners); `listener_count`
  * returns 0; `drain_inflight` resolves immediately, since nothing is ever
- * written, and `is_tracking_inflight` answers `false`. Tests asserting on
+ * written, and `inflight_count` returns 0. Tests asserting on
  * real audit-row persistence (or on listener fan-out) build a real emitter
  * via `create_audit_emitter` against a stub or real DB — `create_test_app`
  * already does this on the test backend.
@@ -183,7 +191,7 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
 	},
 	listener_count: () => 0,
 	drain_inflight: async () => {},
-	is_tracking_inflight: () => false
+	inflight_count: () => 0
 });
 
 /**

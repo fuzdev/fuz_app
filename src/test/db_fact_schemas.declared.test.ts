@@ -28,7 +28,7 @@ const HASH = `${FACT_HASH_PREFIX}${HEX}`;
 const UUID = 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6';
 
 const log = new Logger('test', { level: 'off' });
-const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit_pool: async () => {} } };
+const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit: async () => {} } };
 const db_specs = new Map(
 	create_db_route_specs(DB_ROUTE_DEPS, {
 		db_type: 'pglet-memory',

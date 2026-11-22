@@ -58,6 +58,13 @@ export interface HeldBegin {
 	reached: Promise<void>;
 	/** Let the held transaction begin. */
 	release: () => void;
+	/**
+	 * Fail the held transaction with `error` instead of beginning it: its
+	 * callback never runs and the transaction call rejects — what its caller
+	 * sees when a `BEGIN` (or the checkout before it) fails. Twin of
+	 * `HeldCommit.fail`.
+	 */
+	fail: (error: Error) => void;
 }
 
 /** A pass-through `Db` plus the controls to stall one query or one commit. */
@@ -203,8 +210,11 @@ export const create_gated_db = (inner: Db): GatedDb => {
 		hold_begin: () => {
 			const reached = Promise.withResolvers<void>();
 			const held = Promise.withResolvers<void>();
+			// a hold failed after its test stopped waiting must not surface as an
+			// unhandled rejection
+			held.promise.catch(() => {});
 			armed_begin = { reached: reached.resolve, held: held.promise };
-			return { reached: reached.promise, release: held.resolve };
+			return { reached: reached.promise, release: held.resolve, fail: held.reject };
 		},
 		refuse_in_transaction: (match, error) => {
 			armed_refusal = { match, error };

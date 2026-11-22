@@ -56,15 +56,13 @@ export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpo
 ];
 
 /**
- * Audit factory registering the cell event types so cell emits validate, and
- * tracking in-flight writes so `_testing_drain_effects` awaits them.
+ * Audit factory registering the cell event types so cell emits validate.
  */
 const cell_parity_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events }),
-		track_inflight: true
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
 	});
 
 /**

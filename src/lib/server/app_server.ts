@@ -98,6 +98,7 @@ import {
 import { create_revocation_guard } from '../actions/connection_closer.ts';
 import type { ConnectionRegistry } from '../actions/connection_registry.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
+import type { AuditEmitter } from '../auth/audit_emitter.ts';
 
 /**
  * Bootstrap configuration for `AppServerOptions.bootstrap`.
@@ -514,6 +515,16 @@ export interface AppServerOptions {
 	await_pending_effects?: boolean;
 
 	/**
+	 * How long `AppServer.close` waits for the effects still in flight — each
+	 * request's unflushed `pending_effects` (failure audit rows, the session
+	 * touch, token usage) and every pool write of `deps.audit` — before it
+	 * closes the database. What is still running then is given up on and
+	 * logged. Default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`; must be a positive
+	 * number of ms.
+	 */
+	shutdown_drain_timeout_ms?: number;
+
+	/**
 	 * Called when an eager pending effect rejects, on HTTP requests and on the
 	 * frames of every WS endpoint the server mounts, in either
 	 * `await_pending_effects` mode. Use for monitoring, metrics, or alerting.
@@ -566,7 +577,12 @@ export interface AppServer {
 	 *    is left closing, so an upgrade or stream that registers afterward is
 	 *    born closed — refused at once rather than outliving the server — and
 	 *    a closed registry hosts no other server
-	 * 3. release what assembly acquired, last acquired first: remove the
+	 * 3. wait for the effects still in flight — the unflushed
+	 *    `pending_effects` of requests already answered (failure audit rows,
+	 *    the session touch, token usage; production does not hold a response
+	 *    for them) and every pool write of `deps.audit` — bounded by
+	 *    `shutdown_drain_timeout_ms`, logging what it gives up on
+	 * 4. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
 	 *    revocation guard, the audit-log SSE listener), the members it added
 	 *    to `deps.connection_closer` (each mounted connection registry, the
@@ -578,7 +594,7 @@ export interface AppServer {
 	 *    were before assembly, so a failed assembly can be retried on the same
 	 *    backend, and a backend whose `close` you own (a test harness) can
 	 *    host another server
-	 * 4. close the database connection (`AppBackend.close`)
+	 * 5. close the database connection (`AppBackend.close`)
 	 *
 	 * Idempotent: a second call settles with the first one's outcome (a failed
 	 * close is not retried), and concurrent calls share one shutdown.
@@ -621,6 +637,13 @@ export const require_audit_sse = (source: { audit_sse: AuditLogSse | null }): Au
  * `fuz_http` `DEFAULT_BODY_LIMIT_BYTES`.
  */
 export const DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * Default bound on `AppServer.close`'s wait for the effects still in flight
+ * (`AppServerOptions.shutdown_drain_timeout_ms`). Twin of the Rust spine's
+ * `DEFAULT_DRAIN_TIMEOUT`.
+ */
+export const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
 
 /**
  * Each `AppServerOptions` rate-limiter field, with the defaults an omitted one
@@ -836,6 +859,56 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 };
 
 /**
+ * What `drain_effects_on_shutdown` gave up on at its bound, each counted on
+ * its own: a request flush still waiting on its audit writes has those
+ * writes counted in `audit_writes` too, so the two are not summed.
+ */
+export interface ShutdownDrainGivenUp {
+	/** Request flushes still running. */
+	request_flushes: number;
+	/** Pool writes of the audit emitter still in flight. */
+	audit_writes: number;
+}
+
+/**
+ * Wait for the request flushes in flight and then the audit emitter's pool
+ * writes, until none is left or `timeout_ms` passes — then log an error naming
+ * what was given up on. Never rejects.
+ *
+ * @returns what was given up on, both counts `0` when everything settled
+ */
+export const drain_effects_on_shutdown = async (
+	inflight_flushes: ReadonlySet<Promise<void>>,
+	audit: Pick<AuditEmitter, 'drain_inflight' | 'inflight_count'>,
+	timeout_ms: number,
+	log: Logger
+): Promise<ShutdownDrainGivenUp> => {
+	const drain = async (): Promise<void> => {
+		// wait for zero: a flush's post-commit thunk can start another write
+		while (inflight_flushes.size > 0) await Promise.allSettled(inflight_flushes);
+		await audit.drain_inflight();
+	};
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timed_out = new Promise<void>((resolve) => {
+		timer = setTimeout(resolve, timeout_ms);
+	});
+	try {
+		await Promise.race([drain(), timed_out]);
+	} finally {
+		clearTimeout(timer);
+	}
+	const given_up: ShutdownDrainGivenUp = {
+		request_flushes: inflight_flushes.size,
+		audit_writes: audit.inflight_count()
+	};
+	if (given_up.request_flushes === 0 && given_up.audit_writes === 0) return given_up;
+	log.error(
+		`create_app_server: shutdown gave up after ${timeout_ms}ms on effects still running — ${given_up.request_flushes} request flush(es), ${given_up.audit_writes} audit row write(s)`
+	);
+	return given_up;
+};
+
+/**
  * Run `releases` last-first and empty it. Each runs in its own `try`, so one
  * that throws is logged and the rest still run.
  */
@@ -918,6 +991,14 @@ const assemble_app_server = async (
 		options.max_body_size === null
 			? null
 			: create_body_limit_middleware_spec(options.max_body_size ?? DEFAULT_BODY_LIMIT_BYTES);
+
+	const shutdown_drain_timeout_ms =
+		options.shutdown_drain_timeout_ms ?? DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS;
+	if (!(shutdown_drain_timeout_ms > 0 && Number.isFinite(shutdown_drain_timeout_ms))) {
+		throw new Error(
+			`create_app_server: shutdown_drain_timeout_ms must be a positive number of ms, got ${shutdown_drain_timeout_ms}`
+		);
+	}
 
 	// Rate limiters — the ones built here are the server's to dispose, on
 	// close or when assembly fails.
@@ -1233,6 +1314,10 @@ const assemble_app_server = async (
 	// writes to settle — a revocation's connection close must not sit behind
 	// a slow audit INSERT.
 	const on_effect_error = options.on_effect_error;
+	// The flushes production leaves running past the response — what
+	// shutdown waits on before the database closes. Each removes itself as it
+	// settles; none rejects.
+	const inflight_flushes: Set<Promise<void>> = new Set();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
 		c.set('post_commit_effects', []);
@@ -1253,8 +1338,12 @@ const assemble_app_server = async (
 					log,
 					on_effect_error ? (reason) => on_effect_error(reason, error_ctx) : undefined
 				);
-				if (options.await_pending_effects) await flushed;
-				else void flushed;
+				if (options.await_pending_effects) {
+					await flushed;
+				} else {
+					inflight_flushes.add(flushed);
+					void flushed.then(() => inflight_flushes.delete(flushed));
+				}
 			}
 		}
 	});
@@ -1358,6 +1447,10 @@ const assemble_app_server = async (
 		} catch (error) {
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
+		// then the effects still in flight, so a failure row or a session touch
+		// a request already answered started is not lost to the closing pool —
+		// bounded, as the Rust spine's shutdown drain is
+		await drain_effects_on_shutdown(inflight_flushes, deps.audit, shutdown_drain_timeout_ms, log);
 		// then what assembly acquired — the audit listeners and closer members
 		// this server added, and the limiters it built
 		run_releases(releases, log, 'shutdown');

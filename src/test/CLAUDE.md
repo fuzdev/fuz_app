@@ -200,7 +200,7 @@ the test helpers' route list.
 ## Mocking
 
 - DI via small `*Deps` interfaces — `create_stub_app_deps()` for auth deps with safe defaults
-- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it, whose `hold_begin()` holds the next transaction before it begins (so a test lands a commit between a handler's authorization and its first statement — `auth/credential_mint_race.db.test.ts`), and whose `hold_commit()` holds the next transaction open after its callback returns, before it commits — then `release()`s it, or `fail(error)`s it so the transaction rolls back and its call rejects, which is what a caller sees when a `COMMIT` fails (`auth/cleanup.sessions.db.test.ts` drives the session sweep's close-on-failed-commit branch with it on every driver; `auth/cleanup.sessions.refused_commit.db.test.ts` has a deferred constraint trigger refuse the `COMMIT` itself, real Postgres only). The stall seams for tests that need something to happen *between* two of a request's database steps (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window; `auth/connection_closer.admission.db.test.ts` holds a revocation uncommitted and opens a connection in the window — real Postgres only, since the connection's re-read needs a second database connection). `open_transactions()` counts the transactions open right now, which is how `auth/connection_closer.db.test.ts` asserts on any driver that a close ran after its commit; the same file stalls the audit INSERT to assert that a close does not wait for it. Production takes no seam for it. Its `refuse_in_transaction(match, error)` throws `error` for the next statement inside a transaction whose SQL matches, as a refused statement does (`auth/session_cookie_commit.db.test.ts` fails a logout's audit insert with it).
+- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it, whose `hold_begin()` holds the next transaction before it begins (so a test lands a commit between a handler's authorization and its first statement — `auth/credential_mint_race.db.test.ts`) — then `release()`s it, or `fail(error)`s it so the transaction call rejects before its callback runs, as a refused `BEGIN` does (`auth/rest_audit_in_transaction.db.test.ts`, signup's pre-transaction failure row), and whose `hold_commit()` holds the next transaction open after its callback returns, before it commits — then `release()`s it, or `fail(error)`s it so the transaction rolls back and its call rejects, which is what a caller sees when a `COMMIT` fails (`auth/cleanup.sessions.db.test.ts` drives the session sweep's close-on-failed-commit branch with it on every driver; `auth/cleanup.sessions.refused_commit.db.test.ts` has a deferred constraint trigger refuse the `COMMIT` itself, real Postgres only). The stall seams for tests that need something to happen *between* two of a request's database steps (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window; `auth/connection_closer.admission.db.test.ts` holds a revocation uncommitted and opens a connection in the window — real Postgres only, since the connection's re-read needs a second database connection). `open_transactions()` counts the transactions open right now, which is how `auth/connection_closer.db.test.ts` asserts on any driver that a close ran after its commit. Production takes no seam for it. Its `refuse_in_transaction(match, error)` throws `error` for the next statement inside a transaction whose SQL matches, as a refused statement does (`auth/session_cookie_commit.db.test.ts` fails a logout's audit insert with it, `auth/rest_audit_in_transaction.db.test.ts` the login, password and signup success rows, `rate_limiter.bootstrap.db.test.ts` bootstrap's).
 - `http/route_raw_refusals.ts` — the raw answers `prepare_route_response` refuses and some it admits, built fresh per call; shared by `http/route_result.test.ts` and `http/route_result.refusal.db.test.ts`.
 - `create_mock_runtime()` from `#lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
@@ -215,13 +215,17 @@ the test helpers' route list.
   at the top of the `describe_db` block. Resets +
   asserts the `audit_metadata_validation_failures` and
   `audit_unknown_event_type_failures` counters, and the emitter's
-  write-failure counter, per-test —
+  write-failure and success-outside-a-transaction counters, per-test —
   `query_audit_log`'s schema validation and the emitter's pool write are
   fail-open in production, so regressions that emit undeclared metadata
   fields or unknown event types, or lose a row the database refused, are
-  silent without this guard. A test that fails a write on purpose asserts
+  silent without this guard; a success row written outside the transaction
+  of its change (an `emit` that throws for it, swallowed, or a success
+  `emit_pool`) fails it too. A test that fails a write on purpose asserts
   `get_audit_write_failures()` and calls `reset_audit_write_failures()`
   (`#lib/auth/audit_emitter.ts`) before it ends.
+- `seq` follows INSERT order, not commit order: a test that orders audit rows
+  by `seq` across concurrent requests orders them by when each INSERT ran.
 
 ## Cross-backend self-tests (`src/test/cross_backend/`)
 
@@ -239,9 +243,15 @@ Every shipped single-backend suite runs from one file,
 (`#lib/testing/cross_backend/spine_suites.ts`) over the spine's surface, every
 audit row held to a closed world (`reject_unknown_audit_metadata_keys`), one
 override (the standard bundle's uncovered-error set, the same on every spine),
-nothing excluded. A suite added
-to `SUITE_NAMES` runs on every backend with no file of its own, and none runs
-twice. Beside it sit the spine-specific extras: the conformance runner over the
+nothing excluded, and each backend's gated skips declared in `expected_skips`,
+keyed by backend name (`handle.config.name`) rather than read off the
+capabilities — Bun owes the WebSocket case "frames sent with the handshake are
+answered once the connection is admitted" (`ws_handshake_pipelining: false`),
+and nothing else is skipped. A suite added to `SUITE_NAMES` runs on every
+backend with no file of its own, and none runs twice. Every single-backend
+cross file with a gated case ends with `check_declared_skips`
+(`#lib/testing/cross_backend/declared_skips.ts`), declaring the skips that file
+owes; the security and timing projects call it once per backend. Beside it sit the spine-specific extras: the conformance runner over the
 case files, the notification suite again on the role-gated endpoint, the
 reset-isolation pair, the bootstrap-token probe, and — under
 `cross_backend_ts_node` alone (`NODE_ONLY_CROSS_TESTS` in
@@ -419,7 +429,8 @@ Entries align on method, path and JSON-RPC method; the diff stops at the
 first entry whose route differs. A closing test fails a test that ran on one
 side only, and on a whole run a ledger row that matched nothing; on a
 filtered or partly skipped run it skips and says which check it left
-unjudged. A failure lands on side B's copy of the test, as
+unjudged; a gated skip (`test_if`) is held to `expected_skips` on both sides
+instead and doesn't make the run partial. A failure lands on side B's copy of the test, as
 `[entry] path: a=… b=…` lines with the first differing entry in full, or as
 `transcripts stop lining up at entry [n]`. Set
 `FUZ_TEST_TRANSCRIPT_DUMP_DIR=<dir>` for `raw.json`, `transcripts.json` (what

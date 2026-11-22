@@ -646,12 +646,15 @@ describe_db('AuditLogQueries', (get_db) => {
 			},
 			audit_log_config
 		});
-		await audit.emit(
-			{ db: get_db(), pending_effects, post_commit_effects },
-			{
-				event_type: 'classroom_create',
-				metadata: { classroom_id: 'cls-1', name: 'Period 3 English' }
-			}
+		// a success row is written in the request's transaction
+		await get_db().transaction((tx) =>
+			audit.emit(
+				{ db: tx, pending_effects, post_commit_effects },
+				{
+					event_type: 'classroom_create',
+					metadata: { classroom_id: 'cls-1', name: 'Period 3 English' }
+				}
+			)
 		);
 		await flush_pending_effects(pending_effects, log);
 		// a success row reaches the listeners from the post-commit queue
@@ -677,14 +680,18 @@ describe_db('AuditLogQueries', (get_db) => {
 		});
 		try {
 			// `actor_id` is a UUID column: every driver refuses the insert
-			await audit.emit_pool({ event_type: 'login', actor_id: 'not-a-uuid' as Uuid });
+			await audit.emit_pool({
+				event_type: 'login',
+				outcome: 'failure',
+				actor_id: 'not-a-uuid' as Uuid
+			});
 			assert.strictEqual(get_audit_write_failures(), 1, 'the lost row is counted');
 			assert.throws(assert_no_audit_drift, /failed to write/);
 			assert.deepStrictEqual(seen, [], 'there is no row to announce');
 			assert.strictEqual((await query_audit_log_list(deps)).length, 0);
 
 			// a write the database takes leaves the counter alone
-			await audit.emit_pool({ event_type: 'login' });
+			await audit.emit_pool({ event_type: 'login', outcome: 'failure' });
 			assert.strictEqual(get_audit_write_failures(), 1);
 			assert.strictEqual((await query_audit_log_list(deps)).length, 1);
 		} finally {

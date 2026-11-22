@@ -477,8 +477,13 @@ progress), closes every live connection on `deps.connection_closer` — each
 WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
 treat their session as revoked), each audit stream, including registries passed
 through `WsEndpointSpec.registry` or added by hand (a close that throws is
-logged and the shutdown goes on) — then releases what assembly acquired and
-closes the database. The close-all leaves each connection registry and the audit stream
+logged and the shutdown goes on) — then waits for the effects still in flight:
+the unflushed `pending_effects` of requests already answered (failure audit
+rows, the session touch, token usage — production answers without waiting for
+them) and every pool write of `deps.audit` (`drain_inflight`), bounded by
+`shutdown_drain_timeout_ms` (default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`, 10 s,
+the Rust spine's drain timeout), logging what it gives up on — then releases
+what assembly acquired and closes the database. The close-all leaves each connection registry and the audit stream
 registry closing: a WebSocket upgrade or stream still in flight when it runs —
 one the listener accepted before it stopped — is refused rather than outliving
 the server, a WebSocket closed with `WS_CLOSE_GOING_AWAY`, a stream ended after

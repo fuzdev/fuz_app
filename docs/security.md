@@ -1062,13 +1062,11 @@ expiry, a raw row delete — is under
   `close_connections_after_commit`, which logs a failing close rather than
   failing the committed request. The
   close does not depend on the audit row's announcement. A revocation's
-  success row is written in the request transaction where one is open, so a
-  failed audit INSERT rolls the revocation back and fails the request (no
-  close runs); `/login` and `/password` write theirs on the pool after their
-  own commit, fail-open, so a failed INSERT there leaves the revocation in
-  place and the connections closed. Nor does the close wait for a pool write
-  — the queue runs before the request's in-flight pool writes are awaited, so
-  a slow audit INSERT does not hold a revoked connection open.
+  success row is written in its transaction — `/login`'s and `/password`'s
+  included, last in the transaction they open — so a failed audit INSERT
+  rolls the revocation back and fails the request (no close runs). Nor does
+  the close wait for a pool write — the queue runs before the request's
+  in-flight pool writes (its failure rows) are awaited.
 - **The audit listener.** `create_revocation_guard`, registered once on the
   backend's closer, repeats the close on every transport when the audit row is
   announced. The emitter announces a
@@ -1541,8 +1539,7 @@ The wait for a free connection and a new connection's connect are bounded one
 by one, so a checkout that waits and then connects can take about twice the
 bound.
 
-Audit rows written on the pool (failure rows, and the success rows of routes
-with no request transaction) wait longer: `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`
+Audit rows written on the pool (failure rows) wait longer: `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`
 (default 30000), so saturating the pool to shed requests does not also drop
 the forensic rows recording them; a row dropped anyway is logged in full,
 secret-sensitive metadata masked, as one `audit row dropped` error line. A
@@ -2658,14 +2655,18 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 
 ## Audit Logging
 
-A **success** row emitted inside a request transaction — every mutating RPC
-action, and a route with `transaction: true` such as `/logout` — is written in
-that transaction: the change and the row reporting it commit together, and a
-failed insert fails the request and rolls the change back, so no committed
-mutation goes unaudited. Every other row — **failure** rows above all, and the
-success rows of `/login`, `/password`, signup and bootstrap, which commit their
-own transaction first — is a fire-and-forget pool write that survives a
-rollback (never blocks or breaks auth flows). Their delivery is
+A **success** row is written in the transaction of the change it reports —
+every mutating RPC action, a route with `transaction: true` such as `/logout`
+and the db-admin row delete, and the transaction `/login`, `/password`, signup
+and bootstrap each open around just their writes, the row last before the
+commit: the change and the row reporting it commit together, and a failed
+insert fails the request and rolls the change back, so no committed mutation
+goes unaudited, and a response, once sent, has its row committed. `emit`
+refuses a success row with no transaction open. The Rust spine writes the same
+rows the same way. **Failure** rows are fire-and-forget pool writes that
+survive a rollback (never block or break auth flows); `AppServer.close` waits
+for those still in flight, bounded (`shutdown_drain_timeout_ms`), before the
+database closes. Their delivery is
 **best-effort, not durable**: a failed insert is caught, counted, and logged,
 not retried — the request still succeeds and no audit row exists for that
 event. Listeners (the audit SSE stream, the revocation guard) are
@@ -2674,10 +2675,11 @@ written, a success row once the request's transaction has committed — so an au
 outage also suppresses the security reactions chained off it. Enforcement that
 must survive an audit failure cannot be built on the listener path alone, which
 is why every revocation handler closes connections itself (see
-[Closing on Revocation](#closing-on-revocation)). `seq` is assigned at INSERT;
-an in-transaction row commits later, so a row can become visible after a higher
-`seq` — a gap fill (`since_seq`) can miss one that commits while the stream is
-down.
+[Closing on Revocation](#closing-on-revocation)). `seq` follows INSERT order,
+not commit order: it is assigned at INSERT and an in-transaction row commits
+later, so a row can become visible after a higher `seq` — a gap fill
+(`since_seq`) can miss one that commits while the stream is down. What holds is
+that a success row is visible exactly when its change is.
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
 `target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
 is an append-only historical record, not a live relational entity: a soft-delete

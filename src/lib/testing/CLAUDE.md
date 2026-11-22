@@ -34,7 +34,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_route_spec(shape)` — a spec for a surface that is described and never served: `shape` with a handler that throws when run (the spine routes of `create_rust_spine_consumer_surface_spec`).
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with a stub keyring (`sign` answers `<value>.stub_signature`, so an assembly's sample cookie mint runs; nothing else of it does anything), no-op password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer` and `notification_sender`.
-- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `is_tracking_inflight` returns `false`.
+- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` / `emit_pool` resolve immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately, `inflight_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SseRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?, origin_carve_outs?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin, optional daemon_token, session, request_context, bearer_auth) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
@@ -128,7 +128,7 @@ mismatch.
 
 ### `audit_drift_guard.ts` — audit-emission validation
 
-- `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts` and the emitter's write-failure counter (`get_audit_write_failures` in `auth/audit_emitter.ts`). Call once at the top of any `describe_db` block firing audit emits — production validation and the emitter's write are fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field, or losing a row the database refused, is silent. A test that fails a write on purpose resets the counter (`reset_audit_write_failures`) once it has asserted it.
+- `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts` and the emitter's write-failure counter (`get_audit_write_failures` in `auth/audit_emitter.ts`). Call once at the top of any `describe_db` block firing audit emits — production validation and the emitter's write are fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field, or losing a row the database refused, is silent. A test that fails a write on purpose resets the counter (`reset_audit_write_failures`) once it has asserted it. It also zero-checks the success-outside-a-transaction counter (`get_audit_success_outside_transaction`; `reset_audit_success_outside_transaction` for a test that writes one on purpose).
 - `assert_audit_event_metadata(event, {reject_unknown_keys?})` — the wire-side twin: parses a read audit row's `metadata` against its builtin event type's `audit_metadata_schemas` entry as declared, so a mistyped, `null`, or missing field fails while a consumer-added key passes (the schemas are fuz_schema `loose_object`s, and a builtin's schema can't be overridden, so added keys are a consumer's only extension path). `reject_unknown_keys` closes the world, each `loose_object`'s `def` spread into an `object`: an undeclared key fails too, for a suite whose backend adds none. The wire schema leaves `metadata` a loose record and only the TS spine validates it, at insert and fail-open, so this is what holds every spine's rows to their event's contract. A consumer-registered event type passes unexamined. `list_audit_events` and the admin suite run it on every row they read, with `reject_unknown_keys` from the fixture's `reject_unknown_audit_metadata_keys` (a setup option on `default_cross_process_setup`, `default_in_process_setup` and `default_in_process_suite_options`); fuz_app's own spine wiring turns it on.
 - `assert_no_audit_drift()` — the zero-check itself, for a test that manages the counters. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes complete by response time.
 - `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
@@ -2211,26 +2211,20 @@ Conventions that hold across them:
   `_testing_drain_effects` RPC action (daemon-token-gated, like
   `_testing_reset`). It awaits `audit.drain_inflight()` so a following
   `audit_log_list` is authoritative — the deterministic barrier a
-  cross-process audit assertion fires before reading (no poll/sleep). The
-  emitter must be built with `create_audit_emitter({track_inflight: true})`
-  (the spine binary's `audit_factory` does — pinned by
-  `cross_backend/testing_spine_server.audit.test.ts`), or the drain resolves at once.
-  The action answers `{ok: true, tracked}`, `tracked` read from
-  `audit.is_tracking_inflight()`, and `cross_drain_effects` refuses anything but
-  `tracked: true` — so a binary built over an untracked emitter fails its first
-  audit read rather than racing it. The Rust twin answers the same shape.
+  cross-process audit assertion fires before reading (no poll/sleep). Every
+  emitter counts its pool writes in flight, so the drain always waits on them.
+  The action answers `{ok: true, tracked: true}` (a constant on both spines),
+  and `cross_drain_effects` refuses anything else.
   The barrier is needed whatever the transport: HTTP on a binary running
   `await_pending_effects: true` settles a mutation's writes before
   responding, but WS replies before its effects flush, so a WS mutation's
   audit write can still be in flight when its reply arrives. The drain waits
-  until no tracked `emit` write is outstanding — writes started while it
-  waits included — the same wait-for-zero as the Rust spine's
-  `AuditEmitter::drain_inflight` over `new_with_inflight_tracking`.
+  until no pool write is in flight — writes started while it waits included
+  — the same wait-for-zero as the Rust spine's `AuditEmitter::drain_inflight`.
   `create_testing_actions` bundles it over `deps.audit`; suites that mount
   their own endpoint (e.g. the in-process
-  `account_lifecycle_parity.db.test.ts`) add it directly, over a tracked
-  emitter, so the shared suite body can call the barrier on every backend
-  uniformly.
+  `account_lifecycle_parity.db.test.ts`) add it directly, so the shared suite
+  body can call the barrier on every backend uniformly.
 
   Also bundled: `_testing_db_invariants` (`create_testing_db_invariants_action()`,
   void input, read-only, no audit row) — every row breaking a database

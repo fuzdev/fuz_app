@@ -22,6 +22,7 @@ import type { Invite } from './invite_schema.ts';
 import { create_signup_route_shape } from './signup_route_schema.ts';
 import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_ok } from '../http/route_result.ts';
+import { transaction_with_post_commit_rollback } from '../http/pending_effects.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
@@ -159,21 +160,56 @@ export const create_signup_route_specs = (
 					// invite-gated success (which spends an invite), a 5xx, and a
 					// request with no resolved client IP. The per-account limiter
 					// bounds retries of one username only.
-					const { open_signup } = await query_app_settings_load(route);
+					//
+					// A failure before the transaction (the settings load, the hash,
+					// the `BEGIN`) leaves the `internal_error` row Rust's
+					// pre-transaction failures write: no `invite_id` (no find has
+					// run) and no `open_signup` (the load may be what failed). 5xx
+					// is not floored. Both failure-row helpers log an emit that
+					// throws rather than throwing, so the answer is always the
+					// original error or refusal, never the emit's.
+					const log_failure_audit_error = (err: unknown): void => {
+						deps.log.error('signup: the failure audit emit threw:', err);
+					};
+					const emit_pre_tx_failure_audit = async (): Promise<void> => {
+						try {
+							await deps.audit.emit(route, {
+								event_type: 'signup',
+								outcome: 'failure',
+								ip: route.client_ip,
+								metadata: {
+									username,
+									reason: 'internal_error',
+									...(email != null && { email })
+								}
+							});
+						} catch (err) {
+							log_failure_audit_error(err);
+						}
+					};
+					let open_signup: boolean;
+					let password_hash: string;
+					let delay: Promise<void>;
+					try {
+						({ open_signup } = await query_app_settings_load(route));
 
-					// Start the denial-time floor concurrently with failure work.
-					// Observed response time for 403 / 409 is `max(work, delay)`
-					// so the cheap `no_match` path (no Argon2, find returns
-					// nothing) and the expensive `signup_conflict` path (Argon2
-					// + tx + rollback) converge — closes the username-enumeration
-					// timing oracle. The same `start_fail_floor` as login. Started
-					// after rate-limit checks so 429 stays fast.
-					const delay = start_fail_floor(signup_fail_floor_ms, signup_fail_jitter_ms);
+						// Start the denial-time floor concurrently with failure work.
+						// Observed response time for 403 / 409 is `max(work, delay)`
+						// so the cheap `no_match` path (no Argon2, find returns
+						// nothing) and the expensive `signup_conflict` path (Argon2
+						// + tx + rollback) converge — closes the username-enumeration
+						// timing oracle. The same `start_fail_floor` as login. Started
+						// after rate-limit checks so 429 stays fast.
+						delay = start_fail_floor(signup_fail_floor_ms, signup_fail_jitter_ms);
 
-					// Hash before the transaction so the connection isn't held
-					// across the ~100ms Argon2id. Paid on every attempt that gets
-					// here — bounded as described above.
-					const password_hash = await password.hash_password(pw);
+						// Hash before the transaction so the connection isn't held
+						// across the ~100ms Argon2id. Paid on every attempt that gets
+						// here — bounded as described above.
+						password_hash = await password.hash_password(pw);
+					} catch (e: unknown) {
+						await emit_pre_tx_failure_audit();
+						throw e;
+					}
 
 					// `invite` is assigned inside the tx by the FOR UPDATE find;
 					// captured at the outer scope so the failure-audit catch
@@ -184,25 +220,32 @@ export const create_signup_route_specs = (
 					const emit_failure_audit = async (
 						reason: 'no_match' | 'signup_conflict' | 'internal_error'
 					): Promise<void> => {
-						await deps.audit.emit(route, {
-							event_type: 'signup',
-							outcome: 'failure',
-							ip: route.client_ip,
-							metadata: {
-								username,
-								reason,
-								...(invite && { invite_id: invite.id }),
-								...(email != null && { email }),
-								...(open_signup && { open_signup: true })
-							}
-						});
+						try {
+							await deps.audit.emit(route, {
+								event_type: 'signup',
+								outcome: 'failure',
+								ip: route.client_ip,
+								metadata: {
+									username,
+									reason,
+									...(invite && { invite_id: invite.id }),
+									...(email != null && { email }),
+									...(open_signup && { open_signup: true })
+								}
+							});
+						} catch (err) {
+							log_failure_audit_error(err);
+						}
 					};
 
 					let result: { account: Account; actor: Actor; set_cookie: string };
+					// whether the transaction began: a failure before it (the
+					// `BEGIN` itself, a pool checkout) is a pre-transaction failure,
+					// whose row carries no `open_signup`, as on the Rust spine
+					let tx_began = false;
 					try {
-						result = await route.db.transaction(async (tx) => {
-							const tx_deps = { db: tx };
-
+						result = await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
+							tx_began = true;
 							// Find + claim run inside the same transaction so the
 							// row lock makes them atomic. Concurrent signups for
 							// the same (username, email) tuple block on the lock
@@ -212,7 +255,7 @@ export const create_signup_route_specs = (
 							// `ERROR_NO_MATCHING_INVITE`. No race window.
 							if (!open_signup) {
 								invite = await query_invite_find_unclaimed_match_for_update(
-									tx_deps,
+									tx_ctx,
 									email ?? null,
 									username
 								);
@@ -221,7 +264,7 @@ export const create_signup_route_specs = (
 								}
 							}
 
-							const { account, actor } = await query_create_account_with_actor(tx_deps, {
+							const { account, actor } = await query_create_account_with_actor(tx_ctx, {
 								username,
 								password_hash,
 								email
@@ -234,7 +277,7 @@ export const create_signup_route_specs = (
 								// that invariant broke — refuse loudly (the throw
 								// rolls the account back) rather than mint an
 								// account no invite admitted.
-								const claimed = await query_invite_claim_unscoped(tx_deps, invite.id, account.id);
+								const claimed = await query_invite_claim_unscoped(tx_ctx, invite.id, account.id);
 								if (!claimed) {
 									throw new Error(
 										`invite ${invite.id} was already claimed despite the FOR UPDATE lock`
@@ -247,11 +290,23 @@ export const create_signup_route_specs = (
 							// once the commit has landed
 							const session = await create_capped_session({
 								keyring,
-								deps: tx_deps,
+								deps: tx_ctx,
 								account_id: account.id,
 								session_options
 							});
 							const set_cookie = session_cookie_header(session.cookie_value, session_options);
+
+							// the success row, last: a refused row rolls the account back
+							// and answers through the `internal_error` catch below
+							await deps.audit.emit(tx_ctx, {
+								event_type: 'signup',
+								actor_id: actor.id,
+								account_id: account.id,
+								ip: route.client_ip,
+								metadata: invite
+									? { invite_id: invite.id, username }
+									: { open_signup: true, username }
+							});
 
 							return { account, actor, set_cookie };
 						});
@@ -278,7 +333,7 @@ export const create_signup_route_specs = (
 						// `internal_error` before rethrowing. 5xx responses are
 						// not floored: they aren't response-time-controlled
 						// enumeration oracles.
-						await emit_failure_audit('internal_error');
+						await (tx_began ? emit_failure_audit('internal_error') : emit_pre_tx_failure_audit());
 						throw e;
 					}
 
@@ -299,13 +354,6 @@ export const create_signup_route_specs = (
 					// dry); the `finally` releases it.
 					if (open_signup) ip_reserved.reservation.record();
 
-					await deps.audit.emit(route, {
-						event_type: 'signup',
-						actor_id: result.actor.id,
-						account_id: result.account.id,
-						ip: route.client_ip,
-						metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
-					});
 					return route_ok(
 						{
 							ok: true,

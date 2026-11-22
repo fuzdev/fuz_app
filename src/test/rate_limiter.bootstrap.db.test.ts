@@ -36,6 +36,7 @@ import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import { Db } from '#lib/db/db.ts';
+import { flush_request_effects } from '#lib/http/pending_effects.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -54,6 +55,7 @@ import {
 	test_proxy_middleware
 } from './rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './auth/session_test_helpers.ts';
+import { create_gated_db, is_audit_insert, type GatedDb } from './gated_db.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -97,6 +99,8 @@ const create_bootstrap_app = async (
 		burn_token?: BootstrapTokenStore['burn_token'];
 		/** Build the audit emitter over the test db. Default a no-op emitter. */
 		create_audit?: (db: Db) => AuditEmitter;
+		/** Wrap the db the route runs on (a `create_gated_db`). Default the test db. */
+		wrap_db?: (db: Db) => Db;
 	}
 ): Promise<BootstrapTestApp> => {
 	const db = await bootstrap_factory.create();
@@ -135,21 +139,24 @@ const create_bootstrap_app = async (
 		c.set('pending_effects', []);
 		c.set('post_commit_effects', []);
 		await next();
+		// as the app server's flush does, so a listener hears what committed
+		await flush_request_effects(c.var.pending_effects, c.var.post_commit_effects, log);
 	});
 	app.use('*', test_proxy_middleware);
 	// a pool-level session write is refused at once: the bootstrap mints its
 	// session in its own transaction, and one written on the pool would wait
 	// on the in-memory drivers' single connection until the test timed out
+	const base_db = extra?.wrap_db?.(db) ?? db;
 	const route_db = new Db({
 		client: {
 			query: async <T>(text: string, values?: Array<unknown>) => {
 				if (text.includes('auth_session')) {
 					throw new Error('a pool-level statement touched auth_session');
 				}
-				return db.client.query<T>(text, values);
+				return base_db.client.query<T>(text, values);
 			}
 		},
-		transaction: (fn) => db.transaction(fn)
+		transaction: (fn) => base_db.transaction(fn)
 	});
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, route_db);
 
@@ -461,8 +468,7 @@ describe('token max length validation', () => {
 	const attempt = async (token: string) => {
 		let audit: AuditEmitter | undefined;
 		const test_app = await create_bootstrap_app(null, undefined, {
-			create_audit: (audit_db) =>
-				(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+			create_audit: (audit_db) => (audit = create_audit_emitter({ db: audit_db, log }))
 		});
 		const res = await test_app.app.request('/bootstrap', {
 			method: 'POST',
@@ -572,8 +578,7 @@ describe('bootstrap success audit', () => {
 			.mockResolvedValue(new TextEncoder().encode('test_token_test_token_test_token_32'));
 		let audit: AuditEmitter | undefined;
 		const { app, db } = await create_bootstrap_app(null, read_token, {
-			create_audit: (audit_db) =>
-				(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+			create_audit: (audit_db) => (audit = create_audit_emitter({ db: audit_db, log }))
 		});
 
 		const res = await bootstrap_request(app);
@@ -634,8 +639,7 @@ const create_audited_bootstrap_app = async (
 	let audit: AuditEmitter | undefined;
 	const test_app = await create_bootstrap_app(limiter, read_token, {
 		...extra,
-		create_audit: (audit_db) =>
-			(audit = create_audit_emitter({ db: audit_db, log, track_inflight: true }))
+		create_audit: (audit_db) => (audit = create_audit_emitter({ db: audit_db, log }))
 	});
 	const read_audit = async () => {
 		assert.ok(audit);
@@ -709,6 +713,74 @@ describe('token file burn failure', () => {
 		);
 
 		limiter.dispose();
+	});
+});
+
+describe('the bootstrap success row is written in its transaction', () => {
+	test('a refused audit row rolls the bootstrap back: no account, lock unflipped, token unburned', async () => {
+		let gated: GatedDb | undefined;
+		const burns: Array<string> = [];
+		const { app, db, bootstrap_status } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			create_audit: (audit_db) => create_audit_emitter({ db: audit_db, log }),
+			wrap_db: (inner) => (gated = create_gated_db(inner)).db,
+			burn_token: async () => {
+				burns.push('burn');
+				return 'burned';
+			}
+		});
+		assert.ok(gated);
+		gated.refuse_in_transaction(is_audit_insert, new Error('audit insert refused'));
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 500);
+		assert.strictEqual(
+			res.headers.get('Set-Cookie'),
+			null,
+			'no session for a rolled-back bootstrap'
+		);
+		assert.strictEqual((await db.query('SELECT id FROM account')).length, 0, 'nothing was created');
+		assert.strictEqual((await db.query('SELECT id FROM auth_session')).length, 0);
+		const lock = await db.query_one<{ bootstrapped: boolean }>(
+			'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
+		);
+		assert.strictEqual(lock?.bootstrapped, false, 'the lock flip rolled back');
+		assert.deepStrictEqual(
+			burns,
+			[],
+			'the token is still there — the row is written before the burn'
+		);
+		assert.isTrue(bootstrap_status.available, 'the window stays open');
+	});
+
+	test('a burn that fails after the success row announces no success row', async () => {
+		const heard: Array<string> = [];
+		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
+			create_audit: (audit_db) =>
+				create_audit_emitter({
+					db: audit_db,
+					log,
+					on_audit_event: (event) => heard.push(`${event.event_type} ${event.outcome}`)
+				}),
+			burn_token: async () => {
+				throw new Error('EACCES: permission denied');
+			}
+		});
+
+		const res = await bootstrap_request(app);
+		assert.strictEqual(res.status, 500);
+		assert.deepStrictEqual(await res.json(), { error: ERROR_TOKEN_FILE_UNDELETABLE });
+		// the handler answers the refusal without throwing, so only the
+		// bootstrap transaction's own discard keeps its success row's
+		// announcement from firing
+		assert.deepStrictEqual(heard, ['bootstrap failure'], 'only the failure row is announced');
+		const rows = await db.query<{ outcome: string }>(
+			"SELECT outcome FROM audit_log WHERE event_type = 'bootstrap'"
+		);
+		assert.deepStrictEqual(
+			rows.map((r) => r.outcome),
+			['failure'],
+			'the success row rolled back with the bootstrap'
+		);
 	});
 });
 

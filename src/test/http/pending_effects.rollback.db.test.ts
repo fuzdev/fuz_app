@@ -9,9 +9,11 @@
  * run outside the transaction and intentionally survive rollback.
  *
  * This pins both halves through a real database transaction across both dispatch
- * sites: the action dispatcher (`actions/perform_action.ts`, the RPC/WS path —
- * where every production `emit_after_commit` caller lives) and the REST route
- * wrapper (`http/route_spec.ts`). It also proves the underlying row rolled back.
+ * sites: the action dispatcher (`actions/perform_action.ts`, the RPC/WS path)
+ * and the REST route wrapper (`http/route_spec.ts`) — and a third, a
+ * `transaction: false` route's own transaction run through
+ * `transaction_with_post_commit_rollback`, whose failure the handler catches.
+ * It also proves the underlying row rolled back.
  *
  * This is the Rust→TS convergence of the `fuz_actions`
  * `post_commit_effects_clear_discards_without_running` contract: the Rust spine
@@ -31,7 +33,10 @@ import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
-import { emit_after_commit } from '#lib/http/pending_effects.ts';
+import {
+	emit_after_commit,
+	transaction_with_post_commit_rollback
+} from '#lib/http/pending_effects.ts';
 import { define_route, type RouteSpec } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
 import { rpc_action } from '#lib/actions/action_types.ts';
@@ -307,4 +312,83 @@ describe_db('a result that fails to become a response rolls back (REST dispatch)
 			await test_app.cleanup();
 		});
 	}
+});
+
+const INNER_TX_PATH = '/test/inner_transaction_probe';
+
+/**
+ * A `transaction: false` route that opens its own transaction — as login,
+ * password, signup, and bootstrap do — queues a deferred effect in it, and
+ * catches that transaction's failure to answer normally, the way signup and
+ * bootstrap answer a refusal. The handler never throws, so only the inner
+ * transaction's own truncation can discard the effect.
+ */
+const setup_inner_transaction = async (get_db: () => Db) => {
+	const sinks: Sinks = { eager: [], deferred: [] };
+	const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [
+		define_route({
+			method: 'POST',
+			path: INNER_TX_PATH,
+			auth: { account: 'none', actor: 'none' },
+			input: probe_input,
+			output: object({ ok: literal(true), committed: boolean }),
+			description: 'Test probe: a caught inner-transaction failure.',
+			transaction: false,
+			handler: async (route) => {
+				const { fail, token } = route.input;
+				try {
+					await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
+						await tx_ctx.db.query('INSERT INTO rollback_probe (token) VALUES ($1)', [token]);
+						emit_after_commit(tx_ctx, () => {
+							sinks.deferred.push(token);
+						});
+						if (fail) throw new Error('intentional inner transaction failure');
+					});
+				} catch {
+					return route_ok({ ok: true, committed: false });
+				}
+				return route_ok({ ok: true, committed: true });
+			}
+		})
+	];
+	const test_app = await create_test_app({ session_options, db: get_db(), create_route_specs });
+	return { test_app, sinks };
+};
+
+describe_db('post_commit_effects rollback discard (a handler-owned transaction)', (get_db) => {
+	test('a caught inner-transaction failure discards the effects queued in it', async () => {
+		const { test_app, sinks } = await setup_inner_transaction(get_db);
+		const token = next_token();
+
+		const response = await test_app.app.request(INNER_TX_PATH, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ fail: true, token })
+		});
+
+		assert.strictEqual(response.status, 200, 'the handler caught the failure and answered');
+		assert.deepStrictEqual(await response.json(), { ok: true, committed: false });
+		assert.deepStrictEqual(sinks.deferred, [], 'no effect for a transaction that rolled back');
+		assert.strictEqual(await count_probe_rows(test_app.backend.deps.db, token), 0);
+
+		await test_app.cleanup();
+	});
+
+	test('a committed inner transaction keeps its effects', async () => {
+		const { test_app, sinks } = await setup_inner_transaction(get_db);
+		const token = next_token();
+
+		const response = await test_app.app.request(INNER_TX_PATH, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ fail: false, token })
+		});
+
+		assert.strictEqual(response.status, 200);
+		assert.deepStrictEqual(await response.json(), { ok: true, committed: true });
+		assert.deepStrictEqual(sinks.deferred, [token]);
+		assert.strictEqual(await count_probe_rows(test_app.backend.deps.db, token), 1);
+
+		await test_app.cleanup();
+	});
 });

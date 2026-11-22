@@ -5,8 +5,8 @@
  * by their timing contract:
  *
  * - `pending_effects: Array<Promise<void>>` — eager. Producers push pool
- *   writes that are already in flight (audit emits, session-touch UPDATE,
- *   api-token usage tracking). The pool write is rollback-resilient by
+ *   writes that are already in flight (failure audit rows, session-touch
+ *   UPDATE, api-token usage tracking). The pool write is rollback-resilient by
  *   virtue of running outside the request transaction; pushing the
  *   in-flight handle lets test mode (`await_pending_effects: true`) await
  *   it.
@@ -33,6 +33,11 @@
  * ambiguous at the call site. With separate queues, the field name is
  * the contract.
  *
+ * A handler that opens its own transaction (a `transaction: false` route)
+ * runs it through `transaction_with_post_commit_rollback`, which discards
+ * what that transaction queued when it rolls back, even when the handler
+ * catches the failure and answers normally.
+ *
  * Both `RouteContext` (HTTP routes) and `ActionContext` (RPC + WS
  * actions) carry both queues by convention, so this module stays in
  * `http/` (every transport depends on it).
@@ -41,6 +46,8 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+
+import type { Db } from '../db/db.ts';
 
 /**
  * Context passed to `on_effect_error` when an eager pending effect rejects.
@@ -112,8 +119,10 @@ export const emit_after_commit = (
  *
  * Both dispatch sites — the REST route wrapper (`http/route_spec.ts`) and the
  * action dispatcher (`actions/perform_action.ts`, the RPC + WS path) — wrap
- * their handler call in this so the discard contract lives in one place. The
- * Rust `fuz_actions` spine pins the same contract.
+ * their handler call in this so the discard contract lives in one place, and a
+ * handler that opens its own transaction runs it through
+ * `transaction_with_post_commit_rollback`, the same truncation around just
+ * that transaction. The Rust `fuz_actions` spine pins the same contract.
  *
  * `post_commit_effects` is `undefined` when a handler runs without the
  * app-server pending-effects middleware (bare route / dispatch harnesses):
@@ -135,6 +144,50 @@ export const dispatch_with_post_commit_rollback = async <T>(
 		throw err;
 	}
 };
+
+/**
+ * A request's `db` and its two side-effect queues — what a handler that opens
+ * its own transaction hands `transaction_with_post_commit_rollback`, and what
+ * that transaction's callback gets back with `db` swapped for the transaction.
+ * `RouteContext` and `ActionContext` satisfy it, and so does the callback's
+ * context, so either can be passed to `AuditEmitter.emit`.
+ */
+export interface RequestEffectsContext extends EmitAfterCommitContext {
+	db: Db;
+	pending_effects: Array<Promise<void>>;
+}
+
+/**
+ * Run `fn` in a transaction a handler opens on its own `db` (a route with
+ * `transaction: false`, which keeps its rate-limit waits and Argon2 work off a
+ * connection), discarding the `post_commit_effects` `fn` queued when that
+ * transaction rolls back.
+ *
+ * `dispatch_with_post_commit_rollback` discards them only when the handler
+ * throws; a handler that catches its own transaction's failure and answers a
+ * refusal (signup's classified conflicts, bootstrap's undeletable token file)
+ * would otherwise leave a queued fan-out — a success row's announcement — to
+ * fire for writes that rolled back. The truncation is the same: back to the
+ * depth before the transaction, the error rethrown unchanged.
+ *
+ * @param ctx - the request's `db` and queues; `ctx.db` must not already be a transaction
+ * @param fn - the transaction's work, given `ctx` with `db` the transaction
+ * @returns what `fn` returns, once the transaction has committed
+ * @mutates `ctx.post_commit_effects` - truncated to its pre-transaction depth on rollback
+ */
+export const transaction_with_post_commit_rollback = <T>(
+	ctx: RequestEffectsContext,
+	fn: (tx_ctx: RequestEffectsContext) => Promise<T>
+): Promise<Awaited<T>> =>
+	dispatch_with_post_commit_rollback(ctx.post_commit_effects, () =>
+		ctx.db.transaction((tx) =>
+			fn({
+				db: tx,
+				pending_effects: ctx.pending_effects,
+				post_commit_effects: ctx.post_commit_effects
+			})
+		)
+	);
 
 /**
  * Drain an eager `pending_effects` queue: `Promise.allSettled` the

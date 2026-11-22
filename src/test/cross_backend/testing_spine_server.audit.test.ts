@@ -1,9 +1,7 @@
 /**
- * The TS spine binary's audit emitter tracks its in-flight writes, so
- * `_testing_drain_effects` is a real barrier: the drain waits on an audit
- * write a WS mutation left in flight. Built without `track_inflight`, the
- * drain resolves at once and the cross suites reading audit rows after a WS
- * mutation race the write.
+ * The TS spine binary's audit emitter counts its in-flight writes, as every
+ * emitter does, so `_testing_drain_effects` is a real barrier: the drain
+ * waits on an audit write a WS mutation left in flight.
  *
  * @module
  */
@@ -26,7 +24,7 @@ const WRITTEN_EVENT: AuditLogEvent = {
 	id: '00000000-0000-4000-8000-000000000001' as Uuid,
 	seq: 1,
 	event_type: 'login',
-	outcome: 'success',
+	outcome: 'failure',
 	actor_id: null,
 	account_id: '00000000-0000-4000-8000-000000000002' as Uuid,
 	target_account_id: null,
@@ -36,7 +34,7 @@ const WRITTEN_EVENT: AuditLogEvent = {
 	metadata: null
 };
 
-test('cell_audit_factory tracks in-flight writes, so the drain waits on them', async () => {
+test('cell_audit_factory counts in-flight writes, so the drain waits on them', async () => {
 	// every audit INSERT waits on its own gate, released by the test
 	const gates: Array<Deferred<void>> = [];
 	const db = {
@@ -49,9 +47,10 @@ test('cell_audit_factory tracks in-flight writes, so the drain waits on them', a
 	} as unknown as Db;
 	const audit = cell_audit_factory({ db, log });
 
+	// a failure row — the one written on the pool, which the drain waits on
 	await audit.emit(
 		{ db, pending_effects: [], post_commit_effects: [] },
-		{ event_type: 'login', outcome: 'success', account_id: WRITTEN_EVENT.account_id }
+		{ event_type: 'login', outcome: 'failure', account_id: WRITTEN_EVENT.account_id }
 	);
 	assert.strictEqual(gates.length, 1, 'the write starts at emit time');
 
@@ -69,7 +68,6 @@ test('cell_audit_factory tracks in-flight writes, so the drain waits on them', a
 
 test('the TS spine binary answers the drain with tracked: true', async () => {
 	const audit = cell_audit_factory({ db: { query: async () => [] } as unknown as Db, log });
-	assert.ok(audit.is_tracking_inflight());
 	const drain = create_testing_drain_effects_action(audit);
 	assert.deepStrictEqual(await drain.handler(undefined, null as never), {
 		ok: true,

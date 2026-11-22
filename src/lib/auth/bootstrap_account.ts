@@ -25,10 +25,14 @@ import { ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
 import type { Account, Actor, RoleGrant } from './account_schema.ts';
 import { query_create_account_with_actor } from './account_queries.ts';
 import { query_create_role_grant } from './role_grant_queries.ts';
-import type { Db } from '../db/db.ts';
+import {
+	transaction_with_post_commit_rollback,
+	type RequestEffectsContext
+} from '../http/pending_effects.ts';
+import type { AuditEmitter } from './audit_emitter.ts';
 import type { BootstrapTokenStore } from './bootstrap_token_store.ts';
 import type { Keyring } from './keyring.ts';
-import type { SessionOptions } from './session_cookie.ts';
+import { session_cookie_header, type SessionOptions } from './session_cookie.ts';
 import { create_capped_session } from './session_queries.ts';
 import { DEFAULT_MAX_SESSIONS } from './account_route_schema.ts';
 
@@ -49,11 +53,11 @@ export interface BootstrapAccountCreated {
 export interface BootstrapAccountSuccess extends BootstrapAccountCreated {
 	ok: true;
 	/**
-	 * The signed cookie value of the session minted in the bootstrap
-	 * transaction, for the caller to set on its response — it exists only
-	 * because the transaction committed.
+	 * The `Set-Cookie` line of the session minted in the bootstrap
+	 * transaction, formatted inside it, for the caller to set on its
+	 * response — it exists only because the transaction committed.
 	 */
-	session_cookie_value: string;
+	set_cookie: string;
 }
 
 /** Bootstrap failure result. */
@@ -70,7 +74,8 @@ export type BootstrapAccountResult = BootstrapAccountSuccess | BootstrapAccountF
  * Dependencies for `bootstrap_account`.
  */
 export interface BootstrapAccountDeps {
-	db: Db;
+	/** Writes the `bootstrap` success row in the bootstrap transaction. */
+	audit: Pick<AuditEmitter, 'emit'>;
 	/**
 	 * The one-shot token: read through the hardened secret read (a symlinked,
 	 * non-regular, group/other-readable, multiply-linked, or oversized file is
@@ -84,6 +89,17 @@ export interface BootstrapAccountDeps {
 	keyring: Keyring;
 	/** Structured logger instance. */
 	log: Logger;
+}
+
+/**
+ * The request `bootstrap_account` runs for: its pool-level `db` (the bootstrap
+ * opens its own transaction), its side-effect queues (the success row's
+ * listener fan-out is queued post-commit), and the client IP its audit row
+ * records. A `RouteContext` satisfies it.
+ */
+export interface BootstrapAccountContext extends RequestEffectsContext {
+	/** Resolved client IP from the trusted-proxy middleware — `'unknown'` if not resolved. */
+	client_ip: string;
 }
 
 /** Static options for `bootstrap_account`. */
@@ -159,35 +175,42 @@ export const read_bootstrap_token = async (
  *    the race loser, `already_bootstrapped`, nothing burned); create the
  *    account + actor; grant keeper and admin (no expiry, `granted_by =
  *    null`); mint the session through the capped minter login uses (the cap
- *    evicts nothing on a new account); then burn the token file, last, just
+ *    evicts nothing on a new account) and format its `Set-Cookie` line; write
+ *    the `bootstrap` success audit row; then burn the token file, last, just
  *    before the commit
  *
  * The burn comes after the lock, so only the lock winner burns (its row lock
  * is held across the unlink, so a concurrent attempt waits on its UPDATE);
  * after the inserts, so a failed insert spends nothing; last, so the window
- * between a burn and a failed commit is one round trip. A burn that fails
+ * between a burn and a failed commit is one round trip. The audit row is
+ * written before the burn, so a refused row rolls the bootstrap back with the
+ * token unburned and the window open, as a failed insert does; its listener
+ * fan-out is discarded with any rollback. A burn that fails
  * rolls everything back and answers `token_file_undeletable`: nothing was
  * created and the token is still valid, so the operator fixes the directory
  * and retries. A commit that fails after the burn is logged as an error — the
  * token is gone and a new one must be written. Twin of the Rust
  * `bootstrap_handler`.
  *
- * @param deps - database, token store, password hashing, keyring, and logger
+ * @param deps - token store, password hashing, keyring, audit emitter, and logger
+ * @param ctx - the request's pool `db`, side-effect queues, and client IP
  * @param provided_token - the bootstrap token from the user
  * @param input - username and password
  * @param options - the session cookie configuration
- * @returns the created account, actor, role_grants, and session cookie value — or a bootstrap failure
+ * @returns the created account, actor, role_grants, and the session's `Set-Cookie` line — or a bootstrap failure
  * @mutates `bootstrap_lock` row - flips `bootstrapped` to `true` atomically
- * @mutates `account` / `actor` / `role_grant` / `auth_session` tables - inserts the bootstrap account, actor, keeper + admin role_grants, and session
+ * @mutates `account` / `actor` / `role_grant` / `auth_session` / `audit_log` tables - inserts the bootstrap account, actor, keeper + admin role_grants, session, and success row
+ * @mutates `ctx.post_commit_effects` - appends the success row's listener fan-out, discarded on rollback
  * @mutates filesystem - burns the bootstrap token file inside the transaction
  */
 export const bootstrap_account = async (
 	deps: BootstrapAccountDeps,
+	ctx: BootstrapAccountContext,
 	provided_token: string,
 	input: BootstrapAccountInput,
 	options: BootstrapAccountOptions
 ): Promise<BootstrapAccountResult> => {
-	const { db, token_store, password, keyring, log } = deps;
+	const { token_store, password, keyring, audit, log } = deps;
 
 	// 1. Read and verify token (non-destructive, before transaction). The
 	// secure read fails loud on a symlink / non-regular file / permissive mode /
@@ -218,27 +241,26 @@ export const bootstrap_account = async (
 	let burned = false;
 	let tx_result;
 	try {
-		tx_result = await db.transaction(async (tx) => {
-			const lock_rows = await tx.query<{ id: number }>(
+		tx_result = await transaction_with_post_commit_rollback(ctx, async (tx_ctx) => {
+			const lock_rows = await tx_ctx.db.query<{ id: number }>(
 				'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false RETURNING id'
 			);
 			if (lock_rows.length === 0) {
 				return { ok: false as const, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 as const };
 			}
 
-			const tx_deps = { db: tx };
-			const { account, actor } = await query_create_account_with_actor(tx_deps, {
+			const { account, actor } = await query_create_account_with_actor(tx_ctx, {
 				username: input.username,
 				password_hash
 			});
 
-			const keeper_role_grant = await query_create_role_grant(tx_deps, {
+			const keeper_role_grant = await query_create_role_grant(tx_ctx, {
 				actor_id: actor.id,
 				role: ROLE_KEEPER,
 				granted_by: null,
 				expires_at: null
 			});
-			const admin_role_grant = await query_create_role_grant(tx_deps, {
+			const admin_role_grant = await query_create_role_grant(tx_ctx, {
 				actor_id: actor.id,
 				role: ROLE_ADMIN,
 				granted_by: null,
@@ -250,10 +272,23 @@ export const bootstrap_account = async (
 			// creation, not of the login route.
 			const { cookie_value } = await create_capped_session({
 				keyring,
-				deps: tx_deps,
+				deps: tx_ctx,
 				account_id: account.id,
 				session_options: options.session_options,
 				max_sessions: DEFAULT_MAX_SESSIONS
+			});
+			// formatted here, as login and signup format theirs: a value the
+			// formatter refuses rolls the bootstrap back with the token unburned
+			const set_cookie = session_cookie_header(cookie_value, options.session_options);
+
+			// The success row, in the transaction and ahead of the burn: a refused
+			// INSERT rolls the bootstrap back with the token unburned and the
+			// window open, as a failed insert above does.
+			await audit.emit(tx_ctx, {
+				event_type: 'bootstrap',
+				actor_id: actor.id,
+				account_id: account.id,
+				ip: ctx.client_ip
 			});
 
 			// the burn, last before the commit
@@ -273,7 +308,7 @@ export const bootstrap_account = async (
 				account,
 				actor,
 				role_grants: { keeper: keeper_role_grant, admin: admin_role_grant },
-				session_cookie_value: cookie_value
+				set_cookie
 			};
 		});
 	} catch (err) {

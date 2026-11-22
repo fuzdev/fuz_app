@@ -84,7 +84,7 @@ const PORTED_ROUTE_KEYS = [
 	'GET /audit/stream'
 ] as const;
 
-const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit_pool: async () => {} } };
+const DB_ROUTE_DEPS: DbRouteDeps = { audit: { emit: async () => {} } };
 const DB_ROUTE_OPTIONS: DbRouteOptions = {
 	db_type: 'pglet-memory',
 	db_name: 'test',

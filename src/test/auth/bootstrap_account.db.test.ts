@@ -18,8 +18,9 @@ import type { BurnOutcome } from '#lib/runtime/secure_file.ts';
 import { stub_password_deps, TEST_COOKIE_SECRET } from '#lib/testing/app_server.ts';
 import { argon2_password_deps } from '#lib/auth/password_argon2.ts';
 import { create_keyring } from '#lib/auth/keyring.ts';
-import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_session_config, type SessionOptions } from '#lib/auth/session_cookie.ts';
 import { Db } from '#lib/db/db.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
@@ -92,6 +93,11 @@ const refuse_pool_sessions = (db: Db): Db =>
 		transaction: (fn) => db.transaction(fn)
 	});
 
+/** The deps, plus the pool `db` `run` builds the request context on. */
+interface TestBootstrapDeps extends BootstrapAccountDeps {
+	db: Db;
+}
+
 const create_deps = (
 	db: Db,
 	overrides: {
@@ -99,22 +105,31 @@ const create_deps = (
 		password?: BootstrapAccountDeps['password'];
 		log?: Logger;
 	} = {}
-): BootstrapAccountDeps => ({
+): TestBootstrapDeps => ({
 	log: overrides.log ?? log,
 	db: refuse_pool_sessions(db),
 	token_store: overrides.store ?? create_mock_store(),
 	password: overrides.password ?? stub_password_deps,
-	keyring
+	keyring,
+	audit: create_audit_emitter({ db, log })
 });
 
 const INPUT: BootstrapAccountInput = { username: 'keeper', password: 'password_12_chars' };
 
 /** `bootstrap_account` with the shared session options. */
 const run = (
-	deps: BootstrapAccountDeps,
+	deps: TestBootstrapDeps,
 	token: string,
-	input: BootstrapAccountInput = INPUT
-): Promise<BootstrapAccountResult> => bootstrap_account(deps, token, input, { session_options });
+	input: BootstrapAccountInput = INPUT,
+	options: { session_options: SessionOptions<string> } = { session_options }
+): Promise<BootstrapAccountResult> =>
+	bootstrap_account(
+		deps,
+		{ db: deps.db, pending_effects: [], post_commit_effects: [], client_ip: '127.0.0.1' },
+		token,
+		input,
+		options
+	);
 
 const count = async (db: Db, table: 'account' | 'auth_session'): Promise<number> => {
 	const row = await db.query_one<{ n: number }>(`SELECT COUNT(*)::int AS n FROM ${table}`);
@@ -386,19 +401,38 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(await query_role_grant_has_role(deps, result.actor.id, ROLE_ADMIN), true);
 	});
 
-	test('mints the session inside the transaction and returns its cookie value', async () => {
+	test('mints the session inside the transaction and returns its cookie line', async () => {
 		const db = get_db();
 		// `create_deps` refuses a pool-level session write, so a session minted
 		// outside the transaction fails here at once
 		const result = await run(create_deps(db), TEST_TOKEN);
 		assert.ok(result.ok);
-		assert.isString(result.session_cookie_value);
-		assert.isNotEmpty(result.session_cookie_value);
+		assert.ok(result.set_cookie.startsWith('test_session='), result.set_cookie);
 		const rows = await db.query<{ account_id: string }>('SELECT account_id FROM auth_session');
 		assert.deepEqual(
 			rows.map((r) => r.account_id),
 			[result.account.id]
 		);
+	});
+
+	test('a cookie line the formatter refuses rolls the bootstrap back with the token unburned', async () => {
+		const db = get_db();
+		const store = create_mock_store();
+		// a cookie name outside RFC 6265: the session mints, its line can't be written
+		await assert_rejects(
+			() =>
+				run(create_deps(db, { store }), TEST_TOKEN, INPUT, {
+					session_options: { ...session_options, cookie_name: 'bad name' }
+				}),
+			/cookie/i
+		);
+		assert.strictEqual(await get_lock_state(db), false, 'the lock rolled back');
+		assert.strictEqual(await count(db, 'account'), 0, 'the account rolled back');
+		assert.strictEqual(await count(db, 'auth_session'), 0, 'the session rolled back');
+		assert.deepStrictEqual(store.burns, [], 'the burn never ran');
+		assert.strictEqual(store.content, TEST_TOKEN, 'the token is still there');
+		const rows = await db.query("SELECT id FROM audit_log WHERE event_type = 'bootstrap'");
+		assert.strictEqual(rows.length, 0, 'no success row');
 	});
 
 	test('burns the token inside the transaction, after its writes', async () => {

@@ -10,7 +10,7 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { session_cookie_header, type SessionOptions } from './session_cookie.ts';
+import type { SessionOptions } from './session_cookie.ts';
 import {
 	bootstrap_account,
 	read_bootstrap_token,
@@ -219,15 +219,17 @@ export const create_bootstrap_route_specs = (
 				const input = route.input;
 
 				// `transaction: false` makes `route.db` the pool. `bootstrap_account`
-				// manages its own transaction internally.
+				// manages its own transaction internally, and writes the success
+				// row in it.
 				const result = await bootstrap_account(
 					{
-						db: route.db,
 						token_store,
 						password: deps.password,
 						keyring: deps.keyring,
+						audit: deps.audit,
 						log: deps.log
 					},
+					route,
 					input.token,
 					input,
 					{ session_options }
@@ -276,11 +278,9 @@ export const create_bootstrap_route_specs = (
 				// on this route's own limiter, not login's.
 				bootstrap_status.available = false;
 
-				// the session was minted in the transaction; its cookie rides the
-				// success
-				const set_cookie = session_cookie_header(result.session_cookie_value, session_options);
-
-				const { account, actor, role_grants } = result;
+				// the session was minted, and its cookie line formatted, in the
+				// transaction; the line rides the success
+				const { account, actor, role_grants, set_cookie } = result;
 				if (on_bootstrap) {
 					try {
 						await on_bootstrap({ account, actor, role_grants });
@@ -288,13 +288,6 @@ export const create_bootstrap_route_specs = (
 						deps.log.error(`on_bootstrap callback failed: ${to_error_message(err)}`);
 					}
 				}
-
-				await deps.audit.emit(route, {
-					event_type: 'bootstrap',
-					actor_id: actor.id,
-					account_id: account.id,
-					ip: route.client_ip
-				});
 
 				return route_ok(
 					{

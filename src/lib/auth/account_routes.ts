@@ -51,6 +51,7 @@ import {
 import { resolved_auth_session_hash } from './resolved_auth.ts';
 import { attach_route_handler, type RouteSpec } from '../http/route_spec.ts';
 import { route_fail, route_ok } from '../http/route_result.ts';
+import { transaction_with_post_commit_rollback } from '../http/pending_effects.ts';
 import { rate_limit_ip_key } from '../http/ip_canonical.ts';
 import { parse_acting } from '../http/auth_shape.ts';
 import { reserve_optional, type RateLimiter, type RateLimitReservation } from '../rate_limiter.ts';
@@ -277,7 +278,9 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * transaction around just their writes — straight after it commits
  * (`close_connections_after_commit`, which logs a failing close rather than
  * failing the committed request), so a later throw can't drop a close a
- * committed revocation owes. All on `deps.connection_closer`.
+ * committed revocation owes. All on `deps.connection_closer`. Each success
+ * audit row is written last in the transaction of the change it reports, so
+ * a refused row rolls the change back and closes nothing.
  *
  * @param deps - stateless capabilities (keyring, password, log, audit, connection_closer)
  * @param options - per-factory configuration (session_options, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
@@ -380,37 +383,38 @@ export const create_account_route_specs = (
 
 				const valid = await password.verify_password(pw, account.password_hash);
 
-				// The session INSERT and the cap eviction are the route's only
-				// writes, and only atomic together: one transaction around just
-				// them (the route is `transaction: false`, so the reservation
-				// waits above and the Argon2 verify held no connection). Twin of
-				// the Rust login's transaction around `create_capped_session`. It
+				// The session INSERT, the cap eviction, and the `login` success
+				// row are the route's writes, and only atomic together: one
+				// transaction around just them (the route is `transaction: false`,
+				// so the reservation waits above and the Argon2 verify held no
+				// connection). Twin of the Rust login's `mint_login_session`. It
 				// first locks the account row as the verify read it — live, the
 				// verified hash — so a password change or a delete that committed
 				// since mints nothing, and one still to commit waits and then
 				// revokes this session (`query_account_lock_verified`). The
 				// cookie line is formatted inside it, so a value the formatter
 				// refuses rolls the session back, and rides the success, which is
-				// answered only once the commit has landed.
+				// answered only once the commit has landed. The audit row is
+				// written last, so a refused row mints no session.
 				const minted = valid
-					? await route.db.transaction(async (tx) => {
-							const tx_deps = { db: tx };
-							if (
-								!(await query_account_lock_verified(tx_deps, account.id, account.password_hash))
-							) {
+					? await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
+							if (!(await query_account_lock_verified(tx_ctx, account.id, account.password_hash))) {
 								return null;
 							}
 							const session = await create_capped_session({
 								keyring,
-								deps: tx_deps,
+								deps: tx_ctx,
 								account_id: account.id,
 								session_options,
 								max_sessions
 							});
-							return {
-								evicted: session.evicted,
-								set_cookie: session_cookie_header(session.cookie_value, session_options)
-							};
+							const set_cookie = session_cookie_header(session.cookie_value, session_options);
+							await deps.audit.emit(tx_ctx, {
+								event_type: 'login',
+								account_id: account.id,
+								ip: route.client_ip
+							});
+							return { evicted: session.evicted, set_cookie };
 						})
 					: null;
 
@@ -447,8 +451,8 @@ export const create_account_route_specs = (
 				// rechecks. Close them now the eviction has committed — inline, not
 				// queued: with no route transaction, a throw later in the handler
 				// would drop a queued close while the eviction stands. No audit
-				// row: there is no eviction event, and the `login` row records
-				// the cause.
+				// row of their own: there is no eviction event, and the `login`
+				// row records the cause.
 				for (const session_hash of evicted) {
 					close_connections_after_commit(
 						connection_closer,
@@ -456,11 +460,6 @@ export const create_account_route_specs = (
 						deps.log
 					);
 				}
-				await deps.audit.emit(route, {
-					event_type: 'login',
-					account_id: account.id,
-					ip: route.client_ip
-				});
 				return route_ok({ ok: true }, { set_cookie: [set_cookie] });
 			} finally {
 				ip_reserved.reservation.release();
@@ -561,16 +560,17 @@ export const create_account_route_specs = (
 				// operation — `updated_by` stays null (the per-request actor is
 				// incidental; password is account-level state).
 				//
-				// The UPDATE and the two revocations are the route's writes, and
-				// commit together or not at all: one transaction around just them
-				// (the route is `transaction: false`, so the reservation waits
-				// above and the Argon2 verify and hash held no connection). Twin of
-				// the Rust spine's `change_password`. `null` when the UPDATE matched
-				// nothing — a concurrent change committed first.
-				const change = await route.db.transaction(async (tx) => {
-					const tx_deps = { db: tx };
+				// The UPDATE, the two revocations, and the `password_change`
+				// success row are the route's writes, and commit together or not
+				// at all: one transaction around just them (the route is
+				// `transaction: false`, so the reservation waits above and the
+				// Argon2 verify and hash held no connection). Twin of the Rust
+				// spine's `change_password`. The audit row is written last, so a
+				// refused row changes no password and revokes nothing. `null` when
+				// the UPDATE matched nothing — a concurrent change committed first.
+				const change = await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
 					const updated = await query_update_account_password(
-						tx_deps,
+						tx_ctx,
 						ctx.account.id,
 						new_hash,
 						null,
@@ -579,13 +579,23 @@ export const create_account_route_specs = (
 					if (!updated) return null;
 					// revoke all sessions and API tokens (force re-auth everywhere)
 					const sessions_revoked = await query_session_revoke_all_for_account(
-						tx_deps,
+						tx_ctx,
 						ctx.account.id
 					);
 					const tokens_revoked = await query_revoke_all_api_tokens_for_account(
-						tx_deps,
+						tx_ctx,
 						ctx.account.id
 					);
+					// Account-grain operation — no `actor_id`. The password is
+					// account-level state; which per-request actor was resolved
+					// has no semantic bearing on "this account changed its
+					// password". Mirrors `login`/`logout`.
+					await deps.audit.emit(tx_ctx, {
+						event_type: 'password_change',
+						account_id: ctx.account.id,
+						ip: route.client_ip,
+						metadata: { sessions_revoked, tokens_revoked, credential_type }
+					});
 					return { sessions_revoked, tokens_revoked };
 				});
 
@@ -626,26 +636,16 @@ export const create_account_route_specs = (
 				const { sessions_revoked, tokens_revoked } = change;
 
 				// Close every live connection of this account now the password
-				// update and the revoke-all cascade have committed — inline, not
-				// queued: with no route transaction, a throw later in the handler
-				// would drop a queued close while the revocation stands. It does
-				// not depend on the fail-open audit write below; the audit
-				// listeners repeat it on the announced `password_change` row.
+				// update, the revoke-all cascade, and its audit row have committed
+				// — inline, not queued: with no route transaction, a throw later in
+				// the handler would drop a queued close while the revocation
+				// stands. The audit listeners repeat it on the announced
+				// `password_change` row.
 				close_connections_after_commit(
 					connection_closer,
 					{ kind: 'account', account_id: ctx.account.id },
 					deps.log
 				);
-				// Account-grain operation — no `actor_id`. The password is
-				// account-level state; which per-request actor was resolved
-				// has no semantic bearing on "this account changed its
-				// password". Mirrors `login`/`logout`.
-				await deps.audit.emit(route, {
-					event_type: 'password_change',
-					account_id: ctx.account.id,
-					ip: route.client_ip,
-					metadata: { sessions_revoked, tokens_revoked, credential_type }
-				});
 				return route_ok(
 					{ ok: true, sessions_revoked, tokens_revoked },
 					{ set_cookie: [clear_session_cookie_header(session_options)] }

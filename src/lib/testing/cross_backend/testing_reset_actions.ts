@@ -212,25 +212,23 @@ export const testing_reset_action_spec = {
  * asserting on audit rows.
  *
  * The handler awaits `AuditEmitter.drain_inflight`, which waits until no
- * tracked `emit` write is outstanding — so the binary's emitter must be built
- * with `track_inflight: true`, or the drain resolves at once and is no barrier.
- * Tracking is what makes it a barrier whatever the transport: an **HTTP**
- * mutation on a binary running `await_pending_effects: true` has its writes
- * settled by the time it responds, but a **WS** mutation is answered before
- * its effects flush (reply-then-close for a self-revocation), so its audit
- * write can still be in flight when the caller reads the reply. The Rust
- * spine does the same await in `AuditEmitter::drain_inflight`, over an
- * emitter built with `new_with_inflight_tracking`.
+ * pool write of the emitter's is outstanding — every emitter counts them, so
+ * the drain is always a barrier. It matters whatever the transport: an
+ * **HTTP** mutation on a binary running `await_pending_effects: true` has its
+ * writes settled by the time it responds, but a **WS** mutation is answered
+ * before its effects flush (reply-then-close for a self-revocation), so its
+ * audit write can still be in flight when the caller reads the reply. The
+ * Rust spine does the same await in `AuditEmitter::drain_inflight`.
  *
  * Covered: every `emit` that ran before the drain was dispatched, and any
  * started while it waits. A write that starts after the drain resolves is
  * not — nor are eager writes outside `emit` (session touch, token usage),
  * which only the dispatching transport's own flush awaits.
  *
- * The output's `tracked` is `AuditEmitter.is_tracking_inflight` — whether the
- * drain could wait on anything. `cross_drain_effects` refuses `tracked: false`,
- * so a binary whose emitter was built without tracking fails its first audit
- * read instead of racing it. The Rust twin answers the same shape.
+ * The output's `tracked` is always `true`, on both spines, now that every
+ * emitter counts its writes; `cross_drain_effects` still refuses anything
+ * else, so a backend that answered without draining would fail its first
+ * audit read instead of racing it.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
@@ -245,8 +243,8 @@ export const testing_drain_effects_action_spec = {
 		ok: boolean,
 		tracked: meta(boolean, {
 			description:
-				"Whether the backend's audit emitter tracks in-flight writes — false means the drain " +
-				'waited on nothing and is no barrier.'
+				"Whether the backend's audit emitter counts its in-flight writes, so the drain waited " +
+				'on them — always true.'
 		})
 	}),
 	async: true,
@@ -308,18 +306,17 @@ export const testing_mint_session_action_spec = {
 
 /**
  * Build the standalone `_testing_drain_effects` action over `audit` — the
- * emitter the backend's handlers emit through (`deps.audit`), built with
- * `track_inflight: true` (see the spec doc). Mount it on any test endpoint
+ * emitter the backend's handlers emit through (`deps.audit`). Mount it on any test endpoint
  * whose suite asserts on audit rows (the spine binary bundles it via
  * `create_testing_actions`; in-process suites mount it directly). Answers
- * `{ok: true, tracked}`, `tracked` read from `audit.is_tracking_inflight()`.
+ * `{ok: true, tracked: true}`.
  *
  * @param audit - the backend's emitter, whose in-flight writes the action awaits
  */
 export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => {
 		await audit.drain_inflight();
-		return { ok: true, tracked: audit.is_tracking_inflight() };
+		return { ok: true, tracked: true };
 	});
 
 /**
@@ -880,8 +877,7 @@ export interface CreateTestingActionsOptions {
  *
  * Returns the bundled `_testing_*` actions (module doc). The test binary
  * calls this at server-assembly time and registers the result on its
- * dispatcher. `_testing_drain_effects` drains `deps.audit`, so the binary's
- * `audit_factory` builds the emitter with `track_inflight: true`.
+ * dispatcher. `_testing_drain_effects` drains `deps.audit`.
  *
  * The reset action's table-wipe list mirrors
  * `auth_integration_truncate_tables` from `testing/db.ts` — the
