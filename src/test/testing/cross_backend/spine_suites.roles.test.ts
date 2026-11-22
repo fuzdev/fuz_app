@@ -64,6 +64,8 @@ const handle = {
 /** The derived option fields these tests read. */
 interface DerivedRoleOptions {
 	readonly role?: string;
+	readonly scoped_role?: string;
+	readonly other_role?: string;
 	readonly ws_account_roles?: ReadonlyArray<string>;
 	readonly ws_required_roles?: ReadonlyArray<string>;
 	readonly setup_test: { readonly options?: CrossProcessSetupOptions };
@@ -123,6 +125,19 @@ describe('describe_spine_cross_suites suite_roles', () => {
 			);
 			assert.strictEqual(derive(name).role, undefined, `${name} keeps its own default`);
 		}
+	});
+
+	test('suite_roles.conferral reaches the notification suite as scoped_role and sse_round_trip as other_role', () => {
+		const derived = derive('role_grant_offer_notification_ws', {
+			suite_roles: { conferral: ROLE_ADMIN }
+		});
+		assert.strictEqual(derived.scoped_role, ROLE_ADMIN);
+		assert.strictEqual(derive('role_grant_offer_notification_ws').scoped_role, undefined);
+		assert.strictEqual(
+			derive('sse_round_trip', { suite_roles: { conferral: ROLE_ADMIN } }).other_role,
+			ROLE_ADMIN
+		);
+		assert.strictEqual(derive('sse_round_trip').other_role, undefined);
 	});
 });
 

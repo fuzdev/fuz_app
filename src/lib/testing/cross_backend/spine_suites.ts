@@ -562,10 +562,12 @@ export interface SpineSuiteRoles {
 	readonly cell_grant?: string;
 	/**
 	 * The admin-grantable role `role_grant_offer_lifecycle` offers,
-	 * `role_grant_participation` confers, and `role_grant_offer_notification_ws`
-	 * assigns in a scope and revokes. Default `SPINE_PARTICIPANT_ROLE`;
+	 * `role_grant_participation` confers, `role_grant_offer_notification_ws`
+	 * assigns in a scope and revokes, and `sse_round_trip` assigns globally and
+	 * revokes, the audit stream staying open. Default `SPINE_PARTICIPANT_ROLE`;
 	 * `ROLE_ADMIN` serves a backend with only the builtin roles (the scoped
-	 * assign and scoped revoke cases then skip, as a builtin is global-only).
+	 * assign and scoped revoke cases then skip, as a builtin is global-only, and
+	 * so does `sse_round_trip`'s keep case, `admin` being the stream's gate).
 	 */
 	readonly conferral?: string;
 }
@@ -1216,7 +1218,8 @@ const SUITE_ENTRIES: { readonly [K in SuiteName]: SuiteEntry<K> } = {
 			capabilities: c.config.capabilities,
 			base_url: c.config.base_url,
 			sse_path: c.config.sse_path,
-			rpc_path: c.config.rpc_path
+			rpc_path: c.config.rpc_path,
+			other_role: c.options.suite_roles?.conferral
 		}),
 		describe: describe_cross_process_sse_tests,
 		transcript: TRANSCRIPT_SSE,

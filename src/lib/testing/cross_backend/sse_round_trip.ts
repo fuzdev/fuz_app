@@ -34,23 +34,30 @@ import '../assert_dev_env.ts';
  *    stream registered under the named session's hash, while the caller's own
  *    stream stays open and still receives a broadcast — so a backend closing
  *    the whole account, or the caller's streams, on a session revoke fails it.
- * 5. **close on account delete** (gated on `rpc_path` and
+ * 5. **close on a role revoke** (gated on `rpc_path`) — `role_grant_revoke`
+ *    of a second admin's global `admin` grant, the role the stream is gated on,
+ *    closes its stream; a revoke of its global grant of a role the stream
+ *    isn't gated on (`other_role`, skipped when it is `admin`) leaves the
+ *    stream open and still receiving. The stream's gate is global-only
+ *    (`admin` can't be scoped), so scope matching is held on the role-gated
+ *    WebSocket by `describe_ws_role_gated_cross_tests`.
+ * 6. **close on account delete** (gated on `rpc_path` and
  *    `capabilities.account_lifecycle`) — the keeper soft-deletes a second
  *    admin whose stream is open; the delete revokes its credentials and
  *    closes its stream.
- * 6. **close on the other account-wide revocations** (gated on `rpc_path`;
+ * 7. **close on the other account-wide revocations** (gated on `rpc_path`;
  *    purge also on `capabilities.account_lifecycle`) — `admin_token_revoke_all`,
  *    `POST /logout`, `POST /password`, and `account_purge` of a second admin
  *    each close its stream — the rows `create_account_revocations` shares with
  *    the WS suite.
- * 7. **per-session cap** — one stream past `max_per_scope` on one session
+ * 8. **per-session cap** — one stream past `max_per_scope` on one session
  *    closes the oldest (evict-oldest, no final frame) and leaves every other
  *    stream open. With `rpc_path`, each stream is proven admitted as it opens
  *    and each survivor proven open after the overflow by a broadcast frame;
  *    without it, by the connect comment and a short silence.
  *
- * Cases 2–6 need `rpc_path` (each drives an RPC method); 1 and 7 run without
- * it. Every close case (3–6, and 7 when `rpc_path` is given) first proves its
+ * Cases 2–7 need `rpc_path` (each drives an RPC method); 1 and 8 run without
+ * it. Every close case (3–7, and 8 when `rpc_path` is given) first proves its
  * stream **admitted**: after the connect comment, an admin writes one audit
  * row (`app_settings_update`, `open_signup` set to its reset value) and the
  * stream must deliver its frame. The comment alone proves nothing — a
@@ -58,12 +65,12 @@ import '../assert_dev_env.ts';
  * then ends — so a close observed without it can't tell a working revocation
  * from a broken admission.
  *
- * The close-on-revoke matrix is layered: cases 3–6 exercise the account-wide
- * and session-scoped paths cross-process; `token_revoke` (token-scoped — the
- * stock stream admits sessions only, so its bearer close is covered on the
- * WebSocket by `describe_cross_process_ws_tests`) and `role_grant_revoke`
- * (role-matched) are covered by the spine's `fuz_realtime` SSE-registry unit
- * tests and the in-process guard self-test.
+ * The close-on-revoke matrix is layered: cases 3–7 exercise the account-wide,
+ * session-scoped and role-matched paths cross-process; `token_revoke`
+ * (token-scoped — the stock stream admits sessions only) has its bearer close
+ * covered on the WebSocket by `describe_cross_process_ws_tests`. A close seen
+ * cross-process is the union of the revoking handler's and the audit guard's
+ * (`create_revocation_guard`), so a case goes red only when both miss.
  *
  * Gated on `capabilities.sse` — backends without an end-to-end SSE stream
  * skip (the cases still surface as `.skip` in the report). Cross-process
@@ -87,6 +94,10 @@ import {
 	app_settings_update_action_spec
 } from '../../auth/admin_action_specs.ts';
 import type { AuditEventType } from '../../auth/audit_log_schema.ts';
+import {
+	role_grant_assign_action_spec,
+	role_grant_revoke_action_spec
+} from '../../auth/role_grant_offer_action_specs.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
@@ -99,12 +110,14 @@ import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import { create_account_revocations } from './revocation_drivers.ts';
+import { create_active_role_grant } from './role_grant_cross_helpers.ts';
 import { login_fresh_session } from './session_login.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_ACCOUNT_LOGOUT_PATH,
 	SPINE_ACCOUNT_PASSWORD_PATH,
+	SPINE_PARTICIPANT_ROLE,
 	SPINE_SSE_PATH
 } from './spine_surface_constants.ts';
 
@@ -151,6 +164,13 @@ export interface CrossProcessSseTestOptions {
 	readonly logout_path?: string;
 	/** REST password-change route path, for its close case. Default `/api/account/password`. */
 	readonly password_path?: string;
+	/**
+	 * A role the stream is not gated on, which the keep case assigns globally
+	 * and revokes, the stream staying open — one the backend's registry holds
+	 * with the `admin` grant path. Default `SPINE_PARTICIPANT_ROLE`, the
+	 * spine's own; `ROLE_ADMIN`, the stream's own gate, skips that case.
+	 */
+	readonly other_role?: string;
 }
 
 /** A decoded audit `data:` frame: the event type as `method`, the audit row as `params`. */
@@ -290,7 +310,8 @@ const open_admitted_stream = async (options: {
 /**
  * Register the cross-process SSE round-trip suite. Its cases run over a
  * real streaming `fetch`: connected-comment, audit data frame, account-wide
- * close-on-revoke, session-scoped close-on-revoke, close on account delete,
+ * close-on-revoke, session-scoped close-on-revoke, close on a revoke of the
+ * gating role's global grant and not on other role revokes, close on account delete,
  * close on admin token revoke-all, logout, password change and purge, and the
  * per-session cap.
  */
@@ -308,6 +329,7 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
+	const other_role = options.other_role ?? SPINE_PARTICIPANT_ROLE;
 
 	/** `open_admitted_stream` on this suite's endpoint, the keeper as the probe's admin. */
 	const open_admitted = (
@@ -421,8 +443,6 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 		// stream on each, and the second revokes the first: the named session's
 		// stream must close and the caller's own stay open and receiving, which a
 		// backend closing the whole account, or the caller's streams, fails.
-		// `role_grant_revoke`'s role-matched close is covered by `fuz_realtime`'s
-		// SSE registry unit tests.
 		test_if(
 			capabilities.sse && rpc_path !== undefined,
 			'stream closes on a single session_revoke of the subscriber session',
@@ -496,6 +516,98 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					await read_probe_frame(survivor, fixture.transport, rpc_path!, 'second session stream');
 				} finally {
 					await Promise.all(streams.map((sse) => sse.close()));
+				}
+			}
+		);
+
+		// The stream is gated on `ROLE_ADMIN` and never rechecks it, so revoking a
+		// subscriber's global admin grant must close it — the role-matched close
+		// (`{kind: 'role'}`), which reaches only a stream whose gate is the role.
+		// The keeper's own admin grant can't be revoked, so the subscriber is a
+		// second admin, its grant the one `create_account` gave it.
+		test_if(
+			capabilities.sse && rpc_path !== undefined,
+			'stream closes when a global grant of its gating role is revoked',
+			async () => {
+				const fixture = await setup_test();
+				const target = await fixture.create_account({
+					username: 'sse_role_revoke',
+					roles: [ROLE_ADMIN]
+				});
+				// idempotent on the admin grant the account already holds
+				const role_grant_id = await create_active_role_grant(fixture, target, { rpc_path });
+				const cookie = target.create_session_headers().cookie;
+				assert.ok(cookie, 'expected a session cookie for the target account');
+				const sse = await open_admitted(fixture, [cookie]);
+				try {
+					const res = await fixture.transport(
+						rpc_path!,
+						create_rpc_post_init(role_grant_revoke_action_spec.method, {
+							actor_id: target.actor.id,
+							role_grant_id
+						})
+					);
+					assert.strictEqual(
+						res.status,
+						200,
+						`role_grant_revoke RPC failed (status=${res.status})`
+					);
+					const closed = await sse.wait_for_close(2000);
+					assert.ok(closed, 'stream did not close within 2s after role_grant_revoke');
+				} finally {
+					await sse.close();
+				}
+			}
+		);
+
+		// Only a grant of the gating role reaches the stream: a global revoke of
+		// a role the stream isn't gated on closes nothing, and the stream stays
+		// open and still receives a broadcast. Scope matching can't be held here
+		// (`admin` is global-only); `describe_ws_role_gated_cross_tests` holds it.
+		test_if(
+			capabilities.sse && rpc_path !== undefined && other_role !== ROLE_ADMIN,
+			'a revoke of a global grant of another role leaves the stream open',
+			async () => {
+				const fixture = await setup_test();
+				const target = await fixture.create_account({
+					username: 'sse_role_keep',
+					roles: [ROLE_ADMIN]
+				});
+				const assigned = await fixture.transport(
+					rpc_path!,
+					create_rpc_post_init(role_grant_assign_action_spec.method, {
+						to_account_id: target.account.id,
+						role: other_role
+					})
+				);
+				const body = (await assigned.json()) as { result?: { role_grant_id?: unknown } };
+				assert.strictEqual(
+					assigned.status,
+					200,
+					`role_grant_assign failed: ${JSON.stringify(body)}`
+				);
+				const role_grant_id = body.result?.role_grant_id;
+				assert.ok(typeof role_grant_id === 'string', JSON.stringify(body));
+				const cookie = target.create_session_headers().cookie;
+				assert.ok(cookie, 'expected a session cookie for the target account');
+				const sse = await open_admitted(fixture, [cookie]);
+				try {
+					const res = await fixture.transport(
+						rpc_path!,
+						create_rpc_post_init(role_grant_revoke_action_spec.method, {
+							actor_id: target.actor.id,
+							role_grant_id
+						})
+					);
+					assert.strictEqual(
+						res.status,
+						200,
+						`role_grant_revoke of ${other_role} failed (status=${res.status})`
+					);
+					// still open, and still broadcast to
+					await read_probe_frame(sse, fixture.transport, rpc_path!, 'the kept stream');
+				} finally {
+					await sse.close();
 				}
 			}
 		);

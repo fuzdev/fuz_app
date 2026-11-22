@@ -21,6 +21,12 @@ import '../assert_dev_env.ts';
  * - **already decided → 400** `invalid_request` with reason
  *   `role_grant_offer_terminal` — a decline or retract after an accept, a
  *   second decline, a second retract, and either one after the other.
+ * - **a re-offer refreshes the pending offer.** The grantor offering the same
+ *   role to the same account while its offer is pending answers that offer —
+ *   the same id, its `message` the new one, and its `to_actor_id` the new
+ *   request's: naming the recipient's actor narrows it, naming none widens it
+ *   back — and the inbox still holds the one offer. Once the offer is decided,
+ *   a re-offer is a new offer.
  * - **a decided offer can't be accepted.** An accept after a decline or a
  *   retract is `role_grant_offer_terminal` and grants nothing — the
  *   recipient holds no grant of the role and the offer reads back unaccepted.
@@ -76,8 +82,10 @@ import {
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_TERMINAL,
+	RoleGrantOfferCreateOutput,
 	RoleGrantOfferDeclineOutput,
 	RoleGrantOfferHistoryOutput,
+	RoleGrantOfferListOutput,
 	RoleGrantOfferRetractOutput
 } from '../../auth/role_grant_offer_action_specs.ts';
 import { AdminAccountListOutput } from '../../auth/admin_action_specs.ts';
@@ -187,6 +195,54 @@ export const describe_role_grant_offer_lifecycle_cross_tests = (
 		const { offers } = listed.result as { offers: Array<{ id: string }> };
 		return offers.some((offer) => offer.id === offer_id);
 	};
+
+	describe('a re-offer refreshes the pending offer', () => {
+		test("a re-offer while pending answers the same offer, its actor narrowed and widened; after a decline it's a new offer", async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'lifecycle_reoffer' });
+			const recipient_headers = recipient.create_session_headers();
+			const grantor_headers = fixture.create_session_headers();
+
+			const offer = async (params: { to_actor_id?: string; message: string }) =>
+				expect_output(
+					await rpc(
+						fixture,
+						'role_grant_offer_create',
+						{ to_account_id: recipient.account.id, role, ...params },
+						grantor_headers
+					),
+					RoleGrantOfferCreateOutput
+				).offer;
+
+			const first = await offer({ message: 'first' });
+			assert.strictEqual(first.to_actor_id, null);
+
+			const narrowed = await offer({ to_actor_id: recipient.actor.id, message: 'narrowed' });
+			assert.strictEqual(narrowed.id, first.id, 'a re-offer while pending is the same offer');
+			assert.strictEqual(narrowed.to_actor_id, recipient.actor.id, 'naming the actor narrows it');
+			assert.strictEqual(narrowed.message, 'narrowed');
+
+			const widened = await offer({ message: 'widened' });
+			assert.strictEqual(widened.id, first.id);
+			assert.strictEqual(widened.to_actor_id, null, 'naming no actor widens it back');
+			assert.strictEqual(widened.message, 'widened');
+
+			// the inbox holds the one offer, as the last re-offer left it
+			const { offers } = expect_output(
+				await rpc(fixture, 'role_grant_offer_list', {}, recipient_headers),
+				RoleGrantOfferListOutput
+			);
+			assert.deepStrictEqual(
+				offers.map(({ id, to_actor_id, message }) => ({ id, to_actor_id, message })),
+				[{ id: first.id, to_actor_id: null, message: 'widened' }]
+			);
+
+			assert_ok(await decline(fixture, first.id, recipient_headers), 'decline');
+			const after_decline = await offer({ message: 'again' });
+			assert.notStrictEqual(after_decline.id, first.id, 'a decided offer is not reopened');
+			assert.ok(await is_pending(fixture, recipient, after_decline.id), 'the new offer is pending');
+		});
+	});
 
 	describe('role_grant_offer decline + retract refusals', () => {
 		test('a decline by anyone but the recipient → 404, identical to a missing offer; the offer stays pending', async () => {
