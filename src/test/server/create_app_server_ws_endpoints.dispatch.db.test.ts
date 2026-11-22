@@ -16,8 +16,10 @@
  *   `static_serving`
  * - `AppServer.close` ends a socket opened through the upgrade path; an
  *   upgrade request after it is refused 503, one opened after it is born
- *   closed (going-away, no re-read), and one whose
- *   re-read the shutdown lands in is closed going-away, never as revoked
+ *   closed (going-away, no re-read), and one whose re-read the shutdown lands
+ *   in is closed going-away, never as revoked — its re-read held on the
+ *   tracker, so the database closes after it, or given up on at the drain
+ *   bound
  * - a WS reply arrives before its audit write lands, and
  *   `_testing_drain_effects` over a tracked emitter waits for it
  * - `AppServer.close` waits for a WS message's effects still flushing after
@@ -143,6 +145,8 @@ interface TestServer {
 	audit: AuditEmitter;
 	/** The backend's capabilities. */
 	deps: AppBackend['deps'];
+	/** The backend the server was assembled on — its `close` is replaceable. */
+	backend: AppBackend;
 	/** Session cookie header for a fresh account. */
 	create_account: (username: string) => Promise<{
 		account_id: string;
@@ -153,12 +157,14 @@ interface TestServer {
 
 /**
  * Assemble a server over a fresh database, with the WS endpoint at `/api/ws`.
- * `wrap_db` replaces the backend's pool — a `create_gated_db` wrapper, say.
+ * `wrap_db` replaces the backend's pool — a `create_gated_db` wrapper, say —
+ * and `server_log` the backend's logger.
  */
 const create_test_server = async (
 	options: Partial<Omit<AppServerOptions, 'backend' | 'upgrade_websocket'>> = {},
 	audit_factory: AuditFactory = default_audit_factory,
-	wrap_db: (db: Db) => Db = (db) => db
+	wrap_db: (db: Db) => Db = (db) => db,
+	server_log: Logger = log
 ): Promise<TestServer> => {
 	const db = wrap_db(await factory.create());
 	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
@@ -169,7 +175,7 @@ const create_test_server = async (
 		migration_results,
 		close: async () => {},
 		deps: {
-			log,
+			log: server_log,
 			keyring,
 			password: stub_password_deps,
 			db,
@@ -210,7 +216,7 @@ const create_test_server = async (
 			bearer_headers: { authorization: `Bearer ${api_token}` }
 		};
 	};
-	return { server, stub, db, audit, deps: backend.deps, create_account };
+	return { server, stub, db, audit, deps: backend.deps, backend, create_account };
 };
 
 const servers: Array<AppServer> = [];
@@ -583,13 +589,17 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		assert.strictEqual(transport.pending_connection_count(), 0);
 	});
 
-	test('a shutdown during the admission re-read closes the upgrade going-away, never as revoked', async () => {
+	test('a shutdown waits for the admission re-read it lands in, then closes the database', async () => {
 		let gated: GatedDb | undefined;
 		const t = await create_test_server(
 			{},
 			default_audit_factory,
 			(db) => (gated = create_gated_db(db)).db
 		);
+		const order: Array<string> = [];
+		t.backend.close = async () => {
+			order.push('db closed');
+		};
 		const alice = await t.create_account('alice');
 		const res = await t.server.app.request(WS_PATH, {
 			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
@@ -602,24 +612,84 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		const stalled = gated!.stall(is_session_read);
 		try {
 			// typed `void` by Hono; `register_action_ws` returns the admission promise
-			const opened = events.onOpen?.(new Event('open'), fake.ws) as unknown as Promise<void>;
+			const opened = (events.onOpen?.(new Event('open'), fake.ws) as unknown as Promise<void>).then(
+				() => {
+					order.push('admission done');
+				}
+			);
 			await stalled.reached;
 			const transport = t.server.ws_endpoints[WS_PATH]!;
 			assert.strictEqual(transport.pending_connection_count(), 1);
+			assert.strictEqual(t.deps.request_tracker.inflight_count(), 1, 'the re-read is held');
 
-			await t.server.close();
+			const closing = t.server.close();
+			await wait();
 			assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE], 'the close-all closed it pending');
-			// the database closes under the re-read
-			stalled.fail(new Error('database closed'));
+			assert.deepStrictEqual(order, [], 'the database stays open under the held re-read');
+
+			stalled.release();
+			await closing;
 			await opened;
 
+			assert.deepStrictEqual(order, ['admission done', 'db closed']);
 			assert.deepStrictEqual(
 				fake.closes,
 				[GOING_AWAY_CLOSE],
-				'the refusal after the failed re-read sent no 1011 or 4001'
+				'the refusal after the re-read sent no 1011 or 4001'
 			);
 			assert.strictEqual(transport.connection_count(), 0);
 			assert.strictEqual(transport.pending_connection_count(), 0);
+			assert.strictEqual(t.deps.request_tracker.inflight_count(), 0);
+		} finally {
+			stalled.release();
+		}
+	});
+
+	test('a shutdown gives up on an admission re-read at its bound, and the late failure sends nothing', async () => {
+		let gated: GatedDb | undefined;
+		const errors: Array<string> = [];
+		const recording_log = new Logger('test', {
+			level: 'error',
+			console: {
+				error: (...args: Array<unknown>) => {
+					errors.push(args.map(String).join(' '));
+				},
+				warn: () => {},
+				log: () => {}
+			}
+		});
+		const t = await create_test_server(
+			{ shutdown_drain_timeout_ms: 20 },
+			default_audit_factory,
+			(db) => (gated = create_gated_db(db)).db,
+			recording_log
+		);
+		const alice = await t.create_account('alice');
+		const res = await t.server.app.request(WS_PATH, {
+			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
+		});
+		assert.strictEqual(res.status, 200);
+		const { c, create_events } = t.stub.upgrades.at(-1)!;
+		const events = await create_events(c);
+		const fake = create_fake_ws();
+		const stalled = gated!.stall(is_session_read);
+		try {
+			const opened = events.onOpen?.(new Event('open'), fake.ws) as unknown as Promise<void>;
+			await stalled.reached;
+
+			await t.server.close();
+			assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE]);
+			assert.ok(
+				errors.some((e) => e.includes('shutdown gave up') && e.includes('1 request(s)')),
+				`the give-up is logged: ${JSON.stringify(errors)}`
+			);
+
+			// the database closed under the re-read after the bound
+			stalled.fail(new Error('database closed'));
+			await opened;
+			assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE], 'no further frame');
+			assert.deepStrictEqual(fake.sends, []);
+			assert.strictEqual(t.deps.request_tracker.inflight_count(), 0);
 		} finally {
 			stalled.release();
 		}

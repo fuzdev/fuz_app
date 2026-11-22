@@ -48,7 +48,8 @@ import {
 	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	WS_CLOSE_SESSION_REVOKED,
-	WS_CLOSE_SESSION_REVOKED_REASON
+	WS_CLOSE_SESSION_REVOKED_REASON,
+	WS_CLOSE_SOCKET_OPEN_FAILED_REASON
 } from '#lib/actions/transports.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
@@ -84,6 +85,7 @@ import type { Db } from '#lib/db/db.ts';
 import { RESOLVED_AUTH_KEY, SESSION_TOKEN_KEY } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
+import { create_request_tracker, type RequestTracker } from '#lib/http/pending_effects.ts';
 import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -233,6 +235,7 @@ const create_endpoint = (
 		on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 		max_message_bytes?: number;
 		required_roles?: ReadonlyArray<string>;
+		request_tracker?: RequestTracker | null;
 		log?: Logger;
 	} = {}
 ): Endpoint => {
@@ -247,7 +250,7 @@ const create_endpoint = (
 		action_account_rate_limiter: null,
 		path: '/ws',
 		connection_closer: null,
-		request_tracker: null,
+		request_tracker: options.request_tracker ?? null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		allowed_origins: [],
@@ -1122,6 +1125,164 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.deepStrictEqual(socket.fake.closes, []);
 			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, []);
+		});
+	});
+
+	describe('the shutdown hold', () => {
+		/**
+		 * A tracker that records each `accept` and `finish` on the real one,
+		 * so a case can read the order the admission's hold and a queued
+		 * frame's hold were taken and released in.
+		 */
+		const create_recording_tracker = (): { tracker: RequestTracker; events: Array<string> } => {
+			const inner = create_request_tracker();
+			const events: Array<string> = [];
+			let next = 0;
+			const tracker: RequestTracker = {
+				...inner,
+				accept: () => {
+					const accepted = inner.accept();
+					if (!accepted) return null;
+					const n = next++;
+					events.push(`accept ${n}`);
+					return {
+						finish: (flush) => {
+							events.push(`finish ${n}`);
+							accepted.finish(flush);
+						}
+					};
+				}
+			};
+			return { tracker, events };
+		};
+
+		test('the admission re-read is held on the tracker until admission ends', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const tracker = create_request_tracker();
+			const endpoint = create_endpoint(db, { request_tracker: tracker });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			assert.strictEqual(tracker.inflight_count(), 1, 'the stalled re-read is held');
+
+			stalled.release();
+			await socket.opening;
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
+			assert.strictEqual(tracker.inflight_count(), 0, 'released once admitted');
+		});
+
+		test('on_socket_open is held too, and a hook that throws releases the hold', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const tracker = create_request_tracker();
+			const hook_started = Promise.withResolvers<void>();
+			const hook = Promise.withResolvers<void>();
+			const endpoint = create_endpoint(db, {
+				request_tracker: tracker,
+				on_socket_open: async () => {
+					hook_started.resolve();
+					await hook.promise;
+					throw new Error('hook failed');
+				}
+			});
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			stalled.release();
+			await hook_started.promise;
+			assert.strictEqual(tracker.inflight_count(), 1, 'held while the hook runs');
+
+			hook.resolve();
+			await socket.opening;
+			assert.deepStrictEqual(socket.fake.closes, [
+				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_SOCKET_OPEN_FAILED_REASON }
+			]);
+			assert.strictEqual(tracker.inflight_count(), 0, 'released after the hook threw');
+		});
+
+		test('a failed re-read, a refusal, and a close while pending each release the hold', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const tracker = create_request_tracker();
+			const endpoint = create_endpoint(db, { request_tracker: tracker });
+
+			// the re-read throws
+			const failing = await create_session(db, account_id);
+			const failed = await open_stalled(
+				endpoint,
+				await create_upgrade_context(db, account_id, failing)
+			);
+			failed.stalled.fail(new Error('connection lost'));
+			await failed.socket.opening;
+			assert.deepStrictEqual(failed.socket.fake.closes, [
+				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
+			]);
+			assert.strictEqual(tracker.inflight_count(), 0, 'released after a failed re-read');
+
+			// the re-read refuses a revoked credential
+			const revoked = await create_session(db, account_id);
+			const refused = await open_stalled(
+				endpoint,
+				await create_upgrade_context(db, account_id, revoked)
+			);
+			await query_session_revoke_for_account({ db }, revoked.token_hash, account_id);
+			refused.stalled.release();
+			await refused.socket.opening;
+			assert.deepStrictEqual(refused.socket.fake.closes, [REVOKED_CLOSE]);
+			assert.strictEqual(tracker.inflight_count(), 0, 'released after a refusal');
+
+			// a revocation's close reaches the pending entry, so `admit` refuses
+			const closed = await create_session(db, account_id);
+			const pending = await open_stalled(
+				endpoint,
+				await create_upgrade_context(db, account_id, closed)
+			);
+			endpoint.registry.close_connections({ kind: 'session', session_hash: closed.token_hash });
+			await pending.socket.close();
+			pending.stalled.release();
+			await pending.socket.opening;
+			assert.strictEqual(endpoint.registry.connection_count(), 0);
+			assert.strictEqual(tracker.inflight_count(), 0, 'released after a close while pending');
+		});
+
+		test("a queued frame's dispatch is held before the admission's hold is released", async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const { tracker, events } = create_recording_tracker();
+			const endpoint = create_endpoint(db, { request_tracker: tracker });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			const sent = socket.send(mark_request(1, 'queued'));
+			stalled.release();
+			await socket.opening;
+			await sent;
+
+			assert.deepStrictEqual(endpoint.handled, ['queued']);
+			// the admission is 0, the frame 1: the frame is held before the
+			// admission lets go, so the tracker never reads empty between them
+			assert.deepStrictEqual(events.slice(0, 3), ['accept 0', 'accept 1', 'finish 0']);
+			assert.strictEqual(tracker.inflight_count(), 0);
+		});
+
+		test('a closed tracker holds nothing and admission runs as before', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const tracker = create_request_tracker();
+			tracker.close();
+			const endpoint = create_endpoint(db, { request_tracker: tracker });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			assert.strictEqual(tracker.inflight_count(), 0);
+			stalled.release();
+			await socket.opening;
+			assert.strictEqual(endpoint.registry.connection_count(), 1);
 		});
 	});
 

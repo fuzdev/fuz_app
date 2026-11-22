@@ -585,7 +585,9 @@ export interface AppServer {
 	 *    `deps.audit`: every HTTP request and WS message accepted, until its
 	 *    handler has returned and its effect queues have flushed (failure
 	 *    audit rows, API token usage, post-commit thunks; production holds no
-	 *    HTTP response for them, and a WS reply is sent before its flush), and
+	 *    HTTP response for them, and a WS reply is sent before its flush),
+	 *    every WebSocket still opening — its admission re-read, which step 2's
+	 *    close turns into a going-away refusal, and `on_socket_open` — and
 	 *    every pool write of the emitter — a handler still running when the
 	 *    close starts is waited for, then its flush. A WS handler's socket is
 	 *    closed in step 2, which aborts its `signal`; one that runs on is still
@@ -885,7 +887,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 export interface ShutdownDrainGivenUp {
 	/**
 	 * Requests still held — HTTP requests and WS messages alike, each with its
-	 * handler or its effect flush still running.
+	 * handler or its effect flush still running, and WS upgrades still opening.
 	 */
 	requests: number;
 	/** Pool writes of the audit emitter still in flight. */
@@ -893,8 +895,9 @@ export interface ShutdownDrainGivenUp {
 }
 
 /**
- * Wait for the requests held (HTTP requests and WS messages, one tracker —
- * each until its handler has returned and its flush settled) and then the
+ * Wait for the requests held (HTTP requests, WS messages and WS upgrades
+ * still opening, one tracker — each until its handler has returned and its
+ * flush settled) and then the
  * audit emitter's pool writes, until none is left or `timeout_ms` passes —
  * then log an error naming what was given up on. Never rejects.
  *
@@ -929,7 +932,7 @@ export const drain_effects_on_shutdown = async (
 	};
 	if (given_up.requests === 0 && given_up.audit_writes === 0) return given_up;
 	log.error(
-		`create_app_server: shutdown gave up after ${timeout_ms}ms on work still running — ${given_up.requests} request(s) (handler or effect flush), ${given_up.audit_writes} audit row write(s)`
+		`create_app_server: shutdown gave up after ${timeout_ms}ms on work still running — ${given_up.requests} request(s) (handler, effect flush, or WS open), ${given_up.audit_writes} audit row write(s)`
 	);
 	return given_up;
 };
@@ -1483,11 +1486,12 @@ const assemble_app_server = async (
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
 		// then the work still in flight, refusing any request that arrives from
-		// here, so a handler still running, and the failure row, token-usage
-		// touch or post-commit thunk a request or WS message started, is not cut
-		// off by the closing pool — bounded. The Rust spine's drain waits for an
-		// HTTP request already dispatched too, but drops a WS message's dispatch
-		// still in its handler (`http/CLAUDE.md` §Pending Effects)
+		// here, so a handler still running, a WS upgrade's admission re-read,
+		// and the failure row, token-usage touch or post-commit thunk a request
+		// or WS message started, is not cut off by the closing pool — bounded.
+		// The Rust spine's drain waits for an HTTP request already dispatched
+		// too, but drops a WS message's dispatch still in its handler
+		// (`http/CLAUDE.md` §Pending Effects)
 		request_tracker.close();
 		await drain_effects_on_shutdown(request_tracker, deps.audit, shutdown_drain_timeout_ms, log);
 		// then what assembly acquired — the audit listeners and closer members

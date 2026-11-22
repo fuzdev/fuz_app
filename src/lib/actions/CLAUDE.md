@@ -523,7 +523,10 @@ The rules a caller would miss:
   admits. A dead credential is closed `WS_CLOSE_SESSION_REVOKED`, a lost role
   `WS_CLOSE_PERMISSION_REVOKED`, a failed re-read `WS_CLOSE_INTERNAL_ERROR` —
   fail closed. A refused socket evicts nothing and runs neither hook
-  (../../../docs/security.md §Connection Admission).
+  (../../../docs/security.md §Connection Admission). The open — the re-read
+  and `on_socket_open` — is held on `deps.request_tracker`, so a shutdown
+  landing in it waits rather than closing the database under it
+  (`http/CLAUDE.md` §Pending Effects).
 - **Frames wait for admission and `on_socket_open`.** Frames arriving earlier
   are queued (bounded; overflow closes 1008) and dispatched in order after, so
   an `on_socket_open` hook that awaits `registry.request_connection` on its

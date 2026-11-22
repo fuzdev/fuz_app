@@ -290,10 +290,14 @@ export const flush_request_effects = async (
  * Every request the server accepted — an HTTP request, a WS message accepted
  * for dispatch — held from acceptance until its handler has returned and its
  * effect flush has settled, so `AppServer.close` can wait for both before the
- * database closes. One tracker per backend (`AppDeps.request_tracker`), shared
- * by every transport, so a request is held the same way whichever transport
- * accepted it. Its `drain_inflight` / `inflight_count` match `AuditEmitter`'s,
- * the other set the shutdown drain waits on.
+ * database closes. A WebSocket's open is held the same way, with no flush:
+ * from before its pending registration until its admission re-read,
+ * `on_socket_open`, and the start of its queued frames' dispatch are done
+ * (`actions/ws_socket_session.ts`). One tracker per backend
+ * (`AppDeps.request_tracker`), shared by every transport, so a request is
+ * held the same way whichever transport accepted it. Its `drain_inflight` /
+ * `inflight_count` match `AuditEmitter`'s, the other set the shutdown drain
+ * waits on.
  *
  * The flushes are held apart as well, for a drain that must not wait on a
  * running handler — `_testing_drain_effects`, whose own request is one: a

@@ -174,7 +174,10 @@ describe('drain_effects_on_shutdown', () => {
 		// counted apart: a flush's own audit writes are in both
 		assert.deepStrictEqual(given_up, { requests: 1, audit_writes: 2 });
 		assert.strictEqual(errors.length, 1);
-		assert.include(errors[0], '1 request(s) (handler or effect flush), 2 audit row write(s)');
+		assert.include(
+			errors[0],
+			'1 request(s) (handler, effect flush, or WS open), 2 audit row write(s)'
+		);
 	});
 
 	test('waits for the flushes, then the audit writes, and gives up on nothing', async () => {

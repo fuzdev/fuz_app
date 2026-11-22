@@ -301,13 +301,20 @@ export interface RegisterActionWsOptions {
 	 */
 	on_effect_error?: (error: unknown, context: EffectErrorContext) => void;
 	/**
-	 * Where each message accepted for dispatch is held, from acceptance until
-	 * its handler has returned and its effect flush — run after the reply is
-	 * sent, so nothing else holds it — has settled. `create_app_server` passes
-	 * its view of `deps.request_tracker` (`create_request_tracker_view`), which
-	 * its HTTP requests share, so `AppServer.close` waits for a message as it
-	 * does a request. A message the tracker refuses (once closed) is answered
-	 * `service_unavailable` (`WS_SHUTTING_DOWN_MESSAGE`) and never dispatched.
+	 * Where each socket's open and each message accepted for dispatch are
+	 * held. The open — admission's credential re-read, `on_socket_open`, and
+	 * the start of the queued frames' dispatch — is held from before the
+	 * pending registration until it ends, on every path; a message from
+	 * acceptance until its handler has returned and its effect flush — run
+	 * after the reply is sent, so nothing else holds it — has settled.
+	 * `create_app_server` passes its view of `deps.request_tracker`
+	 * (`create_request_tracker_view`), which its HTTP requests share, so
+	 * `AppServer.close` waits for an upgrade's re-read and a message as it
+	 * does a request, and the database never closes under either within the
+	 * drain bound. An open the closed tracker refuses holds nothing (under
+	 * `AppServer.close` the registry closed first, so it is born closed); a message it refuses is
+	 * answered `service_unavailable` (`WS_SHUTTING_DOWN_MESSAGE`) and never
+	 * dispatched.
 	 * Required, so it can't be forgotten: a hand mount passes
 	 * `deps.request_tracker` (or one it drains before closing the database), or
 	 * `null` when it owns its shutdown otherwise (a test harness).

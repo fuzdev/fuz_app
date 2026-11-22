@@ -184,8 +184,9 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 						}
 					};
 					const refusal = await reread().catch((error: unknown) => {
-						// the shutdown closed the registration and then the database
-						// under the re-read: the answer is the shutdown's — admission
+						// a shutdown that gave up on this request at its drain bound may
+						// have closed the database under the re-read: the answer is the
+						// shutdown's — admission
 						// below refuses, since a closing registry admits nothing —
 						// not a failure
 						if (registry.closing) {

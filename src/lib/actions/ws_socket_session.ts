@@ -67,9 +67,22 @@
  * `close_all_connections`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
  * client reconnects rather than treating its credential as revoked: an upgrade
  * pending at the close-all is closed by it — and its abort makes the refusal
- * that follows the re-read send nothing more, even when the database closed
- * under that re-read — and one that registers after it is born closed and
- * skips the re-read (`ConnectionRegistry` module doc, "Shutdown").
+ * that follows the re-read send nothing more — and one that registers after
+ * it is born closed and skips the re-read (`ConnectionRegistry` module doc,
+ * "Shutdown").
+ *
+ * The open — admission with its re-read, `on_socket_open`, and the start of
+ * the queued frames' dispatch — is held on the `request_tracker` from before
+ * the pending registration until each queued frame has taken its own hold,
+ * on every path out (a refusal, a failed re-read, a hook that throws). So
+ * `AppServer.close` waits for a re-read the shutdown lands in, and the
+ * database closes after it, not under it — as the Rust spine's upgrade hold
+ * does, though that one lasts through the socket's close write
+ * (`http/CLAUDE.md` §Pending Effects). An `on_socket_open` that never returns holds
+ * the shutdown to `shutdown_drain_timeout_ms`; past that bound a re-read the
+ * closing database fails is still refused with nothing more sent. A tracker
+ * already closed holds nothing: under `AppServer.close` the registry closed
+ * first, so such an upgrade is born closed.
  *
  * Frames that arrive before admission are queued, not dispatched: nothing runs
  * on a credential that has not been re-read. They dispatch in arrival order
@@ -360,7 +373,7 @@ export interface WsSocketEndpoint {
 	notification_sender: NotificationSender;
 	/** Called when an eager pending effect of a frame's action rejects; `undefined` for none. */
 	on_effect_error: ((error: unknown, context: EffectErrorContext) => void) | undefined;
-	/** Where each message accepted for dispatch is held until its flush settles; `null` for nowhere. */
+	/** Where each socket's open (admission, `on_socket_open`) and each message accepted for dispatch are held, a message until its flush settles; `null` for nowhere. */
 	request_tracker: RequestTracker | null;
 	/** Roles the endpoint's upgrade is gated on; empty for an ungated endpoint. */
 	required_roles: ReadonlyArray<RoleName>;
@@ -626,9 +639,10 @@ export const create_ws_socket_events = (
 					{ resolved, request_context: upgrade_context, required_roles }
 				);
 			} catch (error) {
-				// fail closed — never admitted unchecked. During shutdown the
-				// database may close under the re-read; that is the shutdown's
-				// refusal, not a failure.
+				// fail closed — never admitted unchecked. A shutdown that gave
+				// up on the held re-read at its drain bound may close the
+				// database under it; that is the shutdown's refusal, not a
+				// failure.
 				if (registry.is_closing()) {
 					log.info('ws upgrade admission: re-check ended by the shutdown', error);
 				} else {
@@ -692,7 +706,25 @@ export const create_ws_socket_events = (
 		return connection_id;
 	};
 
+	// Admit the socket, run `on_socket_open`, and start the queued frames'
+	// dispatch, held on the tracker throughout (module doc, "Admission: the
+	// revocation race").
 	const open_socket = async (ws: WSContext): Promise<void> => {
+		// Synchronously, before the pending registration: a shutdown that
+		// starts while the re-read or the hook runs waits for both, so the
+		// database never closes under them. A closed tracker answers `null`
+		// and holds nothing — under `AppServer.close` the registry closed
+		// first, so the registration below is born closed and reads nothing.
+		const held = request_tracker?.accept() ?? null;
+		try {
+			await admit_and_open(ws);
+		} finally {
+			// each queued frame's dispatch has taken its own hold by now
+			held?.finish(null);
+		}
+	};
+
+	const admit_and_open = async (ws: WSContext): Promise<void> => {
 		const connection_id = await admit_upgrade(ws);
 		if (connection_id === null) return;
 		log.debug('ws opened', connection_id);

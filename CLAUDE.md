@@ -135,7 +135,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 Keep these categories separate:
 
-- Capabilities (`AppDeps`) — injectable, swappable per env: `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` the consumer's `audit_factory` builds), `connection_closer` and `notification_sender` (the realtime fan-outs `create_app_server` fills), `request_tracker` (every request and WS message accepted, held until its effects flush — what `AppServer.close` and `_testing_drain_effects` wait on), and the optional `fact_store`
+- Capabilities (`AppDeps`) — injectable, swappable per env: `keyring`, `password`, `db`, `log`, `audit` (the bound `AuditEmitter` the consumer's `audit_factory` builds), `connection_closer` and `notification_sender` (the realtime fan-outs `create_app_server` fills), `request_tracker` (every request and WS message accepted, held until its effects flush, and each WS upgrade's admission and `on_socket_open` — what `AppServer.close` waits on; `_testing_drain_effects` waits on the flushes), and the optional `fact_store`
 - Route caps (`RouteFactoryDeps`) — `Omit<AppDeps, 'db'>` — for route factories (handlers get `db` via `RouteContext`)
 - Parameters (`*Options`) — Static startup values, per-factory: `session_cookie_name`, `login_ip_rate_limiter`, `login_account_rate_limiter`, `rate_limiters` (the `RateLimiterMode` for omitted limiters), `token_store` (the live bootstrap's `BootstrapTokenStore`)
 - Runtime state (inline ref) — Mutable values: `bootstrap_status` — NOT in deps or options
