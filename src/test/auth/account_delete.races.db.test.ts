@@ -4,10 +4,12 @@
  *
  * The rule is that nothing is left standing for a deleted account — an offer
  * pending to or from it, an invite it issued. `query_role_grant_offer_create`
- * reads both parties' account rows under `FOR SHARE`, and `invite_create`
+ * reads both parties' account rows under `FOR SHARE`, and `query_create_invite`
  * its issuer's, before they insert; a delete writes its tombstone first, so
  * the two are ordered: the create is refused, or the delete supersedes the
- * offer or deletes the invite.
+ * offer or deletes the invite. The invite rule is pinned through the handler
+ * and through the query called directly, as a consumer minting invites on its
+ * own path calls it.
  *
  * Exact, not hammered. On every driver, a create authorized before a delete
  * is held before its transaction begins (`hold_begin`) while the delete
@@ -51,6 +53,7 @@ import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { query_count_active_accounts_with_global_role_locked } from '#lib/auth/role_grant_queries.ts';
 import { query_role_grant_offer_supersede_outgoing } from '#lib/auth/role_grant_offer_queries.ts';
+import { InviteIssuerNotActiveError, query_create_invite } from '#lib/auth/invite_queries.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
@@ -121,6 +124,17 @@ const setup = async (gated: GatedDb) => {
 		);
 	const invites = () =>
 		count(`SELECT COUNT(*) AS n FROM invite WHERE created_by = $1`, [issuer.actor.id]);
+	// `query_create_invite` called directly, as a consumer minting on its own
+	// path does, in a transaction of its own; settles to its outcome.
+	const invite_direct = (): Promise<Outcome> =>
+		gated.db
+			.transaction((tx) =>
+				query_create_invite({ db: tx }, { username: 'race_invitee', created_by: issuer.actor.id })
+			)
+			.then(
+				(invite) => ({ ok: true as const, value: invite }),
+				(error: unknown) => ({ ok: false as const, error })
+			);
 	// Once the issuer's request is authorized, its `admin` grant can go: the
 	// delete then runs no last-admin guard, so the issuer's own account lock is
 	// the one ordering the invite against the delete.
@@ -139,11 +153,15 @@ const setup = async (gated: GatedDb) => {
 		del,
 		pending_offers,
 		invites,
+		invite_direct,
 		revoke_issuer_admin
 	};
 };
 
 type Answer = Awaited<ReturnType<typeof rpc_call>>;
+
+/** A direct query call's outcome, settled so a race can hold it. */
+type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
 
 const assert_ok = (answer: Answer, label: string): void => {
 	assert.ok(answer.ok, `${label}: ${JSON.stringify(answer)}`);
@@ -214,6 +232,20 @@ describe_db('a create in flight across a delete', (get_db) => {
 		}
 	});
 
+	test('query_create_invite refuses an issuer deleted before it, writing nothing', async () => {
+		const gated = create_gated_db(get_db());
+		const s = await setup(gated);
+		try {
+			assert_ok(await s.del(s.issuer.account.id), 'the delete');
+			const outcome = await s.invite_direct();
+			assert.ok(!outcome.ok, `the query refuses a deleted issuer: ${JSON.stringify(outcome)}`);
+			assert.instanceOf(outcome.error, InviteIssuerNotActiveError);
+			assert.strictEqual(await s.invites(), 0, 'no invite row');
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
 	test('an invite committed before its issuer is deleted is deleted by it', async () => {
 		const gated = create_gated_db(get_db());
 		const s = await setup(gated);
@@ -238,7 +270,7 @@ const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tab
 const assert_waits_on_held_commit = async (
 	gated: GatedDb,
 	held: { release: () => void },
-	blocked: Promise<Answer>
+	blocked: Promise<unknown>
 ): Promise<void> => {
 	let settled = false;
 	const settle = () => {
@@ -264,12 +296,12 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 	install_audit_drift_guard();
 
 	/** Hold `first` at its commit, start `second`, show it waits, then release. */
-	const race = async (
+	const race = async <A, B>(
 		gated: GatedDb,
-		first: () => Promise<Answer>,
-		second: () => Promise<Answer>,
+		first: () => Promise<A>,
+		second: () => Promise<B>,
 		between?: () => Promise<unknown>
-	): Promise<[Answer, Answer]> => {
+	): Promise<[A, B]> => {
 		const held = gated.hold_commit();
 		const a = first();
 		await held.reached;
@@ -356,6 +388,24 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 			const [deleted, created] = await race(gated, () => s.del(s.issuer.account.id), s.invite);
 			assert_ok(deleted, 'the delete');
 			assert_unauthenticated(created, 'the invite that waited');
+			assert.strictEqual(await s.invites(), 0, 'no invite row');
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('query_create_invite waits on an uncommitted delete of its issuer, then is refused', async () => {
+		const gated = create_gated_db(get_db());
+		const s = await setup(gated);
+		try {
+			const [deleted, created] = await race(
+				gated,
+				() => s.del(s.issuer.account.id),
+				s.invite_direct
+			);
+			assert_ok(deleted, 'the delete');
+			assert.ok(!created.ok, `the query that waited is refused: ${JSON.stringify(created)}`);
+			assert.instanceOf(created.error, InviteIssuerNotActiveError);
 			assert.strictEqual(await s.invites(), 0, 'no invite row');
 		} finally {
 			await s.test_app.cleanup();

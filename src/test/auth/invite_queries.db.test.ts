@@ -13,11 +13,15 @@ import {
 	query_invite_claim_unscoped,
 	query_invite_list_all_with_usernames,
 	query_invite_delete_unclaimed,
-	query_invite_delete_unclaimed_by_creators
+	query_invite_delete_unclaimed_by_creators,
+	InviteDuplicateError,
+	InviteIssuerNotActiveError
 } from '#lib/auth/invite_queries.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
 import type { Invite } from '#lib/auth/invite_schema.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
+import { soft_delete_test_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
 
@@ -35,13 +39,23 @@ const find_for_update = (
 		query_invite_find_unclaimed_match_for_update({ db: tx }, email, username)
 	);
 
+/** An active issuer for an invite: `query_create_invite` refuses any other. */
+const create_issuer = async (deps: QueryDeps): Promise<Uuid> =>
+	(
+		await query_create_account_with_actor(deps, {
+			username: 'invite_issuer',
+			password_hash: 'hash'
+		})
+	).actor.id;
+
 describe_db('InviteQueries', (get_db) => {
 	describe('create', () => {
 		test('creates invite with email only', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'alice@example.com',
-				created_by: null
+				created_by
 			});
 			assert.ok(invite.id);
 			assert.strictEqual(invite.email, 'alice@example.com');
@@ -49,22 +63,24 @@ describe_db('InviteQueries', (get_db) => {
 			assert.strictEqual(invite.claimed_by, null);
 			assert.strictEqual(invite.claimed_at, null);
 			assert.ok(invite.created_at);
-			assert.strictEqual(invite.created_by, null);
+			assert.strictEqual(invite.created_by, created_by);
 		});
 
 		test('creates invite with username only', async () => {
 			const deps = { db: get_db() };
-			const invite = await query_create_invite(deps, { username: 'bob', created_by: null });
+			const created_by = await create_issuer(deps);
+			const invite = await query_create_invite(deps, { username: 'bob', created_by });
 			assert.strictEqual(invite.email, null);
 			assert.strictEqual(invite.username, 'bob');
 		});
 
 		test('creates invite with both email and username', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'carol@example.com',
 				username: 'carol',
-				created_by: null
+				created_by
 			});
 			assert.strictEqual(invite.email, 'carol@example.com');
 			assert.strictEqual(invite.username, 'carol');
@@ -72,8 +88,9 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('fails with CHECK constraint when both email and username are null', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			const err = await assert_rejects(() =>
-				query_create_invite(deps, { email: null, username: null, created_by: null })
+				query_create_invite(deps, { email: null, username: null, created_by })
 			);
 			assert.ok(
 				err.message.includes('invite_has_identifier') || err.message.includes('check'),
@@ -96,10 +113,42 @@ describe_db('InviteQueries', (get_db) => {
 		});
 	});
 
+	describe('issuer', () => {
+		const assert_issuer_refused = async (deps: QueryDeps, created_by: Uuid): Promise<void> => {
+			const err = await assert_rejects(() =>
+				query_create_invite(deps, { username: 'refused_invitee', created_by })
+			);
+			assert.instanceOf(err, InviteIssuerNotActiveError);
+			assert.strictEqual((await query_invite_list_all_with_usernames(deps)).length, 0);
+		};
+
+		test('refuses an actor that does not exist', async () => {
+			await assert_issuer_refused({ db: get_db() }, create_uuid());
+		});
+
+		test('refuses a tombstoned actor of a live account', async () => {
+			const db = get_db();
+			const created_by = await create_issuer({ db });
+			assert.ok(await soft_delete_test_actor(db, created_by));
+			await assert_issuer_refused({ db }, created_by);
+		});
+
+		test('refuses an actor of a soft-deleted account', async () => {
+			const db = get_db();
+			const { account, actor } = await query_create_account_with_actor(
+				{ db },
+				{ username: 'invite_issuer', password_hash: 'hash' }
+			);
+			await db.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [account.id]);
+			await assert_issuer_refused({ db }, actor.id);
+		});
+	});
+
 	describe('find_unclaimed_match', () => {
 		test('email-only invite matches when signup provides matching email', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'match@example.com', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { email: 'match@example.com', created_by });
 			const found = await find_for_update(deps, 'match@example.com', 'anyuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'match@example.com');
@@ -107,14 +156,16 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('email-only invite does not match when signup provides only username', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'emailonly@example.com', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { email: 'emailonly@example.com', created_by });
 			const found = await find_for_update(deps, null, 'emailonly');
 			assert.strictEqual(found, undefined);
 		});
 
 		test('username-only invite matches on username', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'onlyuser', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'onlyuser', created_by });
 			const found = await find_for_update(deps, null, 'onlyuser');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'onlyuser');
@@ -122,7 +173,8 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('username-only invite does not match on email alone', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'useronly', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'useronly', created_by });
 			// Signup provides email but the invite is username-only — should not match
 			const found = await find_for_update(deps, 'useronly@example.com', 'nomatch');
 			assert.strictEqual(found, undefined);
@@ -130,10 +182,11 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('both-field invite matches when both match', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			await query_create_invite(deps, {
 				email: 'both@example.com',
 				username: 'bothuser',
-				created_by: null
+				created_by
 			});
 			const found = await find_for_update(deps, 'both@example.com', 'bothuser');
 			assert.ok(found);
@@ -143,10 +196,11 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('both-field invite rejects when only email matches', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			await query_create_invite(deps, {
 				email: 'strict@example.com',
 				username: 'strictuser',
-				created_by: null
+				created_by
 			});
 			const found = await find_for_update(deps, 'strict@example.com', 'wronguser');
 			assert.strictEqual(found, undefined);
@@ -154,10 +208,11 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('both-field invite rejects when only username matches', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			await query_create_invite(deps, {
 				email: 'strict2@example.com',
 				username: 'strictuser2',
-				created_by: null
+				created_by
 			});
 			const found = await find_for_update(deps, 'wrong@example.com', 'strictuser2');
 			assert.strictEqual(found, undefined);
@@ -165,10 +220,11 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('both-field invite rejects when signup has no email', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			await query_create_invite(deps, {
 				email: 'need@example.com',
 				username: 'needboth',
-				created_by: null
+				created_by
 			});
 			const found = await find_for_update(deps, null, 'needboth');
 			assert.strictEqual(found, undefined);
@@ -176,7 +232,8 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('email-only invite matches case-insensitively', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'Alice@Example.COM', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { email: 'Alice@Example.COM', created_by });
 			const found = await find_for_update(deps, 'alice@example.com', 'anyuser');
 			assert.ok(found);
 			assert.strictEqual(found.email, 'Alice@Example.COM');
@@ -184,7 +241,8 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('username-only invite matches case-insensitively', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'Alice', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'Alice', created_by });
 			const found = await find_for_update(deps, null, 'alice');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'Alice');
@@ -192,7 +250,8 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('username-only invite matches when signup also provides email', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'onlyuser2', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'onlyuser2', created_by });
 			const found = await find_for_update(deps, 'extra@example.com', 'onlyuser2');
 			assert.ok(found);
 			assert.strictEqual(found.username, 'onlyuser2');
@@ -200,15 +259,16 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('multiple matching invites of different types returns a match', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			// Create email-only invite
 			const email_invite = await query_create_invite(deps, {
 				email: 'multi@example.com',
-				created_by: null
+				created_by
 			});
 			// Create username-only invite
 			const username_invite = await query_create_invite(deps, {
 				username: 'multiuser',
-				created_by: null
+				created_by
 			});
 			// Signup provides both — both branches match, one is returned
 			const found = await find_for_update(deps, 'multi@example.com', 'multiuser');
@@ -223,10 +283,11 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('both-field invite matches case-insensitively', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			await query_create_invite(deps, {
 				email: 'Both@Example.COM',
 				username: 'BothUser',
-				created_by: null
+				created_by
 			});
 			const found = await find_for_update(deps, 'both@example.com', 'bothuser');
 			assert.ok(found);
@@ -245,9 +306,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('returns true and sets claimed_by and claimed_at', async () => {
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'claim@example.com',
-				created_by: null
+				created_by
 			});
 			const { account } = await query_create_account_with_actor(deps, {
 				username: 'claimer',
@@ -266,9 +328,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('returns false when invite is already claimed', async () => {
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'double@example.com',
-				created_by: null
+				created_by
 			});
 			const { account: first } = await query_create_account_with_actor(deps, {
 				username: 'first',
@@ -317,9 +380,10 @@ describe_db('InviteQueries', (get_db) => {
 			// Mirrors the `query_session_revoke_by_hash_unscoped` precedent.
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'alice@example.com',
-				created_by: null
+				created_by
 			});
 			const { account: bob } = await query_create_account_with_actor(deps, {
 				username: 'bob',
@@ -343,9 +407,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('claimed invite is no longer matched by find_unclaimed_match_for_update', async () => {
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'gone@example.com',
-				created_by: null
+				created_by
 			});
 			const { account } = await query_create_account_with_actor(deps, {
 				username: 'claimer',
@@ -365,8 +430,9 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('returns all invites', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'first@example.com', created_by: null });
-			await query_create_invite(deps, { email: 'second@example.com', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { email: 'first@example.com', created_by });
+			await query_create_invite(deps, { email: 'second@example.com', created_by });
 			const all = await query_invite_list_all_with_usernames(deps);
 			assert.strictEqual(all.length, 2);
 			const emails = new Set(all.map((i) => i.email));
@@ -378,9 +444,10 @@ describe_db('InviteQueries', (get_db) => {
 	describe('delete_unclaimed', () => {
 		test('deletes an unclaimed invite', async () => {
 			const deps = { db: get_db() };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'delete@example.com',
-				created_by: null
+				created_by
 			});
 			const deleted = await query_invite_delete_unclaimed(deps, invite.id);
 			assert.strictEqual(deleted, true);
@@ -400,9 +467,10 @@ describe_db('InviteQueries', (get_db) => {
 		test('returns false for already-claimed invite', async () => {
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const invite = await query_create_invite(deps, {
 				email: 'nodelete@example.com',
-				created_by: null
+				created_by
 			});
 			const { account } = await query_create_account_with_actor(deps, {
 				username: 'claimer',
@@ -455,7 +523,8 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('an empty actor list deletes nothing', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'invitee_kept', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'invitee_kept', created_by });
 			assert.deepStrictEqual(await query_invite_delete_unclaimed_by_creators(deps, []), []);
 			assert.strictEqual((await query_invite_list_all_with_usernames(deps)).length, 1);
 		});
@@ -464,19 +533,21 @@ describe_db('InviteQueries', (get_db) => {
 	describe('unique partial indexes', () => {
 		test('rejects duplicate unclaimed email (case-insensitive)', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { email: 'unique@example.com', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { email: 'unique@example.com', created_by });
 			const err = await assert_rejects(() =>
-				query_create_invite(deps, { email: 'UNIQUE@Example.COM', created_by: null })
+				query_create_invite(deps, { email: 'UNIQUE@Example.COM', created_by })
 			);
-			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
+			assert.instanceOf(err, InviteDuplicateError);
 		});
 
 		test('allows same email after first is claimed', async () => {
 			const db = get_db();
 			const deps = { db };
+			const created_by = await create_issuer(deps);
 			const first = await query_create_invite(deps, {
 				email: 'reuse@example.com',
-				created_by: null
+				created_by
 			});
 			const { account } = await query_create_account_with_actor(deps, {
 				username: 'claimer',
@@ -485,7 +556,7 @@ describe_db('InviteQueries', (get_db) => {
 			await query_invite_claim_unscoped(deps, first.id, account.id);
 			const second = await query_create_invite(deps, {
 				email: 'reuse@example.com',
-				created_by: null
+				created_by
 			});
 			assert.ok(second.id);
 			assert.notStrictEqual(second.id, first.id);
@@ -493,23 +564,25 @@ describe_db('InviteQueries', (get_db) => {
 
 		test('rejects duplicate unclaimed username (case-insensitive)', async () => {
 			const deps = { db: get_db() };
-			await query_create_invite(deps, { username: 'dupuser', created_by: null });
+			const created_by = await create_issuer(deps);
+			await query_create_invite(deps, { username: 'dupuser', created_by });
 			const err = await assert_rejects(() =>
-				query_create_invite(deps, { username: 'DUPUSER', created_by: null })
+				query_create_invite(deps, { username: 'DUPUSER', created_by })
 			);
-			assert.ok(err.message.includes('unique') || err.message.includes('duplicate'));
+			assert.instanceOf(err, InviteDuplicateError);
 		});
 
 		test('allows same username after first is claimed', async () => {
 			const db = get_db();
 			const deps = { db };
-			const first = await query_create_invite(deps, { username: 'reuseuser', created_by: null });
+			const created_by = await create_issuer(deps);
+			const first = await query_create_invite(deps, { username: 'reuseuser', created_by });
 			const { account } = await query_create_account_with_actor(deps, {
 				username: 'claimer',
 				password_hash: 'hash'
 			});
 			await query_invite_claim_unscoped(deps, first.id, account.id);
-			const second = await query_create_invite(deps, { username: 'reuseuser', created_by: null });
+			const second = await query_create_invite(deps, { username: 'reuseuser', created_by });
 			assert.ok(second.id);
 			assert.notStrictEqual(second.id, first.id);
 		});

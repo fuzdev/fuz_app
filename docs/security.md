@@ -2223,7 +2223,9 @@ transactions meet the same rows in opposite orders.
   a cap never counts stale), a password change and a delete through their
   write, a revoke through its revokee's row (`query_account_lock_for_revoke`),
   an offer or invite create through `query_account_lock_live_many`
-  (`FOR SHARE`), an accept through both parties' rows, lower id first
+  (`FOR SHARE`), which `query_role_grant_offer_create` and
+  `query_create_invite` take themselves (a caller that locks an actor or
+  grant row first takes the account row before it), an accept through both parties' rows, lower id first
   (`query_account_lock_for_offer_accept`). A purge takes every admin's
   account and its own in one id-ordered statement
   (`query_account_lock_admins_for_purge` — its cascade writes other admins'

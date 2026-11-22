@@ -66,7 +66,6 @@ import {
 	query_account_by_username,
 	query_account_lock_admins_for_purge,
 	query_account_lock_for_purge,
-	query_account_lock_live_many,
 	query_account_soft_delete,
 	query_account_undelete,
 	query_actor_soft_delete,
@@ -86,6 +85,8 @@ import {
 } from './audit_log_queries.ts';
 import { AUDIT_LOG_DEFAULT_LIMIT } from './audit_log_schema.ts';
 import {
+	InviteDuplicateError,
+	InviteIssuerNotActiveError,
 	query_create_invite,
 	query_invite_delete_unclaimed,
 	query_invite_delete_unclaimed_by_creators,
@@ -97,7 +98,6 @@ import {
 	query_app_settings_update
 } from './app_settings_queries.ts';
 import type { RevokingActionFactoryDeps } from './deps.ts';
-import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -333,13 +333,8 @@ export const create_admin_actions = (
 		// The issuer's account was read before this transaction. A delete
 		// committed since creates nothing — refused as the dead credential it now
 		// is, as `account_token_create` refuses it — and one still to commit
-		// waits on this lock, then deletes the invite with the account's other
-		// unclaimed ones: a delete writes its tombstone first.
-		if (!(await query_account_lock_live_many(ctx, [auth.account.id])).has(auth.account.id)) {
-			throw jsonrpc_errors.unauthenticated('unauthenticated', {
-				reason: ERROR_AUTHENTICATION_REQUIRED
-			});
-		}
+		// waits on the query's issuer lock, then deletes the invite with the
+		// account's other unclaimed ones. Twin of the Rust handler's.
 		let invite;
 		try {
 			invite = await query_create_invite(ctx, {
@@ -348,7 +343,12 @@ export const create_admin_actions = (
 				created_by: auth.actor.id
 			});
 		} catch (err: unknown) {
-			if (is_pg_unique_violation(err)) {
+			if (err instanceof InviteIssuerNotActiveError) {
+				throw jsonrpc_errors.unauthenticated('unauthenticated', {
+					reason: ERROR_AUTHENTICATION_REQUIRED
+				});
+			}
+			if (err instanceof InviteDuplicateError) {
 				throw jsonrpc_errors.conflict('an unclaimed invite already exists', {
 					reason: ERROR_INVITE_DUPLICATE
 				});

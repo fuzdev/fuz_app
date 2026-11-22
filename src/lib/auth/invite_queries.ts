@@ -10,8 +10,10 @@
 import type { Uuid } from '../primitive_schemas.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
+import { is_pg_unique_violation } from '../db/pg_error.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
 import type { Invite, CreateInviteInput, InviteWithUsernamesJson } from './invite_schema.ts';
+import { query_account_lock_live_many } from './account_queries.ts';
 
 /**
  * The full `invite` column set, named explicitly so a row read fails loud on
@@ -36,23 +38,104 @@ export const INVITE_COLUMNS = [
 const invite_expr = iso8601_timestamp_expr(INVITE_COLUMNS, ['claimed_at', 'created_at']);
 
 /**
- * Create a new invite.
+ * Error thrown by `query_create_invite` when an unclaimed invite already
+ * reserves the email or the username: the partial unique index
+ * `idx_invite_email_unclaimed` or `idx_invite_username_unclaimed` refused the
+ * insert (SQLSTATE `23505`), which aborts the caller's transaction. Twin of
+ * the Rust `InviteCreateError::Duplicate`.
+ */
+export class InviteDuplicateError extends Error {
+	constructor() {
+		super('an unclaimed invite already exists');
+		this.name = 'InviteDuplicateError';
+	}
+}
+
+/**
+ * Error thrown by `query_create_invite` when the issuer is not an active
+ * account: its actor is missing or tombstoned, or its account soft-deleted — a
+ * delete that committed while the invite was in flight. Twin of the Rust
+ * `InviteCreateError::IssuerNotActive`.
+ */
+export class InviteIssuerNotActiveError extends Error {
+	constructor() {
+		super('the issuer is not an active account');
+		this.name = 'InviteIssuerNotActiveError';
+	}
+}
+
+/**
+ * Create an invite issued by the actor `input.created_by`.
  *
- * @param deps - query dependencies
- * @param input - the invite fields
+ * The issuer must be an active actor of a live account, checked here so every
+ * caller — the spine's `invite_create` handler and a consumer minting invites
+ * on its own path — gets the rule: an invite records no authority, so one
+ * minted for an issuer deleted mid-flight would outlive the delete that should
+ * have voided it. The issuer's account row is read under `FOR SHARE`
+ * (`query_account_lock_live_many`) before the insert: an account delete writes
+ * its tombstone first, so a delete that wrote its tombstone before the read is
+ * waited for if uncommitted and seen (the invite is refused), and one that
+ * reaches the row after it waits for this transaction to
+ * commit and then deletes the invite with the account's other unclaimed ones
+ * (`query_invite_delete_unclaimed_by_creators`). The actor's tombstone is read
+ * after the lock, so a delete waited on is seen there too.
+ *
+ * Run it inside the caller's transaction, which the lock spans — on the pool
+ * the lock ends with its statement and orders nothing. Lock order: account
+ * rows come before actor and `role_grant` rows, as the last-admin guard
+ * (`query_count_active_accounts_with_global_role_locked`) takes them (account,
+ * then actor, then grant). So take it before the transaction locks any actor
+ * or `role_grant` row — or lock the issuer's account row first yourself
+ * (`query_account_lock_live_many`), which this query then re-takes without
+ * waiting: a transaction holding a lock on the issuer's admin grant while it
+ * waits here on an account row a removal holds, while the removal's guard
+ * waits on that grant, deadlocks.
+ *
+ * Callers that pre-check for account collisions on `email` / `username` do so
+ * upstream. Twin of the Rust `query_create_invite`.
+ *
+ * @param deps - query dependencies (must be the caller's transaction)
+ * @param input - the invite fields and its issuing actor
  * @returns the created invite
  * @mutates `invite` table - inserts the new row
+ * @throws InviteIssuerNotActiveError if `created_by` names no actor, a tombstoned one, or one whose account is soft-deleted; nothing is inserted
+ * @throws InviteDuplicateError if an unclaimed invite with the same email or username already exists
  */
 export const query_create_invite = async (
 	deps: QueryDeps,
 	input: CreateInviteInput
 ): Promise<Invite> => {
-	const row = await deps.db.query_one<Invite>(
-		`INSERT INTO invite (email, username, created_by)
-		 VALUES ($1, $2, $3)
-		 RETURNING ${columns_sql(INVITE_COLUMNS, invite_expr(''))}`,
-		[input.email ?? null, input.username ?? null, input.created_by]
+	// An actor's account never changes, so it is read unlocked.
+	const issuer = await deps.db.query_one<{ account_id: Uuid }>(
+		`SELECT account_id FROM actor WHERE id = $1`,
+		[input.created_by]
 	);
+	if (
+		!issuer ||
+		!(await query_account_lock_live_many(deps, [issuer.account_id])).has(issuer.account_id)
+	) {
+		throw new InviteIssuerNotActiveError();
+	}
+	// After the lock, so a delete it waited on is seen.
+	const issuer_actor = await deps.db.query_one<{ id: Uuid }>(
+		`SELECT id FROM actor WHERE id = $1 AND deleted_at IS NULL`,
+		[input.created_by]
+	);
+	if (!issuer_actor) {
+		throw new InviteIssuerNotActiveError();
+	}
+	let row;
+	try {
+		row = await deps.db.query_one<Invite>(
+			`INSERT INTO invite (email, username, created_by)
+			 VALUES ($1, $2, $3)
+			 RETURNING ${columns_sql(INVITE_COLUMNS, invite_expr(''))}`,
+			[input.email ?? null, input.username ?? null, input.created_by]
+		);
+	} catch (err: unknown) {
+		if (is_pg_unique_violation(err)) throw new InviteDuplicateError();
+		throw err;
+	}
 	return assert_row(row, 'INSERT INTO invite');
 };
 

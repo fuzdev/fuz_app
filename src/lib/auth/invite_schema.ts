@@ -52,5 +52,6 @@ export type InviteWithUsernamesJson = Infer<typeof InviteWithUsernamesJson>;
 export interface CreateInviteInput {
 	email?: Email | null;
 	username?: Username | null;
-	created_by: Uuid | null;
+	/** The issuing actor, which must be active on a live account (`query_create_invite`). */
+	created_by: Uuid;
 }

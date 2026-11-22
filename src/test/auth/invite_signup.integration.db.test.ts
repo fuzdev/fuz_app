@@ -514,7 +514,7 @@ describe_db('invite + signup integration', (get_db) => {
 			// Create invite directly via query to bypass route-level account-exists check
 			await query_create_invite(
 				{ db: get_db() },
-				{ username: test_app.backend.account.username, created_by: null }
+				{ username: test_app.backend.account.username, created_by: test_app.backend.actor.id }
 			);
 			const res = await json_request(
 				test_app.app,
@@ -543,7 +543,10 @@ describe_db('invite + signup integration', (get_db) => {
 				existing.account.id
 			]);
 			// Create invite directly via query to bypass route-level account-exists check
-			await query_create_invite({ db: get_db() }, { email: 'taken@example.com', created_by: null });
+			await query_create_invite(
+				{ db: get_db() },
+				{ email: 'taken@example.com', created_by: test_app.backend.actor.id }
+			);
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -569,7 +572,7 @@ describe_db('invite + signup integration', (get_db) => {
 			// Set up username conflict
 			await query_create_invite(
 				{ db: get_db() },
-				{ username: test_app.backend.account.username, created_by: null }
+				{ username: test_app.backend.account.username, created_by: test_app.backend.actor.id }
 			);
 			const res_username = await json_request(
 				test_app.app,
@@ -588,7 +591,7 @@ describe_db('invite + signup integration', (get_db) => {
 			]);
 			await query_create_invite(
 				{ db: get_db() },
-				{ email: 'conflict@example.com', created_by: null }
+				{ email: 'conflict@example.com', created_by: test_app.backend.actor.id }
 			);
 			const res_email = await json_request(
 				test_app.app,
@@ -867,7 +870,10 @@ describe_db('invite + signup integration', (get_db) => {
 
 			// Insert a second invite for the same username — account already exists
 			// from the first signup, so the unique constraint rejects the second signup
-			await query_create_invite({ db: get_db() }, { username: 'raceuser', created_by: null });
+			await query_create_invite(
+				{ db: get_db() },
+				{ username: 'raceuser', created_by: test_app.backend.actor.id }
+			);
 			const res2 = await json_request(
 				test_app.app,
 				'/api/account/signup',
@@ -1129,7 +1135,7 @@ describe_db('invite + signup integration', (get_db) => {
 			// but the account insert collides on the case-insensitive username unique.
 			const { id: invite_id } = await query_create_invite(
 				{ db: get_db() },
-				{ username: test_app.backend.account.username, created_by: null }
+				{ username: test_app.backend.account.username, created_by: test_app.backend.actor.id }
 			);
 			const res = await json_request(
 				test_app.app,
@@ -1264,7 +1270,7 @@ describe_db('invite + signup integration', (get_db) => {
 			// on the account insert.
 			await query_create_invite(
 				{ db: get_db() },
-				{ username: test_app.backend.account.username, created_by: null }
+				{ username: test_app.backend.account.username, created_by: test_app.backend.actor.id }
 			);
 			const t0 = performance.now();
 			const res = await json_request(
@@ -1300,7 +1306,10 @@ describe_db('invite + signup integration', (get_db) => {
 				create_route_specs,
 				db: get_db()
 			});
-			await query_create_invite({ db: get_db() }, { username: 'internalerr', created_by: null });
+			await query_create_invite(
+				{ db: get_db() },
+				{ username: 'internalerr', created_by: test_app.backend.actor.id }
+			);
 
 			// Make the signup tx body reject with a generic Error — the catch
 			// handler should treat this as an `internal_error` and emit the
@@ -1355,7 +1364,7 @@ describe_db('invite + signup integration', (get_db) => {
 			});
 			const invite = await query_create_invite(
 				{ db: get_db() },
-				{ username: 'claimmiss', created_by: null }
+				{ username: 'claimmiss', created_by: test_app.backend.actor.id }
 			);
 
 			// The claim UPDATE matches no row inside the signup tx — the state a
