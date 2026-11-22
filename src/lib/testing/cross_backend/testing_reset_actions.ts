@@ -206,29 +206,30 @@ export const testing_reset_action_spec = {
 } as const satisfies RequestResponseActionSpec;
 
 /**
- * `_testing_drain_effects` — await in-flight fire-and-forget audit writes so
- * a following `audit_log_list` is authoritative. The deterministic barrier
- * the cross-backend conformance suite uses in place of a poll/sleep before
- * asserting on audit rows.
+ * `_testing_drain_effects` — await in-flight fire-and-forget writes so a
+ * following `audit_log_list` or database read is authoritative. The
+ * deterministic barrier the cross-backend conformance suite uses in place of
+ * a poll/sleep before asserting on audit rows.
  *
  * The handler awaits `AuditEmitter.drain_inflight`, which waits until no
  * pool write of the emitter's is outstanding — every emitter counts them, so
- * the drain is always a barrier. It matters whatever the transport: an
- * **HTTP** mutation on a binary running `await_pending_effects: true` has its
- * writes settled by the time it responds, but a **WS** mutation is answered
+ * the drain is always a barrier. It matters whatever the transport: both
+ * test binaries settle an **HTTP** answer's writes before it responds (the
+ * TS binary through `await_pending_effects: true`, the Rust stub through its
+ * `await_background_writes_layer`), but a **WS** mutation is answered
  * before its effects flush (reply-then-close for a self-revocation), so its
  * audit write can still be in flight when the caller reads the reply. The
  * Rust spine does the same await in `AuditEmitter::drain_inflight`.
  *
  * Covered: every `emit` that ran before the drain was dispatched, and any
  * started while it waits. A write that starts after the drain resolves is
- * not — nor are eager writes outside `emit` (session touch, token usage),
- * which only the dispatching transport's own flush awaits.
+ * not — nor, on TS, the bearer leg's token touch, which rides its request's
+ * `pending_effects`. The Rust spine spawns its touch on the same tracker as
+ * its audit writes, so its drain awaits that too.
  *
- * The output's `tracked` is always `true`, on both spines, now that every
- * emitter counts its writes; `cross_drain_effects` still refuses anything
- * else, so a backend that answered without draining would fail its first
- * audit read instead of racing it.
+ * The output's `tracked` is a constant `true` on both spines — every drain
+ * waits on what it covers. It is kept until consumers are on a release whose
+ * `cross_drain_effects` no longer reads it.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
@@ -243,13 +244,13 @@ export const testing_drain_effects_action_spec = {
 		ok: boolean,
 		tracked: meta(boolean, {
 			description:
-				"Whether the backend's audit emitter counts its in-flight writes, so the drain waited " +
-				'on them — always true.'
+				'Always true — every drain waits on the writes it covers. Kept until consumers no ' +
+				'longer read it.'
 		})
 	}),
 	async: true,
 	description:
-		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.'
+		'Test-binary only — await in-flight fire-and-forget writes so a following audit_log_list or database read is authoritative.'
 } as const satisfies RequestResponseActionSpec;
 
 /**

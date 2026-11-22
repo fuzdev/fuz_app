@@ -264,16 +264,51 @@ describe('normalize_db_state over the auth tables', () => {
 		);
 	});
 
-	test('the uncompared columns are left out', () => {
+	test("a token's last use compares as set or not; its ip as it is", () => {
 		const state = normalize_db_state({
 			columns,
 			rows: {
 				api_token: [
-					{ id: 'tok_abC0_d-3xyzA', account_id: UUID_A, last_used_at: T, last_used_ip: '::1' }
+					{ id: 'tok_abC0_d-3xyzA', account_id: UUID_A, last_used_at: T, last_used_ip: '::1' },
+					{ id: 'tok_zzZ9_y-8xyzB', account_id: UUID_B, last_used_at: null, last_used_ip: null }
 				]
 			},
 			audit_seq_advance: 0
 		});
-		assert.deepEqual(state.tables.api_token, [{ account_id: '<id:1>', id: '<tok:1>' }]);
+		assert.deepEqual(state.tables.api_token, [
+			{ account_id: '<id:1>', id: '<tok:1>', last_used_at: '<set>', last_used_ip: '::1' },
+			{ account_id: '<id:2>', id: '<tok:2>', last_used_at: null, last_used_ip: null }
+		]);
+	});
+
+	test("a token's last use joins no rank, so the writes around it rank alike", () => {
+		const at = (minute: number): string => `2026-11-21T18:0${minute}:00+00:00`;
+		const dump = (touched: string) =>
+			normalize_db_state({
+				columns,
+				rows: {
+					account: [
+						{ id: UUID_A, username: 'a', password_hash: 'x', created_at: at(1) },
+						{ id: UUID_B, username: 'b', password_hash: 'x', created_at: at(3) }
+					],
+					api_token: [
+						{
+							id: 'tok_abC0_d-3xyzA',
+							account_id: UUID_A,
+							last_used_at: touched,
+							last_used_ip: '::1'
+						}
+					]
+				},
+				audit_seq_advance: 0
+			});
+		// the touch landing before the second account's write or after it
+		const before = dump(at(2));
+		const after = dump(at(4));
+		assert.deepEqual(
+			before.tables.account!.map((r) => r.created_at),
+			['<t:1>', '<t:2>']
+		);
+		assert.deepEqual(before, after);
 	});
 });

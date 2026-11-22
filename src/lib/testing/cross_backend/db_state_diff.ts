@@ -9,7 +9,8 @@ import '../assert_dev_env.ts';
  * reaches no answer unless some test reads it back, so it is invisible there.
  * `create_db_state_probe` reads a backend's database over its own
  * connection (the backend must be on PostgreSQL the test process reaches),
- * after draining the backend's in-flight audit writes, and
+ * after draining the backend's in-flight detached writes (audit rows; on the
+ * Rust spine also the token touch and the bootstrap write), and
  * `normalize_db_state` maps the rows onto a form both backends share when
  * they wrote the same things:
  *
@@ -40,6 +41,11 @@ import '../assert_dev_env.ts';
  *   timestamp in the dump (`<t:3>`); `null` stays `null`. Two writes in one
  *   transaction share a rank, a later write ranks after, and a backend
  *   setting a column the other leaves `null` differs.
+ * - **A token's last use** — `api_token.last_used_at` — becomes `<set>` or
+ *   stays `null`, and joins no rank: the touch is a detached write that runs
+ *   concurrently with its own request's transaction on both spines, so its
+ *   order against that request's writes is promised by neither, and ranking
+ *   it would shift every later rank. `last_used_ip` compares as it is.
  * - **Expiries** — a column or JSON key named `expires_at`, in a row with a
  *   `created_at` — become their offset from that `created_at`, rounded to
  *   the minute (`+30d0h0m`), and join no rank: a rank keeps order and loses
@@ -47,14 +53,16 @@ import '../assert_dev_env.ts';
  * - **`seq`** becomes the offset from the dump's smallest, and the dump
  *   carries `audit_seq_advance`: how far the audit sequence moved between
  *   `mark` and the read, so an audit insert that rolled back — no row left,
- *   a sequence value spent — differs too.
+ *   a sequence value spent — differs too. Rows of successive requests take
+ *   `seq` in request order because fuz_app's two test binaries (the TS
+ *   spine binary and `testing_spine_stub`) settle an HTTP answer's writes
+ *   before answering (`await_pending_effects: true` on TS, the stub's
+ *   `await_background_writes_layer`); in production a refusal's row is
+ *   written after its answer, and the next request's row can land first.
  *
  * `diff_db_states` lists every place two normalized states differ, as
  * `DifferentialDiff`s under `db.` (`db.audit_log[2].metadata.reason`,
  * `db.audit_seq_advance`), the paths a known-divergence ledger names.
- *
- * `DB_STATE_UNCOMPARED_COLUMNS` names the columns left out, each with its
- * reason — a write no barrier orders against the read.
  *
  * Rows compare by position after the sort, so a row one backend writes and
  * the other doesn't shifts every later row of its table. Rows the sort can't
@@ -131,24 +139,8 @@ export const DB_STATE_SORT_KEYS: Readonly<Record<string, ReadonlyArray<string>>>
 	audit_log: ['seq']
 };
 
-/**
- * Columns a dump leaves out, each with why: what no barrier orders against
- * the read, so its value depends on timing, not on what the backend wrote.
- */
-export const DB_STATE_UNCOMPARED_COLUMNS: Readonly<Record<string, string>> = {
-	'api_token.last_used_at':
-		"the Rust spine records a token's use on a detached task no drain awaits " +
-		'(`spawn_api_token_touch`), so the read races it; TS flushes it before answering',
-	'api_token.last_used_ip': 'written with `api_token.last_used_at`, by the same detached task'
-};
-
 /** Tables a dump leaves out: the migration tracker, which no request writes. */
 const DB_STATE_EXCLUDED_TABLES: ReadonlyArray<string> = ['schema_version'];
-
-const omit_uncompared = (table: string, row: Record<string, unknown>): Record<string, unknown> =>
-	Object.fromEntries(
-		Object.entries(row).filter(([column]) => !(`${table}.${column}` in DB_STATE_UNCOMPARED_COLUMNS))
-	);
 
 /** The canonical walk's table order over the tables a dump holds. */
 const walk_order = (tables: Iterable<string>): Array<string> => {
@@ -247,6 +239,17 @@ const visit_strings = (
 const EXPIRY_KEY = 'expires_at';
 
 /**
+ * Columns compared as set or not, never ranked — each written by a detached
+ * write. `api_token.last_used_at`: the bearer leg's touch runs concurrently
+ * with its own request's transaction on both spines, so its order against
+ * that request's writes is promised by neither.
+ */
+const SET_ONLY_COLUMNS: ReadonlySet<string> = new Set(['api_token.last_used_at']);
+
+/** The marker a non-null `SET_ONLY_COLUMNS` value becomes. */
+const SET_MARKER = '<set>';
+
+/**
  * Whether `key` and `value` are an expiry — the one test both the rank set's
  * skip and the offset rewrite read, so a value is never in neither.
  */
@@ -288,19 +291,10 @@ const sortable = (key: string): string => key.replace(/\d+/g, (n) => n.padStart(
 /**
  * Normalize a dump (module doc). Pure; numbering restarts for every call.
  *
- * @param dump - the rows and column types `create_db_state_probe` read
+ * @param raw - the rows and column types `create_db_state_probe` read
  * @returns the normalized state
  */
-export const normalize_db_state = (dump: RawDbState): DbState => {
-	const raw: RawDbState = {
-		...dump,
-		rows: Object.fromEntries(
-			Object.entries(dump.rows).map(([table, rows]) => [
-				table,
-				rows.map((row) => omit_uncompared(table, row))
-			])
-		)
-	};
+export const normalize_db_state = (raw: RawDbState): DbState => {
 	// the timestamps' dense ranks, over every timestamp the dump holds
 	const instants = new Set<bigint>();
 	const add_instant = (s: string): void => {
@@ -314,6 +308,7 @@ export const normalize_db_state = (dump: RawDbState): DbState => {
 			const created = row_created_micros(row, columns);
 			for (const [column, value] of Object.entries(row)) {
 				if (created !== null && is_expiry(column, value)) continue;
+				if (SET_ONLY_COLUMNS.has(`${table}.${column}`)) continue;
 				if (TIMESTAMP_UDTS.has(columns[column] ?? '') && typeof value === 'string') {
 					add_instant(value);
 				} else {
@@ -396,6 +391,7 @@ export const normalize_db_state = (dump: RawDbState): DbState => {
 				const value = row[column];
 				const offset = expiry_offset(column, value, created);
 				if (value === null) out[column] = null;
+				else if (SET_ONLY_COLUMNS.has(`${table}.${column}`)) out[column] = SET_MARKER;
 				else if (offset !== null) out[column] = offset;
 				else if (TIMESTAMP_UDTS.has(columns[column] ?? '') && typeof value === 'string') {
 					out[column] = rank_of(value);
@@ -451,7 +447,8 @@ const read_audit_seq = async (db: Db): Promise<number> => {
 /**
  * A probe over a backend's database, read directly — the backend's
  * `env.DATABASE_URL` must be a PostgreSQL URL the test process reaches. The
- * read drains the backend's in-flight audit writes first
+ * read drains the backend's in-flight detached writes (audit rows; on the
+ * Rust spine also the token touch and the bootstrap write) first
  * (`_testing_drain_effects`, on the daemon token), so a WebSocket mutation's
  * row has landed.
  *

@@ -37,15 +37,18 @@ export interface AuditReadFixture {
 }
 
 /**
- * Await the backend's in-flight audit writes via `_testing_drain_effects`, so
- * a following `audit_log_list` sees every row emitted before the call. The
- * backend must mount the action — every spine test binary does; in-process
- * suites mount `create_testing_drain_effects_action`.
+ * Await the backend's in-flight detached writes (audit rows; on the Rust
+ * spine also the token touch and the bootstrap write) via
+ * `_testing_drain_effects`, so a following `audit_log_list` sees every row
+ * emitted before the call. The backend must mount the action — every spine
+ * test binary does; in-process suites mount
+ * `create_testing_drain_effects_action`.
  *
  * Refuses an answer without `tracked: true` — what both spines always answer,
- * their emitters counting every write in flight. A backend answering anything
- * else did not drain, and its audit reads would race the writes — an absent
- * row then reading as a pass. Every audit read runs through here, so each one
+ * their drains awaiting the backend's in-flight detached writes (audit rows;
+ * on the Rust spine also the token touch and the bootstrap write). A backend
+ * answering anything else did not drain, and its audit reads would race the
+ * writes — an absent row then reading as a pass. Every audit read runs through here, so each one
  * checks the barrier is live.
  *
  * @param fixture - the per-test fixture, whose daemon token authorizes the drain

@@ -472,10 +472,13 @@ field a loose output schema passes on one spine, shows up as a difference.
   timestamps their dense rank over the dump (`<t:n>`, `null` kept, so one
   extra instant shifts every later rank), `seq` an offset from the dump's smallest, and
   `audit_seq_advance` how far the sequence moved since the mark (a
-  rolled-back insert spends a value). `DB_STATE_UNCOMPARED_COLUMNS` names
-  the columns left out, each with its reason — today the token-use touch,
-  which the Rust spine writes on a detached task no drain awaits.
-  `diff_db_states(a, b)` lists the differences as
+  rolled-back insert spends a value). Every column of every dumped table
+  compares — the token-use touch included, which the Rust spine's drain
+  awaits and a TS test binary (`await_pending_effects: true`) settles before
+  the response — but `api_token.last_used_at` compares as `<set>` or `null`
+  and joins no rank: the touch runs concurrently with its own request's
+  transaction on both spines, so its order against that request's writes is
+  promised by neither. `diff_db_states(a, b)` lists the differences as
   `db.<table>[i].<column>…` and `db.audit_seq_advance`. Rows compare by
   position, so a missing row shifts its table.
 
@@ -2212,11 +2215,15 @@ Conventions that hold across them:
   `_testing_reset`). It awaits `audit.drain_inflight()` so a following
   `audit_log_list` is authoritative — the deterministic barrier a
   cross-process audit assertion fires before reading (no poll/sleep). Every
-  emitter counts its pool writes in flight, so the drain always waits on them.
-  The action answers `{ok: true, tracked: true}` (a constant on both spines),
-  and `cross_drain_effects` refuses anything else.
-  The barrier is needed whatever the transport: HTTP on a binary running
-  `await_pending_effects: true` settles a mutation's writes before
+  emitter counts its pool writes in flight, so the drain always waits on them;
+  the Rust spine spawns its token-use touch on the same tracker, so its drain
+  covers that too (the TS touch rides its request's `pending_effects`). The
+  action answers `{ok: true, tracked: true}` — `tracked` a constant on both
+  spines, kept until consumers are on a release whose `cross_drain_effects`
+  no longer reads it — and `cross_drain_effects` refuses anything else.
+  The barrier is needed whatever the transport: HTTP on either test binary
+  (the TS one's `await_pending_effects: true`, the Rust stub's
+  `await_background_writes_layer`) settles a mutation's writes before
   responding, but WS replies before its effects flush, so a WS mutation's
   audit write can still be in flight when its reply arrives. The drain waits
   until no pool write is in flight — writes started while it waits included
