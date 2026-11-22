@@ -76,7 +76,12 @@ import {
 	type OnBootstrap
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
-import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
+import {
+	create_request_flush_tracker,
+	flush_request_effects,
+	type EffectErrorContext,
+	type RequestFlushTracker
+} from '../http/pending_effects.ts';
 import {
 	assert_credential_routes_in_auth_scope,
 	assert_endpoint_in_auth_scope,
@@ -515,9 +520,10 @@ export interface AppServerOptions {
 	await_pending_effects?: boolean;
 
 	/**
-	 * How long `AppServer.close` waits for the effects still in flight — each
-	 * request's unflushed `pending_effects` (failure audit rows, API token
-	 * usage) and every pool write of `deps.audit` — before it
+	 * How long `AppServer.close` waits for the effects still in flight — the
+	 * unflushed effect queues of each HTTP request and WS message (failure
+	 * audit rows, API token usage, post-commit thunks) and every pool write of
+	 * `deps.audit` — before it
 	 * closes the database. What is still running then is given up on and
 	 * logged. Default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`; must be a positive
 	 * number of ms.
@@ -577,10 +583,11 @@ export interface AppServer {
 	 *    is left closing, so an upgrade or stream that registers afterward is
 	 *    born closed — refused at once rather than outliving the server — and
 	 *    a closed registry hosts no other server
-	 * 3. wait for the effects still in flight — the unflushed
-	 *    `pending_effects` of requests already answered (failure audit rows,
-	 *    API token usage; production does not hold a response
-	 *    for them) and every pool write of `deps.audit` — bounded by
+	 * 3. wait for the effects still in flight — the unflushed effect queues
+	 *    of HTTP requests and WS messages already answered (failure audit
+	 *    rows, API token usage, post-commit thunks; production holds no HTTP
+	 *    response for them, and a WS reply is sent before its flush) and
+	 *    every pool write of `deps.audit` — bounded by
 	 *    `shutdown_drain_timeout_ms`, logging what it gives up on
 	 * 4. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
@@ -864,29 +871,33 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
  * writes counted in `audit_writes` too, so the two are not summed.
  */
 export interface ShutdownDrainGivenUp {
-	/** Request flushes still running. */
+	/** Request flushes still running — HTTP requests and WS messages alike. */
 	request_flushes: number;
 	/** Pool writes of the audit emitter still in flight. */
 	audit_writes: number;
 }
 
 /**
- * Wait for the request flushes in flight and then the audit emitter's pool
- * writes, until none is left or `timeout_ms` passes — then log an error naming
- * what was given up on. Never rejects.
+ * Wait for the request flushes in flight (HTTP requests and WS messages, one
+ * tracker) and then the audit emitter's pool writes, until none is left or
+ * `timeout_ms` passes — then log an error naming what was given up on. Never
+ * rejects.
  *
  * @returns what was given up on, both counts `0` when everything settled
  */
 export const drain_effects_on_shutdown = async (
-	inflight_flushes: ReadonlySet<Promise<void>>,
+	flushes: Pick<RequestFlushTracker, 'drain_inflight' | 'inflight_count'>,
 	audit: Pick<AuditEmitter, 'drain_inflight' | 'inflight_count'>,
 	timeout_ms: number,
 	log: Logger
 ): Promise<ShutdownDrainGivenUp> => {
 	const drain = async (): Promise<void> => {
-		// wait for zero: a flush's post-commit thunk can start another write
-		while (inflight_flushes.size > 0) await Promise.allSettled(inflight_flushes);
-		await audit.drain_inflight();
+		// until both are empty: a flush's post-commit thunk can start an audit
+		// write, and a WS message answered meanwhile can start another flush
+		do {
+			await flushes.drain_inflight();
+			await audit.drain_inflight();
+		} while (flushes.inflight_count() > 0 || audit.inflight_count() > 0);
 	};
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const timed_out = new Promise<void>((resolve) => {
@@ -898,7 +909,7 @@ export const drain_effects_on_shutdown = async (
 		clearTimeout(timer);
 	}
 	const given_up: ShutdownDrainGivenUp = {
-		request_flushes: inflight_flushes.size,
+		request_flushes: flushes.inflight_count(),
 		audit_writes: audit.inflight_count()
 	};
 	if (given_up.request_flushes === 0 && given_up.audit_writes === 0) return given_up;
@@ -1314,10 +1325,9 @@ const assemble_app_server = async (
 	// writes to settle — a revocation's connection close must not sit behind
 	// a slow audit INSERT.
 	const on_effect_error = options.on_effect_error;
-	// The flushes production leaves running past the response — what
-	// shutdown waits on before the database closes. Each removes itself as it
-	// settles; none rejects.
-	const inflight_flushes: Set<Promise<void>> = new Set();
+	// Every request's flush, HTTP and WS — what shutdown waits on before the
+	// database closes. The WS endpoints mounted below track theirs here too.
+	const request_flushes = create_request_flush_tracker();
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
 		c.set('post_commit_effects', []);
@@ -1338,12 +1348,8 @@ const assemble_app_server = async (
 					log,
 					on_effect_error ? (reason) => on_effect_error(reason, error_ctx) : undefined
 				);
-				if (options.await_pending_effects) {
-					await flushed;
-				} else {
-					inflight_flushes.add(flushed);
-					void flushed.then(() => inflight_flushes.delete(flushed));
-				}
+				request_flushes.track(flushed);
+				if (options.await_pending_effects) await flushed;
 			}
 		}
 	});
@@ -1395,7 +1401,8 @@ const assemble_app_server = async (
 				action_ip_rate_limiter,
 				action_account_rate_limiter,
 				notification_sender: deps.notification_sender,
-				on_effect_error
+				on_effect_error,
+				request_flushes
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_registry;
 			// every revocation's close — the handlers' and the guard's — reaches
@@ -1447,10 +1454,11 @@ const assemble_app_server = async (
 		} catch (error) {
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
-		// then the effects still in flight, so a failure row or a token-usage touch
-		// a request already answered started is not lost to the closing pool —
-		// bounded, as the Rust spine's shutdown drain is
-		await drain_effects_on_shutdown(inflight_flushes, deps.audit, shutdown_drain_timeout_ms, log);
+		// then the effects still in flight, so a failure row, a token-usage touch
+		// or a post-commit thunk a request or WS message already answered started
+		// is not lost to the closing pool — bounded, as the Rust spine's shutdown
+		// drain is
+		await drain_effects_on_shutdown(request_flushes, deps.audit, shutdown_drain_timeout_ms, log);
 		// then what assembly acquired — the audit listeners and closer members
 		// this server added, and the limiters it built
 		run_releases(releases, log, 'shutdown');

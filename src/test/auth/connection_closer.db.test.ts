@@ -1951,6 +1951,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				actions: create_account_actions(deps),
 				db: deps.db,
 				connection_closer: deps.connection_closer,
+				request_flushes: null,
 				required_roles: [SELF_SERVICE_ROLE],
 				receive_timeout: null,
 				log

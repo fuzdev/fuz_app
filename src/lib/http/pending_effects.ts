@@ -265,7 +265,8 @@ export const flush_post_commit_effects = async (
  * that needs a write awaits it itself. Eager rejections are logged and passed
  * to `on_rejection` (the server's `on_effect_error`). The caller picks whether
  * to await the returned promise — HTTP awaits it in test mode only, WS awaits
- * it per frame after the reply is sent. Never rejects.
+ * it per frame after the reply is sent — and `create_app_server` tracks it
+ * either way, so `AppServer.close` waits for it. Never rejects.
  *
  * @param pending_effects - the eager queue of in-flight pool writes
  * @param post_commit_effects - the deferred thunks queued by `emit_after_commit`
@@ -282,4 +283,51 @@ export const flush_request_effects = async (
 	const deferred = flush_post_commit_effects(post_commit_effects, log);
 	await flush_pending_effects(pending_effects, log, on_rejection);
 	await deferred;
+};
+
+/**
+ * Every request's effect flush — an HTTP request's, whether or not its
+ * response awaits it, and a WS message's, which runs after its reply is
+ * sent — kept so `AppServer.close` can wait for them before the database
+ * closes. One tracker per server, shared by every transport, so
+ * a flush is tracked the same way whichever request started it. Its method
+ * names match `AuditEmitter`'s, the other set the shutdown drain waits on.
+ */
+export interface RequestFlushTracker {
+	/**
+	 * Hold `flush` until it settles. `flush` must never reject —
+	 * `flush_request_effects` doesn't.
+	 *
+	 * @mutates the tracker - adds `flush`, removed again as it settles
+	 */
+	track: (flush: Promise<void>) => void;
+	/**
+	 * Wait until no tracked flush is left — not for a snapshot: a flush
+	 * tracked while waiting is awaited too. Never rejects.
+	 */
+	drain_inflight: () => Promise<void>;
+	/** How many tracked flushes are still running. */
+	inflight_count: () => number;
+}
+
+/** Create an empty `RequestFlushTracker`. */
+export const create_request_flush_tracker = (): RequestFlushTracker => {
+	const inflight: Set<Promise<void>> = new Set();
+	return {
+		track: (flush) => {
+			inflight.add(flush);
+			// removed on either outcome, so a flush that rejects despite the
+			// contract can't wedge shutdown or surface as an unhandled rejection
+			const remove = (): void => {
+				inflight.delete(flush);
+			};
+			void flush.then(remove, remove);
+		},
+		drain_inflight: async () => {
+			// the removal reaction was registered first, so a settled flush is gone
+			// from the set by the time a pass resumes
+			while (inflight.size > 0) await Promise.allSettled(inflight);
+		},
+		inflight_count: () => inflight.size
+	};
 };

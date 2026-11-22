@@ -19,6 +19,8 @@
  *   re-read the shutdown lands in is closed going-away, never as revoked
  * - a WS reply arrives before its audit write lands, and
  *   `_testing_drain_effects` over a tracked emitter waits for it
+ * - `AppServer.close` waits for a WS message's effects still flushing after
+ *   its reply — an eager promise and a post-commit thunk, neither an audit write
  * - an action's notification, sent over HTTP RPC or WS through the handler
  *   context's sender, reaches the account's sockets on every mounted
  *   registry — once per socket, a registry two endpoints share included
@@ -45,7 +47,7 @@ import {
 	type AppServerOptions
 } from '#lib/server/app_server.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
-import { wait } from '@fuzdev/fuz_util/async.ts';
+import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 import type { Db } from '#lib/db/db.ts';
 import { create_gated_db, is_session_read, type GatedDb } from '../gated_db.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
@@ -681,6 +683,71 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			method: 'failing_effect',
 			path: WS_PATH
 		});
+	});
+
+	test("close waits for a WS message's effects still in flight after its reply", async () => {
+		// Neither effect is an audit write, so only the server's own flush
+		// tracking can hold close for them: an eager promise the handler
+		// queued, and an async post-commit thunk.
+		const eager_gate = create_deferred<void>();
+		const deferred_gate = create_deferred<void>();
+		const landed: Array<string> = [];
+		const slow_effects_action: RpcAction = {
+			spec: {
+				method: 'slow_effects',
+				kind: 'request_response',
+				initiator: 'frontend',
+				auth: { account: 'required', actor: 'none' },
+				side_effects: true,
+				input: fuz_void,
+				output: object({ ok: literal(true) }),
+				async: true,
+				description: 'queues an eager and a deferred effect, each held by the test'
+			},
+			handler: (_input, ctx) => {
+				ctx.pending_effects.push(eager_gate.promise.then(() => void landed.push('eager')));
+				emit_after_commit(ctx, async () => {
+					await deferred_gate.promise;
+					landed.push('deferred');
+				});
+				return { ok: true };
+			}
+		};
+		const t = await create_test_server({
+			ws_endpoints: [
+				{
+					path: WS_PATH,
+					actions: [...protocol_actions, slow_effects_action],
+					receive_timeout: null
+				}
+			]
+		});
+		try {
+			const alice = await t.create_account('alice_close_ws');
+			const socket = await open_socket(t, alice.session_headers);
+			const { frame, dispatched } = await socket.request_reply('slow_effects');
+			assert_ok(frame);
+
+			let closed = false;
+			const closing = t.server.close().then(() => {
+				closed = true;
+			});
+			await wait(20);
+			assert.ok(!closed, 'close returned with a WS message flush still running');
+
+			eager_gate.resolve();
+			await wait(20);
+			assert.ok(!closed, 'close returned with a post-commit thunk still running');
+
+			deferred_gate.resolve();
+			await closing;
+			assert.sameMembers(landed, ['eager', 'deferred'], 'both effects landed before close');
+			await dispatched;
+		} finally {
+			// a failed assertion must not leave the flush held until the drain's bound
+			eager_gate.resolve();
+			deferred_gate.resolve();
+		}
 	});
 });
 

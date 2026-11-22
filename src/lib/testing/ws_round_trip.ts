@@ -482,6 +482,9 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		// the harness drives the dispatcher against a stub db — no revocation
 		// handler runs here, so there is no closer to reach this registry
 		connection_closer: null,
+		// the harness has no shutdown to drain a frame's flush for — each
+		// message's flush is awaited before its dispatch settles
+		request_flushes: null,
 		receive_timeout,
 		log,
 		on_socket_open,

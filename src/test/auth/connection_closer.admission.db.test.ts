@@ -130,6 +130,7 @@ const create_ws_endpoint = (
 		actions: [heartbeat_action],
 		db: h.gated.db,
 		connection_closer: closed_by === 'handlers' ? deps.connection_closer : null,
+		request_flushes: null,
 		receive_timeout: null,
 		log
 	});

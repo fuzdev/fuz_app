@@ -124,7 +124,11 @@ import {
 	type ResolvedAuth
 } from '../auth/resolved_auth.ts';
 import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
-import { flush_request_effects, type EffectErrorContext } from '../http/pending_effects.ts';
+import {
+	flush_request_effects,
+	type EffectErrorContext,
+	type RequestFlushTracker
+} from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import type { NotificationSender } from './notification_sender.ts';
 import type { JsonrpcErrorResponse, JsonrpcRequestId } from '../http/jsonrpc.ts';
@@ -349,6 +353,8 @@ export interface WsSocketEndpoint {
 	notification_sender: NotificationSender;
 	/** Called when an eager pending effect of a frame's action rejects; `undefined` for none. */
 	on_effect_error: ((error: unknown, context: EffectErrorContext) => void) | undefined;
+	/** Where each frame's effect flush is tracked for shutdown; `null` for nowhere. */
+	request_flushes: RequestFlushTracker | null;
 	/** Roles the endpoint's upgrade is gated on; empty for an ungated endpoint. */
 	required_roles: ReadonlyArray<RoleName>;
 }
@@ -405,6 +411,7 @@ export const create_ws_socket_events = (
 		action_account_rate_limiter,
 		notification_sender,
 		on_effect_error,
+		request_flushes,
 		required_roles
 	} = endpoint;
 	const { client_ip, upgrade_preset, resolved, upgrade_context } = upgrade;
@@ -938,8 +945,10 @@ export const create_ws_socket_events = (
 			registry.send_to(connection_id, frame);
 		} finally {
 			pending_controllers.delete(id);
-			// deferred first — see the ordering invariant above
-			await flush_request_effects(
+			// deferred first — see the ordering invariant above. Tracked, since
+			// the reply is already sent: a shutdown now waits for the flush, as it
+			// does an HTTP request's.
+			const flushed = flush_request_effects(
 				pending_effects,
 				post_commit_effects,
 				log,
@@ -947,6 +956,8 @@ export const create_ws_socket_events = (
 					? (reason) => on_effect_error(reason, { transport: 'ws', method, path })
 					: undefined
 			);
+			request_flushes?.track(flushed);
+			await flushed;
 		}
 	};
 

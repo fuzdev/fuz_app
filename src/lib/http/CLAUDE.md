@@ -48,7 +48,7 @@ declarative routes and DEV-only validation is in
 - `http/health_schema.ts` — `HEALTH_PATH` + `HealthResponse`, browser-safe, shared by the health route and `ui/backend_probe.svelte.ts`.
 - `http/common_routes.ts` — health, readiness (`/ready`) and server-status route specs.
 - `http/db_routes.ts` — the keeper-only, allowlisted table browser.
-- `http/pending_effects.ts` — the two effect queues (§Pending Effects): `emit_after_commit`, `dispatch_with_post_commit_rollback`, `transaction_with_post_commit_rollback`, `flush_request_effects` over `flush_pending_effects` + `flush_post_commit_effects`, `RequestEffectsContext`, `EmitAfterCommitContext`, `EffectErrorContext`.
+- `http/pending_effects.ts` — the two effect queues (§Pending Effects): `emit_after_commit`, `dispatch_with_post_commit_rollback`, `transaction_with_post_commit_rollback`, `flush_request_effects` over `flush_pending_effects` + `flush_post_commit_effects`, `RequestFlushTracker`, `RequestEffectsContext`, `EmitAfterCommitContext`, `EffectErrorContext`.
 
 ## Route Spec System
 
@@ -377,7 +377,7 @@ The rules a caller would miss:
 
 - **Defer, never schedule.** A thunk, not `Promise.resolve().then(fn)`: a microtask would run before the wrapping `COMMIT` resumes and announce state that may roll back.
 - **Discard on rollback, at the dispatch site.** Both dispatch sites (`http/route_spec.ts`, `actions/perform_action.ts`) wrap the handler in `dispatch_with_post_commit_rollback`, which truncates the deferred queue on a throw. A `transaction: false` handler that opens its own transaction (`/login`, `/password`, signup, bootstrap) runs it through `transaction_with_post_commit_rollback`, which discards what that transaction queued even when the handler catches the failure and answers normally. The eager queue is never truncated.
-- **Drain at the outer flush.** `flush_request_effects` is the one flush: the HTTP middleware in `server/app_server.ts` (awaited before the response under `await_pending_effects: true`, else left running and tracked so `AppServer.close` waits for it, bounded by `shutdown_drain_timeout_ms`) and the per-message WS flush (awaited after the reply). It invokes the deferred thunks before awaiting the eager writes, so a connection close never waits behind a slow audit INSERT, and wraps each thunk in its own `try/catch`, so one failure can't starve its siblings. Eager rejections go to the log and `on_effect_error` (`{transport, method, path}`).
+- **Drain at the outer flush.** `flush_request_effects` is the one flush: the HTTP middleware in `server/app_server.ts` (awaited before the response under `await_pending_effects: true`, else left running) and the per-message WS flush (awaited after the reply is sent). Both hand it to the server's one `RequestFlushTracker` (`create_request_flush_tracker`; `register_action_ws`'s `request_flushes`), so `AppServer.close` waits for a WS message's effects as it does a request's, bounded by `shutdown_drain_timeout_ms`. It invokes the deferred thunks before awaiting the eager writes, so a connection close never waits behind a slow audit INSERT, and wraps each thunk in its own `try/catch`, so one failure can't starve its siblings. Eager rejections go to the log and `on_effect_error` (`{transport, method, path}`).
 
 ```typescript
 emit_after_commit(ctx, () => ctx.notification_sender.send_to_account(account_id, msg));

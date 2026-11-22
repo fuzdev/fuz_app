@@ -145,6 +145,7 @@ const start_server = async (
 		action_account_rate_limiter: null,
 		path: '/ws',
 		connection_closer: null,
+		request_flushes: null,
 		app,
 		upgradeWebSocket,
 		allowed_origins: [],

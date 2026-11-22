@@ -4,7 +4,9 @@
  * its `pending_effects` (a failure audit row, the session touch), so one a
  * request just started would otherwise be cut off by the closing pool. The
  * wait is bounded (`shutdown_drain_timeout_ms`), and what it gives up on is
- * logged — twin of the Rust spine's shutdown audit drain.
+ * logged — twin of the Rust spine's shutdown audit drain. A WS message's
+ * flush, which runs after its reply, is held the same way:
+ * `create_app_server_ws_endpoints.dispatch.db.test.ts`.
  *
  * @module
  */
@@ -16,6 +18,7 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import { prefix_route_specs } from '#lib/http/route_spec.ts';
+import { create_request_flush_tracker } from '#lib/http/pending_effects.ts';
 import {
 	DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
 	drain_effects_on_shutdown
@@ -163,7 +166,8 @@ describe('drain_effects_on_shutdown', () => {
 	test('gives up at its bound, logging what it gave up on', async () => {
 		const { log, errors } = capture_log();
 		const never = create_deferred<void>();
-		const flushes = new Set([never.promise]);
+		const flushes = create_request_flush_tracker();
+		flushes.track(never.promise);
 		const audit = { drain_inflight: () => never.promise, inflight_count: () => 2 };
 
 		const given_up = await drain_effects_on_shutdown(flushes, audit, 20, log);
@@ -180,8 +184,8 @@ describe('drain_effects_on_shutdown', () => {
 		const flush = wait(5).then(() => {
 			order.push('flush');
 		});
-		const flushes = new Set([flush]);
-		void flush.then(() => flushes.delete(flush));
+		const flushes = create_request_flush_tracker();
+		flushes.track(flush);
 		const audit = {
 			drain_inflight: async () => {
 				order.push('audit');
@@ -195,6 +199,70 @@ describe('drain_effects_on_shutdown', () => {
 		});
 		assert.deepStrictEqual(order, ['flush', 'audit']);
 		assert.deepStrictEqual(errors, []);
+	});
+
+	test('a flush tracked while draining is waited for too', async () => {
+		const { log, errors } = capture_log();
+		const flushes = create_request_flush_tracker();
+		const order: Array<string> = [];
+		const first = wait(5).then(() => {
+			order.push('first');
+			// a later flush starts before the first settles — a WS message
+			// answered during the drain
+			flushes.track(
+				wait(5).then(() => {
+					order.push('second');
+				})
+			);
+		});
+		flushes.track(first);
+		const audit = { drain_inflight: async () => {}, inflight_count: () => 0 };
+
+		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
+			request_flushes: 0,
+			audit_writes: 0
+		});
+		assert.deepStrictEqual(order, ['first', 'second']);
+		assert.strictEqual(flushes.inflight_count(), 0);
+		assert.deepStrictEqual(errors, []);
+	});
+
+	test('loops until both are empty: a flush tracked while the audit writes drain is waited for', async () => {
+		const { log, errors } = capture_log();
+		const flushes = create_request_flush_tracker();
+		const order: Array<string> = [];
+		let audit_passes = 0;
+		const audit = {
+			drain_inflight: async () => {
+				audit_passes++;
+				if (audit_passes === 1) {
+					// a WS message answered while the audit writes drain
+					flushes.track(
+						wait(5).then(() => {
+							order.push('late flush');
+						})
+					);
+				}
+			},
+			inflight_count: () => 0
+		};
+
+		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
+			request_flushes: 0,
+			audit_writes: 0
+		});
+		assert.deepStrictEqual(order, ['late flush']);
+		assert.strictEqual(audit_passes, 2);
+		assert.deepStrictEqual(errors, []);
+	});
+
+	test('a tracked flush that rejects is removed, not left to wedge the drain', async () => {
+		const flushes = create_request_flush_tracker();
+		const rejected = Promise.reject(new Error('contract slip'));
+		flushes.track(rejected);
+		await rejected.catch(() => {});
+		await flushes.drain_inflight();
+		assert.strictEqual(flushes.inflight_count(), 0);
 	});
 
 	test('the default bound is the Rust spine drain timeout', () => {
