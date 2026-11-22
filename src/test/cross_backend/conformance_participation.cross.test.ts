@@ -13,6 +13,7 @@
  * @module
  */
 
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
@@ -49,3 +50,5 @@ describe_conformance_table_tests({
 	principals: { role_holder: PARTICIPATION_HOLDER_USERNAME },
 	suite_name: 'role-gated participation conformance (cross-process)'
 });
+
+check_declared_skips({});

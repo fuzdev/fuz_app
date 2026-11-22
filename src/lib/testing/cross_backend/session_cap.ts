@@ -110,8 +110,8 @@ export interface SessionCapCrossTestOptions {
 	readonly ws?: WsEndpointTarget;
 	/**
 	 * Whether the `ws` endpoint mounts the self-service account actions
-	 * (`capabilities.ws_account_actions`), so the session-list case also lists
-	 * over a socket. Default `false`.
+	 * (`capabilities.ws_account_actions`), for the case that lists the
+	 * sessions over a socket; `false` (the default) skips it.
 	 */
 	readonly ws_account_actions?: boolean;
 	/**
@@ -142,6 +142,23 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 			// a refused login past the cap is the defect, not a test fault
 			label: `${label} (the cap evicts, it never refuses)`
 		});
+
+	/** `account_session_list` on a transport: the listed ids, and those marked current. */
+	const list_on = async (
+		transport: FetchTransport,
+		headers: Record<string, string>,
+		label: string
+	): Promise<{ ids: Array<string>; current: Array<string> }> => {
+		const { sessions } = expect_output(
+			await cross_rpc_call(transport, rpc_path, 'account_session_list', undefined, headers),
+			SessionListOutput
+		);
+		assert.ok(sessions.length > 0, `${label}: the account lists its sessions`);
+		return {
+			ids: sessions.map((s) => s.id).sort(),
+			current: sessions.filter((s) => s.is_current).map((s) => s.id)
+		};
+	};
 
 	describe('per-account session cap parity', () => {
 		test(`logging in ${
@@ -246,23 +263,6 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 			const first = await login(fixture, 'the first login');
 			const second = await login(fixture, 'the second login');
 
-			/** `account_session_list` on a transport: the listed ids, and those marked current. */
-			const list_on = async (
-				transport: FetchTransport,
-				headers: Record<string, string>,
-				label: string
-			): Promise<{ ids: Array<string>; current: Array<string> }> => {
-				const { sessions } = expect_output(
-					await cross_rpc_call(transport, rpc_path, 'account_session_list', undefined, headers),
-					SessionListOutput
-				);
-				assert.ok(sessions.length > 0, `${label}: the account lists its sessions`);
-				return {
-					ids: sessions.map((s) => s.id).sort(),
-					current: sessions.filter((s) => s.is_current).map((s) => s.id)
-				};
-			};
-
 			const on_first = await list_on(first, {}, 'the first login');
 			const on_second = await list_on(second, {}, 'the second login');
 			assert.strictEqual(
@@ -316,28 +316,48 @@ export const describe_session_cap_cross_tests = (options: SessionCapCrossTestOpt
 				[],
 				'a daemon token authenticated the request, not the cookie beside it'
 			);
-
-			if (ws === undefined || !ws_account_actions) return;
-			const client = await create_ws_transport({
-				base_url: ws.base_url,
-				ws_path: ws.ws_path,
-				cookies: first.cookies(),
-				origin: ws.origin
-			});
-			try {
-				const result = await client.request(1, 'account_session_list', undefined);
-				const parsed = parse(SessionListOutput, result);
-				assert.ok(parsed.ok, `the socket's session list parses (got ${JSON.stringify(result)})`);
-				const current = parsed.value.sessions.filter((s) => s.is_current).map((s) => s.id);
-				assert.deepStrictEqual(
-					current,
-					on_first.current,
-					"the first login's socket sees exactly its own session as current"
-				);
-			} finally {
-				await client.close();
-			}
 		});
+
+		test_if(
+			ws !== undefined && ws_account_actions,
+			"the session list over a socket marks the socket's own session current",
+			async () => {
+				assert.ok(ws !== undefined);
+				const fixture = await setup_test();
+				await fixture.create_account({
+					username,
+					password_value: DEFAULT_TEST_PASSWORD,
+					roles: [...ws_account_roles]
+				});
+				const first = await login(fixture, 'the first login');
+				await login(fixture, 'the second login');
+				const on_first = await list_on(first, {}, 'the first login');
+				assert.strictEqual(
+					on_first.current.length,
+					1,
+					'the first login sees exactly one current session'
+				);
+				const client = await create_ws_transport({
+					base_url: ws.base_url,
+					ws_path: ws.ws_path,
+					cookies: first.cookies(),
+					origin: ws.origin
+				});
+				try {
+					const result = await client.request(1, 'account_session_list', undefined);
+					const parsed = parse(SessionListOutput, result);
+					assert.ok(parsed.ok, `the socket's session list parses (got ${JSON.stringify(result)})`);
+					const current = parsed.value.sessions.filter((s) => s.is_current).map((s) => s.id);
+					assert.deepStrictEqual(
+						current,
+						on_first.current,
+						"the first login's socket sees exactly its own session as current"
+					);
+				} finally {
+					await client.close();
+				}
+			}
+		);
 
 		// `max_sessions` further logins leave the watched session outside the
 		// newest `max_sessions`, so it is evicted whatever sessions the account

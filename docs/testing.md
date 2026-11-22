@@ -1055,9 +1055,14 @@ WS and ships as an optional peer dep.
 ### Capability vocabulary
 
 Suites gate optional behaviors declaratively — no `if (config.name ===
-'rust')` branches. A suite calls `test_if(capabilities.X, name, fn)` (a thin
-wrapper over `test.skipIf(!cond)`); each `BackendConfig` declares which
-capabilities its backend supports, and the runner filters silently. Adding a
+'rust')` branches. A suite calls `test_if(capabilities.X, name, fn)` (`test.skipIf(!cond)`,
+with the skip tagged as gated); each `BackendConfig` declares which
+capabilities its backend supports, and the runner skips the rest. To keep a
+skip from passing unnoticed, call `check_declared_skips(expected)`
+(`testing/cross_backend/declared_skips.ts`) in a `describe` (or at a file's
+top level): its closing test holds every gated skip under it to `expected`,
+name path → reason, failing on an undeclared skip and on an entry whose test
+runs or that names no test. Adding a
 capability is a one-line change in `capabilities.ts` plus a flag in each
 consumer config.
 
@@ -1335,6 +1340,26 @@ capabilities, so state every mount flag truthfully and the rest follows.
   case of either is a wrong declaration or a bug, not a case to skip), throws at collection, and one naming no test the suite
   collected fails the closing check test — so a renamed case can't leave a
   stale entry behind.
+- `expected_skips` declares the gated skips the backend owes — the cases a
+  suite skips for a capability the backend lacks, and the suites skipped for
+  an undeclared backdoor — each by its name path with a non-empty reason:
+
+  ```ts
+  expected_skips: {
+  	'cross-process websocket > frames sent with the handshake are answered once the connection is admitted':
+  		'our runtime refuses frames sent with the upgrade (ws_handshake_pipelining: false)'
+  }
+  ```
+
+  Given, the call ends with `check_declared_skips` over them (an `exclude`
+  declares its own suite's skip), so a skip nobody declared — a capability
+  flipped by mistake, a suite gating on a new flag — fails the run, and so does
+  an entry whose test now runs. Omitted, nothing is checked. Write the list
+  out per backend (fuz_app keys it by `handle.config.name`) — derived from the
+  capabilities, it would declare a mistaken flag's skips for it. A suite
+  skipped for a missing backdoor is keyed by generated text (its line under
+  `spine cross suites excluded on this backend`, the reason in the name), so
+  copy the path from the failure message.
 - `overrides` is a shallow merge over a suite's derived options, typed per
   suite (`SuiteOverrides`): a role list, an `xfail` for a tracked divergence, a
   narrower capability set. The two unexcludable suites take an allowlist:

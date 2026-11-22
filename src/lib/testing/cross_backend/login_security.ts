@@ -96,6 +96,7 @@ import {
 } from '../../rate_limiter.ts';
 import type { SetupTest } from './setup.ts';
 import { list_audit_events } from './audit_cross_helpers.ts';
+import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
@@ -434,7 +435,8 @@ export const describe_login_security_cross_tests = (
 			assert.strictEqual(after.status, 429, 'the burst must leave the per-IP bucket full');
 		});
 
-		test.skipIf(!concurrent_transactions)(
+		test_if(
+			concurrent_transactions,
 			`a concurrent burst of ${ip_limit * 2} correct logins all succeed past the per-IP cap`,
 			async () => {
 				const fixture = await setup_test();
@@ -474,7 +476,8 @@ export const describe_login_security_cross_tests = (
 			}
 		);
 
-		test.skipIf(base_url === null)(
+		test_if(
+			base_url !== null,
 			'every X-Forwarded-For line is read (a spoofed first line picks no bucket)',
 			async () => {
 				assert.ok(base_url !== null);

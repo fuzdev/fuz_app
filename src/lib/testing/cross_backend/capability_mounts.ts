@@ -88,6 +88,7 @@ import { rpc_call } from '../rpc_helpers.ts';
 import { create_ws_transport, WsUpgradeRefusedError } from '../transports/ws_transport.ts';
 import { is_response_for, type JsonrpcErrorResponseFrame } from '../transports/ws_client.ts';
 import type { BackendCapabilities } from './capabilities.ts';
+import { test_skip_gated } from './declared_skips.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest, TestFixture } from './setup.ts';
 import {
 	SPINE_ACCOUNT_STATUS_PATH,
@@ -460,8 +461,13 @@ export interface CapabilityMountRow {
 	readonly group:
 		'capability mounts' | 'capability mount controls' | 'capability mounts not probed';
 	readonly name: string;
-	/** `run` sends and checks; `fail` fails at once (a contradictory declaration); `skip` is shown skipped. */
-	readonly mode: 'run' | 'fail' | 'skip';
+	/**
+	 * `run` sends and checks; `fail` fails at once (a contradictory
+	 * declaration); `skip` is shown skipped (a flag no request observes);
+	 * `gated_skip` is a skip the backend's declarations cause, registered
+	 * through `test_skip_gated` so `check_declared_skips` holds it.
+	 */
+	readonly mode: 'run' | 'fail' | 'skip' | 'gated_skip';
 	/** The check a `run` row makes, or the failure a `fail` row reports. */
 	readonly body: (setup_test: SetupTest) => Promise<void>;
 }
@@ -510,7 +516,7 @@ export const plan_capability_mount_rows = (
 					: {
 							group: 'capability mounts',
 							name: `${flag}: no WebSocket endpoint to probe (capabilities.ws is false)`,
-							mode: 'skip',
+							mode: 'gated_skip',
 							body: noop
 						}
 			);
@@ -544,7 +550,7 @@ export const plan_capability_mount_rows = (
 			rows.push({
 				group: 'capability mount controls',
 				name: `${name}: no WebSocket endpoint (capabilities.ws is false)`,
-				mode: 'skip',
+				mode: 'gated_skip',
 				body: noop
 			});
 			continue;
@@ -602,6 +608,8 @@ export const describe_capability_mounts_cross_tests = (
 				if (row.group !== group) continue;
 				if (row.mode === 'skip') {
 					test.skip(row.name, () => {});
+				} else if (row.mode === 'gated_skip') {
+					test_skip_gated(row.name, () => {});
 				} else {
 					test(row.name, () => row.body(setup_test));
 				}

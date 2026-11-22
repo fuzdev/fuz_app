@@ -51,6 +51,7 @@ import '../assert_dev_env.ts';
 
 import { test } from 'vitest';
 
+import { test_skip_gated } from './declared_skips.ts';
 import type { TestingBackdoorMethod } from './spine_surface_constants.ts';
 
 /**
@@ -459,17 +460,18 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 
 /**
  * Conditional `test()` wrapper — registers a vitest case only when
- * `cond` is true; otherwise registers it as `.skip` so the run still
- * surfaces the gated coverage in the report.
+ * `cond` is true; otherwise registers it as a gated skip
+ * (`test_skip_gated`), so the run still surfaces the gated coverage in the
+ * report and `check_declared_skips` can hold the skip to a declaration.
  *
- * Thin wrapper around vitest's `test.skipIf(!cond)` with the argument
- * order flipped to match the more readable `test_if(capabilities.ws, ...)`
- * call pattern.
+ * `test.skipIf(!cond)` with the argument order flipped to match the more
+ * readable `test_if(capabilities.ws, ...)` call pattern, and the skip tagged
+ * at registration.
  */
 export const test_if = (cond: boolean, name: string, fn: () => void | Promise<void>): void => {
 	if (cond) {
 		test(name, fn);
 	} else {
-		test.skip(name, fn);
+		test_skip_gated(name, fn);
 	}
 };

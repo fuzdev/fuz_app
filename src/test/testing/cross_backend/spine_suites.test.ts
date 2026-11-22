@@ -168,6 +168,13 @@ describe('describe_spine_cross_suites option validation', () => {
 		assert.throws(call({ exclude: { ready: '  ' } }), /exclude 'ready' needs a reason/);
 	});
 
+	test('an expected skip needs a reason', () => {
+		assert.throws(
+			call({ expected_skips: { 'a > b': '' } }),
+			/expected_skips: every declared skip needs a reason — a > b/
+		);
+	});
+
 	test('an unknown suite name is refused', () => {
 		assert.throws(
 			call({ exclude: { not_a_suite: 'x' } as SpineCrossSuitesOptions['exclude'] }),

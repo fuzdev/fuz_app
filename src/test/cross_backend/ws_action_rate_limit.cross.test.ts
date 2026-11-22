@@ -17,6 +17,7 @@
 
 import { inject, describe } from 'vitest';
 
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
@@ -37,6 +38,7 @@ describe('TS spine (node)', () => {
 		rpc_path: ts.config.rpc_path,
 		max_attempts
 	});
+	check_declared_skips({});
 });
 
 describe('Rust spine_stub', () => {
@@ -47,4 +49,5 @@ describe('Rust spine_stub', () => {
 		rpc_path: rust.config.rpc_path,
 		max_attempts
 	});
+	check_declared_skips({});
 });

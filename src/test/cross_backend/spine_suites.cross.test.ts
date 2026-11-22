@@ -10,6 +10,9 @@
  * methods kept off the declared surface — the cell verbs, the actor
  * resolvers and the `_testing_*` backdoors.
  *
+ * Each backend declares the cases it skips (`EXPECTED_SKIPS`), so a skip
+ * no backend owes fails the run.
+ *
  * The audit-reading suites hold every row to a closed world
  * (`reject_unknown_audit_metadata_keys`), so neither spine can add an
  * undeclared metadata key.
@@ -36,7 +39,32 @@ import {
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { describe_spine_cross_suites } from '#lib/testing/cross_backend/spine_suites.ts';
 
+import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
+
 const handle = inject_backend_handle();
+
+/**
+ * Each backend's gated skips, by backend name — keyed by name, not read off
+ * the capabilities, so a capability flipped by mistake fails the run instead
+ * of declaring its own skips.
+ */
+const EXPECTED_SKIPS: Record<string, Record<string, string>> = {
+	[CROSS_PROJECT_RESOURCES.cross_backend_ts_node.node.name]: {},
+	[CROSS_PROJECT_RESOURCES.cross_backend_ts_bun.bun.name]: {
+		'cross-process websocket > frames sent with the handshake are answered once the connection is admitted':
+			'Bun.serve answers 400 to an upgrade carrying frames in its TCP write when the handler ' +
+			"upgrades after yielding to the event loop, as the spine's does behind its auth reads " +
+			'(ws_handshake_pipelining: false)'
+	},
+	[CROSS_PROJECT_RESOURCES.cross_backend_rust_spine_stub.stub.name]: {}
+};
+
+const expected_skips = EXPECTED_SKIPS[handle.config.name];
+if (expected_skips === undefined) {
+	throw new Error(
+		`spine_suites.cross.test.ts: no expected skips for backend '${handle.config.name}'`
+	);
+}
 
 /**
  * The counted routes' declared errors the standard bundle drives on no spine:
@@ -72,6 +100,7 @@ describe_spine_cross_suites(handle, {
 	roles: spine_roles,
 	rpc_success_fixtures: create_spine_rpc_success_fixtures(),
 	setup: { reject_unknown_audit_metadata_keys: true },
+	expected_skips,
 	// exactly what the standard bundle leaves uncovered on every spine, so a
 	// dropped record or one covered code swapped for another fails; a code the
 	// suite comes to cover leaves this list, and a newly declared one is driven

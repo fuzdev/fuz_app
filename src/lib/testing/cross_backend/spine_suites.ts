@@ -31,6 +31,13 @@ import '../assert_dev_env.ts';
  *   required reason; one `beforeEach` skips them at run time, so each shows as
  *   skipped with its reason, and an entry matching no collected test of its
  *   suite fails the closing check test.
+ * - `expected_skips` declares the gated skips the backend owes — the cases a
+ *   suite skips because the backend lacks what they gate on (`test_if`), and
+ *   the suites skipped for an undeclared backdoor — each by its name path with
+ *   a required reason. When given, a closing test (`check_declared_skips`)
+ *   fails on a gated skip it doesn't list and on an entry whose test runs or
+ *   that names no test, so a skip is never only a skipped line in the report.
+ *   An `exclude` entry declares its suite's skip itself.
  * - `overrides` replaces a suite's derived options, field by field (a shallow
  *   merge over what the handle gives) — a role list the backend's WS upgrade
  *   requires, an `xfail` for a tracked divergence, a narrower capability set.
@@ -118,6 +125,11 @@ import {
 	type BodySizeSmugglingCrossTestOptions
 } from './body_size_smuggling.ts';
 import type { BackendCapabilities } from './capabilities.ts';
+import {
+	assert_declared_skip_reasons,
+	check_declared_skips,
+	test_skip_gated
+} from './declared_skips.ts';
 import {
 	describe_capability_mounts_cross_tests,
 	resolve_capability_mounts_target,
@@ -598,6 +610,16 @@ export interface SpineCrossSuitesOptions {
 	 * suite has, fails.
 	 */
 	readonly exclude_cases?: SuiteCaseExclusions;
+	/**
+	 * The gated skips this backend owes — each test a suite registers skipped
+	 * because the backend lacks what it gates on (`test_if`, a suite skipped
+	 * for an undeclared backdoor), by its name path below the calling suite,
+	 * with a non-empty reason. When given, a closing test
+	 * (`check_declared_skips`) fails on a gated skip not listed here, and on
+	 * an entry whose test runs or that names no test. An `exclude`d suite's
+	 * skip is declared by its `exclude` entry. Omitted, no skip is checked.
+	 */
+	readonly expected_skips?: Readonly<Record<string, string>>;
 	/** Per-suite option overrides, a shallow merge over what the handle gives. */
 	readonly overrides?: SuiteOverrides;
 	/** The roles the role-shaped suites use, when the backend lacks the spine's own. */
@@ -1351,6 +1373,12 @@ const validate_spine_cross_suites_options = (
 			);
 		}
 	}
+	if (options.expected_skips !== undefined) {
+		assert_declared_skip_reasons(
+			options.expected_skips,
+			'describe_spine_cross_suites: expected_skips'
+		);
+	}
 	for (const [name, cases] of Object.entries(options.exclude_cases ?? {})) {
 		if (!is_suite_name(name)) {
 			throw new Error(`describe_spine_cross_suites: exclude_cases names unknown suite '${name}'`);
@@ -1655,7 +1683,7 @@ export const register_spine_case_exclusions = (
  *
  * @param handle - the backend, as `inject_backend_handle()` returns it
  * @param options - the declared surface, plus excludes, case exclusions and overrides
- * @throws Error - on an exclude with no reason, an unknown suite name, a suite
+ * @throws Error - on an exclude or `expected_skips` entry with no reason, an unknown suite name, a suite
  *   both excluded and overridden, an excluded `UNEXCLUDABLE_SPINE_SUITES` suite
  *   (or one of its cases, or an override changing the declaration it checks), an exclude,
  *   override or `exclude_cases` entry for a suite that skips itself or isn't
@@ -1705,8 +1733,21 @@ export const describe_spine_cross_suites = (
 		register_spine_case_exclusions(options.exclude_cases!, ranges);
 	}
 	if (skipped.length > 0) {
-		describe('spine cross suites excluded on this backend', () => {
-			for (const [name, reason] of skipped) test.skip(`${name}: ${reason}`, () => {});
+		describe(SPINE_SUITES_SKIPPED_TITLE, () => {
+			for (const [name, reason] of skipped) test_skip_gated(`${name}: ${reason}`, () => {});
 		});
 	}
+	if (options.expected_skips !== undefined) {
+		// an exclude is its suite's declaration; a backdoor skip is owed one
+		const excluded = Object.fromEntries(
+			Object.entries(options.exclude ?? {}).map(([name, reason]) => [
+				`${SPINE_SUITES_SKIPPED_TITLE} > ${name}: ${reason}`,
+				reason
+			])
+		);
+		check_declared_skips({ ...excluded, ...options.expected_skips });
+	}
 };
+
+/** The `describe` holding one skipped test per suite the call leaves out. */
+export const SPINE_SUITES_SKIPPED_TITLE = 'spine cross suites excluded on this backend';

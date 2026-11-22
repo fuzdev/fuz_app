@@ -17,6 +17,7 @@
 
 import { assert, describe, inject, test } from 'vitest';
 
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import { reconstruct_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
 
 import './cross_test_types.ts';
@@ -38,3 +39,5 @@ describe('the pool checkout bounds at boot', () => {
 		});
 	}
 });
+
+check_declared_skips({});

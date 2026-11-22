@@ -32,9 +32,12 @@
  * included: a filter applies to both sides alike), and, on a whole run —
  * every registered test ran on both sides — when a ledger row matched
  * nothing; on a partial run it skips, saying which check it left unjudged.
- * A test skipped on both sides makes every run partial, so the ledger then
- * goes unjudged until the skip is removed; and a retried test records twice
- * and fails here, so these files take no `retry`.
+ * A gated skip (`test_if`) is held to `expected_skips` on both sides and left
+ * out of the whole-run count, so a declared skip on both sides leaves the
+ * ledger judged; an undeclared one, or a declared one that runs, fails here.
+ * Any other skip makes every run partial, so the ledger then goes unjudged
+ * until it is removed; and a retried test records twice and fails here, so
+ * these files take no `retry`.
  *
  * To investigate a failure, set `FUZ_TEST_TRANSCRIPT_DUMP_DIR`
  * (`TRANSCRIPT_DUMP_DIR_ENV`) to a directory: the closing test writes both
@@ -51,6 +54,13 @@ import { afterAll, afterEach, assert, beforeAll, beforeEach, describe, test } fr
 
 import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backend/account_lifecycle.ts';
 import { describe_cookie_attributes_cross_tests } from '#lib/testing/cross_backend/cookie_attributes.ts';
+import {
+	assert_declared_skip_reasons,
+	DECLARED_SKIPS_CHECK_NAME,
+	find_declared_skip_problems,
+	is_gated_skip,
+	type CollectedTest
+} from '#lib/testing/cross_backend/declared_skips.ts';
 import { differential_path_covers } from '#lib/testing/cross_backend/differential_normalize.ts';
 import { describe_identity_parity_cross_tests } from '#lib/testing/cross_backend/identity_parity.ts';
 import {
@@ -125,6 +135,13 @@ export interface TranscriptDifferentialOptions {
 	readonly dump_dir?: string;
 	/** Compare the database each test leaves too (module doc). */
 	readonly compare_db_state?: boolean;
+	/**
+	 * The gated skips both sides owe (`test_if` cases skipped for what the
+	 * backends lack), each by its test key with a reason; default none. Held
+	 * on each side by `find_declared_skip_problems`, and left out of the
+	 * whole-run count, so a declared skip doesn't leave the ledger unjudged.
+	 */
+	readonly expected_skips?: Readonly<Record<string, string>>;
 }
 
 /** The `index` of a database difference, which belongs to no entry. */
@@ -165,6 +182,7 @@ interface Task {
 	readonly name: string;
 	readonly type: string;
 	readonly mode?: string;
+	readonly meta?: object;
 	readonly suite?: Task;
 	readonly tasks?: ReadonlyArray<Task>;
 	readonly result?: { readonly state?: string; readonly errors?: ReadonlyArray<unknown> };
@@ -178,8 +196,17 @@ const key_below = (task: Task, root: Task): string => {
 };
 
 /** Every test under `suite`, depth first. */
+/** The tests under `suite`, less a nested `check_declared_skips` scope and its check. */
 const collect_tests = (suite: Task): Array<Task> =>
-	(suite.tasks ?? []).flatMap((t) => (t.type === 'test' ? [t] : collect_tests(t)));
+	(suite.tasks ?? []).flatMap((t) =>
+		t.type === 'test'
+			? t.name === DECLARED_SKIPS_CHECK_NAME
+				? []
+				: [t]
+			: (t.tasks ?? []).some((x) => x.type === 'test' && x.name === DECLARED_SKIPS_CHECK_NAME)
+				? []
+				: collect_tests(t)
+	);
 
 /** Whether a test will run — a `-t` filter, `.only` elsewhere or `test.skip` marks the rest `skip`. */
 const will_run = (test: Task): boolean => test.mode === 'run' || test.mode === 'only';
@@ -229,9 +256,15 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 	const stored_a: Map<string, StoredTranscript> = new Map();
 	const paired: Set<string> = new Set();
 	const matched_rows: Set<TranscriptKnownDivergence> = new Set();
-	/** Per side, the keys of the tests set to run, and how many tests are registered. */
+	/**
+	 * Per side, the keys of the tests set to run, how many tests are
+	 * registered less the gated skips, and every test by key.
+	 */
 	const running: Record<string, Array<string>> = {};
 	const registered: Record<string, number> = {};
+	const collected: Record<string, Array<CollectedTest>> = {};
+	const expected_skips = options.expected_skips ?? {};
+	assert_declared_skip_reasons(expected_skips, 'describe_transcript_differential: expected_skips');
 	const failed_so_far: Record<string, boolean> = { [a.name]: false, [b.name]: false };
 	const last_seq_base: Record<string, number | null> = { [a.name]: null, [b.name]: null };
 	const sizes: Record<string, Array<number>> = { [a.name]: [], [b.name]: [] };
@@ -270,7 +303,13 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 				beforeAll(({}, suite) => {
 					root = suite;
 					const tests = collect_tests(root);
-					registered[side.name] = tests.length;
+					collected[side.name] = tests.map((t) => ({
+						path: key_below(t, suite),
+						gated_skip: is_gated_skip(t)
+					}));
+					// a gated skip is held to `expected_skips` below, not counted as
+					// a test the run left out
+					registered[side.name] = tests.filter((t) => !is_gated_skip(t)).length;
 					running[side.name] = tests.filter(will_run).map((t) => key_below(t, suite));
 				});
 				beforeEach(async () => {
@@ -419,6 +458,14 @@ export const describe_transcript_differential = (options: TranscriptDifferential
 				];
 				assert.deepEqual(one_sided, [], 'transcript differential: tests that ran on one side');
 			}
+			// the paths are read at collection, so a filtered run checks them too
+			const skip_problems = sides.flatMap((s) => {
+				const tests = collected[s.name];
+				return tests
+					? find_declared_skip_problems(expected_skips, tests).map((p) => `${s.name}: ${p}`)
+					: [];
+			});
+			assert.deepEqual(skip_problems, [], 'transcript differential: gated skips');
 			// a ledger row is judged only on a whole run: a filtered or partly
 			// skipped one may leave out the tests a row covers
 			const whole =

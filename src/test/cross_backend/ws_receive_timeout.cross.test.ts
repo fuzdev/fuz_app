@@ -28,6 +28,7 @@ import {
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON
 } from '#lib/actions/transports.ts';
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
@@ -110,8 +111,10 @@ const describe_ws_receive_timeout_tests = (
 
 describe('TS spine (node)', () => {
 	describe_ws_receive_timeout_tests(ts);
+	check_declared_skips({});
 });
 
 describe('Rust spine_stub', () => {
 	describe_ws_receive_timeout_tests(rust);
+	check_declared_skips({});
 });

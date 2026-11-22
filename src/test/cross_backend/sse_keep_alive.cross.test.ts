@@ -22,6 +22,7 @@
 import { assert, describe, inject, test } from 'vitest';
 
 import { SSE_CONNECTED_COMMENT, SSE_KEEP_ALIVE_COMMENT } from '#lib/realtime/sse_constants.ts';
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
@@ -113,8 +114,10 @@ const describe_sse_keep_alive_tests = (handle: ReconstructedBootstrappedBackendH
 
 describe('TS spine (node)', () => {
 	describe_sse_keep_alive_tests(ts);
+	check_declared_skips({});
 });
 
 describe('Rust spine_stub', () => {
 	describe_sse_keep_alive_tests(rust);
+	check_declared_skips({});
 });

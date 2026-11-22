@@ -1269,7 +1269,9 @@ have files of their own.
   `peer/ping` round-trip) is `true` on fuz_app's Rust and TS spine presets
   (`ConnectionRegistry.request_connection`); a backend states it
   `true` once it wires the `peer/ping` HTTP + WS mount), `test_if(cond, name, fn)`
-  for capability-gated cases, and `in_process_capabilities` preset. Only
+  for capability-gated cases (a skipped one registered through
+  `test_skip_gated`, so `check_declared_skips` can hold it to a declaration),
+  and `in_process_capabilities` preset. Only
   flags a suite reads are capabilities — a wiring fact that gates nothing is
   not recorded. **Mount flags have no family default**: `MountFlag` names the
   flags that describe a backend's own mounts (`ws`, `sse`, `cell_crud`,
@@ -1399,7 +1401,7 @@ minus their in-process-only knobs (`create_route_specs`,
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
 session_options, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
-exclude_cases?, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
+exclude_cases?, expected_skips?, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
 rpc_skip_methods?, rpc_input_overrides?, rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. `rpc_input_overrides`
@@ -1490,6 +1492,15 @@ here never reaches it.
   (`check_spine_case_exclusions`, which reads the collected paths, so a
   filtered run still checks them) — the dead-name check, as the known-divergence
   ledger has.
+- **`expected_skips`** — `{[name path]: reason}`: the gated skips the backend
+  owes — the cases a suite skips because the backend lacks what they gate on
+  (`test_if`) and the suites skipped for an undeclared backdoor (their line
+  under `SPINE_SUITES_SKIPPED_TITLE`), each by its name path below the calling
+  suite with a required reason. Given, the call ends with
+  `check_declared_skips` over them, an `exclude`d suite's line declared by its
+  `exclude` entry; omitted, no skip is checked. fuz_app's own call keys the
+  list by backend name, so a capability flipped by mistake fails rather than
+  declaring its own skip.
 - **`overrides`** — `SuiteOverrides`, per suite a `Partial` of its own options
   (`SuiteOptionsMap`), shallow-merged over the derived ones: a role list, an
   `xfail`, a narrower capability set, `ws: undefined` to drop optional socket
@@ -1765,6 +1776,25 @@ capabilities}` protocol every Tier 1 suite uses, so **one case array runs
   live gates, and the Rust spine dispatches its own. Input-dependent handler
   checks stay hand-written rows. fuz_app spreads it into both conformance
   legs.
+- `declared_skips.ts` — gated skips and the check over them.
+  `test_skip_gated(name, fn)` registers a skipped test tagged
+  `TaskMeta.fuz_gated_skip` (`is_gated_skip` reads it) — what `test_if`,
+  `describe_spine_cross_suites`' skipped-suite lines and `capability_mounts`'
+  rows with no WebSocket endpoint to probe (`gated_skip`) register; every skip a
+  backend's declarations cause goes through it, and only the informational
+  `UNPROBED_CAPABILITIES` rows stay plain skips. The tag is set at
+  registration, so a `-t` filter or `.only` never changes it.
+  `check_declared_skips(expected)` registers a closing test (named
+  `DECLARED_SKIPS_CHECK_NAME`) that reads every test under its suite — the
+  enclosing `describe`, or the file — and holds the tagged ones to
+  `expected`, name path below that suite → required reason
+  (`find_declared_skip_problems`, the pure half): an undeclared skip fails, so
+  does an entry whose test was registered to run (stale) or that names no
+  test. A nested suite with a check of its own owns its subtree: an outer
+  check neither collects nor needs declared what sits below it. fuz_app calls it in every single-backend cross file with a gated case,
+  and per backend in the security and timing projects; the transcript
+  differential holds both sides to its `expected_skips` the same way and
+  leaves the declared skips out of its whole-run count.
 - `xfail.ts` — `xfail_until(marker, name, fn)` for deferred-by-design rows,
   `marker` an `XfailMarker` `{tracking_id, reason, fails_with}`. `fails_with`
   is required — a `RegExp` over the thrown message or a predicate over the

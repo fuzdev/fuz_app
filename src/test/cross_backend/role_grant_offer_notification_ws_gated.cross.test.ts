@@ -9,6 +9,7 @@
  * @module
  */
 
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { default_cross_process_setup } from '#lib/testing/cross_backend/setup.ts';
 import { describe_role_grant_offer_notification_ws_tests } from '#lib/testing/cross_backend/role_grant_offer_notification_ws.ts';
@@ -28,3 +29,5 @@ describe_role_grant_offer_notification_ws_tests({
 	ws_path: SPINE_ROLE_GATED_WS_PATH,
 	ws_required_roles: SPINE_ROLE_GATED_WS_ROLES
 });
+
+check_declared_skips({});

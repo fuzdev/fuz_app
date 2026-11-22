@@ -82,10 +82,11 @@ describe('plan_capability_mount_rows', () => {
 		}
 	});
 
-	test('without ws, the socket control is skipped and the rest still run', () => {
+	test('without ws, the socket control is a gated skip and the rest still run', () => {
 		const controls = plan({ ws: false }).filter((r) => r.group === 'capability mount controls');
-		const skipped = controls.filter((r) => r.mode === 'skip');
+		const skipped = controls.filter((r) => r.mode === 'gated_skip' || r.mode === 'skip');
 		assert.strictEqual(skipped.length, 1);
+		assert.strictEqual(skipped[0]!.mode, 'gated_skip');
 		assert.include(skipped[0]!.name, "keeper's session socket");
 		assert.ok(controls.filter((r) => r.mode === 'run').length > 0);
 	});
@@ -94,7 +95,7 @@ describe('plan_capability_mount_rows', () => {
 		const rows = plan({ ws: false, ws_account_actions: false });
 		assert.ok(!rows.some((r) => r.name.startsWith('ws_account_actions declared ')));
 		const skip = rows.find((r) => r.name.startsWith('ws_account_actions: no WebSocket endpoint'));
-		assert.strictEqual(skip?.mode, 'skip');
+		assert.strictEqual(skip?.mode, 'gated_skip');
 	});
 
 	test('without ws, a declared account-actions flag fails at once', async () => {

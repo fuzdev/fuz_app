@@ -15,6 +15,7 @@ import { assert, describe, inject, test } from 'vitest';
 
 import { ERROR_RATE_LIMIT_EXCEEDED } from '#lib/http/error_schemas.ts';
 import { default_login_ip_rate_limit } from '#lib/rate_limiter.ts';
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 
 import type { BootstrapRateLimitProbe } from './bootstrap_rate_limit_probe.ts';
 import './cross_test_types.ts';
@@ -46,3 +47,5 @@ describe('bootstrap rate limit', () => {
 		assert_bootstrap_429(probes.b, 'rust');
 	});
 });
+
+check_declared_skips({});

@@ -65,7 +65,8 @@ import '../assert_dev_env.ts';
  * that ask for no upgrade gate on `capabilities.ws` alone.
  *
  * **Multi-actor upgrade.** One more WS row needs a keeper seeded with a
- * second actor (`extra_actors`), so it runs only given `multi_actor`: a
+ * second actor (`extra_actors`), so it runs only given `multi_actor` (without
+ * it the row registers as a gated skip): a
  * multi-actor keeper's session upgrading with no `?acting=` → 400
  * `actor_required`, the flat body both spines' upgrade-time actor resolution
  * answers. The upgrade resolves an actor there, and a multi-actor account
@@ -274,7 +275,7 @@ export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityG
 	readonly ws_path?: string;
 	/** Audit-log SSE path. Default `/api/admin/audit/stream`. */
 	readonly sse_path?: string;
-	/** Run the multi-actor rows (`transport_composition_multi_actor_cases`). */
+	/** Run the multi-actor rows (`transport_composition_multi_actor_cases`); omitted, they skip. */
 	readonly multi_actor?: TransportCompositionMultiActorOptions;
 	/**
 	 * The backend's request-body cap on `rpc_path`, in bytes; the RPC row's
@@ -602,9 +603,13 @@ export const describe_transport_composition_cross_tests = (
 			);
 		});
 		const { multi_actor } = options;
-		if (!multi_actor) return;
 		for (const c of transport_composition_multi_actor_cases) {
 			const name = case_name(c);
+			// without the multi-actor setup the cases register as gated skips
+			if (!multi_actor) {
+				test_if(false, name, () => {});
+				continue;
+			}
 			const body = (): Promise<void> => run_case(c, multi_actor.setup_test);
 			if (!is_runnable(c)) {
 				test_if(false, name, body);

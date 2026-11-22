@@ -31,6 +31,10 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { create_spine_live_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import {
+	check_declared_skips,
+	test_skip_gated
+} from '#lib/testing/cross_backend/declared_skips.ts';
 
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';
@@ -101,6 +105,8 @@ if (ws) {
 		ws,
 		suite_name: 'conformance table (cross-process, WS)'
 	});
+} else {
+	test_skip_gated('conformance table (cross-process, WS): needs ws + ws_account_actions', () => {});
 }
 
 const multi_actor_setup_test = default_cross_process_setup(handle, {
@@ -123,8 +129,15 @@ if (ws) {
 		ws,
 		suite_name: 'conformance table (cross-process, WS, multi-actor keeper)'
 	});
+} else {
+	test_skip_gated(
+		'conformance table (cross-process, WS, multi-actor keeper): needs ws + ws_account_actions',
+		() => {}
+	);
 }
 
 describe_invite_duplicate_tests({ setup_test });
 describe_invite_audit_tests({ setup_test });
 describe_offer_cross_account_tests({ setup_test });
+
+check_declared_skips({});

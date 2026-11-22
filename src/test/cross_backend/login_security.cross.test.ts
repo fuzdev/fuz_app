@@ -23,11 +23,13 @@
 
 import { inject, describe } from 'vitest';
 
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
 } from '#lib/testing/cross_backend/setup.ts';
 import { describe_login_security_cross_tests } from '#lib/testing/cross_backend/login_security.ts';
+import { default_login_ip_rate_limit } from '#lib/rate_limiter.ts';
 
 import './cross_test_types.ts';
 
@@ -39,6 +41,13 @@ describe('TS spine (node)', () => {
 		setup_test: default_cross_process_setup(ts, { reject_unknown_audit_metadata_keys: true }),
 		base_url: ts.config.base_url
 	});
+	check_declared_skips({
+		[`login rate limiting + trusted-proxy parity > a concurrent burst of ${
+			default_login_ip_rate_limit.max_attempts * 2
+		} correct logins all succeed past the per-IP cap`]:
+			'the TS spine here runs on one pglet-wasm connection, which refuses concurrent ' +
+			'top-level transactions (concurrent_transactions: false)'
+	});
 });
 
 describe('Rust spine_stub', () => {
@@ -49,4 +58,5 @@ describe('Rust spine_stub', () => {
 		// connection, which refuses concurrent top-level transactions
 		concurrent_transactions: true
 	});
+	check_declared_skips({});
 });

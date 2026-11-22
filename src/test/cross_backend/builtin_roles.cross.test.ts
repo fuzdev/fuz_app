@@ -20,6 +20,7 @@ import {
 	CELL_ROLE_HOLDER_USERNAME,
 	describe_cell_grant_role_cross_tests
 } from '#lib/testing/cross_backend/cell_grant_role.ts';
+import { check_declared_skips } from '#lib/testing/cross_backend/declared_skips.ts';
 import { inject_backend_handle } from '#lib/testing/cross_backend/provided_context.ts';
 import { describe_role_grant_offer_lifecycle_cross_tests } from '#lib/testing/cross_backend/role_grant_offer_lifecycle.ts';
 import { describe_role_grant_participation_cross_tests } from '#lib/testing/cross_backend/role_grant_participation.ts';
@@ -84,4 +85,9 @@ describe('builtin roles: socket accounts holding admin', () => {
 		rpc_path,
 		ws_account_roles: [ROLE_ADMIN]
 	});
+});
+
+check_declared_skips({
+	'builtin roles: participation on admin > role-gated participation conferral (success paths) > admin assigns a scoped admin grant that round-trips scope_kind':
+		'a builtin role is global-only, so the participation suite has no scope kind to assign on admin'
 });
