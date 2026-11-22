@@ -52,7 +52,7 @@ export interface AuditLogRouteOptions {
 		registry: SseRegistry<SseNotification>;
 		log: Logger;
 		/**
-		 * Each stream's keep-alive interval (`SseResponseOptions.keep_alive_ms`)
+		 * Each stream's keep-alive interval (`SseStreamOptions.keep_alive_ms`)
 		 * — a test server shortens it. Validated here, at route creation.
 		 *
 		 * @default SSE_KEEP_ALIVE_INTERVAL_MS

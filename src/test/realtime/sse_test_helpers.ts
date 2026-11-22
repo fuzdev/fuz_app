@@ -7,7 +7,7 @@
 import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_sse_stream, type SseResponseOptions, type SseStream } from '#lib/realtime/sse.ts';
+import { create_sse_stream, type SseStreamOptions, type SseStream } from '#lib/realtime/sse.ts';
 import { SSE_RESPONSE_HEADERS } from '#lib/realtime/sse_constants.ts';
 
 /** A mock `SseStream` that records what was sent and whether it was closed. */
@@ -47,7 +47,7 @@ export const create_mock_stream = <T = unknown>(): MockSseStream<T> => {
 export const open_sse_response = <T = unknown>(
 	c: Context,
 	log: Logger,
-	options?: SseResponseOptions
+	options?: SseStreamOptions
 ): { response: Response; stream: SseStream<T> } => {
 	const { stream, body } = create_sse_stream<T>(c, log, options);
 	return { response: c.body(body, 200, SSE_RESPONSE_HEADERS), stream };

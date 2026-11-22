@@ -84,7 +84,7 @@ export interface SseNotification {
 }
 
 /** Options for `create_sse_stream`. */
-export interface SseResponseOptions {
+export interface SseStreamOptions {
 	/**
 	 * The account the stream belongs to, named in the warning logged when the
 	 * stream ends on its outbound budget.
@@ -205,7 +205,7 @@ export interface OpenedSseStream<T> {
 export const create_sse_stream = <T = unknown>(
 	c: Context,
 	log: Logger,
-	options?: SseResponseOptions
+	options?: SseStreamOptions
 ): OpenedSseStream<T> => {
 	validate_sse_keep_alive_ms(options?.keep_alive_ms);
 	const { promise, resolve } = Promise.withResolvers<void>();

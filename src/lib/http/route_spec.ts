@@ -73,7 +73,7 @@ import {
 	type RouteResult,
 	type RouteSse
 } from './route_result.ts';
-import type { OpenedSseStream, SseResponseOptions, SseStream } from '../realtime/sse.ts';
+import type { OpenedSseStream, SseStreamOptions, SseStream } from '../realtime/sse.ts';
 import { SSE_RESPONSE_HEADERS } from '../realtime/sse_constants.ts';
 import {
 	assert_route_auth_acting_biconditional,
@@ -294,7 +294,7 @@ export interface RouteContext<
 }
 
 /** Options for `RouteContext.open_sse`. */
-export interface RouteOpenSseOptions extends SseResponseOptions {
+export interface RouteOpenSseOptions extends SseStreamOptions {
 	/**
 	 * Logger for the stream's serialization and `on_close` listener errors and
 	 * its outbound-overflow warning. Default: the `log` given `apply_route_specs`.
@@ -311,7 +311,7 @@ export interface RouteOpenSseOptions extends SseResponseOptions {
 export type RouteSseOpener = <T>(
 	c: Context,
 	log: Logger,
-	options?: SseResponseOptions
+	options?: SseStreamOptions
 ) => OpenedSseStream<T>;
 
 /**

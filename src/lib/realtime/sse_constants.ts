@@ -48,7 +48,7 @@ export const SSE_KEEP_ALIVE_INTERVAL_MS_MAX = 2_147_483_647;
 
 /**
  * Throw unless `keep_alive_ms` is a valid keep-alive interval
- * (`SseResponseOptions.keep_alive_ms`):
+ * (`SseStreamOptions.keep_alive_ms`):
  * `undefined` (the default), `null` (off), or a positive number of ms up to
  * `SSE_KEEP_ALIVE_INTERVAL_MS_MAX`. Timers read anything else — zero, a
  * negative, `NaN`, `Infinity`, or past the max — as an interval of about

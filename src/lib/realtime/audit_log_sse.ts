@@ -212,7 +212,7 @@ export const create_audit_log_sse = (options: {
 	 */
 	max_per_scope?: number | null;
 	/**
-	 * Each stream's keep-alive interval (`SseResponseOptions.keep_alive_ms`), in
+	 * Each stream's keep-alive interval (`SseStreamOptions.keep_alive_ms`), in
 	 * ms; `null` turns keep-alives off. A test server shortens it.
 	 *
 	 * @default SSE_KEEP_ALIVE_INTERVAL_MS
