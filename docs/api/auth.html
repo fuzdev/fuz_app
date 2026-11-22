@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -394,7 +394,7 @@ downstream in the chain).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!--
 gate that reads only what the auth middleware already set: <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#require_auth"><!--[0--><!--[-1-->require_auth<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->
 whenever <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.account === 'required'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.actor === 'required'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 (per registry-time invariant 3, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->actor: 'required'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> today implies a
-credential — accountless actors are out of scope for v1),
+credential — accountless actors are out of scope),
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->require_credential_types(types)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> whenever <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.credential_types?.length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 and the token-scope guard whenever <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.required_scope<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> names a capability.
 All three fire before any body parsing, so a caller they refuse never sees
@@ -414,11 +414,8 @@ to whatever the credential supports and the post-authorization
 gates decide whether the actor's role_grants / credential type match.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/bearer_auth.ts"><!--[-1-->auth/bearer_auth.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Bearer auth middleware for API token authentication.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Bearer tokens are rejected when <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> or <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Referer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> headers are present —
 browsers must use cookie auth. This reduces attack surface: a stolen token
 cannot be replayed from a browser context (the browser adds <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-automatically). The discard is silent on the wire (anti-enumeration); in
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->DEV<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> only, the middleware adds an `X-Fuz-Auth-Debug:
-bearer_discarded_browser_context` response header so tests/tooling can tell
-"token discarded for browser context" apart from "no credential supplied"
-without weakening production.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Token generation and hashing utilities live in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/api_token.ts"><!--[0--><!--[-1-->auth/api_token.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/bootstrap_account.ts"><!--[-1-->auth/bootstrap_account.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Bootstrap flow for creating the first account.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Uses an atomic <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_lock<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> table to prevent TOCTOU race conditions.
+automatically). The discard is silent on the wire (anti-enumeration) and
+logged at debug, the line the Rust spine logs.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Token generation and hashing utilities live in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/api_token.ts"><!--[0--><!--[-1-->auth/api_token.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/bootstrap_account.ts"><!--[-1-->auth/bootstrap_account.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Bootstrap flow for creating the first account.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Uses an atomic <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_lock<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> table to prevent TOCTOU race conditions.
 The lock flip, the account, its keeper and admin grants, its session, and
 the burn of the one-shot token file all happen in one transaction, the burn
 last — so a live token never outlives a successful bootstrap, and a
@@ -886,7 +883,7 @@ the handler runs even though the endpoint hosts non-admin methods
 alongside.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_actions.ts"><!--[-1-->auth/role_grant_offer_actions.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Role grant offer RPC action handlers — the consentful-role-grants action surface.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The offer-lifecycle methods (create / accept / decline / retract / list /
 history) plus <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_revoke<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_assign<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (both
 admin-only). All mount
-on a consumer's JSON-RPC endpoint via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/action_rpc.ts#create_rpc_endpoint"><!--[0--><!--[-1-->create_rpc_endpoint<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. The action
+on a consumer's JSON-RPC endpoint through <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rpc_endpoints<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. The action
 specs themselves live in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/role_grant_offer_action_specs.ts"><!--[0--><!--[-1-->auth/role_grant_offer_action_specs.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. Mutations
 declare <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->side_effects: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> so the RPC dispatcher wraps the handler in
 a DB transaction; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_list<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_history<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> declare
@@ -1019,16 +1016,19 @@ and the surface stays constant as consumers add eligible roles. Mirrors
 the existing <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role_grant_offer_create({role})<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> precedent rather than
 generating per-role methods.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Specs and schemas live in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/self_service_role_action_specs.ts"><!--[0--><!--[-1-->auth/self_service_role_action_specs.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> so
 client-side codegen can import the surface without dragging in the
-query layer.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/session_cookie.ts"><!--[-1-->auth/session_cookie.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Generic session management for cookie-based auth.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Parameterized on identity type via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SessionOptions&lt;TIdentity><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.
-Handles signing, expiration, and key rotation. Apps provide
-encode/decode for their specific identity format.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Cookie value format: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->${encode(identity)}:${expires_at}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (signed with HMAC-SHA256).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/session_middleware.ts"><!--[-1-->auth/session_middleware.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono session boundary — the session cookie read off a request, and the
-request-time middleware that resolves it and clears a stale one.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The cookie is read from the request's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> lines by
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/credential_headers.ts#read_session_cookie_value"><!--[0--><!--[-1-->read_session_cookie_value<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and written as the exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Set-Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> strings of
+query layer.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/session_cookie.ts"><!--[-1-->auth/session_cookie.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The signed session cookie: its name, value format, verification, and the
+exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Set-Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> strings that set and clear it — byte for byte the Rust
+spine's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_auth::session_cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Cookie value: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->keyring.sign("${session_token}:${expires_at}")<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. The signed
+payload carries the raw session token (whose blake3 hash is the
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth_session<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> row id) and its expiry, so one HMAC covers both the token
+bind and the freshness check.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/session_middleware.ts"><!--[-1-->auth/session_middleware.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono session boundary — the request-time middleware that reads the session
+cookie off a request, resolves it, and clears a stale one.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The cookie is read from the request's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> lines by
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_cookie.ts#parse_session_from_cookies"><!--[0--><!--[-1-->parse_session_from_cookies<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and written as the exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Set-Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> strings of
 <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/session_cookie.ts"><!--[0--><!--[-1-->auth/session_cookie.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — no framework cookie parser or serializer sits on
 the credential path, so nothing is percent-decoded on the way in or
 percent-encoded on the way out. A route sets or clears the cookie by
 returning the line on its success (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->route_ok(value, {set_cookie})<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the
-lines from <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_cookie.ts#session_cookie_header"><!--[0--><!--[-1-->session_cookie_header<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_cookie.ts#clear_session_cookie_header"><!--[0--><!--[-1-->clear_session_cookie_header<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), never
+lines from <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_cookie.ts#sign_session_cookie"><!--[0--><!--[-1-->sign_session_cookie<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/session_cookie.ts#format_session_clear_cookie"><!--[0--><!--[-1-->format_session_clear_cookie<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), never
 by writing on the context.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/session_queries.ts"><!--[-1-->auth/session_queries.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Auth session database queries.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Server-side sessions keyed by blake3 hash of the session token.
 The cookie contains the raw token; the database stores only the hash.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/signup_route_schema.ts"><!--[-1-->auth/signup_route_schema.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Hono-free wire schemas + route shape for <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->POST /signup<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->signup_routes.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (whose handler mints the new session through
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->session_middleware<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and the query layer) so cross-process test
@@ -1086,16 +1086,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_1d8fg8l = {
+					__sveltekit_1wqcbuw = {
 						base: "",
-						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
+						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1d8fg8l);
-						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
+						kit.init(__sveltekit_1wqcbuw);
+						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

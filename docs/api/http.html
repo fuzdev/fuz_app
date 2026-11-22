@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -305,28 +305,28 @@ the server does not serve, and the server trusts them all. The forms, as
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/origin.ts#parse_allowed_origins"><!--[0--><!--[-1-->parse_allowed_origins<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> matches them (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/origin_wildcard.ts#OriginWildcard"><!--[0--><!--[-1-->OriginWildcard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->):<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->port<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->:*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) — the host at any port, or none;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->host<!--]--><!--]--><!----></strong><!--]--><!--[2--> — each <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> label is any one label, in any position
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->https://*.example.com<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->https://example.*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), and a host that is all
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> labels (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http://*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->https://*.*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is every host with that many
-labels — four of them cover every IPv4 address;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->both<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http://*:*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->https://*.example.com:*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->A bracketed IPv6 host is exact, so it takes only the port form.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/origin.ts"><!--[-1-->http/origin.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Request source verification middleware for API protection.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Verifies requests carry an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the server allows, or none.
-CSRF protection is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SameSite: strict<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on session cookies
-(see <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/session_middleware.ts"><!--[0--><!--[-1-->auth/session_middleware.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) plus the CORS simple-request refusal
-(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/simple_request.ts"><!--[0--><!--[-1-->http/simple_request.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SameSite<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> alone admits same-site pages, which
-include every other port on the same host. This module provides origin
-allowlisting for locally-running services — preventing untrusted websites
-from making requests as the user browses the web — and is the only gate on
-the WebSocket upgrade, which is never preflighted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The allowlist grammar is shared with the Rust spine entry for entry:
+labels — four of them cover every IPv4 address;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->both<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http://*:*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->https://*.example.com:*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->A bracketed IPv6 host is exact, so it takes only the port form.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/origin.ts"><!--[-1-->http/origin.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Request source verification middleware for API protection.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Verifies requests carry an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the server allows, or none. The origin
+check is one of three CSRF layers, beside <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SameSite: strict<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> session
+cookies (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/session_middleware.ts"><!--[0--><!--[-1-->auth/session_middleware.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and the JSON-only <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->POST<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> refusal
+(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/simple_request.ts"><!--[0--><!--[-1-->http/simple_request.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SameSite<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> alone admits same-site pages, which
+include every other port on the same host, and the origin check refuses an
+untrusted page's request before any handler runs. It is the only one of the
+three that guards the WebSocket upgrade, which is never preflighted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The allowlist grammar is shared with the Rust spine entry for entry:
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/origin.ts#parse_allowed_origins"><!--[0--><!--[-1-->parse_allowed_origins<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> accepts and refuses the same entries, naming each
 refusal with the same <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/origin.ts#AllowedOriginsErrorKind"><!--[0--><!--[-1-->AllowedOriginsErrorKind<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> string, and an accepted list
 matches the same origins. The shared conformance table
 (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/origin_conformance.json"><!--[0--><!--[-1-->testing/cross_backend/origin_conformance.json<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) pins both.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/pending_effects.ts"><!--[-1-->http/pending_effects.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Two-queue side-effect machinery for request handlers.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Handlers register fire-and-forget work in one of two queues, distinguished
 by their timing contract:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pending_effects: Array&lt;Promise&lt;void>><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — eager. Producers push pool
-writes that are already in flight (failure audit rows, session-touch
-UPDATE, api-token usage tracking). The pool write is rollback-resilient by
+writes that are already in flight (failure audit rows, api-token usage
+tracking). The pool write is rollback-resilient by
 virtue of running outside the request transaction; pushing the
 in-flight handle lets test mode (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->await_pending_effects: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) await
 it.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->post_commit_effects: Array&lt;() => void | Promise&lt;void>><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — deferred.
 Producers go through <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->emit_after_commit(ctx, fn)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; the flush
 middleware is the only site that ever invokes the thunk, and it does
 so after the request handler (and its wrapping <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->db.transaction<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->)
-returns. Used for WS sends and any work that must observe a committed
+returns. Used for WS sends, a revocation's connection closes, a success
+audit row's listener fan-out, and any work that must observe a committed
 transaction.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Discard on rollback.<!--]--><!--]--><!----></strong><!--]--><!--[2--> A <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->post_commit_effects<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> thunk is discarded if the
 handler's transaction rolls back (a thrown handler) — it must not announce
 state that never committed. Both dispatch sites enforce this by wrapping
@@ -453,16 +453,16 @@ error map (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declara
 			
 			<script>
 				{
-					__sveltekit_1d8fg8l = {
+					__sveltekit_1wqcbuw = {
 						base: "",
-						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
+						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1d8fg8l);
-						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
+						kit.init(__sveltekit_1wqcbuw);
+						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

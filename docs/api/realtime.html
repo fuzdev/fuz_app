@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -123,8 +123,9 @@ Matched by <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_by_
 coarser scopes a stream should be reachable by.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The split keeps "tabs-per-session" cap semantics sane when a stream also
 carries a broader identity for coarse close — the broader identity
 doesn't cap across sessions.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Registration can run in two phases (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->subscribe_pending<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> then <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) so a
-revocation reaches a stream that is still opening — see the class doc.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse.ts"><!--[-1-->realtime/sse.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->SSE (Server-Sent Events) streaming utilities for Hono.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Provides generic helpers for creating SSE response streams
-and a notification type aligned with JSON-RPC 2.0.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="outbound-bound"><!--[--><!--[2-->Outbound bound<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SseStream.send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> never waits on its client: each frame is written to the
+revocation reaches a stream that is still opening — see the class doc.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse.ts"><!--[-1-->realtime/sse.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->SSE (Server-Sent Events) streaming utilities for Hono.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse.ts#create_sse_stream"><!--[0--><!--[-1-->create_sse_stream<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> opens a stream on a request — what a route spec's
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RouteContext.open_sse<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> gives it, answered by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_result.ts#route_sse"><!--[0--><!--[-1-->route_sse<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — and
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse.ts#SseNotification"><!--[0--><!--[-1-->SseNotification<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is the notification shape, aligned with JSON-RPC 2.0.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="outbound-bound"><!--[--><!--[2-->Outbound bound<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->SseStream.send<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> never waits on its client: each frame is written to the
 response stream, which holds it until the client reads. What a stream holds
 unread is kept within <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse_constants.ts#SSE_OUTBOUND_QUEUE_BYTES"><!--[0--><!--[-1-->SSE_OUTBOUND_QUEUE_BYTES<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — each frame charged its
 bytes as written (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data: <!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> prefix and terminator included) plus
@@ -144,16 +145,16 @@ and the timer stops when the stream closes. <!--]--><!--[3--><!--[0--><!--[--><!
 			
 			<script>
 				{
-					__sveltekit_1d8fg8l = {
+					__sveltekit_1wqcbuw = {
 						base: "",
-						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
+						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1d8fg8l);
-						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
+						kit.init(__sveltekit_1wqcbuw);
+						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

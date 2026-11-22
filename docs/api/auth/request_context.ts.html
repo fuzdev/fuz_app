@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.KtNjyhB2.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DWs3lPCO.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DcItk9vr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DqrqQT1p.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -124,9 +124,9 @@ pre-authorization 401 → authorization phase → post-authorization 403 →
 input validation 400.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Pure data — the function does not touch a Hono context. Each transport
 passes the account its credential resolved (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ResolvedAuth.account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and
 binds the returned <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#AuthorizationResult"><!--[0--><!--[-1-->AuthorizationResult<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> to its wire shape. The REST
-pipeline additionally writes <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#REQUEST_CONTEXT_KEY"><!--[0--><!--[-1-->REQUEST_CONTEXT_KEY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for downstream
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#require_role"><!--[0--><!--[-1-->require_role<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#require_credential_types"><!--[0--><!--[-1-->require_credential_types<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> middleware that still reads
-the resolved context off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The account is never read here: the context is built on the credential
+pipeline additionally writes <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#REQUEST_CONTEXT_KEY"><!--[0--><!--[-1-->REQUEST_CONTEXT_KEY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for the
+downstream <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#require_role"><!--[0--><!--[-1-->require_role<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> middleware, which reads the resolved context off
+the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The account is never read here: the context is built on the credential
 leg's row, so a request reads its account once, as on the Rust spine,
 whose <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#apply_authorization_phase"><!--[0--><!--[-1-->apply_authorization_phase<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> takes the resolved account the same way.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Branching by <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.account<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> × <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->auth.actor<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->Both <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'none'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{ok: true, request_context: null}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. Public actions
 never see a <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account == null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on any non-public route → same null
@@ -325,16 +325,16 @@ names a surface the spine actually mounts.<!--]--><!--]--><!----></p><!--]--><!-
 			
 			<script>
 				{
-					__sveltekit_1d8fg8l = {
+					__sveltekit_1wqcbuw = {
 						base: "",
-						version: "c37f76143fd7d94da3d67a7add1ad021c0807665"
+						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1d8fg8l);
-						const app = await import("/_app/immutable/entry/app.KtNjyhB2.js");
+						kit.init(__sveltekit_1wqcbuw);
+						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
