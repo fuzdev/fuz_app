@@ -709,9 +709,9 @@ export type AuthorizationResult =
  * Pure data — the function does not touch a Hono context. Each transport
  * passes the account its credential resolved (`ResolvedAuth.account`) and
  * binds the returned `AuthorizationResult` to its wire shape. The REST
- * pipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for downstream
- * `require_role` / `require_credential_types` middleware that still reads
- * the resolved context off the Hono context.
+ * pipeline additionally writes `REQUEST_CONTEXT_KEY` on `c` for the
+ * downstream `require_role` middleware, which reads the resolved context off
+ * the Hono context.
  *
  * The account is never read here: the context is built on the credential
  * leg's row, so a request reads its account once, as on the Rust spine,

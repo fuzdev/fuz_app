@@ -9,7 +9,7 @@
  *   gate that reads only what the auth middleware already set: `require_auth`
  *   whenever `auth.account === 'required'` or `auth.actor === 'required'`
  *   (per registry-time invariant 3, `actor: 'required'` today implies a
- *   credential — accountless actors are out of scope for v1),
+ *   credential — accountless actors are out of scope),
  *   `require_credential_types(types)` whenever `auth.credential_types?.length`,
  *   and the token-scope guard whenever `auth.required_scope` names a capability.
  *   All three fire before any body parsing, so a caller they refuse never sees

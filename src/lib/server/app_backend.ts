@@ -149,9 +149,8 @@ export interface CreateAppBackendOptions {
 	/**
 	 * Bound on the pool checkouts a request makes, in ms — the server env's
 	 * `FUZ_DB_CHECKOUT_TIMEOUT_MS`. Default `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`
-	 * (5 s). A failed checkout answers 503 on every surface. Audit writes use
-	 * `db_audit_checkout_timeout_ms` instead — the failed-login row a request
-	 * waits on included. A checkout that waits and then connects can take about
+	 * (5 s). A failed checkout answers 503 on every surface. Audit pool writes (failure
+	 * rows) use `db_audit_checkout_timeout_ms` instead. A checkout that waits and then connects can take about
 	 * twice the bound (`db/db_pg.ts`, "Checkout timeout"). Postgres only:
 	 * PGlite and pglet have no pool, and a value passed with one is warned of
 	 * at boot. Twin of the Rust `BaseServerEnv::db_checkout_timeout`.
@@ -160,8 +159,8 @@ export interface CreateAppBackendOptions {
 	/**
 	 * Bound on the checkout behind each audit pool write, in ms — the server
 	 * env's `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`. Default
-	 * `DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS` (30 s). A failed login awaits its
-	 * row, so it can wait up to this bound. Postgres only, like
+	 * `DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS` (30 s). No response waits on
+	 * a pool write; `AppServer.close` drains them within its own bound. Postgres only, like
 	 * `db_checkout_timeout_ms`. Twin of the Rust
 	 * `BaseServerEnv::db_audit_checkout_timeout`.
 	 */

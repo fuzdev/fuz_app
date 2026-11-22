@@ -97,11 +97,12 @@ import type { ResolvedAuth } from '../auth/resolved_auth.ts';
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
  *
- * `pre_authorization` runs before the authorization phase — the 401 check
- * and the rule-3 token-scope refusal live here, so a caller either one turns
- * away never reaches the actor resolution or the route's body.
+ * `pre_authorization` runs before the authorization phase — the 401 check,
+ * the credential-type gate and the rule-3 token-scope refusal live here, each
+ * reading only what the auth middleware set, so a caller they turn away never
+ * reaches the actor resolution or the route's body.
  * `post_authorization` runs after the authorization phase has populated
- * `RequestContext` — credential / role checks live here because they read
+ * `RequestContext` — the role check lives here because it reads
  * `c.var.request_context.role_grants`.
  *
  * Both phases run ahead of body validation, which is why neither is named
@@ -157,13 +158,15 @@ export type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
  * either.
  *
  * Audit writes run through `AppDeps.audit.emit(route, input)` (see
- * `auth/audit_emitter.ts`). It writes a success row in the route's
- * transaction when one is open and a failure row on the pool it closes over,
- * so a refused attempt's row survives the rollback.
+ * `auth/audit_emitter.ts`). A success row is written in the transaction of
+ * the change it reports — a refused INSERT fails the change, and with no
+ * transaction open `emit` throws — and a failure row on the pool it closes
+ * over, so a refused attempt's row survives the rollback.
  *
- * Routes whose body manages its own transaction (signup, bootstrap)
- * declare `transaction: false` on the spec, which makes `route.db` the
- * pool — they reach for it directly.
+ * Routes whose body opens its own transaction around just its writes
+ * (`/login`, `/password`, signup, bootstrap) declare `transaction: false`
+ * on the spec, which makes `route.db` the pool, and run that transaction
+ * through `transaction_with_post_commit_rollback`.
  *
  * @typeParam TAuth - `auth`, narrowed per route by `RequestContextForAuth`
  * @typeParam TInput - the validated body
@@ -274,7 +277,7 @@ export interface RouteContext<
 	db: Db;
 	/**
 	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
-	 * pool writes already running (audit emits, api-token usage
+	 * pool writes already running (failure audit rows, api-token usage
 	 * tracking). The flush middleware drains via
 	 * `flush_pending_effects` after the handler returns.
 	 */

@@ -18,7 +18,7 @@
  * This is the Rust→TS convergence of the `fuz_actions`
  * `post_commit_effects_clear_discards_without_running` contract: the Rust spine
  * discards on rollback; this brings the TS twin to parity. See
- * docs/security.md §Post-commit effects.
+ * `src/lib/http/CLAUDE.md` §Pending Effects.
  *
  * @module
  */

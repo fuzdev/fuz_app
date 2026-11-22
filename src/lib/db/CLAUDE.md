@@ -199,8 +199,9 @@ records who holds them. Optional — minimal consumers never migrate it.
 - **`fact_ddl.ts`** — `fact` (content-addressed bytes: embedded `bytes` xor
   `external_url`, CHECK enforces exactly one) + `fact_ref` (declared
   dependency edges; `target_hash` deliberately not an FK, for federation) +
-  `memo` (`(fn_id, input_hash) → output_hash`) + `fact_holder` (`(actor_id,
-  hash)` possession rows, both FKs cascading). `FACT_MIGRATION_NS`, namespace
+  `memo` (`(fn_id, input_hash) → output_hash`; the table ships, no store
+  reads or writes it yet) + `fact_holder` (`(actor_id, hash)` possession
+  rows, both FKs cascading). `FACT_MIGRATION_NS`, namespace
   `fuz_facts` — frozen and append-only (`full_fact_schema`, then
   `fact_holder`), each entry statement-identical with the Rust `fuz_fact`
   migration of the same name.
@@ -211,7 +212,8 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it;
   the `older_than` cutoff keeps a fact whose `created_at` or any
   `fact_holder.created_at` is within the window, so a deduplicated re-upload
-  survives any sweep whose window covers it).
+  survives any sweep whose window covers it). No action or sweep runs them
+  yet.
 - **`fact_holder_queries.ts`** — `FACT_HOLDER_COLUMNS`, `query_put_fact_holder`
   (idempotent upsert — a repeat put refreshes the row's `created_at` to the
   most recent put), and the admission reads `query_fact_holder_table_exists` /

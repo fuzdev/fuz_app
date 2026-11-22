@@ -17,11 +17,13 @@
  *
  * ## Closing after commit
  *
- * A revocation runs inside a request transaction, and it must not close a
- * connection until that transaction commits. `queue_connection_close` defers
- * the close onto the request's post-commit queue (`emit_after_commit`): it
- * runs after the commit and is dropped on rollback, so a revocation that never
- * happened closes nothing.
+ * A revocation must not close a connection until its transaction commits.
+ * `queue_connection_close` defers the close onto the request's post-commit
+ * queue (`emit_after_commit`): it runs after the commit and is dropped on
+ * rollback, so a revocation that never happened closes nothing. A handler
+ * that opens its own transaction around just its writes (`/login`,
+ * `/password`) closes straight after that commit instead
+ * (`close_connections_after_commit`).
  *
  * Two things rest on that order. A client told "revoked" rechecks its session
  * straight away, and before the commit the row it probes is still there. And
@@ -33,10 +35,10 @@
  * ## Why the handlers close directly
  *
  * The audit listener (`create_revocation_guard`) closes connections too, but
- * only once the audit row is announced, and a row written outside a
- * transaction (`/login`, `/password`) is fail-open. The handler's own close
- * is the one that runs whatever happens to the audit row, so the closer it holds must reach every
- * transport whose connections outlive their credential. `RealtimeCloser` is
+ * only once a success row whose event type declares a revocation scope is
+ * announced — and the session sweep writes no row at all. The handler's own
+ * close is the one the revocation owns, so the closer it holds must reach every transport
+ * whose connections outlive their credential. `RealtimeCloser` is
  * that fan-out, and `create_app_backend` puts one on `AppDeps`.
  *
  * ## The audit listener

@@ -516,8 +516,8 @@ export interface AppServerOptions {
 
 	/**
 	 * How long `AppServer.close` waits for the effects still in flight — each
-	 * request's unflushed `pending_effects` (failure audit rows, the session
-	 * touch, token usage) and every pool write of `deps.audit` — before it
+	 * request's unflushed `pending_effects` (failure audit rows, API token
+	 * usage) and every pool write of `deps.audit` — before it
 	 * closes the database. What is still running then is given up on and
 	 * logged. Default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`; must be a positive
 	 * number of ms.
@@ -579,7 +579,7 @@ export interface AppServer {
 	 *    a closed registry hosts no other server
 	 * 3. wait for the effects still in flight — the unflushed
 	 *    `pending_effects` of requests already answered (failure audit rows,
-	 *    the session touch, token usage; production does not hold a response
+	 *    API token usage; production does not hold a response
 	 *    for them) and every pool write of `deps.audit` — bounded by
 	 *    `shutdown_drain_timeout_ms`, logging what it gives up on
 	 * 4. release what assembly acquired, last acquired first: remove the
@@ -1447,7 +1447,7 @@ const assemble_app_server = async (
 		} catch (error) {
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
-		// then the effects still in flight, so a failure row or a session touch
+		// then the effects still in flight, so a failure row or a token-usage touch
 		// a request already answered started is not lost to the closing pool —
 		// bounded, as the Rust spine's shutdown drain is
 		await drain_effects_on_shutdown(inflight_flushes, deps.audit, shutdown_drain_timeout_ms, log);

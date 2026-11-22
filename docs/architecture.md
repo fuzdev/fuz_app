@@ -10,7 +10,7 @@ Subsystem details for fuz_app internals. For auth design rationale, see
 ## Module Organization
 
 Modules are organized by **domain first, not technical layer**. The auth identity
-system (~80% of the library) lives entirely in `auth/` — crypto primitives, schema
+system, most of the library, lives entirely in `auth/` — crypto primitives, schema
 definitions, database queries, HTTP middleware, route specs, and the deps bundle.
 This follows the precedent set by `ui/` and mirrors how consumers think about the
 code: "I need auth" not "I need a middleware that happens to do auth."
@@ -234,8 +234,8 @@ fact refs derived from `data` (string values that are exactly a fact hash).
 Cell-to-cell relationships live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) —
 and resource-side ACL in `cell_grant`. Authorization is pure predicates
 (`can_view_cell` / `can_edit_cell` / `can_manage_cell`) with strict
-relation-read visibility filtering and `404`-masking. The RPC surface is 17
-generic verbs. See usage.md §"Cell data layer".
+relation-read visibility filtering and `404`-masking. The RPC surface is a
+set of generic verbs. See usage.md §"Cell data layer".
 
 **Facts** (`db/fact_*`, `server/*fact*`, namespace `fuz_facts`) — the
 immutable, content-addressed byte store. `fact` holds bytes embedded in
@@ -286,7 +286,8 @@ would still hydrate a dropped `deleted_at` as `undefined` — which is why
 "mapper-fed" earns no exemption. Each const also carries
 `satisfies ReadonlyArray<keyof Row>`, so a column the row type doesn't know
 is a compile error. The per-subsystem inventories live in
-`src/lib/auth/CLAUDE.md` and `src/lib/db/CLAUDE.md` §Named projections; the
+`src/lib/auth/CLAUDE.md` and the named-projections paragraph of
+`src/lib/db/CLAUDE.md`; the
 placement rule (a const lives in its table's query module, or in its `*_ddl.ts`
 when two query modules project the table) is documented on `db/sql_columns.ts`.
 fuz_app pins the whole set with one registry test,
@@ -315,9 +316,9 @@ everything back (500 `token_file_undeletable`); the success result carries the
 signed cookie value the route sets.
 
 The conditional `UPDATE` on `bootstrap_lock` **is** the existence check — winning
-that row is what authorizes the insert. An earlier belt-and-suspenders
-"no accounts exist" query was deliberately removed so the lock is the single
-signal; see the repo-root `CLAUDE.md` § Test/prod write-semantics parity.
+that row is what authorizes the insert, with no separate "no accounts exist"
+query, so the lock is the single signal (the repo-root `CLAUDE.md` §Test/prod
+write-semantics parity).
 
 The token file is reached through one seam, a `BootstrapTokenStore`
 (`auth/bootstrap_token_store.ts`: `path`, `read_token` — the hardened secure
@@ -431,56 +432,28 @@ standalone shape schemas. `to_error_schemas(defs)` groups definitions into a
 status map.
 
 **One error map per route**: `resolve_route_error_map(spec, middleware_specs)`
-(`http/route_errors.ts`) is the union of three layers — derived, each
-middleware layer that runs on the route, and the route's own — in that order.
-Nothing replaces anything: a definition at a status another layer declares is
-one more branch there, a definition declared twice counts once, and two
-shapes of one code at one status are both kept.
+(`http/route_errors.ts`) is the union of what the framework derives from the
+route's shape, what each middleware layer on the route declares, and the
+route's own `errors` — nothing replaces anything. Every reader reads that one
+map (the surface, the DEV error check, `assert_response_matches_spec`, error
+coverage, the adversarial suites), so an error a route answers that its map
+doesn't declare fails each of them; a 500 `internal_error` and a 503
+`service_unavailable` are answerable on any route and declared by none. Run
+against the Rust spine over the cross-process round trip, this is REST
+error-code parity between the spines. The derivation, layer by layer, is
+`src/lib/http/CLAUDE.md` §The route error map.
 
-- `derive_route_errors({method, auth, has_input?, has_params?, has_query?, rate_limit?})`
-  derives what the framework's own middleware answers, narrowed to the slots
-  the route has: the body codes (`invalid_request_body`, `invalid_json_body`)
-  only off `GET` and with an input, `invalid_route_params` with params,
-  `invalid_query_params` with a query, 401 `authentication_required` when the
-  account or actor is required, a 403 per gate the route declares (token scope,
-  credential type, role), 429 with `rate_limit`, 415 on a `POST`. When
-  `auth.actor !== 'none'` it adds the authorization phase's 400s
-  (`actor_required`, `actor_not_on_account`), its 500 (`no_actors_on_account`)
-  and its 401 `authentication_required` (an account removed after the
-  credential leg read it), declared on an actor-optional route too.
-- `MiddlewareSpec.errors` declares what each middleware layer can return —
-  the body limit's 413 `payload_too_large` and 400 `invalid_content_length`
-  (`create_app_server` mounts the limit as a `*` spec ahead of the others
-  unless `max_body_size` is `null`), the origin check's 403
-  `forbidden_origin`; the bearer_auth and daemon_token layers soft-fail through
-  on every non-success path, so they declare an empty list. A layer counts on
-  the routes its `path` applies to, less its `carve_outs`.
-- Routes declare their handler's codes via `RouteSpec.errors`.
+The design rule behind it: derive what the framework emits, never what the
+consumer authors. The framework answers its own codes at fixed middleware
+sites, so it can declare them; a consumer's input declares its own
+`acting?: ActingActor` slot, which the framework reads back by reference
+rather than grafting on, so "did the spec declare this?" always has one
+answer.
 
 A handler answers a failure as a result, `route_fail(def, fields?)`, and
-`define_route` refuses at the type level one the route doesn't allow: a
-definition outside its `errors`, the 401 and auth 403s its `auth` derives,
-the 429 of its `rate_limit`, and the catch layers' 500 and 503 — read by what
-reaches the wire, so a definition whose body an allowed one accepts at the
-same status and code passes. The input 400s, the actor codes, and the 415 are
-the pipeline's, and no handler answers them. An answer a handler spells itself
-(`route_raw`) is not typed by the route, and the checks below are its
-net.
-
-`create_app_surface_spec` builds every route's map once
-(`AppSurfaceSpec.route_error_maps`, keyed `METHOD path`), and `create_app_server`
-hands the same map to the DEV error check. Every reader reads it: the
-surface, which stays status-keyed (a status with several definitions is an
-`anyOf` of their bodies), the DEV error check, `assert_response_matches_spec`,
-error coverage, and the attack-surface suites.
-
-An error a route answers that its map doesn't declare fails: the DEV error
-check logs it, `assert_response_matches_spec` (and so the round trips) throws,
-and the adversarial suites hold every refusal to the route's own map — its
-status, its code there, and its body. A 500 `internal_error` and a 503
-`service_unavailable` are the exceptions, answerable on any route and declared
-by none. Run against the Rust spine over the cross-process round trip, this is
-REST error-code parity between the spines.
+`define_route` refuses at the type level one the route doesn't allow. An
+answer a handler spells itself (`route_raw`) is not typed by the route, and
+the map's checks are its net.
 
 `RouteSpec.rate_limit?: RateLimitKey` (`'ip' | 'account' | 'both'`) declares what a
 route's rate limiter is keyed on — metadata for surface introspection and policy
@@ -496,19 +469,6 @@ in handlers), the action dispatchers (`create_rpc_endpoint` and
 `AppServerOptions`. One budget per action across both transports
 (./usage.md §Rate limiters covers defaults and turning them off). Surface
 exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
-
-`RouteSpec.query?: AnySchema` declares an optional query parameter
-schema, an object schema. When
-present, `apply_route_specs` adds query validation middleware that decodes
-the query strictly (`read_request_query_pairs` — an escape that doesn't
-decode is refused, never left literal or replaced), takes each name's first
-value, parses the result against the schema, and returns 400
-(`ERROR_INVALID_QUERY_PARAMS`) on either failure. A handler reads the validated query as `route.query`. The query
-schema appears in the surface as `query_schema` on each route.
-
-All error codes are centralized as `ERROR_*` constants in `error_schemas.ts` —
-snake_case machine-parseable strings, single source of truth for production code
-and tests.
 
 **Loose error bodies are intentional**: Multiple producers (middleware + handler) can
 emit different shapes at the same status code, and a thrown error flattens its `data`
@@ -647,73 +607,17 @@ naming the method, with `data.reason` `ERROR_RESPONSE_OUTPUT_INVALID` and
 the issues — distinct from the codes bad caller input gets — the same path
 an error response takes.
 
-## Fire-and-Forget Pending Effects
+## Pending and Post-Commit Effects
 
-Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
-background effects (audit logging, token usage tracking). Two
-patterns:
-
-- **Audit fan-out** runs through the bound `AppDeps.audit` capability
-  (`auth/audit_emitter.ts`), built by the consumer's `audit_factory`
-  callback on `CreateAppBackendOptions` — typically a one-liner over
-  `create_audit_emitter`. `await audit.emit(ctx, input)` writes a success
-  row inside the request's transaction when one is open (`ctx.db`), so the
-  change and its row commit together, and every other row — failures above
-  all — via the pool captured inside the closure, so an attempt's row
-  persists when the request transaction rolls back. The emitter also captures its registered
-  listeners and the optional `AuditLogConfig` so handlers cannot
-  silently fall back to the builtin config or a stale callback. The write is
-  eager, but the listeners hear of a **success** row only after the request's
-  transaction commits (its fan-out rides the `post_commit_effects` queue) and
-  never when the handler throws; a **failure** row is
-  announced as soon as it is written. Action factories take
-  `ActionFactoryDeps` (`{log, audit}`) directly; those whose handlers end
-  credentials (`create_account_actions`, `create_admin_actions`, and the
-  `create_standard_rpc_actions` bundle over them) take
-  `RevokingActionFactoryDeps`, which adds `connection_closer`.
-- `query_validate_api_token(deps, raw_token)` only validates; the usage record
-  is `query_api_token_touch(deps, id, ip)`, which the bearer middleware runs
-  fire-and-forget once the token's account is found live — it runs from
-  middleware (no `RouteContext` / `ActionContext` in scope) and doesn't need
-  the audit-emit envelope.
-
-When `audit_log_sse` is set on `create_app_server`, the factory registers
-`audit_sse.on_audit_event` via `backend.deps.audit.add_listener` so SSE
-fan-out runs alongside the consumer's callback (no shallow copy of `AppDeps`).
-The flush middleware uses `try/finally` + `Promise.allSettled` to ensure the
-eager `pending_effects` queue flushes even when handlers throw.
-
-In test mode (`await_pending_effects: true`), effects are awaited before the response
-returns — eliminates polling workarounds in tests. In either mode, the optional
-`on_effect_error` callback on `AppServerOptions` reports rejected effects with
-their context (`transport`, `method`, `path`) — HTTP requests and the frames of
-every mounted WS endpoint alike — use for monitoring, metrics, or alerting.
-
-For work that must run **only after the transaction commits** (WS fan-out:
-role_grant offer / revoke notifications; a revocation's connection closes, via
-`queue_connection_close`; the success-only `db_admin_row_delete`
-audit emit, which must never claim a delete that failed at COMMIT), use
-`emit_after_commit(ctx, fn)` from `http/pending_effects.ts`. It pushes a deferred _thunk_ onto a separate
-`post_commit_effects` queue (distinct from the eager `pending_effects` promise
-queue above). The contract is two-sided: the thunk runs at flush time (after
-the wrapping `db.transaction` resolves, never mid-transaction), **and it is
-discarded if the handler's transaction rolls back** — both dispatch sites
-(`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
-shared `dispatch_with_post_commit_rollback` helper (`http/pending_effects.ts`),
-which truncates the queue on a handler throw, so a rolled-back transaction never
-fires a notification for state that never committed. Reach for the eager
-`pending_effects` queue instead when a write must survive rollback (attempt
-audits). The flush wraps each thunk in a caught-and-logged `try`/`catch`, so one
-failing send can't starve siblings or corrupt the committed response. `ctx` is
-any `{post_commit_effects}` shape — shared by `ActionContext` (RPC + WS)
-and `RouteContext` (HTTP) handlers. The Rust `fuz_actions` spine pins the same
-discard-on-rollback contract. Note that
-WS sends via `ctx.notification_sender` are NOT
-wrapped by `create_validated_broadcaster` (which only guards SSE
-`broadcast(channel, data)`) — the `input` schemas on
-`RemoteNotificationActionSpec`s are checked at send time in DEV only
-(`perform_action` wraps the sender in `create_validated_notification_sender`,
-which logs a mismatch and sends anyway), never in production.
+Every request carries two effect queues: eager `pending_effects`, pool writes
+already in flight that survive the transaction's rollback (failure audit rows,
+the api-token usage touch), and deferred `post_commit_effects`, thunks queued
+through `emit_after_commit` that run only if the transaction commits (WS
+notifications, a revocation's connection closes, a success audit row's
+listener fan-out). Their contract, the rollback discard and the flush are
+documented in one place: `src/lib/http/CLAUDE.md` §Pending Effects. Where an
+audit row is written — a success row in its change's transaction, a failure
+row on the pool — is `src/lib/auth/CLAUDE.md` §Audit emitter.
 
 ## AsyncSlot
 
@@ -759,17 +663,16 @@ methods or by naming the slot differently (e.g. `remove` instead of
 
 Keyed sibling of `AsyncSlot`. Generic: `KeyedAsyncSlot<K, T = void, E = string>`.
 Lazily creates an `AsyncSlot` per key in a backing `SvelteMap`, propagating
-`map_error` / `preserve_error_on_retry` to each child. Used wherever a state
-class previously paired an `AsyncSlot` with a `SvelteSet<id>` for per-row
-in-flight tracking — today that's the four admin/account state classes
+`map_error` / `preserve_error_on_retry` to each child. Used for per-row
+in-flight tracking in the admin and account state classes
 (`AdminAccountsState.grant` / `.revoke` / `.retract`, `AdminInvitesState.remove`,
 `AdminSessionsState.revoke_sessions` / `.revoke_tokens`,
 `AccountSessionsState.revoke`).
 
-Two genuine wins over the `AsyncSlot` + `SvelteSet` pair:
+What it gives over an `AsyncSlot` paired with a `SvelteSet<id>`:
 
 - **Cross-key supersession is correct** — clicking row B while row A is in
-  flight no longer aborts row A; each key has its own `AbortController`.
+  flight doesn't abort row A; each key has its own `AbortController`.
 - **Per-key error surfacing** — `error(key)` is per-row, not last-error-wins.
   Components render an inline error indicator next to the failing button.
 

@@ -581,7 +581,8 @@ const action_method_enum_kinds_all: ReadonlySet<ActionMethodEnumKind> = new Set(
 ]);
 
 /**
- * Filter `heartbeat` / `cancel` out of `specs` unless the consumer opts back in.
+ * Filter the protocol actions (`heartbeat`, `cancel`, `peer/ping`) out of
+ * `specs` unless the consumer opts back in.
  * Protocol actions ship from fuz_app and are spread into every consumer's
  * `actions` array at registration time (via `protocol_actions` from
  * `actions/protocol.ts`) — they should not appear in consumer-owned typed
@@ -629,7 +630,7 @@ const resolve_spec_qualifier = (
  * `BroadcastActionMethod`. Pairs each runtime const with an `Infer` type
  * alias under the same identifier. A const's `def` is its array of methods.
  *
- * Protocol-action methods (`heartbeat`, `cancel`) are filtered out by
+ * Protocol-action methods (`heartbeat`, `cancel`, `peer/ping`) are filtered out by
  * default — pass `include_protocol_actions: true` if a consumer genuinely
  * wants them on their typed surface. Empty kinds are skipped, so every
  * emitted const names at least one method.

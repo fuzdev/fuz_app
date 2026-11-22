@@ -74,8 +74,8 @@ export const hash_api_token = (token: string): string => hash_blake3(token);
  * The public id of a raw API token: `API_TOKEN_ID_PREFIX` and the first
  * `API_TOKEN_ID_BODY_LENGTH` characters of the body after `API_TOKEN_PREFIX`.
  * Both spines derive it the same way, so a token minted by either names the
- * same id on both. Twin of the Rust spine's `generate_api_token` id
- * derivation (`fuz_auth::api_token`).
+ * same id on both. Twin of the Rust spine's `fuz_auth::api_token::to_api_token_id`,
+ * which answers `None` where this throws.
  *
  * @param token - the whole raw token, `API_TOKEN_PREFIX` included
  * @returns the token's public id

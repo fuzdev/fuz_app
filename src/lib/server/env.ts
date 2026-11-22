@@ -82,14 +82,14 @@ export const BaseServerEnv = object({
 		optional(env_integer({ min: 1, max: DB_CHECKOUT_TIMEOUT_MAX_MS })),
 		{
 			description:
-				'Bound on the pool checkouts a request makes, in ms (default 5000); a failed checkout answers 503. Audit writes use FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS instead, including the failed-login row a request waits on. Postgres only — PGlite and pglet have no pool'
+				'Bound on the pool checkouts a request makes, in ms (default 5000); a failed checkout answers 503. Audit pool writes (failure rows) use FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS instead. Postgres only — PGlite and pglet have no pool'
 		}
 	),
 	FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS: meta(
 		optional(env_integer({ min: 1, max: DB_CHECKOUT_TIMEOUT_MAX_MS })),
 		{
 			description:
-				'Bound on the checkout behind each audit pool write, in ms (default 30000); a failed login waits on its row, so up to this bound. Postgres only'
+				'Bound on the checkout behind each audit pool write (a failure row), in ms (default 30000); no response waits on one, and shutdown drains them within its own bound. Postgres only'
 		}
 	)
 });

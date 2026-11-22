@@ -14,9 +14,9 @@ fuz_app's auth stack is designed to protect against:
 - **Password brute force** — rate limiting + account enumeration prevention
 - **Credential theft** — HttpOnly cookies, bearer token origin rejection
 - **Privilege escalation** — credential type hierarchy, admin-grant-path enforcement
-- **Insider threats** — best-effort audit trail for auth mutations (see
-  [Audit Logging](#audit-logging) — a failed audit write is logged and swallowed,
-  never blocking the mutation), granted_by provenance
+- **Insider threats** — an audit trail for auth mutations, where a success
+  row commits with its change or the change rolls back and failure rows are
+  best-effort (see [Audit Logging](#audit-logging)), and `granted_by` provenance
 
 Current deployment target: single-process, single-node. See [Known Limitations](#known-limitations).
 
@@ -31,7 +31,7 @@ the expected configuration. The app server does not handle TLS directly.
 
 The app server emits **no backend-fingerprinting response headers** — no
 `Server`, `X-Powered-By`, or `WWW-Authenticate` on any response, including
-401s and errors. Both spines converge on this: a prober cannot tell which
+401s and errors. Both spines hold this: a prober cannot tell which
 implementation or framework is serving the request from the response headers,
 and a 401 carries no auth-scheme challenge to probe. The cross-impl
 conformance suite enforces it as an always-on invariant over every case (the
@@ -76,11 +76,10 @@ an HTTP/2 client's split cookie means.
 Ten endpoints declare `credential_types: ['session']` on their `auth`
 axis. The dispatcher rejects non-session credentials with 403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
-before the handler runs. Eight close a credential-minting, lockout, or
-privilege-pivot threat (list below); the remaining two are gated for reasons
-that aren't a threat of their own — `POST /logout` for forensic fidelity, and
-`GET /audit/stream` because a long-lived admin feed is not handed to a
-channel the deployment never chose (both noted after the list).
+before the handler runs. Most close a credential-minting, lockout, or
+privilege-pivot threat (list below); `POST /logout` and `GET /audit/stream`
+are gated for reasons that aren't a threat of their own (both noted after the
+list).
 
 - `account_token_create` — Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation.
 - `account_token_revoke` — Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.
@@ -102,8 +101,7 @@ _tears down_ access, so a leaked bearer "logging out" harms no one — it
 holds no session to end. Without the gate the handler would return a
 misleading `200 {ok: true}` and emit a phantom `logout` audit row for an
 event that never happened; the session-credential gate refuses such a
-caller instead (403 `ERROR_CREDENTIAL_TYPE_REQUIRED`). Both spine impls
-converge on this shape.
+caller instead (403 `ERROR_CREDENTIAL_TYPE_REQUIRED`), on both spines.
 
 **`GET /audit/stream` — gated because it is a long-lived admin feed.** The
 stream carries every audit row on the instance for as long as it stays open,
@@ -111,8 +109,8 @@ so it is not handed to a credential channel the deployment never chose: the
 route admits sessions only. The gate is not what keeps a stream closable — the
 handler registers a bearer's stream under its API token id and a token
 revocation closes by that id, so a consumer that widens the channel loses no
-close. The route's `required_scope` is the separate rule-3 declaration and is
-unreachable behind this gate on the default mount; see §Token scoping.
+close. The route's `required_scope` is declared beside the gate and is
+unreachable behind it on the default mount; see §Token scoping.
 
 **`account_delete` self path — handler-enforced.** A self-delete (no
 `account_id`, or the caller's own) is session-only: a leaked API or daemon
@@ -186,11 +184,9 @@ legitimate operator.
 **Hardening layers**:
 
 - **Atomic DB lock**: `bootstrap_lock` single-row latch prevents TOCTOU races —
-  the UPDATE-guarded latch is the _single_ account-creation signal. An earlier
-  belt-and-suspenders `query_account_has_any` check inside the transaction was
-  removed as redundant once both the production and test writers came to flip
-  the same lock row; direct DB tampering with `bootstrap_lock` is out of scope
-  for the write contract
+  the UPDATE-guarded latch is the _single_ account-creation signal, and the
+  test writer flips it as production does; direct DB tampering with
+  `bootstrap_lock` is out of scope for the write contract
 - **Early in-memory check**: `bootstrap_status.available` short-circuits before
   any rate limiting, file reads, or crypto after bootstrap completes — and an
   unreadable token file flips it to `false`, closing the window rather than
@@ -264,37 +260,31 @@ legitimate operator.
   that would read back differently
 - **An invalid cookie is cleared**: a session cookie that is present and does
   not verify — malformed, a bad MAC, its signed expiry passed, an empty value
-  — is answered with a clearing `Set-Cookie` on any `/api` response past the
-  body cap and the host and origin gates, never an accepted WebSocket
-  upgrade, whichever credential authenticates the request, and ahead of a
-  `Set-Cookie` the handler appends, so a login carrying a stale cookie keeps
-  its new session. A cookie
-  that verifies but names no live session row is not cleared: the cookie
-  alone doesn't show it, so revoking a session leaves the browser's cookie in
-  place until it expires or a new login replaces it — a logout needs a live
-  session, so it answers 401 and clears nothing. The scope is each spine's
-  router's reading of the path, and the two differ on spellings a browser
-  never sends (`/%61pi/x` clears on the TS spine only, `/api/../health` on the
-  Rust spine only). On the TS spine the clear rides the response the
-  spine builds, which is every route's: a handler returns data and the spine
-  makes the response after the commit, and a handler holds no Hono context
-  to write a cookie on. What the route system doesn't build answers without
-  one — a consumer's own middleware or raw Hono route returning a `Response`
-  it made, or replacing the context's `Set-Cookie`; the next ordinary `/api`
-  response carries it, and in DEV such an answer is logged
-  (`http/dev_set_cookie_check.ts`). The Rust spine clears every such response
+  — is answered with a clearing `Set-Cookie` on `/api` responses past the body
+  cap and the host and origin gates, whichever credential authenticates the
+  request, and ahead of a `Set-Cookie` the handler appends, so a login
+  carrying a stale cookie keeps its new session. A cookie that verifies but
+  names no live session row is not cleared: revoking a session leaves the
+  browser's cookie in place until it expires or a new login replaces it (a
+  logout needs a live session, so it answers 401 and clears nothing). The TS
+  spine clears on every response the route system builds, and a consumer's own
+  middleware or raw Hono route answering its own `Response` misses it (logged
+  in DEV); the Rust spine clears every non-`101` response — root
+  ../CLAUDE.md §Middleware Ordering step 9. Where the two routers read the
+  path differently, the clear's scope does too (§CSRF Protection, "One
+  spelling per path")
 - **A cookie is sent only for work that committed**: a route's session cookie
   (a login's, a logout's clear) is part of its success result, and the
   response is built after the commit. A login whose commit fails, or a logout
   whose audit write fails, answers its error with no cookie of the handler's
 - **Server-side sessions**: Cookie contains a signed opaque ID (HMAC-SHA256);
   session data is DB-resident, stored as a blake3 hash
-- **Absolute lifetime**: 30-day hard cap, set once at mint on both layers —
-  the DB row's `expires_at` and the cookie's embedded expiry are fixed, and
-  there is deliberately no touch/renewal on either (a sliding window renews a
-  leaked cookie forever at one request per window; both spines converged on
-  the hard cap). The only recovery from an aged-out session is a fresh login.
-  Sessions carry no activity signal — there is nothing to touch or renew
+- **Absolute lifetime**: 30-day hard cap, fixed at mint on both layers — the
+  DB row's `expires_at`, set on the database clock (`NOW()` plus the lifetime,
+  `auth/session_queries.ts`), and the cookie's embedded expiry. There is
+  deliberately no touch or renewal on either (a sliding window renews a leaked
+  cookie forever at one request per window); the only recovery from an
+  aged-out session is a fresh login
 - **Expiry and live connections**: an expired session is refused on every
   request, but a WebSocket or SSE stream it opened does not read it again.
   The auth cleanup deletes expired session rows and closes those connections
@@ -353,16 +343,10 @@ accepted spelling, on both spines.
 - **Required lifetime at mint**: `account_token_create` takes a required
   `lifetime` union — `{kind:'eternal'}` or `{kind:'ttl', days}` — with
   deliberately no default, so `expires_at IS NULL` always means "deliberately
-  eternal" and a bounded token needs no follow-up plumbing (the validate
-  chokepoint has enforced `expires_at` all along, on both spines). A
-  framework-level ceiling (`max_token_ttl_days`) is deferred until `fuzf`
-  grows an expiry story (an expiry-aware token read + a 401 hint)
-- **Browser context discard**: Bearer tokens are silently discarded (not
-  rejected) when the request carries any `Origin` or `Referer` line, an empty
-  one included — the middleware
-  calls `next()` without setting a context, so public actions still work.
-  Browsers send these headers automatically; CLI tools don't. Prevents XSS
-  from exploiting a token extracted via browser-side code
+  eternal"
+- **Browser context discard**: a bearer token sent with any `Origin` or
+  `Referer` line is discarded, not rejected (§CSRF Protection, "Browser/CLI
+  split")
 - **Soft-fail for invalid tokens**: Bearer middleware never returns 401 or
   error diagnostics. Invalid, expired, or empty tokens are treated as "no
   credential" — downstream auth enforcement (the RPC dispatcher's
@@ -390,11 +374,9 @@ The mint's `scope` is a closed shape on both spines: an unknown key is refused
 and the second marks tokens that predate scoping, which a minter forging it
 would launder — as are a `methods` list on `full` and a `null` one. Duplicate
 method names collapse into one. A document past the 4 KiB cap
-(`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written. Both
-spines count the cap in UTF-8 bytes of the document's compact JSON, at mint
-and when a stored document is read — never the text Postgres prints a `jsonb`
-as, which adds a space after every `:` and `,` — so a document one spine
-mints, the other reads, and one past the cap fails closed on both.
+(`MAX_TOKEN_SCOPE_BYTES`) is refused 400 before anything is written, and a
+stored one past it fails closed when read; both spines count the cap the same
+way (`auth/token_scope.ts`).
 
 **A narrowed token is RPC-only.** `methods` denies outright every non-RPC
 spine surface that reads account data or carries authority, whatever its
@@ -407,7 +389,7 @@ its placement is per site: each surface declares its refusal (or, below,
 reads the credential through the anonymous downgrade), and the surface census
 pins every site. A method-name allowlist alone would have been a false
 promise — the db-admin browser serves paginated rows of every browsable table
-plus row `DELETE` (the credential tables sit behind `NON_BROWSABLE_TABLES` now,
+plus row `DELETE` (the credential tables sit behind `NON_BROWSABLE_TABLES`,
 but browsable rows can still carry secrets in data columns, and could be gated
 on a global role a bearer satisfies), so a token whose UI badge read "scoped
 to `cell_get`" could still bulk-read and delete browsable rows.
@@ -452,40 +434,24 @@ back, and it has two arms:
   surfaces; the WS upgrade and the db-admin browser round out the set the
   spine knows.
 
-  **`/audit/stream` carries a channel gate as well as rule 3.** A narrowed
-  token is what rule 3 refuses; a **full-scope** bearer passes it. The audit
-  route also declares `credential_types: ['session']`, which refuses every
-  bearer at the channel, ahead of the scope gate: the stream is a long-lived,
-  instance-wide admin feed, and the default does not hand it to a channel the
-  deployment never chose. `required_scope` stays declared beside it: it is the
-  rule-3 statement the surface census matches on, and it still governs a
-  consumer that deliberately widens the channel.
-
-  **Widening that gate loses no close.** The stream handler registers a
-  bearer's stream under its API token id as well as its account id, and a
-  token revocation closes by that id — the handler's own close through
-  `create_sse_connection_closer`, and the revocation guard's `token` scope
-  through the same closer. Which audit events close what is declared once, in
-  `audit_event_revocation_scopes`, and the revocation guard reads it; the
-  Rust twin does the same with the `RevocationScope` column on
-  `AUDIT_EVENT_SPECS`. A consumer route with its own `SseRegistry`
-  registers the same identities to get the same closes.
+  `/audit/stream` also carries the session channel gate
+  (§Credential-channel gating), which refuses every bearer ahead of this one;
+  its `required_scope` stays declared for the surface census and for a
+  consumer that widens the channel. Widening it loses no close: a bearer's
+  stream registers under its API token id, which a token revocation closes by
+  (§SSE Connection Security).
 - `rpc:<method>` — one action method, refused unless the token lists it. What
   the dispatcher's per-method gate reports; a route spec may not declare it
   (registration throws), since a route never reaches that gate.
 
 **The identifier half is deliberately open.** A consumer names its own surface
 — `surface:file_store`, `surface:git_http` — with no upstream release and no
-registration. Nothing is lost by that: the RPC-only rule is all-or-nothing, so a
-surface
-name decides nothing and only labels which surface refused, and the sibling
-`rpc:` arm carries arbitrary consumer method names on the same wire field.
-Registration throws on a malformed capability (unknown section, a surface name
-empty or off the name grammar — runs of lowercase letters joined by single
-underscores, at most 64 characters — or `rpc:` on a route), on the field appearing on an `ActionSpec` (the
-dispatcher derives it from the method there), and on an unrestricted route (the
-same holder reaches it by dropping the credential) — each of the last two would
-be a control that silently does nothing.
+registration: the RPC-only rule is all-or-nothing, so a surface name decides
+nothing and only labels which surface refused. Registration throws on a
+malformed capability (the grammar is `auth/token_scope.ts`'s), on the field
+appearing on an `ActionSpec` (the dispatcher derives it from the method
+there), and on an unrestricted route (the same holder reaches it by dropping
+the credential) — each would be a control that silently does nothing.
 
 Denials are `403` with a flat `{error: 'token_scope_required', required_scope}`
 body (`-32002` in the JSON-RPC envelope for the per-method gate), identical on
@@ -554,8 +520,7 @@ Rotating filesystem credential for keeper-level operations:
   in the ecosystem sends `X-Daemon-Token` outside that harness
 - **Mode `0600` is applied at creation.** The test-only producer writes the
   file via `write_file_atomic` with a unique exclusive temp and mode `0600`,
-  so it never exists group/other-readable (the old optional-`chmod` pattern,
-  under which a default umask landed it at `0644`, is gone)
+  so it never exists group/other-readable, whatever the umask
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`
@@ -566,11 +531,8 @@ Rotating filesystem credential for keeper-level operations:
   base64url characters, checked before the constant-time compare on both
   spines. A value of any other shape, and an `X-Daemon-Token` sent on two
   lines, is discarded — the request continues without the credential
-- **Browser context discard**: like bearer tokens, daemon tokens are silently
-  discarded when `Origin` or `Referer` is present — the middleware calls
-  `next()` without setting a context. Daemon tokens are loopback-only and never
-  legitimately carry an `Origin`, so a header-bearing one is dropped (and the
-  request falls through to `credential_type_required` downstream)
+- **Browser context discard**: like a bearer token, a daemon token sent with
+  `Origin` or `Referer` is discarded (§CSRF Protection, "Browser/CLI split")
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
 ## Test Backdoor Actions
@@ -579,12 +541,8 @@ Cross-process integration tests need a few privileged operations the production
 wire never exposes — wiping auth tables between tests, forging an expired
 session to exercise the DB-row expiry gate, seeding a content-addressed fact
 without a store handle, flooding a connection past its outbound budget. These
-live as `_testing_*` RPC actions
-(`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
-`_testing_drain_effects`, `_testing_flood_notifications`,
-`_testing_schema_snapshot`, `_testing_migration_tracker`,
-`_testing_db_invariants`, `_testing_action_manifest`, `_testing_origin_check`,
-`_testing_credential_read`, `_testing_shorten_credential_expiry`)
+live as the `_testing_*` RPC actions `TESTING_BACKDOOR_METHODS` lists
+(`testing/cross_backend/spine_surface_constants.ts`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time (fuz_app's own spine
 binary, like the Rust stub, also serves them on its WS endpoint, behind the
@@ -657,50 +615,35 @@ enforcement:
   that closer through `create_sse_connection_closer(registry, role)` — one
   `close_by_identity` per session hash, API token id, or account id, and the
   account's streams for a revoked `role`.
-- **Revocation guard**: `create_revocation_guard(closer, log)` returns an
-  `on_audit_event` callback that repeats those closes when the audit row is
-  announced, through the same closer — `create_app_server` registers one on
-  `deps.connection_closer`, which holds the registry — by the
-  `RevocationScope` the event declares (`audit_event_revocation_scopes`):
-  - `session` (`session_revoke`, `logout`) — closes only the stream whose
-    `scope` matches the revoked or logged-out session's hash
-  - `token` (`token_revoke`) — closes only the stream registered under the
-    revoked API token's id
-  - `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
-    `account_delete`, `account_purge`) — closes the target account's streams
-  - `role` (`role_grant_revoke`) — closes the target account's streams when
-    the revoked role is the one the stream requires and the revoked grant was
-    global (the stream's role gate admits on global grants only, so a scoped
-    revoke closes nothing). The same guard closes the account's sockets gated
-    on the role on the same rows
+- **Revocation guard**: `create_revocation_guard(closer, log)` repeats those
+  closes when the audit row is announced, through the same closer, by the
+  `RevocationScope` each event declares (`audit_event_revocation_scopes`, twin
+  of the Rust `AUDIT_EVENT_SPECS` column): a session-scoped event closes the
+  stream whose `scope` is that session's hash, a token-scoped one the stream
+  registered under that token id, an account-scoped one the account's streams,
+  and a revoke of a global grant the account's streams gated on that role. The
+  per-revocation table is under [Closing on Revocation](#closing-on-revocation)
 - **Success guard**: Only `outcome='success'` events act — an outcome outside
   the enum is inert. Failed revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the revocation
   itself. No periodic role_grant refresh is needed.
-- **Client disconnect**: `create_sse_stream` (and `create_sse_response` over it) closes its stream when the
-  client disconnects, including one that leaves before the handler returns —
-  a runtime cancels only a body it has started sending, so that case would
-  otherwise leave a registered stream nothing delivers to. On
-  `@hono/node-server` the request's `signal` misses such a disconnect (it is
-  created on first read and aborted only if it existed when the connection
-  closed), so the Node stream behind the response is watched there — the
-  response object over HTTP/1, its `Http2Stream` over HTTP/2. The audit route
-  registers the stream's close listener before admitting it, so a client gone
-  by then takes no slot and evicts no other stream.
+- **Client disconnect**: `create_sse_stream` (and `create_sse_response` over
+  it) closes its stream when the client disconnects, including one that leaves
+  before the handler returns — a runtime cancels only a body it has started
+  sending (how it watches for that on `@hono/node-server` is `realtime/sse.ts`'s
+  TSDoc). The audit route registers the stream's close listener before
+  admitting it, so a client gone by then takes no slot and evicts no other
+  stream.
 - **Factory-managed**: `audit_log_sse: true` on `create_app_server` handles all
   wiring (registry, guard, closer, broadcaster, `on_audit_event` composition,
   event specs). `create_audit_log_sse({log, connection_closer})` remains for
   manual control.
 
 The audit log SSE route (`/audit/stream`) registers each stream with
-`scope = session_hash` and `groups = [account_id]` (plus the API token id for
-a bearer, on a route widened to admit one), so `session_revoke` and `logout`
-close only that session's streams, while a `role_grant_revoke` of the stream's
-role and the account-wide revocations (`session_revoke_all`,
-`token_revoke_all`, `password_change`, an account delete or purge) close every
-stream for the account.
+`scope = session_hash` and `groups = [account_id]`, plus the API token id for
+a bearer on a route widened to admit one.
 
 ## WebSocket Connection Cap
 
@@ -783,34 +726,26 @@ connection, with one rule:
   counts frames.
 
 **WebSocket.** The budget is `outbound_queue_bytes`, default
-`DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB) — a value of its own, not derived from
-the inbound message cap (set it on `ConnectionRegistry`, or on
-`WsEndpointSpec` for the registry `create_app_server` creates; zero or a
-non-positive value throws at assembly). Every frame fuz_app sends a
-connection goes through one path — responses, error frames, notifications,
-broadcasts, `send_to_account`, server-initiated requests.
+`DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB, its own value, not derived from the
+inbound message cap; on `ConnectionRegistry`, or on `WsEndpointSpec` for the
+registry `create_app_server` creates). Every frame fuz_app sends a connection
+goes through it — responses, error frames, notifications, broadcasts,
+server-initiated requests.
 
 - **Overflow closes the connection**: a frame that does not fit is not
   delivered, and the socket closes with `WS_CLOSE_OUTBOUND_OVERFLOW` (4005,
   reason `outbound queue overflow`). The connection leaves the registry in the
-  same synchronous step — later sends miss it and the counts and the
-  per-account cap no longer see it — its in-flight handlers are cancelled, and
-  no frame follows the close frame, the response of the request whose handler
-  overflowed the connection included.
-- **Not a revocation**: the credential is still good and nothing took the
-  connection's place, so `FrontendWebsocketClient` reconnects under its
-  ordinary backoff. The close is the client's notice that it missed messages;
-  a consumer re-reads whatever state it tracks on reconnect.
-- **Write deadlines**: bytes a socket has not taken `WS_WRITE_STALL_TIMEOUT`
-  (10 s) after they were handed to it end the connection with no close frame —
-  the client sees an abnormal close (1006). A close frame gets
-  `WS_CLOSE_WRITE_TIMEOUT` (1 s), after which a socket still holding unwritten
-  bytes is cut the same way where the runtime can cut one, so a revoked or
-  overflowed connection whose client stopped reading does not keep its buffered
-  frames for the runtime's own close timeout.
-- **One log line, no audit row**: an overflow or a stall logs one warning
-  naming the connection, its account, and what was waiting. A client can
-  provoke either at will, so an audit write per event would amplify it.
+  same step, its in-flight handlers are cancelled, and no frame follows the
+  close frame.
+- **Not a revocation**: the credential is still good, so
+  `FrontendWebsocketClient` reconnects under its ordinary backoff; the close
+  is the client's notice that it missed messages, and a consumer re-reads the
+  state it tracks.
+- **A client that stops reading is cut**: bytes a socket has not taken within
+  `WS_WRITE_STALL_TIMEOUT` (10 s) end the connection with no close frame, and a
+  close frame gets `WS_CLOSE_WRITE_TIMEOUT` (1 s). An overflow or a stall logs
+  one warning and writes no audit row — a client can provoke either at will.
+  The deadlines and the pump are `actions/ws_outbound_writer.ts`'s TSDoc.
 
 What the WebSocket bound leaves:
 
@@ -819,24 +754,17 @@ What the WebSocket bound leaves:
   the budget and the deadlines; `notify` on the same context goes through them.
 - **A socket the runtime does not report on.** The pump reads the runtime's
   socket buffer (`bufferedAmount` on Node's `ws`, `getBufferedAmount()` on
-  Bun). An adapter whose socket exposes neither reads as never backed up:
-  its frames are budgeted while they wait for the pump, and no stall is
-  detected.
-- **A closed socket is not counted.** A connection the server closed or
-  dropped leaves the registry at once, so the per-account connection cap does
-  not count it while its socket is still closing. What the runtime holds for
-  such a socket is bounded instead: at a close the registry hands the socket
-  only the waiting frames its buffer has room for and discards the rest, so —
-  where the runtime reports its buffer — the buffer holds less than
-  `WS_WRITE_HIGH_WATER_BYTES` (64 KiB) plus one frame, and the close frame. On
-  Node's `ws` and Bun a socket still holding any of it at the close deadline
-  (1 s) is cut. A socket with no way to be cut (no `terminate`, as on a
-  web-standard `WebSocket`) whose client is not reading would stay in the
-  runtime, holding that much, until the runtime or the client ends it, and the
-  cap would not limit how many such sockets one account leaves behind.
+  Bun). An adapter whose socket exposes neither reads as never backed up: its
+  frames are budgeted while they wait for the pump, and no stall is detected.
+- **A closing socket.** A connection the server closed leaves the registry at
+  once, so the per-account cap no longer counts it while its socket closes.
+  What the runtime holds for it is bounded (under `WS_WRITE_HIGH_WATER_BYTES`,
+  64 KiB, plus one frame and the close frame) and cut at the close deadline on
+  Node's `ws` and Bun; a socket with no way to be cut (no `terminate`) whose
+  client isn't reading stays in the runtime until the runtime or the client
+  ends it.
 - **One frame of any size.** A frame is accepted when nothing is waiting,
-  whatever its size, so "one frame" above is as large as the largest message
-  the server sends.
+  whatever its size.
 
 **SSE.** `create_sse_stream` holds what a stream has written and its client
 has not read to `SSE_OUTBOUND_QUEUE_BYTES` (1 MiB, fixed), with the same charge
@@ -900,19 +828,15 @@ admission:
    nothing is queued for it, no count includes it, and the caps neither count
    it nor evict for it.
 2. **Re-read.** The credential is read again
-   (`revalidate_resolved_auth`, `auth/resolved_auth.ts`): the session row or
-   API-token row still exists, is unexpired, and belongs to the same account,
-   and the account is not soft-deleted. A daemon token has no row and no
-   revocation event, so only its account is re-read. The re-read uses the
-   resolve path's own queries and liveness predicate, writes nothing, and does
-   not touch a token's `last_used_at` — re-checking a credential is not using
-   it. A WebSocket also re-reads its acting actor, on every endpoint: an
-   actor soft-deleted under its live account keeps the account's credentials
-   and its own grant rows, so it is refused like a dead credential. The audit
-   stream, and a WebSocket endpoint with `required_roles`, also
-   re-read the acting actor's role grants, since a role revocation closes
-   them too: a lost role refuses the stream with 403, and the socket with
-   `WS_CLOSE_PERMISSION_REVOKED`.
+   (`revalidate_resolved_auth`, `auth/resolved_auth.ts`) with the resolve
+   path's own queries: the session or API-token row still exists, is
+   unexpired, and belongs to the same account, and the account is live (a
+   daemon token has no row, so only its account is re-read). The re-read
+   writes nothing — re-checking a credential is not using it. A WebSocket also
+   re-reads its acting actor (a soft-deleted actor is refused like a dead
+   credential), and the audit stream and a WebSocket endpoint with
+   `required_roles` re-read the actor's role grants, a lost role refusing the
+   stream with 403 and the socket with `WS_CLOSE_PERMISSION_REVOKED`.
 3. **Admit.** `admit` refuses when the pending registration is gone — a
    revocation closed it — and otherwise applies the cap and opens the
    connection.
@@ -940,34 +864,24 @@ after it commits, so every revocation is one or the other.
   stream closed the instant it opened — and the client's reconnect is answered
   by the gates.
 
-**Frames sent before admission.** A WebSocket client can send as soon as the
-handshake completes. Those frames are queued and dispatched in arrival order
-once the connection is admitted (and its `on_socket_open` hook has completed);
-they are dropped unread on a refusal. Nothing is dispatched on a credential
-that has not been re-read. The queue is bounded twice, since a runtime adapter
-applies no backpressure and pending sockets are not capped per account: at
-most `MAX_PRE_ADMISSION_FRAMES` frames, and at most
-`PRE_ADMISSION_QUEUE_BYTES_FACTOR` times the message-size cap in bytes. Past
-either, the socket closes with `WS_CLOSE_POLICY_VIOLATION` (1008). A client
-whose reopen flush can exceed either bound — a durable queue raised above the
-frame cap, or queued requests totalling more than the byte budget — meets that
-close.
+**Frames sent before admission.** Frames a client sends after the handshake
+are queued, dispatched in arrival order once the connection is admitted, and
+dropped unread on a refusal, so nothing is dispatched on a credential that
+hasn't been re-read. The queue is bounded in frames and bytes
+(`MAX_PRE_ADMISSION_FRAMES`, `PRE_ADMISSION_QUEUE_BYTES_FACTOR`); past either
+the socket closes with `WS_CLOSE_POLICY_VIOLATION` (1008), which a client
+flushing a large durable queue on reopen can meet.
 
 **What a client must not assume.** A server-initiated message sent between the
 handshake and admission is not delivered, just as one sent before the
 handshake is not. A client that needs to know its connection is live sends a
 request and waits for the answer.
 
-**A closed socket dispatches nothing.** A runtime adapter can keep delivering
-inbound frames after the server closes a socket, until the close handshake
-completes — on Node, for as long as the client withholds its close frame, up
-to the `ws` close timeout. So a server-side close (revocation, cap eviction,
-heartbeat timeout, oversized message, refused admission) removes the
-connection and aborts its handlers' signal at close time, and frames arriving
-afterward are dropped rather than dispatched: a revoked or evicted socket
-cannot keep running handlers by ignoring the close. A connection removed from
-the registry without a close is ended on its next frame
-(`WS_CLOSE_INTERNAL_ERROR`) rather than left open and unanswered.
+**A closed socket dispatches nothing.** A runtime can keep delivering frames
+after the server closes a socket, until the close handshake completes; a
+server-side close removes the connection and aborts its handlers at close
+time, and later frames are dropped, so a revoked or evicted socket can't keep
+running handlers by ignoring the close.
 
 **What the guarantee rests on.** The two halves above leave one schedule
 uncovered by themselves: a revocation whose close ran *before* the
@@ -987,18 +901,15 @@ revocation the re-read sees.
   [Single-Process Architecture](#single-process-architecture)): a second
   process serving the same database keeps its connections on a credential this
   one revoked.
-- A commit whose outcome the server never learns closes nothing. The queued
-  closes are dropped whenever the transaction call throws, and a `COMMIT` that
-  landed but whose acknowledgement was lost throws like one that failed. The
-  request answers with an error; repeating an admin revoke-all closes the
-  connections (`account_session_revoke_all` first needs a new login, its
-  caller's session having gone with the commit), while repeating a single
-  session or token revoke, or an account delete, finds nothing left to revoke
-  and closes nothing — and the admin revoke-alls refuse an account that is no
+- A commit whose outcome the server never learns closes nothing: the queued
+  closes are dropped whenever the transaction call throws, and a `COMMIT`
+  whose acknowledgement was lost throws like one that failed. Repeating an
+  admin revoke-all closes the connections; repeating a single revoke or an
+  account delete finds nothing left to revoke, so those connections stay open
+  until they disconnect — and the admin revoke-alls refuse an account no
   longer active, so a deleted account's connections stay open until they
-  disconnect. The expired-session sweep is the exception: it closes for the
-  sessions its delete returned whatever became of its commit, since they are
-  expired either way, and the next pass deletes any row the commit left.
+  disconnect too. The expired-session sweep is the exception: it closes
+  for the sessions its delete returned whatever became of its commit.
 - A role that ends any other way closes nothing: a grant reaching its
   `expires_at`, or a `role_grant` or `actor` row deleted through the db-admin
   browser, whose `db_admin_row_delete` event declares no revocation scope. The
@@ -1007,32 +918,16 @@ revocation the re-read sees.
   connection carries its credential's **deadline**
   (`ResolvedAuth.credential_deadline`) and closes there itself: a WebSocket
   with `WS_CLOSE_SESSION_REVOKED` and reason `Credential expired`, an audit
-  stream by ending as a revoked one does. The deadline is the earliest of
-  what the credential carries — a session's signed cookie expiry and its
-  row's, an API token's row (none for an eternal token), none for the daemon
-  token — with each row's expiry read as the time left on the database clock,
-  so a skew between the server's and the database's clocks moves no
-  deadline. The wait is a chain of timers of at most an hour, so a deadline
-  past `setTimeout`'s ceiling (about 24.8 days; a session lives 30) does not
-  fire at once. The deadline sits on the monotonic clock, which stops while
-  the host is suspended, so each wake-up also checks the same deadline on the
-  wall clock and closes at whichever comes first: a suspend delays the close
-  by at most one timer (an hour) after the resume. A wall clock stepped
-  forward can close a connection early; its client reconnects through the
-  gates. The re-read refuses an already-expired credential at open. The Rust spine closes at the same deadline, with the same code and
-  reason.
-  - The auth cleanup repeats the close for a **session**: each pass deletes
-    the expired session rows and closes the connections they opened, after
-    the delete commits (`cleanup_expired_sessions`) — the close
-    `account_session_revoke` could no longer make once the row is gone. It is
-    scheduled by `create_app_server`'s `auth_cleanup` option (off by default)
-    or `start_auth_cleanup`; the deadline does not depend on it.
-  - An expired **API token**'s row is not swept; its connections close at
-    their deadline, and `account_token_revoke` still finds the row to close
-    for.
-
-  The Rust spine's sweep makes the same closes, and its servers all schedule
-  it.
+  stream by ending as a revoked one does. The deadline is the earliest expiry
+  the credential carries, each row's read on the database clock, so clock
+  skew moves none; how the wait survives `setTimeout`'s ceiling and a host
+  suspend is `auth/credential_deadline.ts`'s TSDoc (a suspend delays the
+  close by at most an hour after the resume). The re-read refuses an
+  already-expired credential at open. The Rust spine closes at the same
+  deadline, with the same code and reason. The auth cleanup's session sweep
+  also closes the connections of the expired rows it deletes, after the
+  delete commits (`src/lib/auth/CLAUDE.md` §Cleanup); an expired API token's
+  row isn't swept, and its connections close at their deadline.
 - Rotating the daemon token closes nothing: the token has no row and no
   revocation event, so a connection opened on an earlier token keeps running.
 - A revocation made by code that neither queues a close nor emits an audit
@@ -1053,19 +948,14 @@ expiry, a raw row delete — is under
 **Two closers, one order.**
 
 - **The handler.** Every handler that ends a credential queues a close on the
-  request's post-commit queue: `queue_connection_close(ctx,
-  deps.connection_closer, target)`. The queue runs once the handler's
-  transaction has committed and is discarded when the handler throws.
-  `/login` and `/password`, which run their writes in a transaction of their
-  own (`transaction: false` routes), close straight after that commit with
-  `close_connections_after_commit`, which logs a failing close rather than
-  failing the committed request. The
-  close does not depend on the audit row's announcement. A revocation's
-  success row is written in its transaction — `/login`'s and `/password`'s
-  included, last in the transaction they open — so a failed audit INSERT
-  rolls the revocation back and fails the request (no close runs). Nor does
-  the close wait for a pool write — the queue runs before the request's
-  in-flight pool writes (its failure rows) are awaited.
+  request's post-commit queue (`queue_connection_close(ctx,
+  deps.connection_closer, target)`), run once its transaction commits and
+  discarded when it throws; `/login` and `/password`, which open their own
+  transaction, close straight after that commit
+  (`close_connections_after_commit`). The close depends on no audit row: a
+  revocation's success row is in its transaction, so a failed audit INSERT
+  rolls the revocation back and no close runs, and the queue runs before the
+  request's failure rows are awaited.
 - **The audit listener.** `create_revocation_guard`, registered once on the
   backend's closer, repeats the close on every transport when the audit row is
   announced. The emitter announces a
@@ -1101,41 +991,21 @@ holds another; its client reconnects into the gate when it still qualifies.
 Nothing is sent on a socket after its close. A failed revocation (`revoked: false` — the id was wrong, or another
 account's) closes nothing: it carries a caller-supplied id.
 
-**Expired sessions.** One close is not a revocation. The auth cleanup's
-session sweep deletes expired session rows, and a deleted row can no longer be
-closed for by `account_session_revoke`, so the sweep closes the connections of
-each session it deletes — by session id, through the same
-`deps.connection_closer`, after its delete commits. It writes no audit row
-(nobody performed an expiry), so no listener repeats the close. It runs only
-where the cleanup is scheduled (`auth_cleanup` on `create_app_server`, off by
-default); the bound it gives is under
-[Connection Admission](#connection-admission), "What remains".
+**Expired sessions.** One close is not a revocation: the auth cleanup's
+session sweep closes the connections of each expired session it deletes,
+through the same `deps.connection_closer`, after its delete commits, and
+writes no audit row (nobody performed an expiry), so no listener repeats it.
+It runs only where the cleanup is scheduled (`auth_cleanup` on
+`create_app_server`, off by default).
 
 **One closer for every transport.** `deps.connection_closer` is a
-`RealtimeCloser`: each close fans out to every member added to it. A
-registry, socket, or stream that throws while closing does not stop the
-others — every match is attempted, then the first error is thrown and logged.
-`create_app_backend` creates it, and `create_app_server` adds each WebSocket
-connection registry it mounts (`ws_endpoints`) and its audit stream registry
-(`audit_log_sse`), so the standard assembly needs no wiring. Assembling by
-hand:
-
-- `register_action_ws` and `create_audit_log_sse`
-  take `connection_closer` as a **required** option and add their registry to
-  it. `null` is the explicit opt-out. A registry joined this way gets every
-  handler's close, a role revoke's included, whether or not a revocation guard
-  is registered — `create_app_server` registers one only when it mounts a
-  WebSocket endpoint or the audit stream.
-- The action and route factories whose handlers revoke
-  (`create_account_actions`, `create_admin_actions`,
-  `create_role_grant_offer_actions`, `create_self_service_role_actions`,
-  `create_standard_rpc_actions`, `create_account_route_specs`) read
-  `connection_closer` off their `deps`, where it is required. A backend with
-  no live-connection surface leaves its closer empty; hand-built deps for the
-  action factories can pass `noop_connection_closer`.
-- A consumer's own `SseRegistry` joins with
-  `deps.connection_closer.add(create_sse_connection_closer(registry, role))`,
-  `role` being the one its streams are gated on (or `null`).
+`RealtimeCloser`: each close fans out to every member added to it, and one
+member that throws doesn't stop the others. `create_app_backend` creates it
+and `create_app_server` adds each WebSocket registry it mounts and its audit
+stream registry, so the standard assembly needs no wiring; the factories whose
+handlers revoke require it on their `deps`. Assembling by hand, and joining a
+consumer's own `SseRegistry` (`create_sse_connection_closer`):
+`src/lib/actions/CLAUDE.md` §Connection closer.
 
 **A socket that revokes itself is answered first.** When a WebSocket request
 revokes the credential its own socket runs on, the response is sent before the
@@ -1218,27 +1088,21 @@ construction (only its `testing_*` crates build
 `RateLimiterMode::DisabledForTesting`, and its release audit forbids linking
 them), while the TS side has only the warning and the banner.
 
-The 5-attempt cap was deliberately **not** widened when the buckets became
-monotone. Widening buys NAT'd-egress headroom by loosening the one bound that
-caps credential guessing from a single address; splitting the shared bucket buys
-the same headroom without touching that bound.
+The 5-attempt cap stays: widening it would buy NAT'd-egress headroom by
+loosening the one bound on credential guessing from a single address, and
+splitting the buckets buys that headroom without touching it.
 
-Costs to accept, both bounded by the split above but not eliminated by it:
+Costs to accept, bounded by the split but not eliminated by it:
 
 - On a NAT'd egress the IP budget is unforgiving within its window — a
-  colleague's earlier failed logins still count against you, and successes no
-  longer drain the bucket for everyone. Accidental exhaustion is meaningfully
-  more likely than it was under the refund.
-- Sustaining a deliberate lockout got cheaper. Under the refund, an attacker
-  holding an egress at the cap lost the whole bucket the moment any user logged
-  in successfully; now losing that race costs them nothing, so ~1 failed request
-  per `window / max_attempts` holds the address at the cap. The refund was never
-  a *defense* against this (a full bucket refuses the very success that would
-  clear it) — it was an accident that made the attack fragile.
-- There is no operator "clear this IP" action. Within a window the only remedies
+  colleague's earlier failed logins count against you, and no success drains
+  the bucket.
+- A deliberate lockout is cheap to sustain: about one failed request per
+  `window / max_attempts` holds an address at the cap.
+- There is no operator "clear this IP" action: within a window the remedies
   are waiting it out or restarting the process (in-memory state, see
   §Known Limitations). `RateLimiter.reset` is public, so a consumer can expose
-  an admin action over it — on IP keys that is an operator escape hatch, not the
+  an admin action over it — on IP keys an operator escape hatch, not the
   success-forgiveness the method's TSDoc forbids.
 
 Pinned on both spines by the `login_security` cross-backend suite (interleaved
@@ -1294,8 +1158,7 @@ a throttled RPC call would answer with a REST-shaped error instead of a
 JSON-RPC envelope.
 
 Rate limiting belongs on low-entropy credentials — passwords — and on bounding
-attacker-controlled writes. The Rust spine never had a bearer limiter; this is
-the converged shape on both.
+attacker-controlled writes. Neither spine limits bearer auth.
 
 What the path does bound is the work a junk value costs. Both spines refuse a
 bearer that is not token-shaped (`is_api_token_shaped`: the prefix plus exactly
@@ -1305,217 +1168,87 @@ indexed lookup. Either way the request soft-fails to "no credential".
 
 ### Rate Limiter Limitations
 
-- **Reserve, then settle**: a handler that checked the limiter, awaited the
-  Argon2 work, and recorded afterwards let every request of a concurrent burst
-  pass the check before any of them recorded — a burst of any size got
-  through. Every password-bearing handler (login, password change, signup,
-  bootstrap) instead reserves the attempt, which admits it and counts it in
-  flight in one synchronous step; the attempt counts against the cap until the
-  handler settles it — `record` on the outcomes that count, `release` (in a
-  `finally`) on the rest. A burst gets at most `max_attempts` past the limiter.
-  The Rust spine reserves the same way (released on drop), except that a
-  request dropped during its Argon2 work — a client that disconnects
-  mid-verify, which cancels the Rust handler but not the TS one — is recorded:
-  the work runs on regardless, and the TS handler settles every attempt that
-  reaches the verify.
-- **Attempts count while in flight, whatever their outcome — so excess
-  concurrent attempts wait briefly.** An in-flight attempt might be a
-  correct one, but until it settles it holds a slot, so a burst of *correct*
-  logins from one address (a class behind one NAT) meets the cap too. The
-  password surfaces therefore reserve with `RateLimiter.reserve` (Rust
-  `RateLimiter::reserve`): when the cap is reached only because of attempts in
-  flight, the request waits up to `RESERVATION_WAIT_MAX_MS` (5 s, Rust
-  `RESERVATION_WAIT_MAX`) for a slot instead of refusing. Each settle, record,
-  or reset on a key wakes that key's waiters — no other key's — to re-decide:
-  a freed slot is taken; recorded failures reaching the cap refuse at once
-  with their real `retry_after`; the wait running out answers `429` with
-  `retry_after: IN_FLIGHT_RETRY_AFTER_SECONDS` (1). At most
-  `max_attempts` requests wait on one key — one more is refused at once — so a
-  flood can't park requests without bound, and a request that leaves the wait
-  (timed out, aborted, or cancelled) leaves the waiter count as it found it. A
-  burst of up to twice the cap from one address all succeeds, the later half
-  after a short delay; past that, the excess answers `429` with
-  `retry_after: 1` and retries. A burst of wrong guesses still gets exactly
-  `max_attempts` past, the waiters refused as soon as those failures record.
-  The action dispatchers' limiters don't wait: they count every pass at once.
-  A waiter holds no place in a queue: on each wake every waiter on the key
-  re-decides, so one can lose every race for a freed slot until its wait runs
-  out (at most 5 s). A waiting request holds no database connection on
-  either spine: login and password change run their writes in a transaction of
-  their own, opened after the wait and the Argon2 work (the TS routes are
-  `transaction: false`).
-- **Bearer auth's reason for having no limiter** (below) is the same cost
-  without the wait: a limiter there would count *successful* concurrent
-  requests, and bearer automation bursts by design.
+- **Concurrent attempts are counted while in flight.** Every password-bearing
+  handler (login, password change, signup, bootstrap) reserves the attempt —
+  admitting it and counting it in flight in one synchronous step — and settles
+  it after the Argon2 work, so a concurrent burst gets at most `max_attempts`
+  past the limiter. The Rust spine reserves the same way, except that a
+  request whose client disconnects mid-verify is recorded there.
+- **Excess concurrent attempts wait briefly.** An in-flight attempt might be a
+  correct one, so when the cap is reached only by attempts in flight a request
+  waits up to `RESERVATION_WAIT_MAX_MS` (5 s) for a slot instead of refusing,
+  then answers `429` with `retry_after: 1`; a burst of wrong guesses still gets
+  exactly `max_attempts` past. A waiting request holds no database connection.
+  The rules (who waits, how many, the wake-up) are `rate_limiter.ts`'s TSDoc.
+  The action dispatchers' limiters don't wait.
 - **Blocked requests don't extend lockout**: A 429 reserves nothing and records
   nothing. Continued abuse during lockout doesn't extend the window.
-- **Single-process**: See [Known Limitations](#known-limitations).
-
-### Rate Limiting in Multi-Process Deployments
-
-The in-memory rate limiter is designed for single-process deployments. In
-horizontally-scaled setups, each process maintains independent counters —
-an attacker distributing requests across N instances can attempt
-N × max_attempts per window.
-
-Mitigations for multi-process deployments:
-
-- **Reduce window sizes** as compensation (e.g., 3 attempts / 10 min instead
-  of 5 / 15 min) to limit the effective multiplier
-- **Rate limit at the reverse proxy** (nginx `limit_req`) for IP-based limiting
-  — this is shared across all backend instances and handles the common case
-- **Use a shared store** (Redis, DB table) for application-level rate limiting
-  when proxy-level limiting is insufficient (e.g., per-account limiting)
-
-For v1 single-process deployments, the in-memory limiter is sufficient.
+- **Single-process**: counters are per process; see
+  [Known Limitations](#known-limitations).
 
 ## Body Size Limiting
 
-`create_app_server` applies a body size limit (`http/body_limit.ts`) before
-auth and route handling. Default: 1 MiB (`DEFAULT_BODY_LIMIT_BYTES`). Oversized
-payloads are rejected with 413 and `{error: 'payload_too_large'}`
-(`REST_PAYLOAD_TOO_LARGE`). Configure via `max_body_size` on
-`AppServerOptions`; pass `null` to disable. A non-safe-integer or negative
-value throws at assembly; `null` adds a security warning to the startup
-diagnostics. The limit is mounted as a middleware spec at `*`, ahead of the
-others, so every route's declared errors carry its 413 `payload_too_large`
-and 400 `invalid_content_length`; with `null` neither is declared.
+`create_app_server` caps request bodies (`http/body_limit.ts`) ahead of every
+other middleware: default 1 MiB (`DEFAULT_BODY_LIMIT_BYTES`), `max_body_size`
+on `AppServerOptions` to change it, `null` to disable (a security warning in
+the startup diagnostics). An oversized body answers 413 `payload_too_large`; a
+`Content-Length` that isn't a plain run of ASCII digits — which a cap can't
+compare and Hono's `bodyLimit` would pass uncounted — answers 400
+`invalid_content_length`. Every route's error map declares both.
 
-On both spines the 413 comes first for a declared `Content-Length` over the
-cap; a length-less (chunked) body over the cap is refused too, but which
-refusal it gets when another check also applies is implementation-defined.
+**A refusal closes the connection without reading the body.** A request whose
+declared `Content-Length` is over the cap is refused on the header, before any
+auth, with `Connection: close`: an unread body can't safely share a
+keep-alive connection, since its bytes could parse as the next request
+(request smuggling), and reading past it to reuse the connection takes up to
+the attacker-declared length off the socket. No backend serves a request
+pipelined behind a refused one (`testing/cross_backend/body_size_smuggling.ts`),
+and the reject never reads the body (`server/create_app_server.db.test.ts`).
+A body with no declared length is measured as it arrives and refused once past
+the cap.
 
-**A `Content-Length` the cap cannot read.** A `Content-Length` that is not a
-plain run of ASCII digits — `abc`, `-1`, `+5`, `1e9`, `0x1F4`, an empty value,
-a combined `5, 500` — is refused with 400 `{error: 'invalid_content_length'}`
-and `Connection: close`, before auth and without reading the body. A length
-that does not parse cannot be compared to the cap, and Hono's `bodyLimit`
-passes such a request on without counting its body. A digit run of any length
-compares as a number, so one far past what a number holds exactly is over the
-cap (413). The runtimes' HTTP parsers answer their own bodiless 400 to most of
-these before the application runs, so the check is defense in depth where
-they do and the refusal where they do not:
+**Runtime floors.** The `Connection: close` is what makes the runtime close at
+once. **Bun 1.4.3 is the tested floor**: an older Bun kept the connection
+after the 413 and served the next request, so run Bun deployments, and the
+Bun leg of the cross-backend suites, at the floor or later. The parser
+behavior the defense-in-depth checks were measured against is Node 24.14.1
+and Bun 1.4.3; the Rust spine's `Transfer-Encoding` + `Content-Length`
+handling needs hyper 1.11.1 or later. The per-runtime matrix — which parser
+refuses which malformed length, what each runtime does after the 413 — is
+`http/body_limit.ts`'s TSDoc.
 
-- **Node** refuses every form above, and a repeated `Content-Length` header
-  whether or not the values agree.
-- **Bun** refuses them too, except a repeated header with equal values, which
-  reaches the application as one combined value (`50, 50`) — refused here.
-- **The Rust spine** (hyper) refuses a value that is not digits and a repeated
-  header with differing values at parse, and accepts a repeated header with
-  equal values as that value. It has no application-level check, and needs
-  none: no unparsed length reaches its limit layer.
-
-Observed on Node 24.14.1 and Bun 1.4.3.
-
-A request carrying both `Transfer-Encoding` and a well-formed `Content-Length`
-is measured by the bytes that arrive, since the declared length does not frame
-a chunked body. The Node and Bun parsers refuse such a request with their
-own 400. hyper accepts it: it removes the `Content-Length`, whichever
-header came first, frames the body as chunked, and closes the connection after
-its response, so the Rust spine's limit layer sees no declared length and
-counts the bytes that arrive (hyper 1.11.1 or later — an older hyper left a
-`Content-Length` that preceded `Transfer-Encoding` on the request and kept the
-connection). The status differs by backend; the outcome does not — the
-connection closes and a request pipelined behind it is never served, which the
-cross-backend suite pins.
-
-**Rejection and the connection.** A request whose `Content-Length` exceeds the
-cap is rejected on the header, before the body is read, and the 413 carries
-`Connection: close`. The defense-in-depth posture is to **close the connection
-without reading the body**: an unread request body cannot safely share a
-keep-alive connection, because the leftover bytes could be parsed as the start
-of the next request (request smuggling) — and a server that instead reads past
-the body to reuse the connection takes up to the attacker-declared length off
-the socket. What the connection does after the 413 is up to the runtime, and
-the runtimes differ:
-
-- **Node** (`@hono/node-server`) closes at once, with the body unread. The
-  `Connection: close` header is what makes it: a 413 without one leaves the
-  adapter holding the connection for a drain window, after which it closes —
-  or, when nothing touched the request body and the rest of it arrives inside
-  that window, reads it off and serves the next request.
-- **Bun** closes at once too, with the body unread, honouring the header.
-  **Bun 1.4.3 is the tested floor**: an older Bun kept the connection after
-  the 413 and served the next request (correctly framed), so run Bun
-  deployments, and the Bun leg of the cross-backend suites, at the floor or
-  later.
-- **The Rust spine** (hyper) closes at once, without waiting for the body.
-
-No runtime serves a request behind one refused on its declared length. A
-reverse proxy with its own request-body cap refuses an oversized request
-before it reaches the runtime.
-
-The limit checks `Content-Length` first and answers from the header alone,
-falling through to Hono's `bodyLimit` only for a request with no
-`Content-Length`, or with one beside `Transfer-Encoding`. `bodyLimit` measures
-the bytes that arrive: it reads the body into memory, up to the cap, before the
-next middleware runs. Its 413 is sent once more than the cap has been read,
-and carries no `Connection: close` — what the connection does then is the
-runtime's default. `http/body_limit.test.ts` pins each branch.
-
-**What the two spines share, and what each decides.** Pinned on every backend
-by `testing/cross_backend/body_size.ts` and the front-door table
-(`testing/cross_backend/transport_composition.ts`): a declared `Content-Length`
-over the cap answers 413 whatever the request's `Origin` or credentials, and an
-authenticated, allowed-origin request whose chunked body runs past the cap
-answers 413. Neither refusal waits for the rest of the body: over a real
-socket the suite sends the declared-length request's head alone, and the
-chunked body only as far as one byte past the cap, and requires the 413.
-Implementation-defined:
+**What the spines decide for themselves.** A declared length over the cap
+answers 413 on every backend whatever the request's origin or credentials,
+and so does a chunked body run past the cap. Two cases differ, the outcome
+(nothing past the cap reaches a handler) the same:
 
 - **An over-cap body with no declared length, when another refusal also
-  applies.** The TS spine has read the body up to the cap before any later
-  middleware runs, so its 413 comes ahead of the origin check, auth and the
-  handler. The Rust spine counts the body as the handler reads it: the origin
-  check answers its 403 on the headers; a handler that never reads the body
-  answers its own status, and hyper closes the connection rather than read
-  the rest; a handler that buffers the body answers 413. Nothing past the cap
-  reaches a handler on either.
+  applies.** The TS spine reads the body up to the cap before later
+  middleware, so its 413 comes first; the Rust spine counts the body as the
+  handler reads it, so the origin check's 403, or a handler's own status, can
+  answer first.
 - **A repeated `Content-Length` with equal values.** The TS spine answers 400
   `invalid_content_length` where the runtime hands the repeat to the
-  application (Bun; Node's parser refuses it first). hyper folds the
-  repeat into one value before any layer runs, and the request is accepted.
+  application (Bun); hyper folds it into one value and accepts the request.
 
-The cross-backend suite
-(`testing/cross_backend/body_size_smuggling.ts`) pipelines a request behind an
-oversized one and requires at most one response from every backend — the
-connection closes and the pipelined request is never served — and
-`server/create_app_server.db.test.ts` pins that the reject never reads the
-body.
+**The cap is global, not per-route.** A route that legitimately needs large
+bodies (content uploads) should not be served by raising or disabling the
+global cap, which strips the protection from every other route, the RPC
+surface included — and a chunked request is buffered up to the cap, so a cap
+raised to upload sizes buffers that much per request. Give such a route a
+bounded **streaming** handler that enforces its own ceiling (the fact store's
+`put_stream` is the in-stack example).
 
-**The cap is global, not per-route.** The limit is mounted once for the whole
-app, so `max_body_size` (and `null`) apply to every route — there is no
-per-route override. A route that legitimately needs large bodies (e.g. content
-uploads) should **not** be served by raising or disabling the global cap: that
-strips the protection from every other route, including the RPC surface,
-re-opening an unbounded-body memory-exhaustion surface. Instead, give such a
-route a bounded **streaming** handler that consumes the body incrementally and
-enforces its own ceiling (the fact store's `put_stream` is the in-stack
-example), and keep the global cap in place for everything else.
-
-**Why streaming, not a larger cap.** For a request carrying `Content-Length`
-the middleware rejects on the header and never buffers. For a chunked request
-(no `Content-Length`) it reads and buffers the body up to the cap before
-forwarding it — harmless at 1 MiB, but a cap raised to upload sizes would let a
-chunked upload buffer that much per request. A streaming handler avoids the
-buffer entirely, which is the other reason large uploads belong on their own
-streaming route rather than under a wider global cap.
-
-**WebSocket messages.** The body limit doesn't see WebSocket frames, so
-`register_action_ws` caps each inbound message separately at
-`DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, the same bound as the HTTP body cap;
-`max_message_bytes` on `WsEndpointSpec` to change it) and closes the socket
-with 1009 on a larger one — no per-message error reply, and the Rust spine
-likewise ends the connection. The check runs after the
-runtime adapter has assembled the message, so it bounds dispatch work, not
-what the adapter buffers — where memory matters, also set the adapter's own
-frame limit (e.g. the `ws` library's `maxPayload`, which defaults to 100 MiB),
-above `max_message_bytes`: twice it, as the cross-backend test adapters do. A
-message past the frame limit is refused by the adapter without the
-`message too big` reason (`ws` closes with 1009 and an empty reason, Bun drops
-the socket), so a frame limit equal to `max_message_bytes` loses the reason a
-message just over it gets.
-What the server sends a socket is bounded separately — see
+**WebSocket messages.** The body limit doesn't see WebSocket frames:
+`register_action_ws` caps each inbound message at
+`DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB; `max_message_bytes` on
+`WsEndpointSpec`) and closes the socket with 1009 on a larger one, as the Rust
+spine does. The check runs after the adapter has assembled the message, so it
+bounds dispatch work, not what the adapter buffers: also set the adapter's own
+frame limit (the `ws` library's `maxPayload` defaults to 100 MiB) above
+`max_message_bytes` — twice it, as the cross-backend test adapters do, since a
+message past the adapter's limit is refused without the `message too big`
+reason. What the server sends a socket is bounded separately —
 [Outbound Bounds](#outbound-bounds).
 
 ## Database Unavailable (Pool Checkout Timeout)
@@ -1542,9 +1275,9 @@ bound.
 Audit rows written on the pool (failure rows) wait longer: `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS`
 (default 30000), so saturating the pool to shed requests does not also drop
 the forensic rows recording them; a row dropped anyway is logged in full,
-secret-sensitive metadata masked, as one `audit row dropped` error line. A
-failed login awaits its failure row, so under a saturated pool it can wait up
-to this bound rather than the request's.
+secret-sensitive metadata masked, as one `audit row dropped` error line. In
+production no response waits for a failure row; with
+`await_pending_effects: true` (tests) the flush awaits it.
 
 PGlite and pglet have no pool, so both bounds are inert there (a value set
 with one is warned of at boot); an in-process query behind a long transaction
@@ -1579,30 +1312,19 @@ so of duplicate keys only the kept (last) one counts, on both spines.
 ## Authorization
 
 Roles are declared at server init via `create_role_registry()` — not stored
-in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level).
-Consumer apps extend with app-defined roles at server init; unknown roles are hard
-rejections. A role name is lowercase letters and underscores with no leading, trailing
-or consecutive underscores, at most 64 characters (`RoleName`, `NAME_LENGTH_MAX`):
-a registered role outside that grammar throws at assembly, and a `role` param
-outside it is refused at input validation, before any gate that would record
-the caller's text in a failure audit row. The Rust spine holds the same grammar
-(`is_valid_name`). The `scope_kind` on `role_grant_offer_create` and
-`role_grant_assign` is held to the same grammar and cap as a registered scope
-kind (`ScopeKindName`; `is_valid_name` on the Rust spine) and is
-refused at validation the same way. Off that grammar is the index-side
-`'GLOBAL'` token, which with the all-zeros `scope_id` would equal a global
-grant's key in the partial unique indexes (see Duplicate prevention below).
+in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level);
+consumer apps add their own at init, and unknown roles are hard rejections.
 
-The other caller-supplied strings that reach audit metadata are length-capped
-at input validation too, on both spines, counted in UTF-16 code units: an API
-token's `name` (`API_TOKEN_NAME_LENGTH_MAX`, 255), a cell's `kind` on
-`cell_create` and as a `cell_list` filter (`CELL_KIND_LENGTH_MAX`, 64), and
-the `scope_kind` on `role_grant_offer_create` and `role_grant_assign`
-(`NAME_LENGTH_MAX`, 64, part of its grammar). A longer value is refused `invalid_params`
-before any row is written. Every length bound on a wire string is enforced on
-`String.length` by `bounded_string` (`primitive_schemas.ts`), whose
-`min_length` / `max_length` count UTF-16 code units; `Email` is bounded in
-UTF-8 bytes by its own check.
+**Caller text is bounded before it reaches an audit row.** A role name and a
+`scope_kind` are lowercase letters and single underscores, at most 64
+characters (`RoleName`, `ScopeKindName`; the Rust `is_valid_name`): a
+registered role off that grammar throws at assembly, and a param off it is
+refused at input validation, before any gate that would record it in a
+failure row. The grammar also keeps out the index-side `'GLOBAL'` token (see
+Duplicate prevention below). The other caller strings that reach audit
+metadata — an API token's `name`, a cell's `kind` — are length-capped at
+validation on both spines, counted in UTF-16 code units (`bounded_string`,
+`primitive_schemas.ts`; `Email` in UTF-8 bytes).
 
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |
@@ -1627,36 +1349,25 @@ where admin self-replication is undesirable, implement app-specific role
 hierarchy checks in a custom grant guard.
 
 **Account-removal target guards**: `account_delete` (soft) and `account_purge`
-(hard) refuse two target classes regardless of caller privilege, each emitting a
-fail-loud failure-audit row before any mutation. `ERROR_CANNOT_DELETE_KEEPER`
-(403) blocks any account holding an active keeper role grant — auth resolution
-and daemon-token resolution both pivot on the keeper account, so removing it
-would brick keeper/daemon auth with no recovery (keeper is non-web-revocable and
-purge itself requires keeper auth); keeper removal stays out-of-band.
-`ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the sole remaining _active_ admin —
-the admin count and the target's own admin check both filter `deleted_at IS NULL`,
-so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
-can itself be removed once another active admin exists. The count locks the rows
-it counted (`FOR NO KEY UPDATE`), so two removals racing for the last two admins
-serialize and the second is refused (§Row Locks).
+(hard) refuse two target classes regardless of caller privilege, each writing
+a failure row before any mutation. `ERROR_CANNOT_DELETE_KEEPER` (403) blocks
+any account holding an active keeper grant — auth and daemon-token resolution
+pivot on it, so removing it would brick keeper auth with no recovery; keeper
+removal stays out-of-band. `ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the
+sole remaining _active_ admin; the count locks the rows it counted, so two
+removals racing for the last two admins serialize and the second is refused
+(§Row Locks).
 
 **An undelete restores the account, never a credential.** `account_undelete`
-clears the tombstones of the account and its actors; the sessions and API
-tokens the delete revoked stay revoked, each answering as an anonymous
-request does, and the account's owner logs in fresh. A login or token
-creation in flight across the delete is refused or revoked under the same
-account-row lock as across a password change, and a credential whose account
-is tombstoned resolves as no credential on both spines.
-
-What comes back with an undelete is the account, its actors, and its role
-grants, which sit inert while it is tombstoned: nothing authenticates as the
-account, it cannot accept or make an offer, and it does not count toward the
-last-admin guard. What does not come back: the pending offers made to it and
-by it, which the delete superseded, and the unclaimed invites it issued,
-which the delete (and a purge) removed — a signup with one answers as a
-signup with no invite does. An offer or an invite being created while its
-issuer is deleted is ordered against the delete by the issuer's account-row
-lock: it is refused, or it commits first and the delete ends it.
+(admin-only) clears the tombstones of the account and its actors; the sessions
+and API tokens the delete revoked stay revoked, and the owner logs in fresh.
+Its role grants come back, having sat inert while it was tombstoned (nothing
+authenticates as the account, it can't accept or make an offer, and it doesn't
+count toward the last-admin guard). What doesn't come back: the pending
+offers to and from it, which the delete superseded, and the unclaimed invites
+it issued, which the delete removed. A login, token, offer or invite created
+in flight across the delete is ordered against it by the account-row lock:
+refused, or committed first and ended by the delete.
 
 **Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
 grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`
@@ -1688,112 +1399,68 @@ arms hold identically on the TS and Rust spines
 **404-over-403 is the general mask, not a per-handler quirk.** Any
 resource-scoped lookup where existence itself is privileged returns the
 **same `not_found` shape** for "no such row" and "exists but the caller
-can't view it" — never a `forbidden` that would confirm the id. Beyond
-role_grants/offers above, the cell surface applies it uniformly:
-`cell_get` / `cell_update` / `cell_delete` / `cell_clone` all return 404
-(`ERROR_CELL_NOT_FOUND`) when the caller fails the verb's own authorization
-predicate — `can_view_cell` for the reads (`cell_get` / `cell_clone`),
-`can_edit_cell` for the writes (`cell_update` / `cell_delete`) — identical
-to a genuine miss (`auth/cell_actions.ts`). `can_edit_cell`'s `editor` grant
-arm requires the cell's moderation admission, as the read does, so a grant
-made while a contribution was approved admits no write once it is rejected —
-the write answers the same 404. The uniform property is the
-**wire shape**, not a single shared predicate. A caller therefore cannot
-enumerate private cells (or offers, or another actor's grants) by id —
-found-and-unauthorized and not-found are wire-indistinguishable.
+can't view it" — never a `forbidden` that would confirm the id. The cell
+surface applies it uniformly: `cell_get` / `cell_clone` (failing
+`can_view_cell`) and `cell_update` / `cell_delete` (failing `can_edit_cell`,
+whose editor arm requires moderation admission as the read does) answer
+`ERROR_CELL_NOT_FOUND`, identical to a genuine miss. The uniform property is
+the **wire shape**, not one shared predicate: a caller cannot enumerate
+private cells, offers, or another actor's grants by id. Both spines hold the
+masks (the cell and conformance cross suites), and
+`cell_actions.authz.db.test.ts` pins the cell mask byte-identical across an
+unviewable cell, a view-but-not-edit cell, and a genuine miss.
 
 **Moderation gates reads.** A cell's effective audience is its visibility or
-grants **and** its moderation admission — unmoderated or `approved`, an
-allowlist over the free-text `moderation` column. `can_view_cell`'s public and
-grant arms and `cell_list`'s SQL twin require it, so a pending or rejected
-contribution reaches its author and admins alone, even after its author flips
-it public or after a grant made while it was approved. The governing root's
-manager reads it through a separate steward arm (`can_steward_cell`) at the
-moderation surfaces only — `cell_get`, `cell_moderate`, `cell_list`, and the
-fact route — never clone, a create under it, the relation reads, or the grant
-paths, so moderating a contribution never lets the moderator copy it out or
-build under it.
+grants **and** its moderation admission (unmoderated or `approved`), so a
+pending or rejected contribution reaches its author and admins alone, even
+after its author makes it public. The governing root's manager reads it
+through a separate steward arm (`can_steward_cell`) at the moderation
+surfaces only — never clone, a create under it, the relation reads, or the
+grant paths — so moderating a contribution never lets the moderator copy it
+out or build under it.
 
-**A root's contribution policy is manage-tier.** The policy that decides who
-may contribute under a root lives in the root's own `policy` column, never in
-its `data`: an editor grant can rewrite `data`, so a policy read from it would
-be the editor's to loosen. `cell_policy_set` is its one writer past creation,
-in this order: the 404 mask for a caller who can't view the cell, **403**
-`cell_policy_manage_only` for one who can't manage it, **400**
-`cell_policy_root_only` on a cell with a parent, then a non-null policy's
-validation through the mounted create authorizer's `validate_policy` —
-`cell_policy_unsupported` when none is mounted, since a policy nothing
-interprets would look like a rule while enforcing none. A clone is born
-without a policy, so cloning a root never copies its rules out.
-
-**Cross-impl parity**: the 404 masks hold on both spines — the cell 404
-(`cell_get` / `cell_update` / `cell_delete` / `cell_clone`) and the
-role-grant / offer 404 return the same wire shape on the TS spine and the
-Rust spine via the cell + conformance cross suites. The in-process cell suite
-(`cell_actions.authz.db.test.ts`) additionally pins the mask
-**byte-identical** across an unviewable cell, a view-but-not-edit cell, and a
-genuine miss — so no distinguishing field (an id echo, a divergent message)
-can creep into one path.
+**A root's contribution policy is manage-tier.** It lives in the root's
+`policy` column, never in `data` (an editor grant can rewrite `data`).
+`cell_policy_set` is its one writer past creation: the 404 mask, then 403
+`cell_policy_manage_only`, 400 `cell_policy_root_only`, and
+`cell_policy_unsupported` when no create authorizer is mounted to interpret
+it — a policy nothing enforces would look like a rule. A clone is born
+without a policy.
 
 **Phase ordering hides route shape from callers who lack the authority to
-call.** Every dispatch surface (HTTP RPC, WS) runs **401 →
-authorization phase → 403 → 400 → handler**: authentication, then actor
-resolution, then the credential / scope / role gates, and only then input
-validation. A caller any of those refuse never learns the route's input
-schema or shape from a parse error (a 400 leaking required fields / types) —
-a 400 would confirm the method exists and describe how to call it, to a
-channel that should have learned neither. Coarse authority facts before fine
-ones, and no shape disclosure before authority is settled: the same argument
-that puts the credential gate ahead of the scope gate. Both spines implement
-the same order (the Rust spine validates input handler-side, which is what
-puts it last there). Pinned by
-`account_actions.credential_gate.db.test.ts` §authority gates precede input
-validation and by a cross-backend conformance row. (Module detail:
-`http/CLAUDE.md` §Validation pipeline; `auth/CLAUDE.md` §Two-phase identity.)
+call.** Every dispatch surface (HTTP RPC, WS) runs **401 → authorization phase
+→ 403 → 429 → 400 → handler** — the per-action rate limit is the dispatchers'
+only; REST routes run the same order without it. A caller the authority gates
+refuse never learns the input schema from a parse error, which would confirm
+the method exists and describe how to call it: coarse authority facts before
+fine ones, the argument that also puts the credential gate ahead of the scope
+gate. Both spines implement the same order, pinned in-process and by a
+cross-backend conformance row (module detail: `src/lib/http/CLAUDE.md`
+§Validation pipeline).
 
-**Role-shaped cell grants validate against the registered role set.** A
-`cell_grant` can name either an actor (`{actor_id}`) or a role
-(`{role, scope_id?}`); a role-shaped grant admits every actor holding that
-role (scope-matched). Because a grant for a role no actor can ever hold would
-be silently inert — looking like access was conferred while admitting no
-one — `cell_grant_create` rejects an unregistered role at create time with
-`invalid_params` / `cell_grant_unknown_role` rather than writing a dead row.
-The check runs after the manage-tier authorization (a non-manager still gets
-the 404 mask, not a role-registry probe). Actor-shaped grants whose principal
-is the cell's own owner are likewise rejected (`cell_grant_principal_is_owner`)
-since owner access is implicit. A grant on a contribution whose `moderation`
-doesn't admit an audience — pending, rejected, or any marker but `approved` —
-is refused with `forbidden` / `cell_grant_unapproved`, first thing after the
-manage-tier authorization and with no admin exemption: the read predicate
-wouldn't honor the grant until approval, so minting it would only stage access
-for later. A consumer's `authorize_grant_create` hook, asked after these
-gates and before the write, can narrow who a manager may share with (403
-`cell_grant_not_authorized`), never widen it — the spine's gates have already
-run. Revoke is the manager's, the self-revoker's (an actor-shaped grant's own
-actor), and — only when a consumer mounts `authorize_grant_revoke` — a scope
-steward's: the hook is asked only of a caller who is neither, and only for a
-role-shaped grant with a `scope_id`, so it can't open an actor-shaped or
-scopeless grant to anyone. Its refusal keeps the 404 mask, so a non-manager
-never learns the grant exists, and an allowed revoke is audited `steward:
-true`.
+**Cell grants can't be minted inert or widened by a hook.** A role-shaped
+`cell_grant` (`{role, scope_id?}`) for an unregistered role is refused
+(`invalid_params` / `cell_grant_unknown_role`), an actor-shaped grant to the
+cell's own owner is refused (`cell_grant_principal_is_owner`), and a grant on
+a contribution whose moderation doesn't admit an audience is refused
+(`forbidden` / `cell_grant_unapproved`, no admin exemption) — each after the
+manage-tier authorization, so a non-manager still gets the 404 mask, not a
+role-registry probe. A consumer's `authorize_grant_create` hook can narrow
+who a manager may share with, never widen it; `authorize_grant_revoke` is
+asked only of a caller who is neither the manager nor the self-revoker, and
+only for a role-shaped grant with a `scope_id`, and its refusal keeps the 404
+mask. The per-verb rules are `src/lib/auth/CLAUDE.md` §Cell layer.
 
-**Actor-search scope gate**: `actor_search` (the prefix-search picker over
-`actor.name`) is account-grain authenticated, but an **unbounded global
-search is admin-only**. A non-admin caller must pass at least one `scope_id`;
-results are then filtered to actors holding an _active_ role_grant on one of
-those scopes (active = `revoked_at IS NULL AND (expires_at IS NULL OR
-expires_at > NOW())`, so a revoked or expired membership no longer confers
-search visibility). Omitting `scope_ids` as a non-admin is rejected with
-`invalid_params` / `actor_search_scope_required` — not an empty result, so the
-gate is a hard boundary rather than a silent filter. The admin check is
-account-grain (any actor on the caller's account holding a global `admin`
-role_grant). The gate keys on `scope_ids` _presence_, not authority over the
-scope: a caller who already knows a `scope_id` can scope a search to it, but
-the cap (`ACTOR_SEARCH_LIMIT_MAX`) plus the per-account rate limit bound the
-batched-enumeration surface either way. The sibling `actor_lookup` (batched
-id → label) needs no scope gate — it resolves only ids the caller already
-holds, and its wire rows omit `account_id` / `email` / timestamps / role
-state (control-plane and timing-oracle avoidance).
+**Actor-search scope gate**: an **unbounded global `actor_search` is
+admin-only** (a global `admin` grant on any of the caller's actors). A
+non-admin must pass at least one `scope_id`, and sees only actors holding an
+_active_ grant on one of those scopes; omitting it is refused
+(`invalid_params` / `actor_search_scope_required`), a hard boundary rather
+than a silent empty result. The gate keys on `scope_ids` presence, not
+authority over the scope, so the result cap (`ACTOR_SEARCH_LIMIT_MAX`) and the
+per-account rate limit bound enumeration either way. `actor_lookup` needs no
+gate: it resolves only ids the caller already holds, and its rows omit
+`account_id`, `email`, timestamps and role state.
 
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_kind, 'GLOBAL'), COALESCE(scope_id, sentinel))`
@@ -1808,137 +1475,74 @@ DO NOTHING`); an expired but unrevoked row in the slot is first revoked
 consent as a security property of web-path role grants, not a UX nicety.
 Missing consent is an authorization bug, not a missing button.
 
-Two code paths, one invariant:
+Three ways a role grant is written, each with its own gate:
 
 - **Direct grant** (`query_create_role_grant`) — the low-level write, with no
-  consent step of its own. Two kinds of caller reach it. The
-  process-gated ones are where a reaching-for-consent step would itself be the
-  vulnerability: keeper bootstrap (`bootstrap_account.ts`), the dev/setup
-  seeding path, and test fixtures — filesystem- or process-gated, not
-  network-reachable. But two **network** RPC actions also call it directly:
-  `self_service_role_set` (self-target only, so the grantee and the caller are
-  the same actor — consent is structural rather than a separate step) and
-  `role_grant_assign` (admin-only, described under _Immediate assign_ below).
-  So "direct grant" names the write, not an off-network boundary; the
-  authorization property comes from each caller's own gate.
-- **Offer flow** (`role_grant_offer_create` → recipient `role_grant_offer_accept`)
-  — the consentful path. The admin UI drives the same
-  `role_grant_offer_create` RPC action as any other grantor; a role_grant row
-  only exists after the recipient atomically accepts. Consumer-app role
-  grants where the recipient should opt in (classroom membership, future
-  workspace invites) use the offer flow.
+  consent step. Process-gated callers (keeper bootstrap, dev seeding, test
+  fixtures) are not network-reachable, and a consent step there would itself
+  be the vulnerability. Two network actions call it too:
+  `self_service_role_set` (self-target only, so consent is structural) and
+  `role_grant_assign` (below). "Direct" names the write, not an off-network
+  boundary; the authorization comes from each caller's own gate.
+- **Offer flow** (`role_grant_offer_create` → recipient
+  `role_grant_offer_accept`) — the consentful path: a role_grant row exists
+  only after the recipient atomically accepts. A role that models membership
+  the recipient should agree to (a classroom, a workspace) goes through it, so
+  a web-path admin can't draft an account into a group without the recipient
+  seeing and agreeing — closing the "silently drafted into a private
+  workspace" class of social engineering. The `role_grant_offer_received`
+  notification and the persistent inbox show the recipient every pending
+  offer.
 - **Immediate assign** (`role_grant_assign`) — the admin-only direct web path,
   for a capability _unlock_ where waiting on consent is the wrong model ("you
-  may now post"). It runs the same admin-grant-path gate and the same
-  idempotent write as the offer flow, but skips the offer — no row for the
-  grantee to accept. Its safeguards are **admin-only conferral** (no
-  holder-propagation — holding a role confers no power to hand it out) and a
-  `role_grant_create` audit row, not recipient consent.
+  may now post"). Same admin-grant-path gate and idempotent write, no offer.
+  Its safeguards are **admin-only conferral** (holding a role confers no
+  power to hand it out) and a `role_grant_create` audit row, not consent — so
+  it is never the path for membership-shaped roles.
 
-Why the split matters for security:
-
-1. **No unsolicited membership via the offer flow.** When a role models
-   membership the recipient should agree to, exposing it through the offer
-   flow guarantees a web-path admin cannot draft an account into the group
-   without the recipient observing and agreeing. Closes a class of
-   social-engineering attacks where a compromised or hostile admin drafts an
-   account into a group the account owner has no awareness of ("silent
-   membership in a private workspace", "drafted teacher of a classroom you've
-   never heard of"). `role_grant_assign` deliberately trades consent for
-   immediacy (the capability-unlock model above), so it is **not** the path
-   for membership-shaped roles — its boundary is admin-only conferral + audit,
-   an explicit admin action, never a peer or self-service one.
-2. **The recipient sees the grant before it takes effect.** The
-   `role_grant_offer_received` notification plus the persistent inbox give
-   the recipient an audit-visible, client-visible record of every
-   pending offer. A surprise role_grant in the wild is a bug.
-3. **Keeper-path stays direct by design.** Keeper-level operations
-   already require filesystem access (daemon token), so the operator is
-   already privileged — waiting on consent to recover a locked-out
-   instance would be worse, not better.
+Keeper stays direct by design: keeper operations already need filesystem
+access, and waiting on consent to recover a locked-out instance would be
+worse, not better.
 
 Admin surface hardening on the offer flow:
 
-- **Admin-grant-path gate** runs before the offer insert, same as the
-  previous direct-grant route — `keeper`'s `grant_paths` does not include
-  `'admin'`, so it cannot be offered via the web.
-- **Self-target rejection** (400 `role_grant_offer_self_target`): the offer query
-  rejects `from_actor.account_id == to_account_id`. Under the previous
-  direct-grant route an admin granting themselves was a silent
-  idempotent no-op; the offer route surfaces it as an explicit error
-  and emits a `role_grant_offer_create outcome=failure` audit event
-  symmetric with the admin-grant-path and `authorize` denial paths, so
-  self-grant probes leave a trail.
+- **The admin-grant-path gate** runs before the offer insert, so `keeper`
+  (no `'admin'` in its `grant_paths`) can't be offered via the web.
+- **Self-target rejection** (400 `role_grant_offer_self_target`), audited as a
+  failed `role_grant_offer_create`, so self-grant probes leave a trail.
 - **Builtin roles are global-only, and every builtin gate reads the global
-  grant.** The dispatcher's role gate, the cell admin bypass, the bare-hash
-  fact read, cross-account `account_delete`, and the offer inbox reads all
-  check `has_scoped_role(_, 'admin', null)` — a scoped `admin` row confers
-  nothing. No grant path mints one: `role_grant_assign` and
-  `role_grant_offer_create` refuse a scoped `admin` (400
-  `role_grant_builtin_scoped`; `keeper`, scoped or not, stays 403 as never
-  web-grantable), offering a builtin needs a global-admin caller
-  whatever the consumer `authorize` callback says (403
-  `role_grant_offer_not_authorized`), and accept refuses a `keeper` offer, a
-  scoped `admin` offer, or a builtin offer whose grantor no longer holds an
-  active global `admin` — re-checked at mint time under the grantor's
-  account lock (§Row Locks), the
-  refusal audited as a failed `role_grant_offer_accept` and the offer left
-  pending. `role_grant_assign` also re-checks the global admin grant in-handler
-  behind the dispatcher gate, so a scoped `admin` can't assign itself a global
-  one. Self-service eligibility refuses builtin roles at construction.
-- **A replayed accept confers nothing.** Re-accepting an accepted offer
-  answers the grant it minted while that grant stands — writing no audit row
-  and sending no notification, so a loop of replays costs only the
-  per-account rate limit `role_grant_offer_accept` carries (the same class
-  as `role_grant_offer_create`). Once that grant is revoked (or gone) the
-  offer is terminal: a replay answers 400 `role_grant_offer_terminal`, never
-  an OK carrying the revoked grant's id. Both spines.
-- **Admin retract via RPC, grantor-scoped** — admins cancel offers they
-  issued by calling `role_grant_offer_retract` through the RPC surface.
-  The grantor IDOR guard (`from_actor_id = ctx.actor.id`) enforces
-  that one admin cannot retract another admin's in-flight offer, so
-  the original protection holds. Retract emits `role_grant_offer_retract`
-  audit + `role_grant_offer_retracted` WS notification to the recipient.
+  grant** — a scoped `admin` row confers nothing, no grant path mints one
+  (400 `role_grant_builtin_scoped`), offering a builtin needs a global-admin
+  caller whatever the consumer `authorize` says, and accept re-checks the
+  grantor's active global `admin` under the grantor's account lock (§Row
+  Locks).
+- **A replayed accept confers nothing**: it answers the grant it minted while
+  that grant stands, writing no row and sending no notification; once the
+  grant is revoked the offer is terminal (400 `role_grant_offer_terminal`).
+- **Retract is grantor-scoped** (`from_actor_id = ctx.actor.id`), so one admin
+  can't retract another's offer.
 
-Scope and message on the admin route are intentionally omitted from the
-input — admin-path offers are always global (`scope_id = null`) and
-carry no grantor note. Scoped / messaged offers travel through the
-consumer RPC surface (`role_grant_offer_create`), where the consumer's
-`authorize` callback can impose tighter policy than the admin-grant-path gate alone.
+The per-action refusals are the module TSDoc of
+[`auth/role_grant_offer_actions.ts`](../src/lib/auth/role_grant_offer_actions.ts);
+the data layer and audit chain are ./identity.md §Direct grant vs
+offer flow.
 
-See ./identity.md §Direct grant vs offer flow for the data-layer
-description and audit-event chain.
+**Consentful grants + revoke-bypass defense**: several grantors may have
+pending offers for the same `(recipient, role, scope)`, so a terminal
+`superseded_at` state closes the revoke-bypass path — each supersede audited
+as `role_grant_offer_supersede` with its `reason` and `cause_id`:
 
-**Consentful grants + revoke-bypass defense**: Web-path role grants flow
-through `role_grant_offer` — the recipient must explicitly accept. Multiple
-grantors may have coexisting pending offers for the same
-`(recipient, role, scope)`. A fourth terminal state, `superseded_at`,
-closes the revoke-bypass path:
-
-- On accept of offer A, all sibling pending offers for the same
-  `(to_account, role, scope)` are marked superseded in the same
-  transaction, with a `role_grant_offer_supersede` audit event
-  (`reason: 'sibling_accepted'`, `cause_id: A.id`).
-- On revoke of a role_grant — by an admin (`role_grant_revoke`) or by its
-  holder (`self_service_role_set` disabling a role) — every pending offer for
-  the revoked `(actor's account, role, scope)` is marked superseded in the same
-  transaction (`reason: 'role_grant_revoked'`, `cause_id: <revoked role_grant id>`)
-  — and so is every pending offer the revokee's actor **made**. An offer
-  records no authority, so one made under the revoked grant would still confer
-  on accept; all of the actor's outgoing offers go, whatever grant they relied
-  on.
-- On `account_delete` / `account_purge`, every pending offer any of the
-  account's actors made is marked superseded (`reason: 'account_deleted'`,
-  `cause_id: <account id>`; purge does it before its cascade deletes them).
-  Both supersede the pending offers made TO the account the same way —
-  purge before its cascade, so each leaves an audit row — so an offer does
-  not wait out a delete and come back with the undelete; and an offer cannot
-  be created to a deleted account or actor —
-  the answer is the one a missing account gets, to a non-admin grantor too.
-- On parent-scope cascade (consumer's polymorphic `scope_id` row deleted
-  via `query_role_grant_revoke_for_scope`), every pending offer at the scope
-  is marked superseded — tuple-matched and orphan, undifferentiated —
-  with `reason: 'scope_destroyed'`, `cause_id: <destroyed scope row id>`.
+- accepting an offer supersedes its pending siblings (`sibling_accepted`);
+- revoking a grant — by an admin or by its holder through
+  `self_service_role_set` — supersedes the pending offers for that
+  `(account, role, scope)` **and every pending offer the revokee's actor
+  made**, since an offer records no authority and one made under the revoked
+  grant would still confer on accept (`role_grant_revoked`);
+- deleting or purging an account supersedes every pending offer to or from it
+  (`account_deleted`; purge before its cascade, so each leaves a row), and no
+  offer can be created to a deleted account or actor;
+- destroying a consumer scope row (`query_role_grant_revoke_for_scope`)
+  supersedes every pending offer at the scope (`scope_destroyed`).
 
 Net property: accepting a pending offer means the offer survived every
 revoke between its creation and acceptance. An attacker cannot accept a
@@ -1948,26 +1552,15 @@ first accepted or when the admin revoked. A fresh post-revoke grant
 requires the grantor to call `query_role_grant_offer_create` again, which is
 audited.
 
-**Post-commit WS fan-out**: the JSON-RPC notifications (`role_grant_offer_received`
-/ `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoked`;
-a supersede reaches each live party to the offer but the accepting caller,
-whose answer lists it, and never a removed account)
-ship alongside the above via the action context's `notification_sender`, scheduled
-through `emit_after_commit` so sends are strictly post-commit **and discarded if
-the handler's transaction rolls back** — a rolled-back transaction cannot leak a
-notification for state that never committed (distinct from the eager
-`pending_effects` audit-attempt queue, which intentionally **survives**
-rollback). The two-sided contract and its dispatcher-level enforcement are
-documented at ./architecture.md §Fire-and-Forget Pending Effects. Exceptions
-inside a send are caught and logged — one failed send cannot corrupt the
-already-committed response or starve sibling sends in the same batch. Sends are fire-and-forget
-with no delivery receipt: `send_to_account` returns the socket count but a
-non-zero count only means `ws.send` didn't throw; flows that need durable
-delivery must persist the event and hydrate on reconnect. Payload sizes are
-bounded at the schema layer — `offer.decline_reason` at
-`ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` (500), `role_grant_revoked.reason` at
-`ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
-cannot balloon a payload.
+**Post-commit WS fan-out**: the role-grant-offer and `role_grant_revoked`
+notifications are queued through `emit_after_commit`, so a send runs only
+after the transaction commits and is discarded if it rolls back — a
+rolled-back grant can't announce state that never committed. A failed send is
+logged and can't corrupt the committed response or starve its siblings. Sends
+carry no delivery receipt, so a flow that needs durable delivery persists the
+event and hydrates on reconnect; payloads are bounded at the schema layer
+(`ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`, `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX`).
+The queue's contract: `src/lib/http/CLAUDE.md` §Pending Effects.
 
 ## Fact Access Control
 
@@ -1985,43 +1578,29 @@ a cell that refs it — public visibility, an actor grant, or a role-scoped
 grant; to share one file, put it in a cell of its own. There is no per-fact
 permission to set, and none is planned.
 
-**Refs are possession-gated.** The edge is only as safe as what may create it:
-a cell's refs derive from its `data`, which any writer of the cell controls. If
-any writer could name any hash, a hash seen once — in a serve URL, a referer, a
-screenshot, an audit row — would be a permanent bearer read capability: put it
-in a cell you own, make the cell public, and the bytes serve to the world;
-the serve answer (200 against 404) would also say whether a fact exists. So
-`cell_create`, `cell_update`, and `cell_clone` admit a **new** ref, in the
-`data` the write stores (the validator's output), only to a fact the acting
-actor **holds** — one it has put the bytes of. Every put that
+**Refs are possession-gated.** A cell's refs derive from its `data`, which
+any writer of the cell controls. If any writer could name any hash, a hash
+seen once — in a serve URL, a referer, a screenshot, an audit row — would be a
+permanent bearer read capability (put it in a public cell you own), and the
+serve answer would say whether a fact exists. So `cell_create`, `cell_update`,
+and `cell_clone` admit a **new** ref, in the `data` the write stores, only to a
+fact the acting actor **holds** — one it has put the bytes of (every put that
 names a holder records a `fact_holder` row, a put of bytes already stored
-included: bringing identical bytes is possession. A write introducing an
-unheld ref is refused `403` with reason `cell_ref_not_held` and nothing is
-written. The answer is read from holder rows alone, so it is identical for a
-stored hash and an unstored one — no existence oracle. Admission runs last,
-after the `404` masks, the per-kind validator, and the creation policy, so a
-hidden cell still answers its `404` whatever its `data` names
-(`auth/cell_ref_admission.ts`).
+included). An unheld ref is refused `403` `cell_ref_not_held` with nothing
+written, read from holder rows alone, so the answer is the same for a stored
+hash and an unstored one. Admission runs last, after the `404` masks, the
+validator and the creation policy (`auth/cell_ref_admission.ts`).
 
-- **New means not already carried.** `cell_create` checks every ref;
-  `cell_update` checks only refs the cell doesn't already carry, so an editor
-  keeps refs another writer introduced; `cell_clone` checks each cloned row
-  against its own source row's refs, so a clone — shallow or deep — carries
-  what the source carries without holding it, and only refs a
-  `with_data_patch` adds need possession.
-- **Clone carries refs.** A viewer of a cell can clone it and make the clone
-  public. That republishes nothing the viewer couldn't already: what a caller
-  can read through a cell it can download and upload again.
+- **New means not already carried.** An update checks only refs the cell
+  doesn't already carry; a clone checks each row against its source's refs,
+  so only refs a `with_data_patch` adds need possession. A clone made public
+  republishes nothing its viewer couldn't already download and upload again.
 - **Global admins are not gated** — their reach already spans every cell. A
-  scoped `admin` grant is not the global grant and is gated.
-- **Holding is per actor.** `fact_holder` rows cascade with their actor (an
-  account purge erases its possession) and with their fact.
-- **A system put holds nothing.** Seeds and server-side imports put with no
-  holder; their facts are referenced by cells an admin or a trusted writer
-  outside the cell verbs (a seed script) creates, or by an actor that uploads
-  the same bytes itself.
-- **A schema without the fact chain** (a consumer mounting the cell verbs but
-  no fact store) has no holders, so every new ref is refused there.
+  scoped `admin` grant is gated.
+- **Holding is per actor**, and cascades with the actor and the fact.
+- **A system put holds nothing**: seeded facts are referenced by cells an
+  admin or a trusted writer outside the cell verbs creates. A schema without
+  the fact chain has no holders, so every new ref is refused there.
 
 **Reads are a snapshot of the edges.** A serve checks the edge as it is at
 read time. Revoking someone's access to a cell stops their reads through that
@@ -2048,21 +1627,12 @@ A caller who can view a cell that references the bytes reads them through that
 cell; a caller who cannot view a given cell cannot read the fact through it,
 regardless of who else references the same bytes.
 
-**Dedup has zero authorization consequence.** Whether two owners' identical
-bytes share a `fact` row is invisible to the read check. If owner A references
-bytes from a **private** cell and owner B references identical bytes from a
-**public** cell, the two are one `fact` row, but:
-
-- A viewer of B's public cell reads the bytes _through B's cell_ — correct,
-  B published them.
-- The same viewer **cannot** reach A's private reference: naming A's cell fails
-  `can_view_cell` and returns 404. A's stated privacy intent holds despite the
-  shared storage row.
-
-Content-dedup is a pure storage optimization; it can never widen a fact's
-effective visibility. This closes the cross-owner leak that a bare-hash,
-union-of-referrers read model would otherwise create (A's private bytes
-becoming world-readable the instant B publishes identical bytes).
+**Dedup has zero authorization consequence.** If owner A references bytes
+from a **private** cell and owner B identical bytes from a **public** cell,
+they are one `fact` row, but a viewer reads them only _through B's cell_;
+naming A's cell fails `can_view_cell` and returns 404. Content-dedup is a pure
+storage optimization and can never widen a fact's visibility — the
+cross-owner leak a bare-hash, union-of-referrers read model would create.
 
 **Served bytes are inert.** Fact bytes are caller-supplied content served back
 over the app's own origin, so every fact response — on all three serve paths —
@@ -2096,28 +1666,18 @@ leak for non-admins is vacuous for an admin. Non-admin callers are rejected at
 the auth phase (401 unauthenticated / 403 wrong role) and never reach the
 handler; the handler additionally re-checks the admin role as fail-closed
 defense-in-depth. Confidential non-admin reads always go through the
-cell-scoped route. (An "explicitly-public fact" concept — a producer opting
-specific bytes into world-readable status — is a possible future refinement;
-there is no such concept today, so the bare-hash route stays strictly
-admin-gated.)
+cell-scoped route; no fact is world-readable by hash.
 
-**External-fact path validation.** External (filesystem-backed) facts are
-served via an `X-Accel-Redirect` into nginx's internal facts location
-(production) or a disk stream (dev/tests). The stored `external_url` is
-re-validated against the canonical `file:<shard>/<rest>` shape before it is
-trusted to address the filesystem, even though the write path only ever emits
-that shape — defense-in-depth against a future row-injection bug handing nginx
-an attacker-controlled path.
-
-**The URL is bound to the hash.** A well-formed URL must also be the requested
-hash's own address — `<shard>` + `<rest>` spells its hex
-(`file_fact_url_addresses`). Neither serve path re-hashes the bytes it hands
-out, so without the binding a row for hash H whose URL names another fact's
-file would serve that fact's bytes as H, behind H's admission: a private
-fact's bytes under a public cell's ref. A row that fails the binding is a
-logged error and the masked 404, and `PgFactStore.get` refuses it the same
-way. The Rust spine applies the same binding on its serve paths and in its
-store.
+**External-fact paths are re-validated and bound to the hash.** External
+(filesystem-backed) facts are served by an `X-Accel-Redirect` into nginx's
+internal facts location (production) or a disk stream (dev, tests). The
+stored `external_url` must match the canonical `file:<shard>/<rest>` shape
+**and** spell the requested hash's own address (`file_fact_url_addresses`)
+before it addresses the filesystem: neither serve path re-hashes what it
+hands out, so a row whose URL named another fact's file would serve those
+bytes behind this hash's admission. A row failing either is a logged error
+and the masked 404, `PgFactStore.get` refuses it the same way, and the Rust
+spine applies the same checks.
 
 **X-Accel facts location must be `internal;` and carry the fact headers
 (fail-loud at boot).** The `X-Accel-Redirect` path's confidentiality depends on
@@ -2141,36 +1701,14 @@ location ^~ /_facts/ {
 
 The redirect prefix is gated behind a validated `XAccelConfig`
 (`server/x_accel.ts`): it can only be constructed via `create_x_accel_config`,
-which runs `validate_facts_internal_location` and throws at boot unless every
-location serving the prefix — a prefix-type location on the prefix or below it,
-in any `server` block — uses `^~`, is a direct child of its `server` block,
-holds only simple directives (no nested block, no `include`), and has a
-top-level `internal;` plus both header lines — and no other `add_header` for
-those two names (matched case-insensitively): nginx sends every value and a
-client may read only the first, so `add_header X-Content-Type-Options "sniff"`
-ahead of the required line would turn nosniff off. `^~` at server level is what
-keeps regex locations out: nginx never evaluates them for a path whose longest
-prefix match is such a location. An `=` location on the prefix, and a regex
-location whose pattern spells it out, are refused too. The prefix may appear
-only in its own location lines and their bodies: `internal;` admits every
-internal redirect and subrequest, so any other directive naming it — a
-`rewrite`, `try_files`, `error_page`, `index`, `add_before_body`, or a `set` /
-`map` value a redirect later reads — is refused, in any block. The config is
-tokenized as nginx reads it; files named by `include` are not followed, so keep
-facts-related locations out of included files.
-
-The prefix must end in exactly one `/` (the server appends `<shard>/<rest>`
-straight onto it, so `/_facts` would redirect to `/_factsab/…`, outside the
-validated location), and a location must sit exactly at it (`/_facts` or
-`/_facts/`) — one only below it (`location ^~ /_facts/00/`) is refused, and so is
-`/_facts//` alone, since nginx compares location paths byte-for-byte. `ssi`
-with any value but `off` is refused anywhere in the config: SSI `include
-virtual` is a subrequest, which `internal;` admits, so any SSI-processed
-response could include a fact's bytes. `more_set_headers` /
-`more_clear_headers` (headers-more) are refused everywhere except inside a
-`location` that doesn't serve the prefix, since they run after `add_header` and
-can strip the hardening headers. Blocks nested more than 64 deep are a parse
-error.
+which runs `validate_facts_internal_location` and **fails boot** unless every
+location serving the prefix is shaped like the block above — `^~` at server
+level (which keeps regex locations out), `internal;`, both header lines and no
+competing `add_header` for those names — and nothing else in the config can
+redirect into the prefix or strip the headers (an `ssi`, a `rewrite` naming
+it, headers-more). The full rule list is `server/x_accel.ts`'s TSDoc. The
+config is tokenized as nginx reads it, but files named by `include` are not
+followed, so keep facts-related locations out of included files.
 
 The threat model is operator mistakes, not an adversarial config author: the
 prefix check is textual, so a value assembled from pieces (`/_fac$1`) evades
@@ -2185,9 +1723,9 @@ it. Beyond the config text:
   `proxy_ignore_headers X-Accel-Redirect;` (or the `fastcgi_` / `uwsgi_` /
   `scgi_` equivalent).
 - Other module code can redirect internally too (njs `internalRedirect`, perl,
-  echo), or strip the hardening headers as headers-more can (njs
-  `js_header_filter`, lua-nginx-module `header_filter_by_lua*`), and the check
-  sees none of it, so run trusted modules and content only.
+  echo), or strip the hardening headers (njs `js_header_filter`,
+  lua-nginx-module `header_filter_by_lua*`), and the check sees none of it, so
+  run trusted modules and content only.
 
 It is the only nginx property fuz_app validates — see §Config Validation.
 
@@ -2212,7 +1750,7 @@ to prevent account enumeration — the response does not reveal which field coll
 inside the signup transaction via `query_invite_find_unclaimed_match_for_update`
 (`SELECT … FOR UPDATE`). Concurrent signups matching the same invite
 serialize on the row lock; the loser observes a committed `claimed_at`
-on retry, falls through `find_for_update`'s no-row result, and gets
+on retry, gets no row from `query_invite_find_unclaimed_match_for_update`, and gets
 `ERROR_NO_MATCHING_INVITE`. There is no race window between find and
 claim — the win is architectural, not dependent on the
 case-insensitive account uniques shadowing a TOCTOU.
@@ -2225,7 +1763,7 @@ the work and is awaited after it, so response time is `max(work, delay)`.
 Without the floor, an attacker can distinguish `no_match` (~5ms, bails
 before tx) from `signup_conflict` (~50ms+, Argon2id + tx + rollback) by
 response time and use the gap as a username-enumeration oracle. The
-Argon2id hash now runs before the tx so legitimate denial paths
+Argon2id hash runs before the tx so legitimate denial paths
 unconditionally pay the hash cost (bounded per address by the signup IP
 limiter, which every classified failure and every open-signup success
 records), which
@@ -2240,20 +1778,19 @@ invite-gated enumeration anyway — an attacker can sign up under any
 free username to confirm a target is _not_ taken, and the conflict
 response confirms the rest.
 
-**Fallback failure audit on internal errors**: Tx-rollback paths that
-aren't classified as `NoMatchingInviteError` or PG unique violation
-(Argon2id fault, session-create error, DB outage mid-tx) emit an
-`outcome: 'failure'` audit row with `reason: 'internal_error'` before
-the rethrow propagates. Operators investigating "why did signup 500
-for user X at time Y" have the audit row to start from instead of
-silence.
+**Fallback failure audit on internal errors**: every unclassified failure —
+before the transaction (the settings load, the hash, a refused `BEGIN`) or
+inside it (a session-create error, a DB outage) — writes a `signup` failure
+row with `reason: 'internal_error'` before the error propagates, so an
+operator investigating "why did signup 500 for user X at time Y" has a row to
+start from.
 
 **Case-insensitive username uniqueness**: A `LOWER()` unique index on
 `account.username` prevents case-variant duplicates (`alice` vs `Alice`).
-`find_by_username` uses case-insensitive matching. The original `TEXT UNIQUE`
+`query_account_by_username` matches case-insensitively. The original `TEXT UNIQUE`
 column constraint coexists — the `LOWER()` index is strictly more restrictive.
 
-**Three-mode invite matching**: `find_unclaimed_match` uses a single SQL query
+**Three-mode invite matching**: `query_invite_find_unclaimed_match_for_update` uses a single SQL query
 with three disjoint modes based on which fields the invite has:
 
 - **Email-only invite** (email set, username NULL) — matches only if signup
@@ -2280,18 +1817,7 @@ can be claimed by anyone who knows the address. The invite proves the admin's
 intent, not the claimant's identity. Username-only invites have the same
 property — they reserve a name, not a person. Both-field invites are strictly
 stronger (require knowing both values) but still don't prove ownership.
-Email verification is a separate, deferred step — once implemented, accounts
-with verified email will require login codes, and the `email_verified` flag
-(already in the schema) will gate sensitive operations.
-
-**Future: per-account login method control**: `app_settings` could define the
-instance-wide default for whether password login is enabled (e.g.
-`password_login_enabled: true`). Individual accounts would override via a
-per-account setting (column on `account` or separate `account_settings` table).
-This enables progressive hardening — an instance can default to email-only
-login once email auth is implemented, while allowing specific accounts to
-retain password login during migration. The `app_settings` value sets the
-default for new accounts; existing accounts keep their current setting.
+No step verifies email ownership today.
 
 ## CSRF Protection
 
@@ -2308,75 +1834,60 @@ server, that means every other local dev server, notebook, or
 
 **JSON-only `POST`s** (`http/simple_request.ts`) — every `POST` route that
 isn't `raw_body` requires `Content-Type: application/json`, bodyless or not
-(logout), and a `raw_body` route refuses a `POST` with no `Content-Type`, or
-a `text/plain`, form-encoded, or multipart one — 415
+(logout), and a `raw_body` route refuses a `POST` with no `Content-Type` or a
+CORS-safelisted one (`text/plain`, form-encoded, multipart) — 415
 `unsupported_content_type`, before reading a credential or the body. A
-`Content-Type` sent twice, empty, off the `type/subtype` grammar, or holding
-a comma is refused the same way on either kind of route: the header is read
-from the lines the client sent, and a runtime that joins a repeat joins it
-with a comma. Those
-are the requests a browser sends cross-origin without a preflight, cookie
-attached. Any other type makes the browser send an `OPTIONS`
-preflight first, and fuz_app answers none with CORS headers, so the request
-is never sent — whatever the origin allowlist says. `PUT`, `PATCH`, and
-`DELETE` are always preflighted. A consumer that adds CORS middleware
-granting cross-origin requests reopens this. Every fuz_app client sends
-`application/json`. The Rust spine checks the same in each JSON handler.
+`Content-Type` sent twice, empty, or off the grammar is refused the same way,
+read from the lines the client sent. Those are the requests a browser sends
+cross-origin without a preflight, cookie attached; any other type is
+preflighted, and fuz_app answers no preflight with CORS headers, so the
+request is never sent. `PUT`, `PATCH`, and `DELETE` are always preflighted. A
+consumer that adds CORS middleware granting cross-origin requests reopens
+this. The Rust spine checks the same in each JSON handler.
 
-**Origin verification** (`origin.ts`) — an allowlist that rejects requests
-from disallowed `Origin` headers before any handler runs. It is what guards
-the WebSocket upgrade, which is never preflighted, so list exact origins: a
-port wildcard (`http://localhost:*`) admits every same-site local page to the
-socket, cookie included — which is why a wildcard boots only with
-`FUZ_ALLOW_ORIGIN_WILDCARDS=true` (`create_app_server`'s
-`allow_origin_wildcards`), and is warned of on every boot that admits it. It
-also protects locally-running services from being called by untrusted
-websites as the user browses the web. It reads
-`Origin` only, never `Referer` — the Fetch spec mandates `Origin` on every
-unsafe method. The allowlist is parsed strictly, and the server fails at boot
-naming every bad entry; a request whose `Origin` is unreadable, empty, or
-sent twice is refused with `403` — read from the header lines the client
-sent, on a WebSocket upgrade as on any request. Non-browser clients (curl, CLI,
-server-to-server) without an `Origin` header pass through — token auth is
-the security control for those callers, which don't carry auto-attached
-cookies.
+**Origin verification** (`origin.ts`) — an allowlist that refuses a
+disallowed `Origin` with 403 before any handler runs, and the layer that
+guards the WebSocket upgrade, which is never preflighted. So list exact
+origins: a port wildcard (`http://localhost:*`) admits every same-site local
+page to the socket, cookie included — which is why a wildcard boots only with
+`FUZ_ALLOW_ORIGIN_WILDCARDS=true` and is warned of on every boot that admits
+it. It reads `Origin` only, never `Referer` (the Fetch spec mandates `Origin`
+on every unsafe method, and a `Referer` fallback would only widen what's
+accepted). The allowlist is parsed strictly, failing boot on any bad entry;
+an `Origin` that is unreadable, empty, or sent twice is refused, on a
+WebSocket upgrade as on any request. A request with no `Origin` (curl, CLI,
+server-to-server) passes: it carries no auto-attached cookie, and token auth
+is its control.
 
 The check covers every path — `/api`, the probes, the static fallback — on
-both spines, so a page from a foreign origin is refused wherever it points.
-A path leaves it only by a named carve-out that states its reason
-(`origin_carve_outs` on `create_app_server`, `origin_carve_out` on a Rust
-route group), for a route that refuses browser callers by other means.
+both spines. A path leaves it only by a named carve-out that states its
+reason (`origin_carve_outs` on `create_app_server`, `origin_carve_out` on a
+Rust route group), for a route that refuses browser callers by other means.
+The spines bound carve-outs differently:
 
-The spines bound carve-outs differently. On TS, assembly refuses a carve-out
-that overlaps the auth middleware's scope (`/api/*`), and holds every route
-that reads or mints a credential inside that scope — RPC, WebSocket,
-bootstrap, login, signup, logout, password. The account and signup route
-specs are relative and the consumer prefixes them, so assembly checks the
-mounted paths: a route whose `auth` reads an account, one marked
-`reads_credential` (account status, whose handler reads the account behind
-no gate), or one marked `mints_credential` (login, signup, bootstrap), is
-refused outside `/api/*`,
-so no prefix can put one where a carve-out reaches. Rust has no such refusal: its credentialed entry points
-check the origin again in the handler, through `fuz_auth::AuthGate`, so a
-carved-out group still refuses a foreign page there. A carve-out also reaches
-unrouted paths differently: on TS it skips every path it matches, so with
-`/hooks/*` carved out an unrouted `/hooks/x` reaches the static fallback
-unchecked, while Rust sends an unrouted path to its fallback group, which is
-checked whatever a carve-out names.
+- **TS** refuses at assembly a carve-out overlapping the auth middleware's
+  scope (`/api/*`), and refuses any route that reads or mints a credential
+  (`auth` reading an account, `reads_credential`, `mints_credential`) mounted
+  outside it, so no prefix can put one where a carve-out reaches. A carve-out
+  skips every path it matches, so with `/hooks/*` carved out an unrouted
+  `/hooks/x` reaches the static fallback unchecked.
+- **Rust** has no such refusal: its credentialed entry points check the
+  origin again in the handler (`fuz_auth::AuthGate`), and an unrouted path
+  goes to its fallback group, which is checked whatever a carve-out names.
 
 So a same-site page, which does get the cookie sent, still can't drive the
 server: its `POST`s are refused for their content type or never sent, and its
 socket upgrade for its origin.
 
-**Browser/CLI split**: Bearer and daemon tokens are silently discarded when
-the request carries any `Origin` or `Referer` line, an empty one included —
-browsers must use cookie auth. The
-middleware calls `next()` without setting a context, so public actions still
-work even with stale credentials. This reduces the attack surface: a stolen API
-token cannot be replayed from a browser context. Daemon tokens carry the same
-guard for symmetry — they are loopback-only and never legitimately carry an
-`Origin`, so a header-bearing daemon token is dropped (and the request falls
-through to `credential_type_required` downstream rather than a hard fail).
+**Browser/CLI split**: Bearer and daemon tokens are silently discarded — not
+rejected — when the request carries any `Origin` or `Referer` line, an empty
+one included: browsers send these automatically and CLI tools don't, so
+browsers must use cookie auth. The middleware calls `next()` without setting a
+context, so public actions still work, and a token extracted by browser-side
+code (XSS) cannot be replayed from a browser context. A daemon token is
+loopback-only and never legitimately carries an `Origin`, so a header-bearing
+one is dropped the same way and the request falls through to
+`credential_type_required` downstream.
 
 The credential legs run daemon token, then session cookie, then bearer, and
 the first that authenticates wins: a bearer sent beside a winning session or
@@ -2440,9 +1951,7 @@ writes one line a minute and holds no per-host state.
 External traffic reaches the API over **both** cookie and bearer auth. The
 reference deployment recipes forward `Authorization` on the general `/api`
 block, and every deployed consumer builds its site from those recipes. This
-section describes that posture and names what it costs, because an earlier
-version of this document recommended the opposite ("strip `Authorization` at
-nginx, cookie-only for v1") while no deployment ever did it.
+section describes that posture and names what it costs.
 
 **What is actually in force:**
 
@@ -2485,8 +1994,8 @@ compensating control below.
    deliberately not rate limited — see §Why bearer auth is not rate limited —
    so revocation and the two controls above are the whole set.)
 
-Not yet available, and the reason this is a stated tradeoff rather than a solved
-problem: per-token IP binding, and token expiry by default.
+Per-token IP binding is not available, which is why this is a stated tradeoff
+rather than a solved problem.
 
 **If you want the replay surface closed** and your clients don't need bearer
 through the proxy, strip the header at nginx:
@@ -2507,10 +2016,8 @@ enables nginx-level caching for immutable SvelteKit assets (`/_app`).
 
 ### Config Validation
 
-There is no general nginx-config validator. An earlier `validate_nginx_config`
-treated the `Authorization` strip as a hard requirement, which made it reject
-every deployed consumer's config; it was never wired into a deploy and has been
-removed rather than left to drift further from what the recipes build.
+There is no general nginx-config validator: the recipes, not a checker, own
+the rest of the config.
 
 The one nginx property that *is* checked is the facts location, because
 confidentiality depends on it: `XAccelConfig` (`server/x_accel.ts`) can only be
@@ -2546,11 +2053,6 @@ shared IP-based limiting even in multi-process deployments.
 
 The app server's static serving middleware remains useful for dev mode (no nginx)
 and local preview. In production, nginx handles all static requests.
-
-**`add_header` inheritance**: nginx's `add_header` in a child `location` block
-replaces (not extends) inherited headers from the parent `server` block.
-Locations that add their own headers (e.g., `/_app` with `Cache-Control`) must
-repeat the security headers (HSTS, X-Content-Type-Options, etc.).
 
 **`try_files` / `trailingSlash` coupling**: The fallback chain
 `$uri $uri/index.html $uri.html` matches adapter-static's default
@@ -2655,53 +2157,42 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 
 ## Audit Logging
 
-A **success** row is written in the transaction of the change it reports —
-every mutating RPC action, a route with `transaction: true` such as `/logout`
-and the db-admin row delete, and the transaction `/login`, `/password`, signup
-and bootstrap each open around just their writes, the row last before the
-commit: the change and the row reporting it commit together, and a failed
-insert fails the request and rolls the change back, so no committed mutation
-goes unaudited, and a response, once sent, has its row committed. `emit`
-refuses a success row with no transaction open. The Rust spine writes the same
-rows the same way. **Failure** rows are fire-and-forget pool writes that
-survive a rollback (never block or break auth flows); `AppServer.close` waits
-for those still in flight, bounded (`shutdown_drain_timeout_ms`), before the
-database closes. Their delivery is
-**best-effort, not durable**: a failed insert is caught, counted, and logged,
-not retried — the request still succeeds and no audit row exists for that
-event. Listeners (the audit SSE stream, the revocation guard) are
-notified only _after_ a successful insert — a failure row as soon as it is
-written, a success row once the request's transaction has committed — so an audit
-outage also suppresses the security reactions chained off it. Enforcement that
-must survive an audit failure cannot be built on the listener path alone, which
-is why every revocation handler closes connections itself (see
-[Closing on Revocation](#closing-on-revocation)). `seq` follows INSERT order,
-not commit order: it is assigned at INSERT and an in-transaction row commits
-later, so a row can become visible after a higher `seq` — a gap fill
-(`since_seq`) can miss one that commits while the stream is down. What holds is
-that a success row is visible exactly when its change is.
+- **No committed change goes unaudited.** A **success** row is written in the
+  transaction of the change it reports — every mutating RPC action, a route
+  with `transaction: true` such as `/logout` and the db-admin row delete, and
+  the transaction `/login`, `/password`, signup and bootstrap each open around
+  their writes. A failed insert fails the request and rolls the change back,
+  and `emit` refuses a success row with no transaction open. The Rust spine
+  writes the same rows the same way.
+- **Failure rows are best-effort.** They are pool writes outside the
+  request's transaction, so they survive its rollback; no response waits for
+  one, and `AppServer.close` waits for those in flight, bounded
+  (`shutdown_drain_timeout_ms`). A failed insert is counted and logged, not
+  retried: the request's answer is unchanged and no row exists for that
+  attempt.
+- **The listener path is not enforcement.** Listeners (the audit SSE stream,
+  the revocation guard) hear a failure row once it's written and a success
+  row only after its transaction commits, so an audit outage also suppresses
+  the reactions chained off it — which is why every revocation handler closes
+  connections itself ([Closing on Revocation](#closing-on-revocation)).
+- **`seq` follows INSERT order, not commit order**, so a gap fill
+  (`since_seq`) can miss a row that commits while the stream is down; a
+  success row is visible exactly when its change is.
+
+Where each row is written and when listeners hear it: `auth/audit_emitter.ts`'s
+module TSDoc.
+
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
-`target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
-is an append-only historical record, not a live relational entity: a soft-delete
-keeps the account row (so the ids still resolve), and a hard purge leaves the raw
-id intact on historical rows for forensic correlation rather than nulling it.
-Deleting or purging an account additionally snapshots its identifying values
-(`username` / `email`, and per-actor `name`) into the deletion event's metadata,
-so the identity behind a now-orphaned id survives even after the row is gone.
-Append-only is also enforced at the one HTTP surface that could have broken it:
-`http/db_routes.ts`'s `NON_DELETABLE_TABLES` refuses a row `DELETE` on `audit_log`
-with `400 table_not_deletable`, ahead of the key-shape check. `audit_log` has a
-single-column primary key, so the keeper-gated browser would otherwise delete a
-trail row and report success. It is the sharpest of the four excluded tables
-because it is both the trail and part of how revocation propagates — the
-revocation guard closes live connections by listening to audit events, so a raw row
-delete would be invisible to them. The read side is gated the same way: the
-browser exposes only the consumer's declared `browsable_tables`, minus the
-`NON_BROWSABLE_TABLES` credential floor (`account`, `auth_session`,
-`api_token`, `bootstrap_lock`) — `account` matters most, since the browser
-would otherwise be the one surface returning the password-hash corpus in bulk.
-Unlisted tables answer exactly like nonexistent ones. Direct DB access remains
-out of scope.
+`target_actor_id`) carry **no foreign key**: an append-only historical record
+keeps a purged account's raw id for forensic correlation rather than nulling
+it, and a delete or purge snapshots the account's `username` / `email` and
+each actor's `name` into the event's metadata, so the identity behind an
+orphaned id survives. The db-admin browser can't break append-only:
+`audit_log` is one of its `NON_DELETABLE_TABLES` (the trail, and part of how
+revocation propagates, since the revocation guard listens to audit events),
+and its reads stop at the `NON_BROWSABLE_TABLES` credential floor — `account`
+above all, which it would otherwise serve as the password-hash corpus in
+bulk. Direct DB access remains out of scope.
 Each event records an `outcome` (`success` or `failure`), so login/bootstrap/password
 change failures are tracked without needing separate event types.
 
@@ -2811,7 +2302,9 @@ state are designed for **single-process deployments**:
 - Daemon token rotation is file-based. Multiple processes sharing the file may
   read stale state between token write and fsync.
 
-For multi-process deployments, rate limiters would need Redis or a shared DB table;
+For multi-process deployments, rate limiters would need Redis or a shared DB table
+(or, for IP-keyed limits, nginx `limit_req`, which every backend instance
+shares; tightening each instance's windows limits the multiplier meanwhile);
 revocation closes would need a cross-process channel (a shared pub/sub, or
 `LISTEN`/`NOTIFY`); daemon tokens would need a distributed lock or a different
 rotation strategy.

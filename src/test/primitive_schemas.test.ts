@@ -418,7 +418,7 @@ describe('Email', () => {
 		// Deliberate asymmetry with `Username` — `Username` canonicalizes to
 		// lowercase at parse time, but `Email` preserves the input case. The
 		// case-insensitive lookup happens at the SQL layer via `LOWER()` in
-		// `query_account_by_email` (see `auth/CLAUDE.md` §`account_queries.ts`),
+		// `query_account_by_email` (`auth/account_queries.ts`),
 		// so storage retains the user-supplied form and only the lookup
 		// canonicalizes.
 		//

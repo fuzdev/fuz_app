@@ -5,8 +5,8 @@
  * by their timing contract:
  *
  * - `pending_effects: Array<Promise<void>>` — eager. Producers push pool
- *   writes that are already in flight (failure audit rows, session-touch
- *   UPDATE, api-token usage tracking). The pool write is rollback-resilient by
+ *   writes that are already in flight (failure audit rows, api-token usage
+ *   tracking). The pool write is rollback-resilient by
  *   virtue of running outside the request transaction; pushing the
  *   in-flight handle lets test mode (`await_pending_effects: true`) await
  *   it.
@@ -14,7 +14,8 @@
  *   Producers go through `emit_after_commit(ctx, fn)`; the flush
  *   middleware is the only site that ever invokes the thunk, and it does
  *   so after the request handler (and its wrapping `db.transaction`)
- *   returns. Used for WS sends and any work that must observe a committed
+ *   returns. Used for WS sends, a revocation's connection closes, a success
+ *   audit row's listener fan-out, and any work that must observe a committed
  *   transaction.
  *
  * **Discard on rollback.** A `post_commit_effects` thunk is discarded if the

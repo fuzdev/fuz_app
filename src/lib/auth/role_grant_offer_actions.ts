@@ -4,7 +4,7 @@
  * The offer-lifecycle methods (create / accept / decline / retract / list /
  * history) plus `role_grant_revoke` and `role_grant_assign` (both
  * admin-only). All mount
- * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action
+ * on a consumer's JSON-RPC endpoint through `rpc_endpoints`. The action
  * specs themselves live in `auth/role_grant_offer_action_specs.ts`. Mutations
  * declare `side_effects: true` so the RPC dispatcher wraps the handler in
  * a DB transaction; `role_grant_offer_list` and `role_grant_offer_history` declare
@@ -317,7 +317,7 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  *
  * @param deps - `RevokingActionFactoryDeps`: `log`, `audit`, and the `connection_closer` a revoked global grant closes the revokee's role-gated connections through. WS notifications go through the handler context's `notification_sender`, not a dep
  * @param options - role registry, default TTL, authorization override
- * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
+ * @returns the `RpcAction` array to spread into an `RpcEndpointSpec`'s `actions`
  */
 export const create_role_grant_offer_actions = (
 	deps: RevokingActionFactoryDeps,

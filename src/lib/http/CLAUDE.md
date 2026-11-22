@@ -2,7 +2,8 @@
 
 Generic HTTP framework infrastructure — route specs, error schemas, attack
 surface introspection, JSON-RPC envelope + error taxonomy, proxy/origin
-middleware primitives, post-commit effect helper, generic admin route specs.
+middleware primitives, the post-commit effect queues, generic admin route
+specs.
 
 **No auth logic lives in this directory.** Auth middleware, routes, and
 guards live in `auth/` and consume these primitives; the route context names
@@ -10,861 +11,406 @@ the auth domain's types (`RequestContext`, `ResolvedAuth`) as types only, as
 `hono_context.ts` does. Routes and actions in other domains should do the
 same — extend, don't special-case.
 
-For the design rationale behind declarative routes, DEV-only output
-validation, the route error map, and fire-and-forget
-effects, see ../../../docs/architecture.md.
+This file is the home of the route pipeline, the route error map's
+derivation, and the pending and post-commit effects. Design rationale for
+declarative routes and DEV-only validation is in
+../../../docs/architecture.md; per-symbol rules are each module's TSDoc.
 
 ## Module Map
 
-- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions; `define_route`, `define_route_shape` + `attach_route_handler` (a handler checked against its route), `prepare_route_response` + `emit_route_response` (the one place a route result becomes a `Response`), and `RouteContext` — everything a handler reads of its request, built from the Hono context the handler never sees.
+- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs` (the validation pipeline, transactions); `define_route`, `define_route_shape` + `attach_route_handler`; `prepare_route_response` + `emit_route_response` (the one place a route result becomes a `Response`); `RouteContext`.
 - `http/route_result.ts` — what a handler returns, all of it data: `route_ok`, `route_fail`, `route_raw`, `route_sse` (`RouteResult`), and `ROUTE_RAW_REFUSED_HEADERS`. Imports nothing from Hono.
-- `http/auth_shape.ts` — canonical `RouteAuth` type + `AuthAxisState` + predicates + the registration-time checks: `assert_route_auth_invariants` (the cross-axis invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
-- `http/error_schemas.ts` — `ERROR_*` constants, the per-code REST error definitions (`rest_error`, `REST_*`), `derive_route_errors`, `to_error_schemas`.
+- `http/auth_shape.ts` — the canonical `RouteAuth` type, `AuthAxisState`, the per-route predicates (`is_public_auth`, `is_keeper_auth`, …, `needs_actor`), `parse_acting` / `input_schema_declares_acting`, and the registration-time checks `assert_route_auth_invariants` (invariants 1, 3, 4) and `assert_route_auth_acting_biconditional` (invariant 2), both run by `apply_route_specs` and `compile_action_registry` on every spec.
+- `http/error_schemas.ts` — the `ERROR_*` constants (the catalog of codes), the REST error definitions (`rest_error`, `REST_*`), `derive_route_errors`, `to_error_schemas`.
 - `http/route_errors.ts` — the route error map: `RouteErrorMap`, `resolve_route_error_map`, `resolve_app_route_error_maps`, `get_route_error_map`.
-- `http/route_error_check.ts` — `check_route_error` (whether an error response is one its route's map declares, the rule the DEV error check and `assert_response_matches_spec` share; `ALWAYS_ACCEPTED_ERRORS`, `is_error_status`, `format_route_error_check`) `is_json_response`, and the test helpers' hono-free route lookup (`split_route_template` and `parse_route_param`, a template read segment by segment as Hono's `getPattern` reads it; `compile_route_path`; `compile_route_param_pattern`, a `{re}` grouped and anchored as `compile_route_path` reads it — Hono's RegExpRouter reading, stricter than TrieRouter's ungrouped `^re$`; `to_mounted_routes`; `find_mounted_route`), whose reading `resolve_valid_path` also fills params by. Hono-free and `esm-env`-free.
-- `http/dev_route_error_check.ts` — `create_dev_route_error_check({route_specs, route_error_maps, log})`: the DEV-only outer error check, `null` outside DEV; `create_route_lookup`, its lookup by Hono's own router.
-- `http/dev_set_cookie_check.ts` — `create_dev_set_cookie_check({log})`: the DEV-only outer check that a response leads with the `Set-Cookie` line a middleware recorded for it (`EXPECTED_FIRST_SET_COOKIE_KEY` — the session middleware's clear), `null` outside DEV. Knows nothing of sessions.
-- `http/schema_helpers.ts` — shared schema introspection (null/void/strict/surface/middleware-applies), and `to_void_params` / `to_input_params` / `scan_json_value` / `safe_parse_dropping_unknown_keys`.
-- `http/json_text.ts` — `parse_json_text`: JSON text read as the Rust spine's `serde_json` reads it, refusing what `JSON.parse` accepts and serde refuses (an escaped lone surrogate in a string or key, a number out of `f64` range, nesting `JSON_DEPTH_LIMIT` (128) deep); one linear scan of the text after `JSON.parse` accepts it (`is_serde_json_text`), so a refused value under a duplicated key is seen and the cost stays a few milliseconds a MiB. `read_json_body(c.req)` reads a request body through it once per request (the authorization phase's `acting` read and input validation share it), as text, never `c.req.json()`. Every body and frame parse runs it: route input, the RPC POST body and `GET` `params`, WS frames. Hono-free, imports nothing.
-- `http/middleware_spec.ts` — `MiddlewareSpec` interface.
-- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts, as `create_body_limit_middleware_spec(max_size)`, a `MiddlewareSpec` at `'*'` ahead of the other middleware, absent with `max_body_size: null`. Its hono-free shape, `body_limit_middleware_shape` (`http/body_limit_schema.ts`), declares its `413` `payload_too_large` and `400` `invalid_content_length`, so every route's error map carries both; `create_test_app_surface_spec` lists the same shape with a stub handler. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`), which reads the body into memory up to the cap before the next middleware runs, so its `413` — no `Connection: close` — also precedes origin and auth. After the header `413` Node and Bun close at once (the header is what makes them — Bun 1.4.3 is the tested floor, an older Bun kept the connection and served the next request) (../../../docs/security.md §Body Size Limiting).
-- `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
+- `http/route_error_check.ts` — `check_route_error`, the rule the DEV error check and `assert_response_matches_spec` share (`ALWAYS_ACCEPTED_ERRORS`), `is_json_response`, and the hono-free route lookup the test helpers use (`find_mounted_route` and its template readers, matching as Hono's RegExpRouter does). Hono-free and `esm-env`-free.
+- `http/dev_route_error_check.ts` — `create_dev_route_error_check`, the DEV-only outer error check (`null` outside DEV), finding the route with Hono's own router (`create_route_lookup`).
+- `http/dev_set_cookie_check.ts` — `create_dev_set_cookie_check`, the DEV-only outer check that a response leads with the `Set-Cookie` line a middleware recorded (`EXPECTED_FIRST_SET_COOKIE_KEY`). Knows nothing of sessions.
+- `http/schema_helpers.ts` — shared schema introspection (§Schema Helpers).
+- `http/json_text.ts` — `parse_json_text`, JSON read as the Rust spine's `serde_json` reads it (refusing a lone escaped surrogate, an out-of-range number, nesting past `JSON_DEPTH_LIMIT`), and `read_json_body`, the once-per-request body read the authorization phase and input validation share. Every body and frame parse runs it. Hono-free.
+- `http/middleware_spec.ts` — `MiddlewareSpec`, `MiddlewareCarveOut`.
+- `http/body_limit.ts` — `create_body_limit_middleware_spec(max_size)`, the `'*'` body cap `create_app_server` mounts ahead of everything else (absent with `max_body_size: null`): 413 `payload_too_large` past the cap and 400 `invalid_content_length` on an unreadable length, both with `Connection: close`, declared through its hono-free shape (`body_limit_schema.ts`) so every route's error map carries them. The per-runtime behavior and tested floors are its module TSDoc; the threat is ../../../docs/security.md §Body Size Limiting.
+- `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, `env_schema_to_surface`, `events_to_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
-- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution; also records the socket's peer address as it read it (`CONNECTION_IP_KEY`, what `RouteContext.connection_ip` answers). Pulls `hono/utils/ipaddr` for CIDR matching.
-- `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
-- `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and its own `parse_ipv4_bits` / `parse_ipv6_bits` (the grammar of Rust's `IpAddr::from_str`); `IP_LITERAL_CHARS` regex. Imports nothing — the dispatcher keys its IP limiter through it, so it must stay hono-free (`src/test/hono_free_modules.test.ts` walks every `src/lib` module's graph).
-- `http/header_lines.ts` — `get_header_lines(c, name)`: a request header as the lines the client sent — Node's raw header list where `@hono/node-server` provides it (`c.env.incoming.rawHeaders`, plain requests and WebSocket upgrades alike), else the Fetch value as one line (Bun, in-process `app.request`: repeated lines arrive joined) — and `trim_optional_whitespace` (SP and HTAB only). What the credential readers (`auth/credential_headers.ts`) and the gate readers (`http/request_headers.ts`) read, so a header sent twice or empty is seen as such.
-- `http/request_headers.ts` — the gates' header grammar as pure readers over header lines, hono-free: `read_origin`, `read_host`, `read_content_type` (each a `HeaderRead` — `absent`, `one` well-formed line, or `refused`: an empty line, a second line, a byte off the grammar, a comma anywhere) and `is_browser_context(origin_lines, referer_lines)` (any line, an empty one included). A comma is refused so a repeat reads the same joined (Bun, in-process) as it does line by line. Twin of the Rust `fuz_http::request_headers`; both held to `testing/cross_backend/request_header_conformance.json`. `src/test/request_reads_census.test.ts` holds every raw request read in `src/lib` to a per-module allowlist, and these headers and the credential ones to `get_header_lines`.
-- `http/simple_request.ts` — the 415 gate on every `POST` route (`is_post_content_type_refused` over `read_content_type`): a JSON route takes only `application/json`, a `raw_body` route any well-formed type that isn't CORS-safelisted; a repeated, empty or off-grammar `Content-Type` is refused on every runtime (../../../docs/security.md §CSRF Protection).
-- `http/request_target.ts` — the strict readers of the request target: `read_query_pairs` (the query string to its decoded pairs) and `read_path_segment` (one path segment to its text), each a `Result` that refuses an escape that doesn't decode (`PercentDecodeError`: `malformed_escape`, `invalid_utf8`) — never left literal, never replaced with U+FFFD — plus `query_first` / `to_query_record` over the pairs and the two Hono-bound readers every query and param read in the spine goes through (`read_request_query_pairs`, `read_request_route_params`). `+` is a space and the first occurrence of a key wins. Twin of the Rust `fuz_http::request_target`; both held to `testing/cross_backend/request_target_conformance.json`. Also `get_request_path`, the raw path the app's router matches (its `getPath`).
-- `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
-- `http/host.ts` — the host gate (DNS rebinding): `is_loopback_host`, `allows_host` / `allows_request_hosts` over the origin matchers, `create_host_gate_middleware_spec` (`'*'`, 403 `forbidden_host`, on by default in `create_app_server`) and its rate-limited refusal warning (`format_host_refusal_warning`). Twin of the Rust `fuz_http::host`; reads the `Host` lines through `read_host`; verdicts pinned by the host rows of `testing/cross_backend/origin_conformance.json` and, over repeated and empty lines on the wire, by `request_header_conformance.json` (../../../docs/security.md §DNS Rebinding).
-- `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset, fuz_schema), `JsonrpcErrorCode`.
-- `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
-- `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers, and `classify_jsonrpc_message`, the one envelope classifier both transports run.
-- `http/health_schema.ts` — `HEALTH_PATH` + the `HealthResponse` schema (a fuz_schema `object`), browser-safe, shared by the health route spec and the client probe (`ui/backend_probe.svelte.ts`).
-- `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status route specs (the surface explorer route lives in `server/surface_route.ts`).
-- `http/db_routes.ts` — allowlist-gated keeper-only table browser route specs (`public` schema, minus the `NON_BROWSABLE_TABLES` credential floor).
-- `http/pending_effects.ts` — `emit_after_commit` + `dispatch_with_post_commit_rollback` (the shared rollback-discard wrapper both dispatch sites use) + `flush_request_effects` (the one two-queue flush HTTP and WS share, over `flush_pending_effects` + `flush_post_commit_effects`) + `EffectErrorContext` + `EmitAfterCommitContext`.
+- `http/proxy.ts` — the trusted-proxy middleware: CIDR parsing, rightmost-first XFF resolution, and the socket peer it read (`CONNECTION_IP_KEY`, what `RouteContext.connection_ip` answers). Pulls `hono/utils/ipaddr`.
+- `http/client_ip.ts` — `get_client_ip(c)`, the resolved IP off the context; split from `proxy.ts` so modules that only read the IP stay hono-free.
+- `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization, IPv4-mapped collapse, `rate_limit_ip_key` (an IPv6 client's `/64`), and IP parsers with the grammar of Rust's `IpAddr::from_str`. Imports nothing (`src/test/hono_free_modules.test.ts` walks every module's graph).
+- `http/header_lines.ts` — `get_header_lines(c, name)`: a request header as the lines the client sent (Node's raw header list where `@hono/node-server` provides it, else the Fetch value as one line), and `trim_optional_whitespace`. What the credential and gate readers read, so a header sent twice or empty is seen as such.
+- `http/request_headers.ts` — the gates' header grammar as pure readers over header lines: `read_origin`, `read_host`, `read_content_type` (each `absent`, `one` well-formed line, or `refused`) and `is_browser_context`. Twin of the Rust `fuz_http::request_headers`, both held to `testing/cross_backend/request_header_conformance.json`. `src/test/request_reads_census.test.ts` holds every raw request read in `src/lib` to a per-module allowlist.
+- `http/simple_request.ts` — the 415 gate on every `POST` route (`is_post_content_type_refused`): a JSON route takes only `application/json`, a `raw_body` route any well-formed type that isn't CORS-safelisted (../../../docs/security.md §CSRF Protection).
+- `http/request_target.ts` — the strict request-target readers: `read_query_pairs` and `read_path_segment` refuse an escape that doesn't decode (`PercentDecodeError`), never leaving it literal or replacing it; `query_first`, `to_query_record`; the Hono-bound `read_request_query_pairs` / `read_request_route_params` every query and param read goes through; `get_request_path`, the raw path the router matches. Twin of the Rust `fuz_http::request_target`, held to `testing/cross_backend/request_target_conformance.json`.
+- `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, the Origin-only middleware.
+- `http/origin_wildcard.ts` — the wildcard-entry policy: `origin_wildcard_kind`, `origin_wildcard_warning` (the Rust text word for word), `admit_origin_wildcards` (a wildcard boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true`; an unbranded matcher is refused).
+- `http/host.ts` — the host gate (DNS rebinding): `is_loopback_host`, `allows_host`, `create_host_gate_middleware_spec` (`'*'`, 403 `forbidden_host`, on by default). Twin of the Rust `fuz_http::host`, pinned by `origin_conformance.json` and `request_header_conformance.json` (../../../docs/security.md §DNS Rebinding (Host Gate)).
+- `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`.
+- `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, status mappings, `register_jsonrpc_error_code`.
+- `http/jsonrpc_helpers.ts` — builders, type guards, normalizers, and `classify_jsonrpc_message`, the one envelope classifier both transports run.
+- `http/health_schema.ts` — `HEALTH_PATH` + `HealthResponse`, browser-safe, shared by the health route and `ui/backend_probe.svelte.ts`.
+- `http/common_routes.ts` — health, readiness (`/ready`) and server-status route specs.
+- `http/db_routes.ts` — the keeper-only, allowlisted table browser.
+- `http/pending_effects.ts` — the two effect queues (§Pending Effects): `emit_after_commit`, `dispatch_with_post_commit_rollback`, `transaction_with_post_commit_rollback`, `flush_request_effects` over `flush_pending_effects` + `flush_post_commit_effects`, `RequestEffectsContext`, `EmitAfterCommitContext`, `EffectErrorContext`.
 
 ## Route Spec System
 
 `RouteSpec` (in `http/route_spec.ts`) is the unit of the attack surface —
 routes are **data**, registered with Hono by `apply_route_specs` and
-introspected by `generate_app_surface`. Same-shaped data, different
-consumers.
+introspected by `generate_app_surface`. The fields are on the interface's
+TSDoc; the rules a caller misses:
 
-### `RouteSpec` fields
+- `auth: RouteAuth` — `{account, actor, roles?, credential_types?, required_scope?}`, the same shape as `ActionSpec.auth` (`actions/CLAUDE.md`). `required_scope` is route-only: a `surface:<name>` capability a narrowed api token must admit (an `rpc:<method>` throws at registration; the dispatcher derives that one per action).
+- `mints_credential` (login, signup, bootstrap) and `reads_credential` (a handler that reads the account behind no auth gate, through `get_public_account`) — assembly refuses either outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` isn't `'none'` (`assert_credential_routes_in_auth_scope`).
+- `input` is `literal(null)` for no body and on every `GET` (any other throws). `raw_body` routes take the body as a stream (`route.request`).
+- `response_headers` are static headers on every answer the route gives once a request reaches it — its refusals, the handler's result, the error catch's — never a name the body or framing owns.
+- `rate_limit` is metadata that derives the 429; the limiter itself is wired in the handler.
 
-- `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
-- `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, required_scope?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `required_scope` names the capability a narrowed api token's scope must admit — `surface:<name>`, a non-RPC surface refused to every narrowed token (an `rpc:<method>` capability throws at registration: it is the dispatcher's per-method gate, which a route never reaches) — and is route-spec-only: `compile_action_registry` rejects it on an `ActionSpec`, where the dispatcher derives `rpc:<method>` from `spec.method`. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
-- `handler: RouteHandler` — `(route: RouteContext) => RouteResult | Promise<RouteResult>`: the route context in, a result the framework answers with out (§Handlers and results); a handler never receives the Hono context
-- `description` — free-text, surfaced in `AppSurface`
-- `params?: AnySchema` — strict-object schema for URL path params
-- `query?: AnySchema` — strict-object schema for URL query string
-- `input: AnySchema` — request body schema; `literal(null)` for no body, and on every `GET` (`apply_route_specs` refuses any other)
-- `output: AnySchema` — success response schema
-- `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
-- `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion. Such a handler reads the account through `get_public_account` (`auth/request_context.ts`), which answers a scope-narrowed token as anonymous — the RPC pair excepted, its dispatcher gating each method
-- `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
-- `errors?: ReadonlyArray<RestErrorDef>` — the handler's own error definitions (`rest_error`); joins the route error map beside the derived and middleware ones
-- `jsonrpc?: boolean` — the route answers JSON-RPC envelopes, not REST bodies; set by `create_rpc_endpoint`, read by the DEV error check and `assert_response_matches_spec`
-- `response_headers?: Record<string, string>` — static headers every answer of the route carries once a request reaches it: its own validation and guard refusals, the handler's result of any kind, and the error catch's 500 and 503. Checked at registration by the raw result's header rules, and refusing the names a body or the framing owns (`ROUTE_RAW_REFUSED_HEADERS`, `Content-Type`, `Content-Length`). A result that names one of them itself is refused at the prepare. Listed on `AppSurfaceRoute`. For a header true of every answer — the RPC `GET`'s `Cache-Control: no-store` — not for a success's own (the fact routes' hardening headers stay on the bytes answer)
-- `transaction?: boolean` — declarative transaction wrapping (see below)
-
-Every schema field takes a `@fuzdev/fuz_schema` schema (`AnySchema`),
-validated through `parse`, its refusals answered with `to_wire_issues`'s
-`WireIssue`s. A slot holding a value that is no schema throws at registration, naming the route
-and the slot (`assert_validation_schema`) — in an assembled app, surface
-generation (`schema_to_surface`) reads most slots first and throws the same
-refusal; `params`, `query` and an `errors` entry
-may be absent. A `params` or `query` must be an object schema
-under any wrappers (`get_schema_entries`); `apply_route_specs` throws naming
-the route on one that isn't. Input/output naming mirrors SAES `ActionSpec`. Use a strict object for
-inputs — fuz_schema's `object` — the surface diagnostic warns on non-strict
-objects because unknown keys are silently stripped by `strip_object` and
-kept by `loose_object`.
+Every schema slot takes a `@fuzdev/fuz_schema` schema; a slot holding none
+throws at registration naming the route and slot (`assert_validation_schema`),
+and a `params` or `query` must be an object schema. Use a strict `object` for
+inputs — the surface warns on `strip_object` / `loose_object`. Input/output
+naming mirrors SAES `ActionSpec`.
 
 ### Handlers and results
 
-A handler returns a result — data, never a `Response` — and the spine builds
-the response in two steps around the commit. `prepare_route_response` runs
-inside any wrapping transaction and checks everything that could fail: a
-result that can't become a response (a bare `Response`, a result no factory
-made such as `{ok: true}` without `value`, `undefined`, a body
-`JSON.stringify` refuses, a raw result breaking a rule below) throws there,
-rolls back, and discards the post-commit effects. `emit_route_response` runs
-after the commit and is the one place a route result becomes a `Response`, through
-the context, so the context's prepared headers — the clearing `Set-Cookie`
-for an invalid session cookie — are on every one. Nothing a handler returned
-reaches the wire for work that didn't commit: a login whose commit fails
-answers its 500 with no cookie.
+A handler takes the route context alone and returns a result — data, never
+a `Response`. The spine builds the response in two steps around the commit:
+`prepare_route_response` runs inside any wrapping transaction and checks
+everything that could fail (a bare `Response`, a result no factory made, a
+body `JSON.stringify` refuses, a raw result breaking its rules), so a bad
+result throws, rolls back, and discards the post-commit effects;
+`emit_route_response` runs after the commit, through the context, so its
+prepared headers — the clearing `Set-Cookie` for an invalid session cookie —
+are on every response. Nothing a handler returned reaches the wire for work
+that didn't commit: a login whose commit fails answers its 500 with no cookie.
 
-- `route_ok(value, {set_cookie?})` — `value` as JSON at 200. `set_cookie` is
-  the success's own `Set-Cookie` lines (`session_cookie_header`,
-  `clear_session_cookie_header` of `auth/session_cookie.ts`), written after
-  the context's, in order; a failure can't carry one.
-- `route_fail(def, fields?)` — `{error: def.code, ...fields}` at `def.status`,
-  with the headers `def` derives (`REST_RATE_LIMIT_EXCEEDED`'s `Retry-After`).
-  `fields` is absent for a bare code, optional when every field is, required
-  when any is.
-- `route_raw({status, headers?, body?})` — an answer the route spells itself:
-  an empty body, text, bytes, a stream, a JSON-RPC envelope. The prepare
-  refuses what would not send as written: a status outside 200–599; a header
-  in `ROUTE_RAW_REFUSED_HEADERS` (`Set-Cookie` and the hop-by-hop names), a
-  name twice in any case, an empty value; a body without a `Content-Type`,
-  or on a 204, 205 or 304; a `Content-Length` that is not a canonical
-  decimal within the safe integer range (no leading zero), that rides a 204
-  or 205, or that, for a text or bytes body, is not its byte length (it is
-  free with no body or a stream — a size answered without the bytes); a
-  locked stream, detached bytes, a view left out of bounds by a shrunk
-  resizable buffer, a `Response`. A stream that was read and released can't
-  be told from a fresh one. A stream body's `cancel` must release its
-  source: the spine cancels one the route ends up not answering with —
-  refused, rolled back by a failed commit, or asked for by `HEAD`.
-- `route_sse(stream)` — an event stream the handler opened with
-  `route.open_sse(options)`, so it exists before the handler admits it to a
-  registry. Opening writes nothing on the context: the response is built at
-  the emit with `SSE_RESPONSE_HEADERS`, and a stream the route opened and
-  did not answer with (another result, a throw) is closed. A stream another
-  request opened is refused.
+- `route_ok(value, {set_cookie?})` — JSON at 200; `set_cookie` lines follow the context's.
+- `route_fail(def, fields?)` — `{error: def.code, ...fields}` at `def.status`, with the headers `def` derives (`Retry-After`). A failure is plain data, so domain code fails without the context and a handler forwards one (`if (!result.ok) return result`).
+- `route_raw({status, headers?, body?})` — an answer the route spells itself (empty, text, bytes, a stream, a JSON-RPC envelope). The prepare refuses what wouldn't send as written; the rules are `route_raw`'s TSDoc. The one a caller must honor: a stream body's `cancel` releases its source, since the spine cancels a stream it doesn't send (refused, rolled back, or a `HEAD`).
+- `route_sse(stream)` — a stream opened with `route.open_sse(options)`, so it exists before the handler admits it to a registry; one the route opened and didn't answer with is closed.
 
-**`HEAD`.** Hono serves `HEAD` by running the `GET` handler and dropping the
-body unread, so the spine releases what a stream holds: the emit cancels a
-raw stream body and closes an SSE stream (its `on_close` listeners run, its
-registry drops it), then answers the prepared status and headers with no
-body — an SSE answer without its `Connection: keep-alive`, so the
-connection can end. A handler has no `HEAD` branch to write.
+**`HEAD`** runs the `GET` handler; the emit cancels a raw stream body or
+closes an SSE stream and answers status and headers alone. A handler has no
+`HEAD` branch to write.
 
-A response that can't be built after the commit — the runtime refusing what
-the prepare let through — is logged naming the route and answered by the
-error catch's 500; the work stays committed. A handler holds no Hono
-context, so it writes nothing on one: what a response carries is the
-result, the spec's `response_headers`, and what middleware prepared
-(`src/test/route_modules_hono_free.test.ts` holds every module that defines
-a route to importing nothing from Hono and building no `Response`). A failure is plain data
-(`ok: false`), so domain code and shared helpers fail without the context and
-a handler forwards one (`if (!result.ok) return result`). A thrown error is
-still the error catch's.
+A response that can't be built after the commit is logged naming the route
+and answered by the error catch's 500; the work stays committed. A thrown
+error is still the error catch's. `src/test/route_modules_hono_free.test.ts`
+holds every route-defining module to importing nothing from Hono and building
+no `Response`.
 
-A spec is made by `define_route(spec)`, or by `attach_route_handler(shape,
-handler)` over a `define_route_shape(shape)` — the split the hono-free
-`*_route_schema.ts` shapes use. Each checks the handler at the definition
-(`TypedRouteHandler`): `route_ok`'s value against the input side of `output`
-(made readonly at every depth, `ReadonlyJson`, so `route_ok` keeps literals as
-written), and each `route_fail` against what the route allows — its `errors`,
-the derived codes a handler may itself give (`RouteHandlerDerivedErrors`: the
-401 and the auth 403s its `auth` derives, the 429 of a `rate_limit`), and the
-catch layers' 500 `internal_error` and 503 `service_unavailable`
-(`RouteAlwaysErrors`). A failure is allowed when an allowed definition at the
-same status and code accepts its body, so the bare 401 passes where
-`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP` is declared, and the reverse. An
-`errors` list typed `Array<RestErrorDef>` is refused (`KnownRouteErrors`).
-`RouteSpec` carries a phantom brand, in the types only, that just these two
-mint, so a spec literal doesn't typecheck; a spread of a spec keeps the brand
-and is not checked again (the DEV error check covers a rewritten `auth` or
-`errors`). At runtime they return the spec, or the shape with its handler.
+A spec is minted by `define_route(spec)` or `attach_route_handler(shape,
+handler)` over `define_route_shape(shape)` (the split the hono-free
+`*_route_schema.ts` shapes use). Both type the handler against the route
+(`TypedRouteHandler`): `route_ok`'s value against `output`, each `route_fail`
+against what the route allows (its `errors`, the 401/403s its `auth` derives,
+the 429 of a `rate_limit`, and the catch layers' 500 and 503). `RouteSpec`
+carries a phantom brand only these mint, so a spec literal doesn't typecheck;
+a spread keeps the brand unchecked (the DEV error check covers it).
 
 ### `RouteContext` — what a handler gets
 
 The handler's one argument, built by `apply_route_specs` from the Hono
-context:
+context; the fields are the interface's TSDoc. Shared with `ActionContext`
+(same names and types): `auth`, `client_ip`, `signal`, `db`,
+`pending_effects`, `post_commit_effects`. REST's own: `credential`,
+`connection_ip`, `input`, `params`, `query`, `has_test_context_preset`,
+`request`, `query_pairs`, `read_json_body`, `header_lines`,
+`close_connection`, `open_sse`.
 
-```typescript
-interface RouteContext<TAuth, TInput, TParams, TQuery> {
-	// shared with `ActionContext`, same names and types
-	auth: TAuth; // RequestContext | null, narrowed by the spec's `auth`
-	client_ip: string; // resolved by the trusted proxy; 'unknown' without one
-	signal: AbortSignal; // aborts on client disconnect
-	db: Db; // transaction-scoped when `transaction: true`, pool-level otherwise
-	pending_effects: Array<Promise<void>>; // eager pool writes already in flight
-	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
-	// REST's own
-	credential: ResolvedAuth | null; // what the auth middleware resolved
-	connection_ip: string | null; // the socket's peer, as the runtime spells it
-	input: TInput; // validated body; null for a route with none
-	params: TParams; // validated path params; undefined without a `params` schema
-	query: TQuery; // validated query; undefined without a `query` schema
-	has_test_context_preset: boolean; // a harness pre-built `auth`; never in production
-	request: Request; // the raw request: a `raw_body` stream, the undecoded URL
-	query_pairs: QueryPairsRead; // the query decoded strictly, or why it doesn't decode; a key read with `query_first(pairs, key)`
-	read_json_body: () => Promise<JsonBodyResult>; // the once-per-request JSON read
-	header_lines: (name: string) => Array<string>; // a header as the lines sent
-	close_connection: () => void; // answer with `Connection: close`
-	open_sse: <T = unknown>(options?: RouteOpenSseOptions) => SseStream<T>; // the stream a `route_sse` answers with
-}
-```
+- **Typed from the spec.** `define_route` types `input`, `params` and `query` from the route's schemas, and `auth` through `RequestContextForAuth` (`auth/request_context.ts`, the conditional `rpc_action` also narrows by). A handler of a required tier throws rather than run without the context its type promises.
+- **`route.credential`** is the whole resolved credential. A `reads_credential` route reads the account through `get_public_account(route)`, which answers a scope-narrowed token as anonymous (`src/test/auth/token_scope_surface_census.test.ts`).
+- **`route.connection_ip`** is the TCP peer, never forwarded and not normalized — for loopback-only routes; `null` without the trusted-proxy middleware.
+- **`route.query_pairs`** is the strictly decoded query or why it doesn't decode; read a key with `query_first(pairs, key)` (first occurrence wins). `request`'s body is already consumed on a route the pipeline read JSON input for.
+- **`route.close_connection()`** answers with `Connection: close` whatever the result, so the runtime drops a connection whose body nothing will read.
+- **`route.db`** is the transaction when `transaction: true`, the pool otherwise; a `transaction: false` handler opens its own scope (§Pending Effects for the wrapper it must use).
 
-- **Typed from the spec.** `define_route` and `attach_route_handler` type
-  `input`, `params` and `query` from the route's schemas (`TypedRouteContext`),
-  so `route.params.x` on a route with no `params` is a type error, and
-  `auth` from the route's `auth` through `RequestContextForAuth`
-  (`auth/request_context.ts`) — the one conditional `rpc_action`'s
-  `HandlerForSpec` also narrows by: an actor-required route gets a
-  `RequestActorContext`, an account-required one a `RequestContext`,
-  anything else `RequestContext | null`. A handler of a required tier is
-  wrapped where it is defined and throws rather than run without the
-  context its type promises (a spread spec whose `auth` was loosened
-  answers 500, not a handler running on `null`).
-- **`route.credential`** is the whole resolved credential. A
-  `reads_credential` route never reads the account off it: it calls
-  `get_public_account(route)` (`auth/request_context.ts`), which answers
-  a scope-narrowed API token as the anonymous caller
-  (`src/test/auth/token_scope_surface_census.test.ts` holds every route
-  module to that).
-- **`route.connection_ip`** is the TCP peer, never a forwarded address, and
-  not normalized (`::ffff:127.0.0.1` stays that) — for a route that admits
-  loopback callers only. `null` when the trusted-proxy middleware isn't
-  mounted.
-- **Reading the request.** `query_pairs` is the query string read by
-  `read_query_pairs` (`http/request_target.ts`): every pair percent-decoded,
-  or the reason it doesn't decode — a handler that reads an undeclared key
-  refuses an undecodable query in its own shape (the RPC `GET` its envelope)
-  and reads a key with `query_first(pairs, key)` — first occurrence, `''`
-  for a key with no value, the cross-implementation contract the
-  `query_shape` suite pins;
-  `read_json_body()` shares the one body read with the authorization phase
-  and input validation; `request` is the raw `Request`, whose body is
-  already used on a route the pipeline read a JSON input for.
-- **`route.close_connection()`** makes the spine answer with
-  `Connection: close` whatever the result, the error catch's answer
-  included, so the runtime drops a connection whose request body nothing
-  will read. A raw result can't carry the header itself, and an SSE answer
-  after it is refused.
-- **`route.db`** — handler's main DB work. Wrapped in a transaction when `transaction: true` (default for non-GET); routes that opt out (`transaction: false`, e.g. signup / bootstrap) get the pool here directly and may call `route.db.transaction(...)` for their own scope.
-- **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, api-token usage tracking).
-- **`route.post_commit_effects`** — do not push directly; reach for `emit_after_commit` from `http/pending_effects.ts`. The helper pushes a thunk that the flush middleware invokes after the handler returns, closing the microtask-ordering window that an eager `Promise.resolve().then(fn)` leaves open inside the wrapping `db.transaction`.
-- **`route.open_sse(options)`** — opens the event stream the route answers with (`route_sse(stream)`) through the opener `apply_route_specs` was given (`create_sse_stream`, wired by `create_app_server`). It writes nothing on the context; a stream not answered with is closed. Without an opener it throws.
-
-Middleware, the authorization phase and the WebSocket upgrade still run on
-the Hono context and read it through their own helpers (`get_client_ip(c)`,
+Middleware, the authorization phase and the WebSocket upgrade run on the
+Hono context and read it through their own helpers (`get_client_ip(c)`,
 `get_resolved_auth(c)`, `get_header_lines(c, name)`).
 
-Audit rows run through the bound `AppDeps.audit` capability — see
-`auth/CLAUDE.md` §Audit emitter. `await deps.audit.emit(route, input)` writes
-a success row in the route's transaction when one is open and a failure row
-via the pool captured inside the bound emitter, so a refused attempt's row
-lands even when the handler's transaction rolls back.
+Audit rows go through the bound `AppDeps.audit`:
+`await deps.audit.emit(route, input)` writes a success row in the
+transaction of its change (refused when none is open) and a failure row on
+the pool; `auth/CLAUDE.md` §Audit emitter.
 
 ### Declarative transactions
 
-`RouteSpec.transaction` defaults by method:
-
-- `GET` → `false` (read-only, no transaction)
-- All mutations (POST, PUT, DELETE, PATCH) → `true`
-
-Override explicitly when a mutation route must manage its own transactions
-(e.g. signup, which does a multi-step flow that can't live inside a single
-wrapper). See `auth/signup_routes.ts`.
+`RouteSpec.transaction` defaults to `false` on `GET` and `true` on every
+mutation. Override it when a mutation manages its own transactions (login,
+password, signup, bootstrap — see `auth/signup_routes.ts`).
 
 ### Validation pipeline (per-route middleware order)
 
-`apply_route_specs(app, specs, resolve_auth_guards, log, db, {authorize?, open_sse?})` — `open_sse` is the `RouteSseOpener`, `create_sse_stream` in the assembled server.
+`apply_route_specs(app, specs, resolve_auth_guards, log, db, {authorize?, open_sse?})`
+assembles this chain per spec, behind one stage that writes the spec's
+`response_headers` on the context:
 
-`apply_route_specs` assembles the following middleware chain per spec, behind
-one stage that writes the spec's `response_headers` on the context (when it
-declares any), so every stage after it answers with them:
+0. **Content type** — every `POST`: 415 `unsupported_content_type` before any credential or body read (`http/simple_request.ts`).
+1. **Params** — decoded strictly from the raw target (`read_request_route_params`), then `spec.params`; 400 `invalid_route_params` (with `issues` on a schema failure).
+2. **Query** — decoded strictly (`read_request_query_pairs`), then `spec.query`; 400 `invalid_query_params`.
+3. **Pre-authorization guards** — the gates that read only what the auth middleware set, coarse to fine: `require_auth` (401) when the account or actor is required; `require_credential_types` (403 `credential_type_required`); `require_token_scope` (403 `token_scope_required`). Before any body parse, so a refused caller learns no route shape, and before actor resolution, so a wrong channel costs no DB work. The `AuthGuardResolver` (`fuz_auth_guard_resolver`) returns them as `pre_authorization`.
+4. **Authorization phase** — when `auth.actor !== 'none'`, resolves the acting actor against the credential's account plus the `acting` selector (query on `GET`, raw body on mutations, since body validation comes later) and builds the `RequestContext`; an account-only context when only the account is declared. Refusals: 400 `actor_required` (with `available`) / `actor_not_on_account`, 500 `no_actors_on_account`, 401 when the account was removed after the credential leg read it. Public routes skip it.
+5. **Post-authorization guards** — `require_role` (403 `insufficient_permissions`), the one gate that reads the context step 4 built; multi-role specs admit any-of.
+6. **Input validation** — `read_json_body` + `spec.input`; 400 `invalid_json_body` or `invalid_request_body` (`issues` as `WireIssue`s, DEV only). Skipped on a null input.
+7. **Handler** — in a transaction when the spec says so; its result prepared inside it and emitted after the commit.
+8. **Error catch** — a thrown `ThrownJsonrpcError` (recognized by `to_thrown_jsonrpc_error`) → its HTTP status and the flat REST body `{error: <reason>, message?, ...data}`, the reason from `err.data.reason` or the code's name; anything else → 500 `internal_error` (message in DEV only). The JSON-RPC dispatcher keeps its own envelope on the RPC mount.
+9. **DEV-only output validation** — a 2xx JSON body against `spec.output`.
 
-0. **Content type** — every `POST` route: `is_post_content_type_refused(read_content_type(...), raw_body)` → 415 `ERROR_UNSUPPORTED_CONTENT_TYPE`, before any credential or body read (`http/simple_request.ts`)
-1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with `issues`. Each param is decoded strictly from the raw target first (`read_request_route_params`): an escape that doesn't decode is the same 400 with no `issues`, whatever the schema
-2. **Query validation** — `spec.query` → `validated_query`; mismatch returns 400 `ERROR_INVALID_QUERY_PARAMS`. The query is decoded strictly first (`read_request_query_pairs`): an escape that doesn't decode, in any key or value, is the same 400
-3. **Pre-authorization auth guards** — every gate that reads only what the auth middleware set, in coarse-to-fine order: `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`; `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) when `auth.credential_types?.length`; `require_token_scope(capability)` (403 `ERROR_TOKEN_SCOPE_REQUIRED` with `required_scope`, the token-scope refusal) when `auth.required_scope` names a capability. All fire before any body parsing — so a caller they refuse never sees route-shape information from input parse failures — and before actor resolution, so a wrong channel costs no DB work and never learns account state (e.g. that the account is multi-actor). The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_authorization: Array<MiddlewareHandler>`.
-4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against the resolved credential's account (`get_resolved_auth`, set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation — a live account with no actor — and 401 `ERROR_AUTHENTICATION_REQUIRED` when the account was deleted or purged after the credential leg read it). The phase builds on the account row that leg read, reading the account again only to tell a removed account from one with no actor. Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
-5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
-6. **Input validation** — JSON body parsed (`read_json_body`) + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON, or JSON the Rust spine refuses — `parse_json_text`) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Every schema refusal's `issues` are `WireIssue`s (`to_wire_issues`, `schema_issues.ts`), sent under DEV only (`dev_only`). Skipped on a null input (`is_null_schema`: `literal(null)`), which every `GET` has — `apply_route_specs` refuses a `GET` with any other input. The validated input lands on `c.var.validated_input`.
-7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`; its result is prepared inside the transaction and emitted after the commit (`prepare_route_response`, `emit_route_response`)
-8. **Error catch** — catches a thrown JSON-RPC error (`ThrownJsonrpcError`, recognized by brand through `to_thrown_jsonrpc_error`, so one from a second fuz_app copy maps too; a foreign error class carrying a JSON-RPC `code` falls to the generic path) → maps to HTTP status + the flat REST error body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
-9. **DEV-only output validation** — a 2xx JSON body against `spec.output` (see below); error responses are the outer DEV error check's
-
-**Ordering: 401 → authz → 403 → 400 → handler.** Mirrors the RPC dispatcher
-(`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority, and
-matches the Rust spine, which validates handler-side — with the one difference
-that the dispatcher carries a per-action rate-limit phase (429) between 403 and
-400 that REST has no equivalent of. Body validation runs last
-so a caller the authority gates refuse learns nothing about the route's input
-shape — a 400 would confirm the route exists and describe how to call it.
-Params and query still validate first: they are part of addressing the route,
-not of its payload, and the authorization phase reads `acting` off the query on
-GETs.
+**Ordering: 401 → authz → 403 → 400 → handler**, the RPC dispatcher's order
+(`actions/action_rpc.ts`) and the Rust spine's, except that the dispatcher
+adds its per-action 429 between 403 and 400. Within the 403s the two
+differ: REST runs its credential-type and token-scope gates ahead of the
+authorization phase (step 3), while the dispatcher (`actions/perform_action.ts`)
+runs them after it, beside the role gate. Body validation runs last so a
+caller the authority gates refuse learns nothing of the input shape; params
+and query validate first because they address the route, and the
+authorization phase reads `acting` off the query on `GET`.
 
 Duplicate `method path` pairs throw at registration.
 
-A handler reads the validated values as `route.input`, `route.params` and
-`route.query`, typed from the spec's schemas.
-
 ### DEV-only output + error validation
 
-**Input schemas are validated unconditionally** (DEV + production) — they
-are the contract with external callers.
+Inputs are validated unconditionally; outputs and errors under `DEV`
+(`esm-env`) only, each at one mount:
 
-**Output and error schemas are validated DEV-only** via `DEV` from
-`esm-env`, each in one place:
+- **Output** — `wrap_output_validation`, per route: a 2xx JSON body against `spec.output`.
+- **Errors** — `create_dev_route_error_check`, mounted outermost by `create_app_server`, so it sees every layer's refusal; checks a JSON body at 400+ against the route's error map (`check_route_error`). A 500 `internal_error` and a 503 `service_unavailable` are always accepted; a JSON-RPC envelope on a `jsonrpc` route, non-JSON responses, and requests no route matches are skipped.
+- **The first `Set-Cookie`** — `create_dev_set_cookie_check`, beside it, reaching what the route system doesn't build (a consumer middleware, a raw Hono route).
 
-- **Output** — `wrap_output_validation`, per route: a 2xx JSON body against `spec.output`. Skips non-`application/json` responses so SSE doesn't hang on `.json()`.
-- **Errors** — `create_dev_route_error_check` (`http/dev_route_error_check.ts`), one outer middleware `create_app_server` mounts outermost (`app.use('*')`, first after `onError`), so it sees what every layer answers — a middleware's refusal (body limit, origin, auth guards) as much as a handler's or the error catch's. After the request it finds the route with Hono's own router (`create_route_lookup`: the `SmartRouter` over a `RegExpRouter` and a `TrieRouter` that `new Hono()` builds, the route specs added in mount order, the first match the route, `HEAD` read as `GET`) and checks a JSON body at 400 and up against the route's error map (`check_route_error`, `http/route_error_check.ts`): a status the map lacks logs `Undeclared error status (S): METHOD path`, a body off the status's schema `Error schema mismatch (S): METHOD path`. Always accepted: a 500 `internal_error` and a 503 `service_unavailable` (`ALWAYS_ACCEPTED_ERRORS`, which the catch layers answer on any route). On a `jsonrpc` route (the pair `create_rpc_endpoint` builds) a JSON-RPC error envelope is skipped (`is_jsonrpc_error_response`): the endpoint answers its refusals as envelopes, which no REST error definition describes, and the dispatch core checks its own outputs. On any other route an envelope-shaped body is checked. Skipped: non-JSON responses (`is_json_response`, the gate both checks run), and a request no route spec matches — the 405 and 404s of the unmatched-route handler (`server/unmatched_route.ts`) are no route's answer. `assert_response_matches_spec` runs the same `check_route_error`.
-- **The first `Set-Cookie`** — `create_dev_set_cookie_check` (`http/dev_set_cookie_check.ts`), mounted beside the error check: when a middleware recorded the line it put first on the response (`EXPECTED_FIRST_SET_COOKIE_KEY` — the session middleware's clear of an invalid cookie), the answer's first `Set-Cookie` must be that line, else it logs naming the method and path. It reaches what the route system doesn't build — a consumer's `post_route_middleware`, a raw Hono route, a `transform_middleware` layer answering with its own `Response` or replacing the context's cookie. An accepted WebSocket upgrade's placeholder is skipped.
-- **Logs on mismatch, returns the response unchanged** — never throws (a throw inside the error check, its logger's included, is swallowed), never mutates the body
-
-Production short-circuits: `wrap_output_validation` returns the handler
-unwrapped and `create_dev_route_error_check` returns `null`, so nothing is
-mounted — no parse work on the hot path. Uniform across all three
-action-handler surfaces (REST, RPC, WS); see ../../../docs/architecture.md
-§DEV-only Output Validation.
+Each logs a mismatch and returns the response unchanged, never throwing.
+Production mounts none of them. Rationale and the action-side check:
+../../../docs/architecture.md §DEV-only Output Validation.
 
 ### Helpers
 
-- `apply_middleware_specs(app, specs)` — registers middleware specs on Hono by `{name, path, handler}`
-- `prefix_route_specs(prefix, specs)` — prepends a path prefix to every spec; `/` collapses to the bare prefix
+- `apply_middleware_specs(app, specs)` — registers middleware specs by `{name, path, handler}`
+- `prefix_route_specs(prefix, specs)` — prepends a path prefix; `/` collapses to the bare prefix
 
 ## Error Schemas
 
-`http/error_schemas.ts` is the **declarative** error surface:
+`http/error_schemas.ts` is the declarative error surface:
 
-- `ERROR_*` `snake_case` string constants (`ERROR_FORBIDDEN_HOST` / `REST_FORBIDDEN_HOST` the host gate's) — single source of truth for codes; they double as JSON-RPC `data.reason`s, so they carry no HTTP status
-- `rest_error(status, code, fields?, headers?)` → `RestErrorDef<S, C, F>` — one code at one status; the code must be a code, `REST_ERROR_CODE_PATTERN` (`^[a-z][a-z0-9_]*$`, `is_rest_error_code`) — a throw at definition, and a literal plainly off it (prose, uppercase, a leading digit) a type error — so prose goes in `message`; its body `loose_object({error: literal(code), ...fields})` as `.schema`; `headers` derives response headers from a body (`Retry-After`). Status and code must be literals. One `REST_*` definition per code a route or middleware answers (`REST_TABLE_NOT_FOUND`, `REST_RATE_LIMIT_EXCEEDED`, …); a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`, `/account/status`'s 401 with `bootstrap_available`)
-- `to_error_schemas(defs)` — a status map from definitions: one schema at a status maps to it, more to a `union` in list order
-- `ErrorSchemas = Record<number, AnySchema>` — a status map, what `to_error_schemas` groups definitions into: one schema at a status, or a `union` of them
-- `same_rest_error(a, b)` / `dedupe_rest_errors(defs)` — a definition is the same as another when it is the same object, or the same status, code, `headers`, and field schemas; a list keeps the first of each
-- `RateLimitKey` (`rate_limiter.ts`) — `'ip' | 'account' | 'both'`
+- `ERROR_*` — `snake_case` code constants, the catalog of every code; they double as JSON-RPC `data.reason`s, so they carry no status.
+- `rest_error(status, code, fields?, headers?)` → `RestErrorDef` — one code at one status. The code must match `REST_ERROR_CODE_PATTERN` (`^[a-z][a-z0-9_]*$`), a throw at definition and a type error for a plainly-off literal, so prose goes in `message`. The body is `loose_object({error: literal(code), ...fields})` (`.schema`); `headers` derives response headers from a body. One `REST_*` per code; a code with a second body shape gets a second definition (`REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`).
+- `to_error_schemas(defs)` — a status map (`ErrorSchemas`), a `union` where a status has several.
+- `same_rest_error` / `dedupe_rest_errors` — identity by object, or by status, code, `headers` and field schemas.
 
-`RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions
-(`ReadonlyArray<RestErrorDef>`), so a bare schema is impossible by type, and
-`apply_route_specs` refuses anything else at registration.
-
-All error bodies are loose objects — intentional because multiple
-producers (middleware + handler) can emit different extra fields at the
-same status code, and a thrown error flattens its `data` into the body. The
-`error` code is the contract; extra keys (`required_roles`,
-`required_credential_types`, `retry_after`, `message`) are diagnostic.
-
-A body's type is its definition's: `Infer<typeof REST_X.schema>`, or `RestErrorBody<C, F>`.
+`RouteSpec.errors` and `MiddlewareSpec.errors` are lists of definitions, so a
+bare schema is impossible by type and refused at registration. Every body is
+a loose object: several producers can answer one status with different extra
+fields, and a thrown error flattens its `data` into the body. The `error` code
+is the contract; extra keys are diagnostic.
 
 ### The route error map
 
-A route's declared errors are **one map**, built by
-`resolve_route_error_map(spec, middleware_specs?)` (in `http/route_errors.ts`):
-the union of three layers, in order, where nothing replaces anything — a
-definition at a status another layer declares is one more branch there, and a
-repeat (`same_rest_error`) counts once. Two shapes of one code at one status
-(`REST_AUTHENTICATION_REQUIRED` and `REST_AUTHENTICATION_REQUIRED_BOOTSTRAP`)
-are both kept, a union of their bodies. The result, `RouteErrorMap`, holds the
-definitions (`defs`) and the status map they group into (`schemas`):
+A route's declared errors are **one map**, `resolve_route_error_map(spec,
+middleware_specs?)` (`http/route_errors.ts`): the union of three layers in
+order, where nothing replaces anything — a definition at a status another
+layer declares is one more branch there, a repeat counts once, and two shapes
+of one code at one status are both kept. `RouteErrorMap` holds the
+definitions (`defs`) and the status map they group into (`schemas`).
 
 1. **Derived** — `derive_route_errors({method, auth, has_input?, has_params?, has_query?, rate_limit?})`, narrowed to the slots the route has:
-   - a body — `input` not null, `method` not `GET` (registration refuses a `GET` with an input; a surface built from specs alone derives none for one) → 400 `invalid_request_body`, `invalid_json_body`
+   - a body (input not null, not `GET`) → 400 `invalid_request_body`, `invalid_json_body`
    - `params` → 400 `invalid_route_params`; `query` → 400 `invalid_query_params`
-   - `auth.actor !== 'none'` → 400 `actor_required`, `actor_not_on_account`, 500 `no_actors_on_account`, 401 `authentication_required` (an account removed after the credential leg read it — declared on an actor-optional route too) — what the dispatcher's authorization phase emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2)
-   - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `authentication_required` (`REST_AUTHENTICATION_REQUIRED`), the only body the pre-authorization gate answers
-   - `auth.required_scope` → 403 `token_scope_required`; `auth.credential_types?.length` → 403 `credential_type_required`; `auth.roles?.length` → 403 `insufficient_permissions` — in the order the gates fire, each carrying what the route demanded
-   - `rate_limit` → 429 `rate_limit_exceeded` (`retry_after`, a non-negative integer of seconds)
+   - `auth.actor !== 'none'` → 400 `actor_required`, `actor_not_on_account`, 500 `no_actors_on_account`, 401 `authentication_required` (declared on an actor-optional route too)
+   - account or actor required → 401 `authentication_required`
+   - `required_scope` → 403 `token_scope_required`; `credential_types` → 403 `credential_type_required`; `roles` → 403 `insufficient_permissions`
+   - `rate_limit` → 429 `rate_limit_exceeded`
    - every `POST` → 415 `unsupported_content_type`
-2. **Middleware** — the definitions of each `MiddlewareSpec` that runs on the route (`middleware_spec_applies`: its path, less its carve-outs), in list order — the body limit's 413 and 400, the origin check's 403 `forbidden_origin`, a consumer layer's own
-3. **Explicit** — `RouteSpec.errors`, the handler's own codes (a 404, a 409, a second 401)
+2. **Middleware** — the definitions of each `MiddlewareSpec` that runs on the route (`middleware_spec_applies`: its path, less its carve-outs): the body limit's 413 and 400, the origin check's 403 `forbidden_origin`, a consumer layer's own. The bearer and daemon-token layers soft-fail and declare none.
+3. **Explicit** — `RouteSpec.errors`, the handler's own codes (a 404, a 409, a second 401).
 
-`resolve_app_route_error_maps(route_specs, middleware_specs)` builds every
-route's map keyed `METHOD path` (`format_route_key`); `create_app_surface_spec`
-builds it once and carries it as `AppSurfaceSpec.route_error_maps`, and
-`create_app_server` hands the same maps to the DEV error check. Every reader
-reads it: the surface (status-keyed, a status's definitions an `anyOf`), the
-DEV error check, `assert_response_matches_spec`, error coverage
-(`ErrorCoverageCollector`, which reads codes from `defs`), `describe_adversarial_auth`,
-`describe_adversarial_404`, and `assert_error_schema_valid`.
-`get_route_error_map(route_error_maps, spec)` reads a map, or without one resolves the
-route alone; given a map with no entry for the route, it throws naming the key.
+`resolve_app_route_error_maps` builds every route's map keyed `METHOD path`
+(`format_route_key`); `create_app_surface_spec` carries it as
+`AppSurfaceSpec.route_error_maps` and `create_app_server` hands the same maps
+to the DEV error check. Every reader reads that one map: the surface (an
+`anyOf` per status), the DEV error check, `assert_response_matches_spec`,
+error coverage, and the adversarial suites. An error a route answers that its
+map doesn't declare fails each of them; 500 `internal_error` and 503
+`service_unavailable` are answerable everywhere and declared by none. Run
+against the Rust spine over the cross-process round trip, this is REST
+error-code parity between the spines. `get_route_error_map` reads a map entry
+or resolves the route alone, and throws on a map missing the route.
 
-Routes typically only declare `errors` for handler-specific codes (404, 409,
-422): what the framework answers is derived, and what a middleware layer
-answers is the layer's.
-
-The derived actor codes read `spec.auth.actor !== 'none'` directly — per
-registry-time invariant 2 (`actor !== 'none' ⟺ input declares acting?: ActingActor`),
-the auth-shape axis is the single source of truth.
-
-**Framework-emitted vs consumer-authored.** The error-schema derivation
-above is sound because the framework authors the errors at fixed
-middleware sites — 401 from `require_auth`, 400 from
-`create_input_validation`, 403 from `require_role` /
-`require_credential_types`, 429 from rate limiters — and narrows each to
-the slots that reach those sites. Auto-derivation documents the framework's
-own emissions; consumers add their handler's codes in `RouteSpec.errors`,
-beside them.
-
-The same auto-derivation pattern is **not** appropriate for
-consumer-authored inputs (or handler outputs). A consumer's spec declares
-the exact `acting?: ActingActor` slot (`ActingActor` of `primitive_schemas.ts`),
-and the framework
-reads it back via reference-equality to drive the authorization phase — auto-extending
-schemas at registration time would obscure the source of truth ("did the
-spec declare this, or did the framework graft it on?") and quietly shadow
-consumer fields named `acting` that aren't the canonical `ActingActor`.
-The asymmetry is the design rule: derive what the framework emits, never
-what the consumer authors. The keeper `db_routes` bug (an early consumer
-registration failure caught by invariant 2's throw) was the empirical
-confirmation.
-
-### `ERROR_*` constants by category
-
-- **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`, `ERROR_PARAMS_PROTO_KEY` + `ERROR_PARAMS_NUL` (RPC params)
-- **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`, `ERROR_INVALID_CONTENT_LENGTH`
-- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
-- **Keeper/daemon**: `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
-- **Routing + gates**: `ERROR_METHOD_NOT_ALLOWED`, `ERROR_ROUTE_NOT_FOUND` (+ `NOT_FOUND_TEXT`, the plain-text 404 outside `/api/`), `ERROR_FORBIDDEN_HOST`, `ERROR_UNSUPPORTED_CONTENT_TYPE`
-- **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`
-- **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`, `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
-- **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`, `ERROR_INVALID_EVENT_TYPE`
-- **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`, `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_TABLE_NOT_DELETABLE`, `ERROR_ROW_NOT_FOUND`
+**Derive what the framework emits, never what the consumer authors.** The
+derived codes are the framework's own fixed sites; a consumer's input
+declares its `acting?: ActingActor` slot itself, and the framework reads it
+back by reference (invariant 2) rather than grafting it on.
 
 ## Schema Helpers
 
-`http/schema_helpers.ts` is the canonical home for shared schema introspection
-— extracted to break a circular dependency between `http/route_spec.ts`
-(input validation) and `http/surface.ts` (surface generation).
+`http/schema_helpers.ts` holds the shared schema introspection, split out to
+break the `route_spec.ts` ↔ `surface.ts` cycle — import these from here, and
+the route error map from `http/route_errors.ts`. Each function's rules are its
+TSDoc:
 
-**Import `is_null_schema`, `is_void_schema`, `to_void_params`, `to_input_params`, `is_strict_object_schema`, `schema_to_surface`,
-and `middleware_applies` from `http/schema_helpers.ts`, and the route error map from
-`http/route_errors.ts`.** `http/surface.ts` only imports and re-uses them for
-generation logic.
-
-Key helpers:
-
-- `is_null_schema(schema)` — a `literal(null)` (a kind check, not parse-null, to avoid false positives from `nullable(string)`)
-- `is_void_schema(schema)` — a `literal(undefined)` (what `s.void` is, a `meta` copy included; a kind check like `is_null_schema`, so an optional schema is not void); a void input declares a parameterless RPC method
-- `to_void_params(raw_params)` — reads absent, `null`, and `{}` params of a void input as the no-arg call (`undefined`), passing any other shape through for the void schema to refuse — the twin of the Rust spine's `require_void_params`
-- `to_input_params(input, raw_params)` — the one params normalizer every receiving end runs before the input parse (`parse`): `to_void_params` for a void input, else absent/`null` → `{}`; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`)
-- `scan_json_value(value)` → `JsonValueScan` (`{proto_key, nul}`) — one iterative walk (no recursion — `JSON.parse` nests deeper than the call stack) of a parsed JSON value for an own `__proto__` key in any object and U+0000 in any string or key; the dispatcher refuses such params with `ERROR_PARAMS_PROTO_KEY`, then `ERROR_PARAMS_NUL`, and route input validation a NUL body with `invalid_request_body`. Reads the parsed value, so of duplicate keys only the kept one counts. Twin of the Rust `fuz_http::scan_json_value`
-- `safe_parse_dropping_unknown_keys(schema, value)` — the forward-compatible read of a remote-authored payload, returning `parse`'s `{ok, value}` / `{ok: false, issues}`: while every issue is an unknown key (`unknown_key_targets`), strips them from a copy and reparses — after the first parse that reports unknown keys, one schema-guided pass deletes every key a strict `object` doesn't name anywhere the schema reaches (entries, array items, record values, the `variant` option), as a parse reports at most a hundred issues; a key under a `union` is never stripped (the union fails as one issue of its own), and a later `pipe` stage is stripped only as reported — until nothing is left to strip, capped at `UNKNOWN_KEY_PASSES_MAX` passes (the last failure returned past it); any other issue still fails. Used for response `result`s (`ActionEvent`) and peer replies (`peer/ping`); matches serde's ignore-unknown-fields default on the Rust spine
-- `is_strict_object_schema(schema)` — detects an `object` (not `strip_object` / `loose_object`); a `pipe` is read through to its first schema when no stage is a `transform` (so a refined `object` reads strict)
-- `schema_to_surface(schema, {io?, source?, on_unrepresentable?}?)` — throws first on a value that is no schema (`assert_validation_schema`, naming `source`, so an assembled app's slot holding none fails boot as registration would refuse it, not as an unwritable JSON Schema); a schema → JSON Schema (`to_json_schema`), on the side `io` names (`'output'` by default), with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise). `null` for a null or void schema. A part JSON Schema can't say (an output-side transform, a `check`) is left out or written as `{}` (`unrepresentable: 'any'`) and reported to `on_unrepresentable`; a schema with nothing describable (`{}` from a schema other than `unknown`) or one the emitter refuses outright throws, prefixed with `source` — so a root-level transform output fails server assembly. It never answers `null` for a failure, which would read as "no input" and drop the schema from every suite that reads the surface
-- `SchemaFieldInfo` — one field of an object schema (`name`, `base_type` — a `SchemaFieldBaseType`, the innermost fuz_schema kind —, `required`, `has_default`, `nullable`), what the testing generators' `to_object_schema_view` produces
-- `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)
-- `middleware_carves_out(spec, route_path)` — one of the layer's `carve_outs` applies to the route; the carve-out half of `middleware_spec_applies`, which `assert_full_middleware_stack` reads to relax a carved-out route's expected stack
-- `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what the route error map takes middleware definitions by
+- `is_null_schema`, `is_void_schema` (kind checks, not parses), `is_strict_object_schema`, `SchemaFieldInfo`
+- `to_void_params`, `to_input_params` — the one params normalizer every receiving end runs before the input parse (twin of the Rust `require_void_params`)
+- `scan_json_value` — the `__proto__`-key and NUL scan behind `ERROR_PARAMS_PROTO_KEY` / `ERROR_PARAMS_NUL` (twin of `fuz_http::scan_json_value`)
+- `safe_parse_dropping_unknown_keys` — the forward-compatible read of a remote-authored payload (response `result`s, peer replies), matching serde's ignore-unknown-fields default
+- `schema_to_surface` — a schema → JSON Schema for the surface; throws on what it can't write rather than answering `null`, which would read as "no input"
+- `middleware_applies`, `middleware_paths_overlap`, `middleware_carves_out`, `middleware_spec_applies`
 
 ## Surface Generation
 
-`http/surface.ts` produces a JSON-serializable attack surface from
-middleware + route + RPC + env + event specs. Used for startup logging,
-snapshot testing, surface explorer UI, adversarial test generation, and
-policy invariants.
+`http/surface.ts` produces a JSON-serializable attack surface from middleware,
+route, RPC, WS, env and event specs — for startup logging, snapshot tests, the
+surface explorer, adversarial test generation, and policy invariants.
 
-### Types
+- `AppSurface` (`middleware`, `routes`, `rpc_endpoints`, `ws_endpoints`, `env`, `events`, `diagnostics`) and its per-entity entries (`AppSurfaceRoute`, `AppSurfaceRpcMethod`, `AppSurfaceWsEndpoint`, …).
+- `AppSurfaceSpec` — the surface plus its source specs and `route_error_maps`; runtime-only, for tests and introspection.
+- `GenerateAppSurfaceOptions` — the inputs; `ws_endpoints` takes resolved specs, so the surface records the origin patterns the upgrade gate matches. `RpcEndpointSpec` (`{path, actions}`) puts RPC endpoints on the surface without coupling to `create_rpc_endpoint`.
 
-- `AppSurface` — JSON-serializable output (`middleware`, `routes`, `rpc_endpoints`, `ws_endpoints`, `env`, `events`, `diagnostics`)
-- `AppSurfaceSpec` — the surface bundled with the **source specs** (`surface`, `route_specs`, `middleware_specs`, `rpc_endpoints`, `ws_endpoints`). Runtime-only — use for tests and introspection
-- `AppSurfaceRoute`, `AppSurfaceMiddleware`, `AppSurfaceEnv`, `AppSurfaceEvent`, `AppSurfaceRpcEndpoint`, `AppSurfaceRpcMethod` — per-entity entries
-- `AppSurfaceDiagnostic` — `{level: 'warning' | 'info'; category; message; source?}`
-- `RpcEndpointSpec` — `{path, actions: Array<RpcAction>}`; fed into `generate_app_surface` so RPC endpoints appear in the surface without coupling to `create_rpc_endpoint`
-- `GenerateAppSurfaceOptions` — `{route_specs, middleware_specs, env_schema?, event_specs?, rpc_endpoints?, ws_endpoints?}`; `ws_endpoints` takes `ResolvedWsEndpointSpec`s (`allowed_origins` filled in by `resolve_ws_endpoints`), so the surface records the patterns the upgrade gate matches
-
-`generate_app_surface(options)` emits a `warning` diagnostic for every
-input schema that's not strict (unknown keys silently strip under
-`strip_object`), writes every schema through `schema_to_surface` — inputs,
-params and query on the input side (what the server accepts, so a
-`Username` transform keeps its bounds and pattern), outputs, error bodies and
-event params on the output side — with an `info` diagnostic (category
-`schema`, `source` naming the route or method and side) for each schema
-part of which is left out or written as `{}`, throws naming the same source for one
-that can't be written, writes each route's error map (`route_error_maps`) status by status, derives `is_mutation`
-and `transaction` from method/spec, and surfaces RPC methods with their
-`RouteAuth` directly (same shape on both `ActionSpec.auth` and
-`RouteSpec.auth`, no translation step).
-
-`create_app_surface_spec(options)` = `generate_app_surface(options)` plus
-the source specs, for tests that need to iterate over raw specs.
+`generate_app_surface` warns on every non-strict input, writes every schema
+through `schema_to_surface` (inputs on the input side, outputs, errors and
+event params on the output side), notes an `info` diagnostic per partly
+unrepresentable schema and throws on one it can't write, writes each route's
+error map status by status, and surfaces RPC methods with their `RouteAuth`
+unchanged. `create_app_surface_spec` adds the source specs.
 
 ### `surface_query.ts` — pure queries
 
-No side effects, no state — filters and groupings over `AppSurface`:
-
-- `filter_protected_routes` / `filter_public_routes`
-- `filter_role_routes` / `filter_keeper_routes` / `filter_credential_gated_routes` (any `auth.credential_types` gate — superset of keeper)
-- `filter_routes_with_input` / `filter_routes_with_params` / `filter_routes_with_query`
-- `format_route_key(route)` → `'METHOD /path'`, of a surface route or a route spec — the key of the route error maps, and every `METHOD path` label
-- `surface_auth_summary(surface)` — counts per auth bucket (`none`, `keeper`, `role`, `credential`, `authenticated`, `optional`, `other`), roles and credential channels broken out by name; multi-role / multi-channel specs count once per name. One private categorizer decides the bucket: keeper is tested before the role bucket and the general credential bucket after it — keeper is an authority _level_ and names the route, a session gate is a _channel_ restriction over the authority the route already declares (so the audit SSE stream counts under `role`)
-
-The per-route auth predicates these filters compose over (`is_public_auth`,
-`is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,
-`is_plain_authenticated_auth`, plus `needs_actor`) live
-in `http/auth_shape.ts` next to the canonical `RouteAuth` type — import
-them from there, not from this module. Same predicates back the
-dispatcher's authorization phase, the route-spec auth-guard resolver,
-`derive_route_errors`'s actor codes, and the testing harnesses.
-
-Consumer code (tests, attack-surface helpers, `SurfaceExplorer.svelte`)
-should reach for these rather than inlining `.filter` chains.
+Filters and groupings over `AppSurface`: `filter_protected_routes` /
+`filter_public_routes`, `filter_role_routes` / `filter_keeper_routes` /
+`filter_credential_gated_routes`, `filter_routes_with_input` / `_params` /
+`_query`, `format_route_key` (the `METHOD /path` key of the error maps), and
+`surface_auth_summary` (counts per auth bucket; keeper is an authority level
+and names the route, a session gate is a channel restriction, so the audit
+SSE stream counts under `role`). The predicates they compose over live in
+`http/auth_shape.ts`. Consumer code should reach for these rather than
+inlining `.filter` chains.
 
 ## Middleware Infrastructure
 
-`MiddlewareSpec` (in `http/middleware_spec.ts`):
-
-```typescript
-interface MiddlewareSpec {
-	name: string;
-	path: string; // Hono pattern — '*', exact, or '/api/*'
-	handler: MiddlewareHandler;
-	errors?: ReadonlyArray<RestErrorDef>; // definitions this layer may answer with
-}
-```
-
-Declared separately from `http/route_spec.ts` so middleware modules don't
-pull in route types.
+`MiddlewareSpec` (`http/middleware_spec.ts`, apart from `route_spec.ts` so
+middleware modules don't pull in route types) is `{name, path, handler,
+errors?, carve_outs?}`: `path` a Hono pattern (`'*'`, exact, `'/api/*'`),
+`errors` the definitions the layer may answer with, `carve_outs` the
+`MiddlewareCarveOut`s (`{path, reason}`) the layer skips.
 
 ### Trusted proxy — `http/proxy.ts`
 
-Resolves the real client IP from `X-Forwarded-For` only when the TCP
-connection is from a configured trusted proxy. Without this middleware,
-`get_client_ip(c)` returns `'unknown'`. Must run **before** auth and
-rate-limiting middleware (see root ../../../CLAUDE.md §Middleware Ordering).
-
-Per-symbol semantics on TSDoc; the cross-cutting properties:
-
-- **Rightmost-first XFF walk, skipping trusted entries; the first entry that fails strict validation stops the walk and the request keys on the connection IP.** Stopping, not skipping, keeps a client-written entry left of a non-bare-IP hop (`ip:port`, `unknown`) from picking the bucket.
-- **`validate_ip_strict(ip)`** is defensive against Hono's lax `distinctRemoteAddr` (which classifies anything-with-colons as IPv6 and accepts `'[::1]:8080'`, `'::1\n'` as binary-valid). Two-layer check: character-set pre-filter + round-trip through `convertIPv*ToBinary`.
-- **`normalize_ip(ip)`** delegates to `canonicalize_ip` from `http/ip_canonical.ts` — RFC 5952 lowercase + longest-zero-run compression, IPv4-mapped IPv6 stripped to plain IPv4 so buckets collapse. Idempotent, safe on non-IP strings, strict char-set filter preserves malformed forms unchanged.
-- **Three-branch middleware logic**: no XFF → use connection IP; XFF + connection untrusted → ignore XFF, use connection IP (spoof-proof, debug log); XFF + connection trusted → resolve from header, warn if all entries turn out trusted.
-
-Tradeoff: legitimate non-standard proxies that include ports in XFF entries
-(`203.0.113.1:8080`) lose per-client distinction and collapse to the
-proxy's connection IP. nginx + cloud LBs don't include ports — bounded by
-operator configuration in practice.
+Resolves the client IP from `X-Forwarded-For` only when the TCP peer is a
+configured trusted proxy, walking rightmost-first past trusted entries and
+stopping (not skipping) at the first entry that fails strict validation.
+Without it `get_client_ip(c)` answers `'unknown'` for every caller — one
+shared rate-limit bucket — so it must run before auth and rate limiting (root
+../../../CLAUDE.md §Middleware Ordering). The walk's rules and the nginx
+recipe: ../../../docs/security.md §Trusted Proxy / Client IP.
 
 ### Origin allowlist — `http/origin.ts`
 
-Origin allowlisting for locally-running services — **not** the CSRF layer.
-CSRF is handled by `SameSite: strict` on session cookies (`auth/session_middleware.ts`).
+`verify_request_source(allowed_patterns, carve_outs?)` is one of the three
+CSRF layers (../../../docs/security.md §CSRF Protection) and the one that
+guards the never-preflighted WebSocket upgrade: one `Origin` line must match
+the allowlist or 403 `forbidden_origin`; no `Origin` passes (CLI clients,
+probes); an empty or repeated `Origin` is refused on every runtime. It checks
+`Origin` only, by design, and `create_app_server` mounts it at `'*'`; a path
+leaves it only by a named carve-out (security.md has both arguments).
 
-- `parse_allowed_origins(raw)` — comma-separated entries → `Result<{origins: Array<RegExp>}, {errors: Array<AllowedOriginsError>}>`; every refused entry is reported (`{kind, index, entry}`, 1-based), a blank value is `{kind: 'no_origins'}`
-- `OriginPatternErrorKind` / `AllowedOriginsErrorKind` — the refusal kinds, fuz_schema `one_of`s whose `def` is the names, wire names shared with the Rust spine; `ALLOWED_ORIGINS_ERROR_MESSAGES` the reason per kind, `format_allowed_origins_error` one refusal as a boot-error line (entry quoted and escaped)
-- `should_allow_origin(origin, patterns)` — case-insensitive match; a value that isn't visible ASCII matches nothing
-- `verify_request_source(allowed_patterns, carve_outs?)` — Hono handler: one `Origin` line → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control). It reads the lines the client sent (`read_origin` over `get_header_lines`), so an empty or repeated `Origin` is refused on every runtime, a WebSocket upgrade on `@hono/node-server` included. A request whose path a `carve_outs` entry (`MiddlewareCarveOut`, `{path, reason}`) matches passes unchecked
-- `is_browser_context(origin_lines, referer_lines)` (`http/request_headers.ts`) — true when the request carries any `Origin` or `Referer` line, an empty one included. The bearer + daemon-token middleware discard their credential when true; twin of the Rust spine's `fuz_http::is_browser_context`. Distinct from `verify_request_source` (allowlist gate) — this only detects browser context
+- `parse_allowed_origins(raw)` — every refused entry reported (`{kind, index, entry}`); `OriginPatternErrorKind` / `AllowedOriginsErrorKind` are the wire names shared with the Rust spine, `format_allowed_origins_error` a boot-error line.
+- `should_allow_origin(origin, patterns)` — case-insensitive; a non-visible-ASCII value matches nothing.
+- `is_browser_context(origin_lines, referer_lines)` (`http/request_headers.ts`) — any `Origin` or `Referer` line, an empty one included; the bearer and daemon-token legs discard their credential when true.
 
-**Origin-only by design.** Fetch spec mandates `Origin` on every unsafe
-method, so a real browser request on any state-changing surface always
-carries it. Non-browser clients don't ship auto-attached session cookies,
-so CSRF isn't the relevant threat there — auth (bearer / daemon token) is
-the actual control. A `Referer` fallback would only widen the
-accepted-shape envelope without closing a real CSRF hole. The Rust
-spine's `origin_layer` is the twin.
-
-**Every path by default.** `create_app_server` mounts the check at `'*'`
-(`ORIGIN_MIDDLEWARE_PATH`), the static fallback included, so a foreign page is
-refused wherever it points — the Rust spine's `fuz_http::compose_stack` checks
-every route group and its fallback the same way. Probes and CLI clients send no
-`Origin` and pass. A path leaves the check only by a named carve-out with its
-reason (`AppServerOptions.origin_carve_outs`), for a route that refuses browser
-callers by other means; one overlapping the auth middleware's scope
-(`AUTH_MIDDLEWARE_PATH`, where every route that reads or mints a credential
-sits) is refused at assembly. A carve-out skips every path it matches, routed
-or not, so an unrouted path under it reaches the static fallback unchecked;
-the Rust stack checks unrouted paths in its fallback group whatever a
-carve-out names.
-
-**Grammar** (shared with the Rust spine's `AllowedOrigins::parse`, pinned by
-`testing/cross_backend/origin_conformance.json`): entries are trimmed of ASCII
-whitespace and written as a browser writes an `Origin` — exact
-`https://api.fuz.dev`; wildcard label `https://*.fuz.dev` (one label in any
-position — matches `api.fuz.dev`, NOT `fuz.dev` or `a.b.fuz.dev`); several
-`https://*.*.corp.fuz.dev`; port wildcard `http://localhost:*` (any port or
-none); IPv6 `http://[::1]:3000` (exact, no wildcard inside the brackets).
-A wildcard entry boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true`:
-`origin_wildcard.ts` classifies each parsed entry (`origin_wildcard_kind` —
-port, host with some or no label fixed, or both — from the `OriginPattern`
-`parse_allowed_origins` returns beside each matcher and brands onto it under
-the realm-global `Symbol.for('@fuzdev/fuz_app/OriginPattern')`, so a second
-fuz_app copy reads it — `origin_pattern_of`), renders what it admits
-(`origin_wildcard_warning`, the Rust `fuz_http::origin_wildcard_warning` text
-word for word), and `admit_origin_wildcards` gives `validate_server_env` and
-`create_app_server` (the server list and each `ws_endpoints` spec's own) the
-refusal or the warnings (`allow_origin_wildcards`). A matcher with no brand —
-hand-built, or copied with `new RegExp` — is refused, flag or not.
-**Nothing is normalized** — the matcher is built from the entry as written, so
-an entry a browser would never send is refused rather than rewritten: non-ASCII
-(punycode an IDN host), a scheme other than http/https (`null`, `file://`,
-`chrome-extension://`), a path/query/fragment/trailing slash, userinfo, a
-character no hostname holds (`%`, `\`, `^`, `|`, `<`, `>`, `[`, `]`), a partial
-wildcard, an IPv4 address not written as four canonical decimal numbers, an IPv6
-address not in the browser's form (the URL parser serves as the serializer and
-any difference refuses), a port outside `1..=65535` or with leading zeros, the
-scheme's default port, and an empty entry. The checks run in a fixed order so
-both spines name the same kind for the same entry.
+The pattern grammar (shared with the Rust `AllowedOrigins::parse`; nothing
+normalized, so an entry a browser would never send is refused rather than
+rewritten) lives in `origin.ts`: `parse_allowed_origins`'s TSDoc,
+`OriginPatternErrorKind`, and `ALLOWED_ORIGINS_ERROR_MESSAGES`, pinned by
+`testing/cross_backend/origin_conformance.json`. The pattern checks run in a
+fixed order, the first failure naming the kind, so both spines name the same
+error kind for an entry.
 
 ## JSON-RPC (`http/jsonrpc.ts`, `http/jsonrpc_errors.ts`, `http/jsonrpc_helpers.ts`)
 
-Three files split by concern: `http/jsonrpc.ts` declarative (envelope
-schemas), `http/jsonrpc_errors.ts` runtime (throwable + map),
-`http/jsonrpc_helpers.ts` plumbing (builders, guards, converters).
-
-Follows JSON-RPC 2.0 spec with a partial **MCP superset** posture — params
-are object-only (no positional arrays), and the envelopes are fuz_schema
-`loose_object`s that keep members a reader passes over; result is any value
-(`unknown`, which needs its key) since the per-action `spec.output` is the
-actual contract and the MCP object-only result constraint would reject any
-spec declaring a null or primitive output on the wire. A parse returns the
-frame itself, not a copy.
-
-`_meta` is intentionally **not** envelope-validated — that lives in
-per-action schemas so mismatches surface as `invalid_params` rather than
+Three files by concern: envelope schemas, the throwable and its maps,
+builders/guards/the classifier. JSON-RPC 2.0 with a partial **MCP superset**
+posture: params are object-only, envelopes are `loose_object`s, `result` is
+any value (the per-action `spec.output` is the contract). `_meta` is not
+envelope-validated, so its mismatches surface as `invalid_params`, not
 `invalid_request`.
 
-### 15-code error taxonomy
+### Error taxonomy
 
-Five standard codes + ten general application codes (consumers add their
-own by casting `as JsonrpcErrorCode`, and declare each one's HTTP status with
-`register_jsonrpc_error_code` — see below):
+| name                  | code   | HTTP | meaning                                                                    |
+| --------------------- | ------ | ---- | -------------------------------------------------------------------------- |
+| `parse_error`         | -32700 | 400  | JSON parse failure                                                         |
+| `invalid_request`     | -32600 | 400  | envelope malformed                                                         |
+| `method_not_found`    | -32601 | 404  | unknown method                                                             |
+| `invalid_params`      | -32602 | 400  | params schema failure                                                      |
+| `internal_error`      | -32603 | 500  | unhandled exception                                                        |
+| `unauthenticated`     | -32001 | 401  | no credential ("unauthorized" is wrong for 401)                            |
+| `forbidden`           | -32002 | 403  | authenticated but denied                                                   |
+| `not_found`           | -32003 | 404  | resource not found                                                         |
+| `conflict`            | -32004 | 409  | uniqueness/state conflict                                                  |
+| `validation_error`    | -32005 | 422  | business-rule validation (schema failures are `invalid_params`)            |
+| `rate_limited`        | -32006 | 429  | server policy; what a generic 429 maps back to                             |
+| `service_unavailable` | -32007 | 503  | upstream down / maintenance                                                |
+| `timeout`             | -32008 | 504  | handler exceeded its budget                                                |
+| `queue_overflow`      | -32009 | 429  | a full buffer refused a request (WS reconnect queue, inbound dispatch cap) |
+| `request_cancelled`   | -32010 | 499  | caller-initiated cancellation                                              |
 
-- `parse_error` (-32700, HTTP 400) — JSON parse failure.
-- `invalid_request` (-32600, HTTP 400) — envelope malformed.
-- `method_not_found` (-32601, HTTP 404) — unknown RPC method.
-- `invalid_params` (-32602, HTTP 400) — params schema failure.
-- `internal_error` (-32603, HTTP 500) — unhandled exception.
-- `unauthenticated` (-32001, HTTP 401) — HTTP 401 renamed ("unauthorized" is wrong for 401).
-- `forbidden` (-32002, HTTP 403) — authorized but denied.
-- `not_found` (-32003, HTTP 404) — resource not found.
-- `conflict` (-32004, HTTP 409) — uniqueness/state conflict.
-- `validation_error` (-32005, HTTP 422) — **application-level** validation (business logic).
-- `rate_limited` (-32006, HTTP 429) — server-side policy.
-- `service_unavailable` (-32007, HTTP 503) — upstream down / maintenance.
-- `timeout` (-32008, HTTP 504) — handler exceeded time budget.
-- `queue_overflow` (-32009, HTTP 429) — backpressure: a buffer refused a new request because it was full — client-side (the WS reconnect queue) or server-side (a socket past `MAX_INBOUND_DISPATCHES_PER_CONNECTION` in-flight requests).
-- `request_cancelled` (-32010, HTTP 499) — caller-initiated cancellation (nginx "client closed").
+A consumer code (cast `as JsonrpcErrorCode`) answers 500 until
+`register_jsonrpc_error_code(code, http_status)` declares its status, once at
+module load (list that module in `sideEffects`); its refusals are its TSDoc,
+twin of the Rust `ConsumerErrorCode::new`.
 
-**`invalid_params` vs `validation_error`** — use `invalid_params` (standard
-code) for schema parse failures; reserve `validation_error` (app code) for
-business rules.
-
-**`rate_limited` vs `queue_overflow`** — both 429; reverse map
-`HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429] = rate_limited` because rate
-limiting is the default interpretation when translating generic HTTP back
-to a JSON-RPC code.
-
-**Consumer codes** — a consumer code answers 500 until
-`register_jsonrpc_error_code(code, http_status)` declares its status, called
-once at module load beside the code (list that module in `sideEffects`). It
-throws when the code is outside -32099..-32000, is any code
-`JSONRPC_ERROR_CODES` defines, or is already registered with another status,
-or when the status is outside 400–599; the same code and status again is a
-no-op. A registered code joins neither the reverse map nor
-`JSONRPC_ERROR_CODE_TO_NAME`. Twin of the Rust spine's `ConsumerErrorCode::new`,
-which holds a declaration to the same rules.
-
-### API map
-
-- `JSONRPC_ERROR_CODES` — `Record<JsonrpcErrorName, JsonrpcErrorCode>` (frozen)
-- `jsonrpc_error_messages` — named constructors returning `JsonrpcErrorObject`
-- `jsonrpc_errors` — named constructors returning `ThrownJsonrpcError` (derived from `jsonrpc_error_messages` via `create_error_thrower`). Usage: `throw jsonrpc_errors.not_found('user')`, `throw jsonrpc_errors.forbidden()`
-- `ThrownJsonrpcError` — `Error` subclass carrying `code` + optional `data`
-- `to_thrown_jsonrpc_error(err)` — the one thrown → wire conversion: the `JsonrpcErrorObject` a `ThrownJsonrpcError` carries, recognized by a realm-global `Symbol.for` brand on its prototype (so one from a second fuz_app copy is read too), when its `code` is a JSON-RPC error code; else `null` — a foreign error class with a JSON-RPC-shaped `code` (another library's RPC error) or a `DOMException` included. Read by the REST catch layer, `perform_action`, `create_jsonrpc_error_response_from_thrown`, the frontend HTTP and WS transports, and `ActionEvent`'s handler-throw normalization, each masking everything else its own way
-- `jsonrpc_error_code_to_http_status` / `http_status_to_jsonrpc_error_code` (fall back to 500 / `internal_error`) — the code → status table is module-private; `HTTP_STATUS_TO_JSONRPC_ERROR_CODE` (frozen) is the reverse over the base set
-- `register_jsonrpc_error_code(code, http_status)` — declares a consumer code's status (see **Consumer codes** above)
-- Envelope schemas in `http/jsonrpc.ts` (fuz_schema): `JsonrpcRequest`, `JsonrpcNotification`, `JsonrpcResponse`, `JsonrpcErrorResponse`, `JsonrpcResponseOrError`, `JsonrpcErrorObject`, `JsonrpcErrorCode` (`JsonrpcServerErrorCode` an integer in the server range, as `is_jsonrpc_error_code` reads it). Also `JsonrpcRequestId`, `JsonrpcMethod`, `JsonrpcResult`, and the params. `JsonrpcMessage`, `JsonrpcMessageFromClientToServer`, and `JsonrpcMessageFromServerToClient` are types only
-- `parse_inbound_jsonrpc_error(error)` — a peer's error reply read as the Rust `parse_inbound_error` reads it: a code off the base set (a consumer's code included) is `internal_error`, a non-string message `'peer error'`, an own `data` kept as sent; what `PendingPeerRequests.resolve` hands the caller
-- Builders in `http/jsonrpc_helpers.ts`: `create_jsonrpc_request`, `create_jsonrpc_notification`, `create_jsonrpc_response`, `create_jsonrpc_error_response`, `create_jsonrpc_error_response_from_thrown` (preserves code/message/data on a thrown JSON-RPC error, via `to_thrown_jsonrpc_error`; plain `Error` → `internal_error` with `{stack}` in DEV)
-- Type guards: `is_jsonrpc_request_id` (rejects NaN/Infinity), `is_jsonrpc_object`, `is_jsonrpc_request` / `_notification` / `_response` / `_error_response`
-- Converters: `to_jsonrpc_message_id`, `to_jsonrpc_params` (normalizes primitives to `{value}`)
-- Classifier: `classify_jsonrpc_message(json)` → `ClassifiedJsonrpcMessage` (`request` / `notification` / `response` / `invalid`, the last carrying the error and the id to answer it on), twin of the Rust `fuz_http::classify` in order and answers. The WS frame handler and the HTTP POST handler switch on it, each keeping its transport's arms: WS refuses batches before it, routes `cancel` and peer responses, and checks duplicate ids and the in-flight ceiling after; POST answers a notification or a response `invalid_request` on `id: null`. Only a refused request envelope carries data — the schema's issues, DEV-only. A `request` carries the frame as parsed, validated but not rebuilt, so an own `__proto__` key in `params` reaches the dispatcher, which refuses it (`ERROR_PARAMS_PROTO_KEY`) as on GET and the Rust spine (a rebuilt copy would drop it).
-
-Handlers can `throw jsonrpc_errors.*` — `apply_route_specs`' error-catch
-layer converts to the flat REST body (`{error: <reason>, message?, ...rest_data}`)
-at the correct HTTP status.
-Generic `Error` maps to 500 `internal_error` (message in DEV only).
+The entry points: `jsonrpc_errors.*` throwers (`throw jsonrpc_errors.not_found('user')`);
+`to_thrown_jsonrpc_error`, the one thrown → wire recognizer (a realm-global
+brand, so a second fuz_app copy's error maps too, and a foreign error carrying
+a JSON-RPC `code` doesn't); `classify_jsonrpc_message`, the one envelope
+classifier (twin of `fuz_http::classify`), each transport keeping its own
+arms around it; `parse_inbound_jsonrpc_error`, a peer's error reply read as
+the Rust `parse_inbound_error` reads it. A REST handler that throws one is
+answered by the error catch (§Validation pipeline step 8).
 
 ## Pending Effects
 
-Two queues, one timing contract each:
+Every request — an HTTP route, an RPC call, a WS message — carries two effect
+queues with opposite contracts. `RouteContext` and `ActionContext` both carry
+them, which is why the module lives in `http/`. The full contract and the
+Rust-twin note are `http/pending_effects.ts`'s TSDoc.
 
-```typescript
-interface EmitAfterCommitContext {
-	log: Logger;
-	post_commit_effects: Array<() => void | Promise<void>>;
-}
+- **`pending_effects: Array<Promise<void>>`** — eager. Pool writes already in flight, outside the request's transaction, so they **survive** its rollback: failure audit rows (`AppDeps.audit`) and the bearer middleware's api-token usage touch. A success audit row is not one — it is written and awaited in the transaction (`auth/CLAUDE.md` §Audit emitter).
+- **`post_commit_effects: Array<() => void | Promise<void>>`** — deferred thunks that run **iff the transaction commits**: WS notifications (`auth/CLAUDE.md` §WS notifications), a revocation's connection closes (`queue_connection_close`, `actions/CLAUDE.md` §Connection closer), and a success audit row's listener fan-out. Push only through `emit_after_commit(ctx, fn)`.
 
-// `RouteContext` and `ActionContext` carry both:
-//   pending_effects: Array<Promise<void>>
-//   post_commit_effects: Array<() => void | Promise<void>>
-```
+The rules a caller would miss:
 
-- **`pending_effects: Array<Promise<void>>`** — eager. Producers push the in-flight `Promise<void>` for fire-and-forget pool writes already running: failure audit rows via `AppDeps.audit`, session-touch UPDATE, api-token usage tracking. The pool write is rollback-resilient by virtue of running outside the request transaction; pushing the in-flight handle lets test mode (`await_pending_effects: true`) await it, and `AppServer.close` awaits the flushes production leaves running, bounded (`shutdown_drain_timeout_ms`). Drain: `flush_pending_effects(effects, log, on_rejection?)`.
-- **`post_commit_effects: Array<() => void | Promise<void>>`** — deferred. Producers go through `emit_after_commit(ctx, fn)` exclusively; raw thunks should not be pushed directly. The flush middleware (in `server/app_server.ts` and the per-message WS dispatcher in `actions/ws_socket_session.ts`) is the only site that invokes each thunk, after the wrapping `db.transaction` resolves. Drain: `flush_post_commit_effects(effects, log)`.
-
-### Why split
-
-Both shapes used to coexist on a single `Array<PendingEffect>` discriminated
-union. The shapes encode different contracts — eager pushers say "wait for
-this work that's already started"; thunk pushers say "run this after the
-handler returns" — and burying both behind one field made
-`c.var.pending_effects.push(x)` ambiguous at the call site. Splitting turns the field name into the contract.
-
-### Why `emit_after_commit` defers — and discards on rollback
-
-The thunk shape is **load-bearing for correctness**. Pushing
-`Promise.resolve().then(fn)` onto an eager queue — what `emit_after_commit`
-used to do — schedules `fn` as a microtask that drains _before_ the
-wrapping `await db.query('COMMIT')` resumes, so a rolled-back transaction
-would leak a notification for state that never landed. The thunk defers
-the work to flush time; the `try/finally` in the flush middleware runs
-after the handler (and any wrapping transaction) returns.
-
-Deferral alone isn't enough: the flush runs whether the handler returned or
-threw, so a thrown handler (rolling back its transaction) would still fire the
-thunk it queued. So the contract is **two-sided**: both dispatch sites
-(`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
-shared `dispatch_with_post_commit_rollback` helper, which discards
-`post_commit_effects` on a handler throw, and a `transaction: false` handler
-that opens its own transaction (`/login`, `/password`, signup, bootstrap) runs
-it through `transaction_with_post_commit_rollback`, the same truncation around
-just that transaction — so a handler that catches its transaction's failure
-and answers a refusal still discards what it queued. `emit_after_commit` thus
-reads as **"run iff the wrapping transaction commits."** The eager `pending_effects`
-queue is the deliberate opposite (survives rollback — attempt audits). The full
-two-sided contract + Rust-twin parity note live on the helper's TSDoc in
-`http/pending_effects.ts`.
+- **Defer, never schedule.** A thunk, not `Promise.resolve().then(fn)`: a microtask would run before the wrapping `COMMIT` resumes and announce state that may roll back.
+- **Discard on rollback, at the dispatch site.** Both dispatch sites (`http/route_spec.ts`, `actions/perform_action.ts`) wrap the handler in `dispatch_with_post_commit_rollback`, which truncates the deferred queue on a throw. A `transaction: false` handler that opens its own transaction (`/login`, `/password`, signup, bootstrap) runs it through `transaction_with_post_commit_rollback`, which discards what that transaction queued even when the handler catches the failure and answers normally. The eager queue is never truncated.
+- **Drain at the outer flush.** `flush_request_effects` is the one flush: the HTTP middleware in `server/app_server.ts` (awaited before the response under `await_pending_effects: true`, else left running and tracked so `AppServer.close` waits for it, bounded by `shutdown_drain_timeout_ms`) and the per-message WS flush (awaited after the reply). It invokes the deferred thunks before awaiting the eager writes, so a connection close never waits behind a slow audit INSERT, and wraps each thunk in its own `try/catch`, so one failure can't starve its siblings. Eager rejections go to the log and `on_effect_error` (`{transport, method, path}`).
 
 ```typescript
 emit_after_commit(ctx, () => ctx.notification_sender.send_to_account(account_id, msg));
 ```
 
-Used for WS sends (`ctx.notification_sender`, through
-`queue_offer_notification` / `queue_supersede_notifications` for the
-role-grant-offer notifications — see `auth/CLAUDE.md` §WS notifications),
-a revocation's connection closes (`queue_connection_close` — see
-`actions/CLAUDE.md` §Connection closer), the audit emitter's listener fan-out
-for a success row (`auth/CLAUDE.md` §Audit emitter), and any side effect that
-must run only after the transaction commits.
-
-### Key properties
-
-- **The flush owns the safety net.** `flush_post_commit_effects` wraps every thunk in `try/catch` and routes errors through `ctx.log.error`, so one failing send cannot starve sibling effects in the same batch nor corrupt the already-committed response. Per-thunk `try/catch` inside `emit_after_commit` would skip directly-pushed thunks (e.g. tests); centralizing the wrap in the flush closes that gap.
-- **One flush, every transport.** `flush_request_effects(pending_effects, post_commit_effects, log, on_rejection?)` drains both queues; the HTTP middleware and the per-message WS flush both call it, threading `on_effect_error` (with `{transport, method, path}`) into `on_rejection`. Test mode (`await_pending_effects: true`) awaits it before the response returns; production HTTP runs it fire-and-forget; WS awaits it per frame, after the reply.
-- **The deferred thunks never wait on the eager writes.** Every flush site (both modes here, and the per-message WS flush) invokes the `post_commit_effects` thunks before it awaits `pending_effects`, so a revocation's connection close is not held behind a slow audit INSERT. A thunk that needs a write — the audit emitter's success-row fan-out — awaits that write itself.
-- **Drain at the outer flush; discard at the dispatch site.** The successful-path _drain_ of both queues stays at the outer flush middleware (`server/app_server.ts`) + the per-message WS flush — adjacent, one location, no per-wrapper drain timing. What the dispatch sites (route-spec wrapper / `perform_action`) own is the _rollback discard_, via the shared `dispatch_with_post_commit_rollback` helper: on a handler throw they truncate `post_commit_effects` before the outer flush ever sees it, so the flush only drains effects from a committed handler. The eager `pending_effects` queue is never truncated — it drains regardless (attempt audits survive rollback).
-- Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}` shape, which is why this helper lives in `http/` rather than `actions/` or `auth/`.
-
-WS sends are **not** wrapped by `create_validated_broadcaster` (that only
-guards SSE `broadcast(channel, data)`). The input schemas of
-`RemoteNotificationActionSpec`s are contracts for consumers, not enforced
-at send time.
-
 ## Common Routes
 
-`http/common_routes.ts` exposes three generic route-spec factories with no
-auth-domain dependencies:
+`http/common_routes.ts` has three route-spec factories with no auth-domain
+dependency (auth-aware status routes live in `auth/`):
 
-- `create_health_route_spec()` — `GET /health` (`HEALTH_PATH`), public, returns `{status: 'ok'}` (`HealthResponse`, both from `http/health_schema.ts`). Infrastructure endpoint for uptime monitors, and what `ui/backend_probe.svelte.ts` reads
-- `create_ready_route_spec({expected, log})` — `GET /ready`, public, the deploy gate. Introspects the live DB's columns (`db/schema_ready.ts`) and compares against the committed `expected` column map: `200 {ready: true}` on match, else `503 {error: 'schema_drift' | 'db_unreachable'}`. Detailed drift logs server-side only (minimal body — no schema leak, mirrors why `/api/surface` is admin-only). Throws at assembly on an empty `expected` (fail-loud). Opt-in like `/health`; pair with `load_expected_schema(url)` — loads + URL-caches a consumer's committed `expected_schema.json` and throws on an empty map
-- `create_server_status_route_spec({version, get_uptime_ms})` — `GET /api/server/status`, authenticated, returns `{version, uptime_ms}` (`uptime_ms` a non-negative integer)
-
-Auth-aware variants (account status, bootstrap status) live in `auth/` —
-`http/common_routes.ts` stays generic.
+- `create_health_route_spec()` — `GET /health`, public, `{status: 'ok'}`.
+- `create_ready_route_spec({expected, log})` — `GET /ready`, public, the deploy gate: compares the live DB's columns (`db/schema_ready.ts`) to the committed column map, `200 {ready: true}` or `503 {error: 'schema_drift' | 'db_unreachable'}`, the detail logged server-side only. Throws at assembly on an empty `expected`; pair with `load_expected_schema(url)`.
+- `create_server_status_route_spec({version, get_uptime_ms})` — `GET /api/server/status`, authenticated, `{version, uptime_ms}`.
 
 ## DB Routes (Allowlisted Browser)
 
-`http/db_routes.ts` creates keeper-only route specs for administering the
-`public` schema via `information_schema`. Wired by consumers that want a
-table browser; the factory is domain-agnostic.
+`create_db_route_specs(deps, options)` (`http/db_routes.ts`; `deps` is
+`DbRouteDeps`, `{audit}`, which `ctx.deps` satisfies) builds a keeper-only
+browser over the `public` schema: `GET /health`, `GET /tables`,
+`GET /tables/:name` (paged rows, `primary_key`, `deletable`), and
+`DELETE /tables/:name/rows/:id`. The routes, paging grammar, limits and
+refusals are the module's TSDoc. The rules that matter:
 
-`create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})` —
-`deps` is `DbRouteDeps`, `{audit: Pick<AuditEmitter, 'emit'>}` (`ctx.deps` satisfies it):
+- **The allowlist gates everything.** `browsable_tables` is required with no "all"; an unlisted table answers exactly as a missing one (404 `table_not_found`). The `NON_BROWSABLE_TABLES` credential floor is subtracted even when a consumer lists those tables.
+- **Some rows are never deletable.** `NON_DELETABLE_TABLES` (each table's reason is its TSDoc) refuses the `DELETE` before the key-shape check; consumers add to it with `non_deletable_tables`, never replace it. Only a single-column primary key is deletable.
+- **Every successful delete is audited** in the delete's transaction: the row lands iff the delete commits, and a refused row rolls the delete back, as on the Rust twin (`fuz_db_admin`).
+- **Do not widen the auth.** The keeper shape's `credential_types: ['daemon_token']` keeps every bearer out, and is why the specs need no `required_scope` (a daemon token is `full` by construction). Re-auth them to a role a bearer satisfies and both controls are gone at once (../../../docs/security.md §Token scoping).
 
-- `GET /health` — connected probe + table count (schema-wide by design — a did-migrations-run diagnostic) + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
-- `GET /tables` — list browsable tables with row counts
-- `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit validated to `[1, 1000]` with default 100; bytea values come back as `<N bytes>` placeholders, NULL stays NULL, column metadata untouched) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
-- `DELETE /tables/:name/rows/:id` — delete by PK, compared typed as `"<pk>" = $1` (twinning the Rust spine — the untyped text-format param makes PG coerce the id with the PK type's input function, so the delete index-scans and follows the column type's semantics; an uncoercible id — 22P02/22003 — is the same clean 404 as a typed miss). `RETURNING "<pk>"::text` feeds the audit trail the row's canonical PK rendering. Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing/unbrowsable (`ERROR_TABLE_NOT_FOUND`), 409 on a referencing-row refusal (pg error `23503` foreign_key_violation, or `23001` restrict_violation — PG 18+ raises the latter for `ON DELETE RESTRICT`)
-
-Every route declares `acting?: ActingActor` on its `query` (registry-time
-invariant 2). The routes' schemas are `@fuzdev/fuz_schema`: the queries
-`object`s over `ActingActor`, and the counts and positions they
-answer with (`row_count`, `total`, `offset`, `limit`) non-negative integers.
-`GET /tables/:name`'s paging params are each a `query_int`:
-`pipe(string, regex(/^[+-]?\d+$/), transform(Number))`, then `safe_integer`
-and its bounds, under a default — the spellings the Rust twin's
-`str::parse::<i64>` reads, so `""`, `" 5"`, `"1e2"`, `"5.0"` and `"0x10"` are
-refused on both. The surface writes each as a string with that `pattern`,
-its bounds in the `description`, and notes the steps it can't say as an
-`info` diagnostic.
-
-**The allowlist gates everything.** `DbRouteOptions.browsable_tables` is
-required with no "all" escape hatch — the table list shows only listed tables,
-and detail/`DELETE` on an unlisted table answer exactly like a table that
-doesn't exist (404 `ERROR_TABLE_NOT_FOUND`, byte-identical masking). The
-credential floor `NON_BROWSABLE_TABLES` (`account` — the argon2 hash corpus,
-`auth_session` / `api_token` — credential digests, `bootstrap_lock`) is
-subtracted from the allowlist even when a consumer names those tables. The
-browse/delete transactions run under `SET LOCAL statement_timeout`
-(`DB_ADMIN_STATEMENT_TIMEOUT_MS`) so no single statement outlives the bound
-(per statement, not per request — the table listing's per-table `COUNT(*)`
-loop can still take several in sequence).
-
-**Single-column primary keys only.** The `DELETE` filters on one column
-(`WHERE "<pk>" = $1`), which is correct only when the primary key _is_
-that one column. `query_primary_key_columns` returns every PK column in
-`ordinal_position` order, and the route proceeds only at length exactly 1 — a
-composite key (a single-column filter would match every row sharing that
-column's value and silently over-delete) and an absent key both refuse with 400
-and delete nothing. `GET /tables/:name` reports `primary_key: null` in the same
-two cases, so the UI (`ui/table_state.svelte.ts`) disables delete without firing
-a request. Twin of the Rust spine's `fuz_db_admin` router.
-
-**Some tables are never row-deletable.** `NON_DELETABLE_TABLES` — `audit_log`,
-`bootstrap_lock`, `app_settings`, `schema_version` — refuses the `DELETE` with
-400 `ERROR_TABLE_NOT_DELETABLE` before the key-shape check, because a generic
-storage endpoint has no business deleting a row whose meaning lives in the
-domain layer. `audit_log` is the sharpest: it is both the trail and, since
-the revocation guard (`create_revocation_guard`) closes live connections by
-listening to audit events, part of how revocation propagates. The three
-singletons each fail differently on deletion — `bootstrap_lock` leaves
-`check_bootstrap_status` advertising a window `bootstrap_account.ts` then always
-refuses, `app_settings` makes every settings read throw, `schema_version` is the
-migration tracker (composite-keyed, so already refused — named here so the
-protection survives a key-shape change). Consumers add their own via
-`DbRouteOptions.non_deletable_tables`, which is unioned with the builtin set and
-never replaces it.
-
-`GET /tables/:name` reports `deletable` = exactly what the `DELETE` will accept
-(single-column PK **and** not excluded), so a client hides the affordance
-instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
-`can_delete`. `primary_key` stays a truthful report of the key shape; a policy
-exclusion must not masquerade as one.
-
-**Every successful row delete is audited.** The `DELETE` handler writes its
-`db_admin_row_delete` row with `deps.audit.emit` in the route's transaction,
-after the savepoint's `try` (so a refused audit write fails the request rather
-than reading as a row refusal): the row lands iff the delete commits, and a
-refused row rolls the delete back, as on the Rust twin. Remounted with
-`transaction: false`, the handler opens a transaction around just the delete
-and its row (`transaction_with_post_commit_rollback`). Account-grain attribution (the browser's gate is account-grain,
-so no actor is claimed), metadata `{table, pk_column, id}`. Refusals emit
-nothing. The completeness gate covers the event via the
-`db_routes.db.test.ts` emission tests (excluded-with-justification in
-`testing/audit_completeness.ts`). Twinned by `fuz_db_admin`'s emission on the
-Rust spine.
-
-All four routes use the keeper auth shape (`{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`).
-Param schemas use `VALID_SQL_IDENTIFIER` regex, and every table name gets
-`assert_valid_sql_identifier()` before string-interpolating into SQL —
-the identifier validation is the only reason the interpolation is safe.
-
-**Do not widen the auth on these specs.** They serve paginated rows of every
-browsable table plus row `DELETE` — the credential tables sit behind the
-`NON_BROWSABLE_TABLES` floor, but browsable rows can still carry secrets in
-data columns (a consumer's `cell.data` is the live example).
-`credential_types: ['daemon_token']` is what keeps every bearer credential
-out, and it's why the specs need no `auth.required_scope`: a daemon token
-resolves to `full` by construction, so no narrowed token can reach them (see
-../../../docs/security.md §Token scoping). Re-auth them to a role a bearer
-satisfies and both controls are gone at once — the token's scope stops
-applying and the credential gate stops firing. A consumer that does this owns
-the surface census for it.
-
-Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
-`PrimaryKeyInfo`, `ColumnInfo`, `DbRouteDeps`, `DbRouteOptions`,
-`NON_DELETABLE_TABLES`, `NON_BROWSABLE_TABLES`, `DB_TABLE_ROWS_DEFAULT_LIMIT`,
-`DB_TABLE_ROWS_LIMIT_MAX`, `DB_ADMIN_STATEMENT_TIMEOUT_MS`.
+Table names pass `assert_valid_sql_identifier()` before they are
+interpolated into SQL — the only reason the interpolation is safe.
 
 ## Cross-Module Notes
 
-- **Middleware ordering** is assembled by `create_app_server` — see the root ../../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
-- **No re-exports.** Import every symbol from its canonical source module. `http/surface.ts` no longer re-exports schema helpers — go through `http/schema_helpers.ts`
-- **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts`, the same schemas flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint)
-- **Error modules are complementary, not redundant.** `http/error_schemas.ts` is declaration-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields
+- **Middleware ordering** is `create_app_server`'s — root ../../../CLAUDE.md §Middleware Ordering. What `http/` needs upheld: the trusted proxy runs before auth and rate limiting; origin verification before session parsing.
+- **Input/output schemas align with SAES.** RPC via `actions/action_rpc.ts` takes the same schemas unchanged (`actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint).
+- **The error modules are complementary.** `http/error_schemas.ts` is declaration-first (routes, surface); `http/jsonrpc_errors.ts` is throw-first (handlers, the catch layer). One `ERROR_*` code can be raised either way.

@@ -264,7 +264,7 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 /**
  * Create account route specs for session-based auth.
  *
- * The returned specs cover the REST flows that stay after the RPC migration:
+ * The returned specs cover the account surface's REST flows:
  * `/status` (account info + bootstrap availability), `/login`, `/logout`,
  * `/password`. `/status` is bundled
  * here (relative path, prefixed to `/api/account/status` by the caller) so
@@ -282,7 +282,7 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * audit row is written last in the transaction of the change it reports, so
  * a refused row rolls the change back and closes nothing.
  *
- * @param deps - stateless capabilities (keyring, password, log, audit, connection_closer)
+ * @param deps - capabilities (keyring, password, log, audit, connection_closer)
  * @param options - per-factory configuration (session_options, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
  * @returns route specs (not yet applied to Hono)
  */

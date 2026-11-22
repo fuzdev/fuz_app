@@ -10,30 +10,20 @@ see ../CLAUDE.md. For testing patterns, see ./testing.md.
 Every route requires `input` and `output` schemas, each a
 `@fuzdev/fuz_schema` schema (`params` and `query` too, each an object
 schema), and lists in `errors` the error definitions
-(`rest_error`, `REST_*`) its handler answers beyond the derived ones. Input is auto-validated by middleware
-(`parse`). A handler takes one argument, the route context, and reads the
-validated data as `route.input` (and `route.params`, `route.query`), typed
-from the spec's schemas. It never receives the Hono context: `route` also
-carries `auth` (the request context, non-null by type on a route that
-requires an account), `credential`, `client_ip`, `signal`, `db`, and the
-readers for what the pipeline doesn't validate (`request`, `query_pairs`,
-`read_json_body`, `header_lines`).
-
-A handler reading a query key its `query` schema doesn't declare reads
-`route.query_pairs` — the query decoded strictly, or why it doesn't decode —
-and answers the refusal itself: `if (!route.query_pairs.ok) return
-route_fail(REST_INVALID_QUERY_PARAMS);` then `query_first(route.query_pairs.value,
-'key')` (`http/request_target.ts`). A route a consumer adds outside the route
-system (`post_route_middleware`, a raw `app.get`) is matched on the raw path,
-and Hono's `c.req.query()` / `c.req.param()` decode leniently — read through
-`read_request_query_pairs(c)` / `read_request_route_params(c)` instead. A
-method such a path doesn't serve answers the app's 405 with `Allow`.
+(`rest_error`, `REST_*`) its handler answers beyond the derived ones. Input is
+validated before the handler runs. A handler takes one argument, the route
+context, and reads the validated data as `route.input` (and `route.params`,
+`route.query`), typed from the spec's schemas. It never receives the Hono
+context: `route` also carries `auth` (non-null by type on a route that
+requires an account), `credential`, `client_ip`, `signal`, `db`, and readers
+for what the pipeline doesn't validate (`src/lib/http/CLAUDE.md`
+§`RouteContext` — what a handler gets).
 
 A handler returns a result and the framework builds the response:
 `route_ok(value)` answers `value` as JSON at 200, `route_fail(def, fields?)`
-the definition's body at its status with its headers (`Retry-After`), and
+the definition's body at its status with its headers (`Retry-After`),
 `route_raw({status, headers?, body?})` an answer the route spells itself (an
-empty body, text, bytes, a stream) and `route_sse(stream)` an event stream
+empty body, text, bytes, a stream), and `route_sse(stream)` an event stream
 opened with `route.open_sse`. Each is data: the framework builds the response
 after the route's transaction commits, so a handler never returns a
 `Response`. `define_route` checks them against the route: the value
@@ -67,69 +57,37 @@ const my_route_spec = define_route({
 });
 ```
 
-A shape kept apart from its handler — a hono-free module a cross-process
-suite builds its surface from — is a `define_route_shape(shape)`, and
-`attach_route_handler(shape, handler)` checks the handler as `define_route`
-does.
-
-A header every answer of a route carries — its refusals and the error
-catch's 500 included — is declared on the spec as `response_headers` (the RPC
-`GET` declares `Cache-Control: no-store` this way); a success's own headers
-ride a `route_raw` result. A `GET` carries no body: its `input` is
-`literal(null)` — `apply_route_specs` refuses any other — and its fields go on
-`query`.
-
-- `literal(null)` for routes with no request body (GET, or POST with no input)
+- `literal(null)` for routes with no request body — a `GET` carries none, so
+  its fields go on `query` (`apply_route_specs` refuses any other `GET` input)
 - `object` for inputs — rejects unknown keys
 - `loose_object` for outputs with variable shapes
-- Input schemas validated in DEV + production (always-on caller contract;
-  malformed input returns 400 with `{error}`, plus `issues` — `WireIssue`s —
-  in development)
-- Output schemas validated in DEV only (via `esm-env`) — plus declared
-  error schemas (4xx/5xx) for non-2xx responses. Logs an error on mismatch,
-  returns the response unchanged; does not throw. Zero cost in production.
-  See ./architecture.md §DEV-only Output Validation.
+- Input is validated in DEV and production: malformed input answers 400 with
+  `{error}`, plus `issues` (`WireIssue`s) in development. Output and declared
+  error schemas are validated in DEV only, logging a mismatch and returning
+  the response unchanged (./architecture.md §DEV-only Output Validation) — the
+  same on RPC and WebSocket actions.
 - Route specs compose into arrays: `[...account_routes, ...app_routes]`
+
+A shape kept apart from its handler (a hono-free module a cross-process suite
+builds its surface from) is a `define_route_shape(shape)`, and
+`attach_route_handler(shape, handler)` checks the handler as `define_route`
+does. A header every answer of a route carries is declared as
+`response_headers`. A route added outside the route system
+(`post_route_middleware`, a raw `app.get`) reads its query and params through
+`read_request_query_pairs(c)` / `read_request_route_params(c)`, not Hono's
+lenient decoders (`http/request_target.ts`).
 
 Route spec factories for common patterns: `create_account_route_specs()`,
 `create_audit_log_route_specs()`, `create_signup_route_specs()`,
 `create_health_route_spec()`, `create_ready_route_spec()` (with
 `load_expected_schema()`), `create_server_status_route_spec()`,
-`create_account_status_route_spec()`, `create_db_route_specs()`.
-
-`create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})`
-mounts the keeper-only table browser (`deps` needs `audit` — `ctx.deps`
-satisfies it; every successful row delete emits a `db_admin_row_delete` audit
-event recording `{table, pk_column, id}`, `id` being the deleted row's
-canonical `::text` rendering rather than the URL spelling — the delete
-compares the id typed against the PK column, so any spelling PG coerces to
-the same value matches, and an uncoercible id is the same masked 404 as a
-typed miss). `browsable_tables` is the required
-allowlist gating the whole surface — table list, detail, and row-`DELETE`; an
-unlisted table 404s exactly like one that doesn't exist, and the credential
-floor (`NON_BROWSABLE_TABLES`: `account`, `auth_session`, `api_token`,
-`bootstrap_lock`) is subtracted even when named. Reads are bounded — a
-`statement_timeout` (`DB_ADMIN_STATEMENT_TIMEOUT_MS`) wraps the browse/delete
-transactions, and bytea / bytea[] values come back as `<N bytes>` placeholders.
-`non_deletable_tables` names consumer tables whose rows the row-`DELETE` must
-refuse (`400 table_not_deletable`); it is unioned with the builtin
-`NON_DELETABLE_TABLES` (`audit_log`, `bootstrap_lock`, `app_settings`,
-`schema_version`) and never replaces it — reach for it for any table whose
-invariants live in your domain layer rather than in a generic storage endpoint.
-Admin account listing, session listing, session/token revoke-all,
-audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
-pass them via `create_app_server`'s `rpc_endpoints` option (see "Server
-Assembly" below). Use `create_admin_actions(deps, options)`
-for just the admin actions (the two app-settings methods are always
-included), or `create_standard_rpc_actions(deps, options)`
-from `auth/standard_rpc_actions.ts` for the full fuz_app standard
-surface (admin + role-grant-offer + account in one call).
-`create_app_server` auto-mounts every
-`RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
-yourself. Bootstrap routes and the opt-in surface route
-(`surface_route: true` — `GET /api/surface`, admin-only and a
-`surface:app_surface` token surface) are factory-managed by
-`create_app_server`.
+`create_account_status_route_spec()`, and `create_db_route_specs(deps,
+{db_type, db_name, browsable_tables, …})`, the keeper-only table browser
+gated by a required `browsable_tables` allowlist (`src/lib/http/CLAUDE.md`
+§DB Routes). The admin, role-grant-offer and account surfaces are RPC-only:
+mount `create_standard_rpc_actions(deps, options)`
+(`auth/standard_rpc_actions.ts`) or `create_admin_actions` alone through
+`create_app_server`'s `rpc_endpoints` (§Server Assembly).
 
 ## `/ready` schema-drift deploy gate
 
@@ -164,7 +122,7 @@ _expectation_ (it adds its own tables), so adoption is three small pieces:
 2. **Commit `expected_schema.json`** next to the route — the column map covering
    your full namespace set (auth + cell + fact + your own tables).
 
-3. **Add a ~10-line regen test** so the fixture can't silently fall behind the
+3. **Add a short regen test** so the fixture can't silently fall behind the
    DDLs, using `sync_expected_schema_fixture` from
    `@fuzdev/fuz_app/testing/schema_ready_fixture.ts`: bootstrap a fresh DB with
    your full migration chain, then
@@ -198,11 +156,22 @@ then `create_app_server()` assembles the Hono app. `validate_server_env()`
 bridges the loaded env to the validated artifacts needed:
 
 ```typescript
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { load_env } from '@fuzdev/fuz_app/env/load.ts';
 import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import { create_audit_log_config } from '@fuzdev/fuz_app/auth/audit_log_schema.ts';
+import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
+import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import { create_standard_rpc_actions } from '@fuzdev/fuz_app/auth/standard_rpc_actions.ts';
+import {
+	create_health_route_spec,
+	create_ready_route_spec,
+	load_expected_schema
+} from '@fuzdev/fuz_app/http/common_routes.ts';
+import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { create_node_runtime } from '@fuzdev/fuz_app/runtime/node.ts';
 import { create_file_bootstrap_token_store } from '@fuzdev/fuz_app/auth/bootstrap_token_store.ts';
 import { ConnectionRegistry } from '@fuzdev/fuz_app/actions/connection_registry.ts';
@@ -218,11 +187,10 @@ if (!env_config.ok) {
 }
 const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 
-// 2. Init backend (DB + auth migrations + deps with fs)
+// 2. Init backend (DB + auth migrations + deps)
 //
-// `audit_log_config` registers consumer audit event types (built once via
-// `create_audit_log_config({extra_events})`). It folds into the bound
-// `AppDeps.audit` emitter and validates every `audit.emit` call site.
+// `audit_log_config` registers consumer audit event types. It folds into the
+// bound `AppDeps.audit` emitter and validates every `audit.emit` call site.
 // Consumers that don't emit custom event types can omit it — fuz_app
 // falls back to `builtin_audit_log_config`.
 const audit_log_config = create_audit_log_config({
@@ -238,7 +206,7 @@ const backend = await create_app_backend({
 	keyring,
 	password: argon2_password_deps,
 	database_url: env.DATABASE_URL,
-	// consumer migrations, spliced after the builtin auth namespace
+	// consumer migrations, run after the builtin auth namespace
 	migration_namespaces: [{ namespace: 'my_app', migrations: MY_APP_MIGRATIONS }],
 	// audit_factory runs after create_db + migrations; the consumer owns
 	// subscriber-chain composition and AuditLogConfig selection.
@@ -247,10 +215,10 @@ const backend = await create_app_backend({
 
 // 3. Assemble Hono app
 //
-// One WebSocket connection registry, created up front so the RPC actions can send
-// role-grant-offer notifications through it; the WS endpoint registers its
-// connections on it via `WsEndpointSpec.registry` (see the WebSocket example
-// below). Omit both when the app has no WebSocket endpoint.
+// One WebSocket connection registry, created up front so it can be retained
+// for broadcasts; the WS endpoint registers its connections on it via
+// `WsEndpointSpec.registry` (below). Omit it when the app has no WebSocket
+// endpoint, or let the endpoint make its own.
 const connection_registry = new ConnectionRegistry();
 const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
@@ -280,42 +248,31 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 		...prefix_route_specs('/api', app_specific_routes(ctx))
 	],
 	// surface_route: true,  // opt in to GET /api/surface — admin-only, refused to narrowed tokens (for AdminSurface.svelte)
-	audit_log_sse: true, // factory-managed audit SSE (auto-registers its listener via backend.deps.audit.add_listener + adds event specs)
-	auth_cleanup: true, // scheduled auth cleanup — off by default, on in production (see below)
+	audit_log_sse: true, // factory-managed audit SSE (§SSE Endpoints)
+	auth_cleanup: true, // scheduled auth cleanup — off by default, on in production (§Auth cleanup)
 	env_schema: app_env_schema,
 	event_specs: my_event_specs, // audit_log_event_specs auto-appended when audit_log_sse is set
-	// rpc_endpoints: single source of truth for both surface generation and
-	// live dispatch — create_app_server mounts each entry via
-	// create_rpc_endpoint internally. Accepts an array or a factory
-	// (ctx) => Array<RpcEndpointSpec>. Use the factory form when the action
-	// list depends on ctx.deps:
+	// rpc_endpoints: the one source of RPC mounting — the server mounts each
+	// entry, and the same list drives the surface. An array, or a factory
+	// (ctx) => Array<RpcEndpointSpec> when the actions depend on ctx.deps:
 	rpc_endpoints: (ctx) => [
 		{
 			path: '/api/rpc',
-			actions: [
-				...my_app_rpc_actions(ctx.deps),
-				...create_standard_rpc_actions(ctx.deps)
-			]
+			actions: [...my_app_rpc_actions(ctx.deps), ...create_standard_rpc_actions(ctx.deps)]
 		}
 	],
 	static_serving: { serve_static, spa_fallback: '/200.html' }
 });
 ```
 
-`create_standard_rpc_actions` is from
-`@fuzdev/fuz_app/auth/standard_rpc_actions.ts` and emits the combined
-admin + role-grant-offer + account methods (the two
-app-settings methods are always wired). Auto-mounting keeps the surface report
-in sync with dispatch — the same spec array drives both, by
-construction.
+`create_standard_rpc_actions` is the admin + role-grant-offer + account
+methods (the two app-settings methods always included).
 
-To expose the same surface over WebSocket as well — so reactive frontends
-can call `account_*` / `admin_*` over the live connection and pick up
-revocation events without a polling delay — spread `protocol_actions`
-plus `create_standard_rpc_actions(ctx.deps)`
-into `create_app_server`'s
-`ws_endpoints` factory and supply `upgrade_websocket`, the runtime adapter's
-module-level `upgradeWebSocket` helper. On Bun:
+To serve actions over WebSocket as well — so reactive frontends call
+`account_*` / `admin_*` over the live connection and pick up revocations
+without a polling delay — declare `ws_endpoints` and supply
+`upgrade_websocket`, the runtime adapter's module-level `upgradeWebSocket`.
+On Bun:
 
 ```typescript
 import { upgradeWebSocket } from '@hono/bun'; // whose `websocket` also goes to `Bun.serve`
@@ -363,61 +320,34 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * DEFAULT_WS_MAX
 serve({ fetch: app.fetch, port, websocket: { server: wss } });
 ```
 
-`ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
-source of truth for surface + dispatch, auto-mounted onto the assembled
-Hono app on every runtime. Each endpoint charges the same `action_ip_rate_limiter` /
-`action_account_rate_limiter` instances as the RPC endpoints — one budget per
-action across both transports, default instances unless passed in or turned
-off (below) — checks the
-server's `allowed_origins` unless the spec sets a narrower list, and
-registers ahead of `post_route_middleware` and `static_serving`. Its path,
-like an RPC endpoint's, must sit inside `AUTH_MIDDLEWARE_PATH` (`/api/*`, which
-also matches `/api` itself — where the auth middleware runs) — assembly throws
-otherwise, and so does `create_test_app_surface_spec`. Every mounted connection registry is added to `deps.connection_closer`, so
-a revocation handler closes its sockets once the revocation commits — a
-session or token revoke, a password change, a logout, an account delete, a
-cap eviction — without consumer wiring, and the one revocation guard
-`create_app_server` registers on that closer (`create_revocation_guard`)
-repeats the close when the audit row is announced. Omit `actions` to serve the
-sole RPC endpoint's actions (`to_ws_actions`: the protocol actions first, then
-the RPC list) — one action set on both transports. Pass `required_roles:
-[ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
-returns the path-keyed `ConnectionRegistry` map for broadcast.
+`ws_endpoints` mirrors `rpc_endpoints`: an array or a factory, the one source
+for surface and dispatch. Omit an endpoint's `actions` to serve the sole RPC
+endpoint's (`to_ws_actions`: the protocol actions first, then the RPC list) —
+one action set on both transports. Each endpoint charges the same
+`action_ip_rate_limiter` / `action_account_rate_limiter` as the RPC endpoints,
+checks the server's `allowed_origins` unless the spec sets a narrower list,
+and takes `required_roles` for a role gate at upgrade time. Its path, like an
+RPC endpoint's, must sit inside `AUTH_MIDDLEWARE_PATH` (`/api/*`) — assembly
+throws otherwise. Every mounted connection registry joins
+`deps.connection_closer` and `deps.notification_sender`, so revocations close
+its sockets and handlers' notifications reach them with no wiring.
+`AppServer.ws_endpoints` is the path-keyed `ConnectionRegistry` map. The rest
+of `WsEndpointSpec` is its TSDoc (`actions/ws_endpoint_spec.ts`).
 
-`create_app_server` handles: rate limiters -> audit SSE -> proxy middleware ->
-auth middleware -> bootstrap status -> consumer route specs -> factory-managed
-routes (bootstrap, RPC endpoints, surface) -> surface generation -> Hono app
-assembly (routes, then WS endpoints) -> `post_route_middleware` -> static
-serving -> the unmatched-route handler (`server/unmatched_route.ts`: a method
-the path doesn't serve is 405 `method_not_allowed` with `Allow`; a path
-nothing serves is 404, JSON `route_not_found` under `/api/`, plain text
-elsewhere — a consumer's own routes included) -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
-below). Migrations run earlier, in `create_app_backend`.
-A consumer migration namespace must not bear a `reserved_migration_namespaces` name (`fuz_auth`, `fuz_cell`, `fuz_facts`) — `run_migrations` (so `create_app_backend` and every direct caller) throws a `namespace-reserved` `MigrationError` naming it, before touching the database. The spine's own `CELL_MIGRATION_NS` / `FACT_MIGRATION_NS` are admitted by identity (splice the imported objects, not copies); auth always runs first, so passing `AUTH_MIGRATION_NS` again is a no-op.
-
-Consumer-specific code (env loading, error formatting/exit, custom
-middleware) stays in the consumer. Body size limiting defaults to 1 MiB
-(`DEFAULT_BODY_LIMIT_BYTES`); pass `max_body_size` to override (a safe integer
-`0` or more — anything else throws at assembly) or `null` to disable, which
-adds a security warning to the startup diagnostics. An empty
-`allowed_origins` throws at assembly, on the server or on a WS endpoint.
+The middleware order `create_app_server` assembles is ../CLAUDE.md
+§Middleware Ordering. Migrations run earlier, in `create_app_backend`; a
+consumer namespace may not take a reserved name (`fuz_auth`, `fuz_cell`,
+`fuz_facts`) — splice the spine's own `CELL_MIGRATION_NS` /
+`FACT_MIGRATION_NS` objects, not copies. Body size limiting defaults to 1 MiB
+(`DEFAULT_BODY_LIMIT_BYTES`); pass `max_body_size` to override, or `null` to
+disable, which adds a security warning to the startup diagnostics. An empty
+`allowed_origins` throws at assembly.
 
 Custom middleware goes in through `transform_middleware`, which receives
-shallow copies of the host gate (unless `host_gate: false`), the trusted-proxy spec and the auth stack, in a fresh
-array, and returns the list to mount. Add layers anywhere — before the proxy,
-after the stack, between its layers — but leave each of those specs in place:
-assembly throws (`assert_middleware_stack_mounted`) unless every one, matched
-by its `handler` rather than its `name`, is still mounted exactly once at its
-original path (`'*'` for the host gate, the proxy and the origin check, `AUTH_MIDDLEWARE_PATH`
-for the rest of auth) in its
-original order. The endpoint auth-scope check assumes the auth stack is there,
-and the IP-keyed rate limiters assume the proxy ran first — without it
-`get_client_ip` answers `'unknown'` for every caller, so each limiter becomes
-one shared bucket. Moving, dropping, duplicating, reordering, wrapping, or
-replacing one of these layers is refused, with no opt-out; mutating the copies
-in place changes nothing the server mounts unless you return them. The check
-pins where those layers sit, not what added layers do — a layer you add runs
-with full context access.
+shallow copies of the host gate, the trusted-proxy spec and the auth stack,
+and returns the list to mount. Add layers anywhere, but leave each of those
+specs mounted once, at its path, in its order — assembly throws otherwise
+(../CLAUDE.md §Middleware Ordering says why):
 
 ```ts
 transform_middleware: (specs) => [
@@ -438,18 +368,18 @@ buckets), `login_account_rate_limiter` / `signup_account_rate_limiter`
 `action_account_rate_limiter` 1200/15min. The two `action_*` limiters back the
 per-action `rate_limit?` field on `ActionSpec` and are shared by the HTTP RPC
 and WebSocket dispatchers — one budget per action across transports. Under
-`'enforced'`, each explicitly-`null` limiter is a warning in the surface's diagnostics, logged at
-startup.
+`'enforced'`, each explicitly-`null` limiter is a warning in the surface's
+diagnostics, logged at startup.
 
 A test app or test binary turns every limiter off in one place with
 `rate_limiters: 'disabled_for_testing'` (`RateLimiterMode`, the twin of the
 Rust `fuz_auth::RateLimiterMode`; the default is `'enforced'`) — an omitted
 limiter is then `null` rather than a default instance. The surface carries one
-warning for the mode, in place of the per-limiter ones, and the first limiter it leaves `null` prints
-`RATE_LIMITERS_DISABLED_BANNER` with `console.error`, once per module instance, so a
-silenced logger still shows it — the Rust spine prints the same line. A
-limiter passed explicitly still wins, so a rate-limit test enables just the
-one it pins:
+warning for the mode, and the first limiter it leaves `null` prints
+`RATE_LIMITERS_DISABLED_BANNER` with `console.error`, once per module
+instance, so a silenced logger still shows it — the Rust spine prints the
+same line. A limiter passed explicitly still wins, so a rate-limit test
+enables just the one it pins:
 
 ```typescript
 const server = await create_app_server({
@@ -472,35 +402,16 @@ until `close` ends them — so no new request reaches a closed database, then:
 await server.close();
 ```
 
-It stops the auth cleanup schedule when one runs (waiting for a pass in
-progress), closes every live connection on `deps.connection_closer` — each
-WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
-treat their session as revoked), each audit stream, including registries passed
-through `WsEndpointSpec.registry` or added by hand (a close that throws is
-logged and the shutdown goes on) — then waits for the effects still in flight:
-the unflushed `pending_effects` of requests already answered (failure audit
-rows, the session touch, token usage — production answers without waiting for
-them) and every pool write of `deps.audit` (`drain_inflight`), bounded by
-`shutdown_drain_timeout_ms` (default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`, 10 s,
-the Rust spine's drain timeout), logging what it gives up on — then releases
-what assembly acquired and closes the database. The close-all leaves each connection registry and the audit stream
-registry closing: a WebSocket upgrade or stream still in flight when it runs —
-one the listener accepted before it stopped — is refused rather than outliving
-the server, a WebSocket closed with `WS_CLOSE_GOING_AWAY`, a stream ended after
-its connect comment; one that registers after it skips its credential re-read,
-so it never reads from a database that is closing. A closed connection registry hosts
-nothing more, so one passed through `WsEndpointSpec.registry` cannot be reused
-by another server. The releases remove the audit listeners and closer members
-`create_app_server` added to the backend's `deps.audit` and
-`deps.connection_closer` (each its own addition — a connection registry you also added
-stays a member) and dispose the rate limiters it built; a limiter you passed in
-is yours to dispose. The backend's emitter and closer end as they were before
-assembly, so a failed assembly can be retried on the same backend, and a backend
-whose `close` you own (a test harness) can host another server. A failed
-assembly runs the same releases before its error reaches you, so it leaves no
-listener, closer member, or limiter timer behind. `close` is idempotent: a second call settles
-with the first one's outcome (a failed close is not retried), and concurrent
-calls share one shutdown.
+It stops the auth cleanup schedule, closes every live connection (each
+WebSocket with `WS_CLOSE_GOING_AWAY`, so clients reconnect rather than treat
+their session as revoked), waits for the effects still in flight — bounded by
+`shutdown_drain_timeout_ms` (`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), logging what
+it gives up on — then releases what assembly acquired and closes the
+database. The release leaves the backend's emitter, closer and sender as they
+were before assembly, so a backend whose `close` you own (a test harness) can
+host another server; a closed connection registry hosts nothing more. `close`
+is idempotent. Each step is in the `AppServer.close` TSDoc
+(`server/app_server.ts`).
 
 ### Auth cleanup
 
@@ -523,22 +434,15 @@ const { app, close } = await create_app_server({
 await close();
 ```
 
-It is **off by default** — turn it on in production. Without it expired rows
-accumulate and an offer's expiry is never audited. Connections do not wait on
-it: each closes at its credential's deadline, and a pass repeats the close for
-the sessions it sweeps (./security.md §Connection Admission, "What remains").
-The Rust spine's servers all schedule the twin. Leave it off in an in-process
-test harness: a background pass deletes rows and writes audit rows mid-test.
-A cross-process test binary may schedule it when nothing its suites seed is
-already expired. fuz_app's own spine test binary and the Rust
-`testing_spine_stub` leave it off: a background pass would delete rows and
-write audit rows under a running suite, and the conformance table's
-`expired_session` principal seeds a backdated session row.
-
-A failed pass (the database out of reach) is logged and retried on the next
-interval, passes never overlap, and the timer does not hold the process open.
-A server assembled by hand, or one that wants the passes on its own scheduler,
-uses `auth/cleanup.ts` directly:
+It is **off by default** — turn it on in production, and leave it off in an
+in-process test harness, where a background pass deletes rows and writes
+audit rows mid-test. A cross-process test binary may schedule it only when
+nothing its suites seed is already expired: fuz_app's own test binary and the
+Rust `testing_spine_stub` leave it off, because the conformance
+`expired_session` principal seeds a backdated session. A server assembled by
+hand, or one that wants the passes on its own scheduler, uses `auth/cleanup.ts`
+directly, in the process that holds the connections (`auth/cleanup.ts`'s TSDoc
+has why):
 
 ```typescript
 import { start_auth_cleanup, run_auth_cleanup } from '@fuzdev/fuz_app/auth/cleanup.ts';
@@ -551,18 +455,6 @@ await auth_cleanup.stop();
 // or one pass, from your own scheduler in the same process
 const { expired_sessions, expired_offers } = await run_auth_cleanup(backend.deps);
 ```
-
-`AuthCleanupDeps` is `{db, log, audit, connection_closer}`. The closer is
-required: the session sweep closes through it, so it must be the one the
-app's transports were added to (`backend.deps.connection_closer`).
-Run the sweep in the process that holds the connections. A pass from another
-process — a cron script against a live server's database — deletes the
-expired rows and closes nothing, and the server's own pass then finds them
-gone. Those connections still close at their credential's deadline
-(`ResolvedAuth.credential_deadline`); only the sweep's repeat of that close
-is lost.
-`noop_connection_closer` is for a database no server holds connections on:
-tests, or an offline maintenance run.
 
 The loop under `start_auth_cleanup` is `start_periodic`
 (`@fuzdev/fuz_app/periodic.ts`) — a pass at once, one per interval, no
@@ -639,33 +531,24 @@ const subscribe_spec = define_route({
 registry.broadcast('things', { method: 'thing_created', params: { id, name } });
 ```
 
-Channels filter broadcasts — a subscription with `{channels: ['things']}` only
-receives broadcasts to the `'things'` channel. Omit `channels` (or pass `[]`)
-for all broadcasts. A subscription also carries `scope` (a single capped
-identity, typically session hash) and `groups` (uncapped identities, typically
-`[account_id]`) — both are matched by `close_by_identity`, but only `scope` is
-subject to `max_per_scope`.
+A subscription with `channels` receives only broadcasts to those channels
+(omit them for all). `scope` (one capped identity, typically the session
+hash) and `groups` (uncapped, typically `[account_id]`) are what a
+revocation's `close_by_identity` matches. A stream is authorized once, at
+open, and from then on only a revocation's close ends it, which is why the
+handler registers in two phases: `subscribe_pending` before the credential
+re-read, `admit` after it. A route that gates on a role re-reads the role
+there too (`refresh_role_grants`), as the audit-log stream does.
+`registry.subscribe(stream, options)` is the one-step form, for a stream with
+no revocable credential behind it. The rules are ./security.md §SSE
+Connection Security and §Connection Admission.
 
-A stream is authorized once, at open, and from then on only a revocation's
-close ends it — and a close reaches only streams that are registered. That is
-why the handler registers in two phases: `subscribe_pending` registers the
-stream before the re-read (closeable by every `close_by_identity`, receiving
-nothing, counting toward no cap), and `admit` opens it afterward, or refuses
-when a revocation closed the registration in between. A route that gates on a
-role re-reads the role there too (`refresh_role_grants`), as the audit-log
-stream does. `registry.subscribe(stream, options)` is the one-step form, for a
-stream with no revocable credential behind it. See ./security.md §Connection
-Admission.
-
-**Identity-keyed subscriptions** enable force-closing streams when permissions
-change. The simplest way to wire audit SSE is the factory-managed option on
-`create_app_server`:
+The audit-log stream is factory-managed on `create_app_server`:
 
 ```typescript
-// Factory-managed (recommended):
 const { app, audit_sse } = await create_app_server({
 	// ...other options...
-	audit_log_sse: true, // or {role: 'custom_role'}
+	audit_log_sse: true, // or {role: 'custom_role', keep_alive_ms}
 	create_route_specs: (ctx) => [
 		...create_audit_log_route_specs({ stream: ctx.audit_sse! })
 		// ...other routes
@@ -673,21 +556,21 @@ const { app, audit_sse } = await create_app_server({
 });
 ```
 
-When `audit_log_sse` is set, `create_app_server` creates the SSE registry and
-broadcaster internally, registers `audit_sse.on_audit_event` via
-`backend.deps.audit.add_listener` (no shallow-copy of `AppDeps`), adds the
-registry to `backend.deps.connection_closer` so revocations close its streams —
-the handlers' closes, and the one `create_revocation_guard` registered on that
-closer — and auto-appends `audit_log_event_specs` to the event specs. Pass
-`audit_log_sse: {role?, keep_alive_ms?}` to change the stream's role or its
-keep-alive interval. The `audit_sse`
-field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
+With `audit_log_sse` set, `create_app_server` creates the registry and
+broadcaster, registers `audit_sse.on_audit_event` on `backend.deps.audit`,
+adds the registry to `backend.deps.connection_closer` so revocations close
+its streams, and appends `audit_log_event_specs` to the event specs.
+`audit_sse` on `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
 
 ```typescript
-import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/audit_log_sse.ts';
-import {create_realtime_closer} from '@fuzdev/fuz_app/actions/connection_closer.ts';
+import { create_audit_log_sse, audit_log_event_specs } from '@fuzdev/fuz_app/realtime/audit_log_sse.ts';
+import {
+	create_realtime_closer,
+	create_revocation_guard
+} from '@fuzdev/fuz_app/actions/connection_closer.ts';
+import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 
 // One closer for the backend: the audit stream joins it here, and the same
 // instance goes to create_app_backend so the handlers close through it.
@@ -716,31 +599,15 @@ create_audit_log_route_specs({stream: audit_sse});
 event_specs: audit_log_event_specs,
 ```
 
-Streams close two ways. The revocation handlers close them directly, once
-their transaction commits, through the `connection_closer` the registry joined
-— that close does not depend on the audit write. The revocation guard on that
-closer repeats it when the audit row is announced: `role_grant_revoke` of a global grant (role match),
-`session_revoke` (session-scoped), `token_revoke`
-(token-scoped), and the account-wide events (`session_revoke_all`,
-`token_revoke_all`, `password_change`, `logout`, `account_delete`,
-`account_purge`). Only `outcome='success'` events act (a failure may carry
-attacker-submitted identifiers).
-The audit log SSE route subscribes with `scope = session_hash` and
-`groups = [account_id]`, so `session_revoke` closes only the affected tab
-while the coarser events close every stream for the account. For lower-level
-control, adapt an `SseRegistry` with `create_sse_connection_closer()` and
-add it to the closer a `create_revocation_guard()` listens through.
-
-`on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`
-(defaults to a noop) — the consumer threads it into the emitter inside
-the `audit_factory` body on `CreateAppBackendOptions`, and the value
-becomes the first registered listener on the bound `AppDeps.audit`
-emitter. When `audit_log_sse` is set on `create_app_server`, the factory
-registers `audit_sse.on_audit_event` via `add_listener` so SSE fan-out
-runs alongside the consumer's callback, and auto-appends
-`audit_log_event_specs` to event specs. For manual wiring, compose
-`on_audit_event` inside the `audit_factory` body and pass
-`audit_log_event_specs` in `event_specs` on `AppServerOptions`.
+`on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`.
+Streams close two ways: the revocation handlers close them once their
+transaction commits, through the closer the registry joined, and the
+revocation guard on that closer repeats the close when the audit row is
+announced. What each revocation closes — a logout or `session_revoke` only
+that session's streams, the account-wide events every stream of the account
+— is the table in ./security.md §Closing on Revocation. For lower-level
+control, adapt an `SseRegistry` with `create_sse_connection_closer(registry,
+required_role)` and add it to the closer.
 
 **Event specs** declare SSE event types with `EventSpec` (its `params` a
 `@fuzdev/fuz_schema` schema) for surface introspection
@@ -811,8 +678,10 @@ export const all_thing_action_specs: Array<RequestResponseActionSpec> = [thing_c
 ```
 
 Handlers live inside a factory that binds deps (log, DB-adjacent capabilities,
-mutable app state) via closure — no per-handler injection boilerplate. The
-factory returns `{spec, handler}` tuples for `create_rpc_endpoint`:
+mutable app state) via closure — no per-handler injection boilerplate, the way
+`create_admin_actions` / `create_account_actions` do. The factory returns
+`{spec, handler}` tuples for an `RpcEndpointSpec`'s `actions` (or a
+`WsEndpointSpec`'s):
 
 ```typescript
 export interface ThingActionOptions {
@@ -858,9 +727,10 @@ export const create_thing_actions = (
 };
 ```
 
-Readers can read `.method` directly off a spec import at a call site (e.g. for
-driving an integration test through `rpc_call`) — no need to keep a parallel
-`*_METHOD` constant in sync.
+Read `.method` directly off a spec import at a call site (e.g. driving an
+integration test through `rpc_call`) — no parallel `*_METHOD` constant to keep
+in sync. A handler's per-request context is `ActionContext`, the same on HTTP
+RPC and WebSocket (its fields are the TSDoc in `actions/action_types.ts`).
 
 ## Deriving Event Specs from Action Specs
 
@@ -894,18 +764,19 @@ below, not as REST routes.
 
 ### Single JSON-RPC 2.0 Endpoint
 
-`create_rpc_endpoint` produces a single endpoint (GET + POST on the same path) with an internal dispatcher. Method name is in the JSON-RPC envelope (POST body or GET query string), not the URL.
+Each `rpc_endpoints` entry on `create_app_server` (§Server Assembly) is one
+JSON-RPC 2.0 endpoint — `GET` and `POST` on the same path, with an internal
+dispatcher; the method name is in the envelope, not the URL. The server
+mounts it, with its limiters and notification sender; consumers don't call
+`create_rpc_endpoint` (`src/lib/actions/CLAUDE.md` §Single JSON-RPC 2.0
+endpoint).
 
 ```typescript
-import { create_rpc_endpoint } from '@fuzdev/fuz_app/actions/action_rpc.ts';
-import type { RpcAction } from '@fuzdev/fuz_app/actions/action_types.ts';
-
 const actions: Array<RpcAction> = [
 	{
 		spec: thing_create_action, // RequestResponseActionSpec, side_effects: true
 		handler: async (input, ctx) => {
 			// input: validated {name: string} (from spec.input)
-			// ctx: {auth, db, pending_effects, log, notify, signal, ...}
 			const id = await create_thing(ctx.db, input.name);
 			return { id };
 		}
@@ -918,175 +789,111 @@ const actions: Array<RpcAction> = [
 	}
 ];
 
-// Compose with other route specs
-const route_specs = [
-	...create_rpc_endpoint({
-		path: '/api/rpc',
-		actions,
-		log,
-		// required: the per-action `rate_limit` budgets, `null` to turn one off
-		action_ip_rate_limiter,
-		action_account_rate_limiter,
-		// required: what handlers send notifications through (`noop_notification_sender` for none)
-		notification_sender: backend.deps.notification_sender
-	}),
-	...other_hand_written_specs
-];
+const server = await create_app_server({
+	// …other options…
+	rpc_endpoints: [{ path: '/api/rpc', actions }]
+});
 ```
 
 Key behaviors:
 
-- Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
-- POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
-- GET: `?method=...&id=...&params=...` for reads (`side_effects: false` only), answered with `Cache-Control: no-store`
-- Per-action auth inside dispatcher (route-level auth is `{account: 'none', actor: 'none'}`)
-- Per-action transaction scope (mutations get DB transaction, reads get pool)
-- Handler errors roll back the transaction — the catch sits outside the transaction boundary. Post-commit effects the handler queued via `emit_after_commit` are **discarded** on rollback (they run iff the transaction commits); eager `pending_effects` pool writes (audit attempts) survive rollback by design (see ./architecture.md §Fire-and-Forget Pending Effects)
-- All errors are JSON-RPC format: `{jsonrpc, id, error: {code, message, data?}}`
-- Errors: throw `jsonrpc_errors.not_found('thing')` — caught by the dispatcher
-- Input (`spec.input`) validated in DEV + production. Output (`spec.output`)
-  validated in DEV only — logs an error on mismatch, returns the response
-  unchanged. Same asymmetry as REST route specs. See ./architecture.md
-  §DEV-only Output Validation.
+- POST: a JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
+- GET: `?method=...&id=...&params=...` for reads (`side_effects: false` only),
+  answered with `Cache-Control: no-store`
+- Auth runs per action inside the dispatcher (the routes themselves are
+  `{account: 'none', actor: 'none'}`), so add `'POST /api/rpc'` to an
+  attack-surface suite's `public_mutation_allowlist` (./testing.md §Attack
+  Surface Tests)
+- A mutation runs in a transaction, a read on the pool. A handler error rolls
+  the transaction back, and the effects queued with `emit_after_commit` run
+  only once it commits (`src/lib/http/CLAUDE.md` §Pending Effects)
+- Errors are JSON-RPC: throw `jsonrpc_errors.not_found('thing')` and the
+  dispatcher answers `{jsonrpc, id, error: {code, message, data?}}`
 
-**Surface testing**: The route specs use `auth: {account: 'none', actor: 'none'}` because auth is per-action inside the dispatcher. The POST spec will be flagged by `assert_no_unexpected_public_mutations` — add the endpoint path to `public_mutation_allowlist`:
-
-```typescript
-assert_surface_security_policy(surface, {
-	public_mutation_allowlist: ['POST /api/rpc']
-});
-```
-
-Per-action auth and schemas are visible in `surface.rpc_endpoints`, not `surface.routes`.
-
-**Composable RPC test suites**: Two composable suites test RPC endpoints alongside REST route suites:
-
-```typescript
-import { describe_rpc_attack_surface_tests } from '@fuzdev/fuz_app/testing/rpc_attack_surface.ts';
-import { describe_rpc_round_trip_tests } from '@fuzdev/fuz_app/testing/rpc_round_trip.ts';
-
-// Attack surface tests (no DB) — same {build, roles} config as REST suite
-describe_rpc_attack_surface_tests({
-	build: create_my_app_surface_spec, // same build function as REST
-	roles: ['admin', 'keeper']
-});
-
-// Round-trip validation (DB-backed)
-describe_rpc_round_trip_tests({
-	session_options: my_session_config,
-	create_route_specs: my_route_specs,
-	rpc_endpoints: [my_rpc_endpoint_spec]
-});
-```
-
-The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-RPC error codes for wrong/missing credentials), adversarial envelopes (malformed JSON-RPC requests), and adversarial params (schema-invalid params per method). Both suites skip silently when `rpc_endpoints` is empty.
+The RPC test suites (`describe_rpc_attack_surface_tests`,
+`describe_rpc_round_trip_tests`) are in ./testing.md.
 
 ### WebSocket Endpoint
 
-`register_action_ws` mounts a JSON-RPC 2.0 WebSocket endpoint — one `GET` upgrade route guarded by the origin check, auth, token scope, actor resolution, and an optional role (the route-spec pipeline's guards, in its order; any method but `GET` or `HEAD` on the path is a 405 with `Allow`) — and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the revocation guard. Called directly:
+WebSocket endpoints are declared on `create_app_server`'s `ws_endpoints`
+(§Server Assembly), which mounts each — the upgrade route, guarded by the
+origin check, auth, token scope, actor resolution and an optional role, and
+per-message dispatch — and supplies the limiters, the origin default, the
+surface entry, and the closer and sender membership. `register_action_ws` is
+the primitive it mounts through (`src/lib/actions/CLAUDE.md`
+§`register_action_ws` — the endpoint); a test drives the dispatcher with
+`create_ws_test_harness` (`testing/ws_round_trip.ts`).
 
-```typescript
-import { register_action_ws } from '@fuzdev/fuz_app/actions/register_action_ws.ts';
-import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
-import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
+Spread `protocol_actions` from `actions/protocol.ts` into an endpoint's
+`actions` (an endpoint that omits `actions` gets them first): `heartbeat`,
+`cancel` and `peer/ping` complete disconnect detection, per-request cancel,
+and the server→client round trip. Nothing spreads them for you, so a custom
+heartbeat, cancel or ping replaces the default by leaving it out.
 
-const { registry } = register_action_ws({
-	path: '/api/ws',
-	app,
-	upgradeWebSocket, // from the runtime adapter (`@hono/bun`, or `@hono/node-server` on Node)
-	allowed_origins, // required — `validate_server_env`'s `allowed_origins`
-	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
-	actions: [...protocol_actions, ...my_actions],
-	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
-	connection_closer: backend.deps.connection_closer, // required — revocations close this endpoint's sockets
-	notification_sender: backend.deps.notification_sender, // required — handlers send through it
-	// required — share the RPC endpoint's instances; `null` turns one off
-	action_ip_rate_limiter,
-	action_account_rate_limiter,
-	log
-});
-```
+A socket is admitted only after its credential is re-read once the handshake
+completes, and a revocation closes it after its commit
+(./security.md §Connection Admission, §Closing on Revocation). On the client,
+`FrontendWebsocketClient` reacts to three closes:
 
-Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`, `peer/ping`) that complete disconnect detection, per-request cancel, and the server→client `peer/ping` round-trip. The bundle is not auto-spread by `register_action_ws`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel / peer/ping can replace the default by omitting it from the spread.
+- **`WS_CLOSE_PERMISSION_REVOKED`** — it stays closed until `connect()` is
+  called (a reconnect would be refused at the role gate), and rejects its
+  pending and queued requests with `forbidden`; `last_close_code` says why.
+- **`WS_CLOSE_CONNECTION_LIMIT`** — the account held more connections than the
+  endpoint's `max_connections_per_account` (`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`),
+  and this, its oldest, was closed to make room. The client doesn't reconnect
+  (that would close a newer socket in turn), and `superseded` is `true` until
+  the next `connect()`:
 
-Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `request_client`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `notification_sender`, `signal`); HTTP RPC and WebSocket handlers see the same shape (`connection_id` / `request_client` are populated on WS, `undefined` on HTTP). Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
+  ```svelte
+  {#if socket.superseded}
+  	<p>This connection was closed because the account has too many open.</p>
+  	<button type="button" onclick={() => socket.connect()}>reconnect</button>
+  {/if}
+  ```
 
-WS action handlers get the same validation contract as RPC and REST: input
-validated in DEV + production; output validated DEV-only, logging an error
-on mismatch without throwing. See ./architecture.md §DEV-only Output
-Validation.
-
-`notification_sender` is required and only read: handlers send through it, and a hand mount adds the endpoint's registry to it itself (`backend.deps.notification_sender.add(registry)`, keeping the remover) — `create_app_server` does that for every registry it mounts, so a notification reaches the account's sockets on each.
-
-`connection_closer` is required: the endpoint adds its registry to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation), as does the revocation guard. Left out of the closer, a registry's sockets would outlive a revoked credential. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a registry no revocation has to reach, or to add the registry yourself and hold the remover `RealtimeCloser.add` returns.
-
-Mounting by hand outside `create_app_server`, register the revocation guard yourself, over the closer holding your registries, to repeat those closes from the audit chain:
-
-```typescript
-import {
-	create_realtime_closer,
-	create_revocation_guard,
-	type AuditEventHandler
-} from '@fuzdev/fuz_app/actions/connection_closer.ts';
-
-const connection_closer = create_realtime_closer();
-const backend = await create_app_backend({
-	// ...
-	connection_closer,
-	audit_factory: ({ db, log }) => {
-		const guard = create_revocation_guard(connection_closer, log);
-		const on_audit_event: AuditEventHandler = (event) => {
-			guard(event);
-			// Add your own handlers (e.g. domain-specific cleanup) by appending more calls.
-		};
-		return create_audit_emitter({ db, log, on_audit_event });
-	}
-});
-```
-
-The guard closes by the `RevocationScope` each audit event declares
-(`audit_event_revocation_scopes`): one session for `session_revoke`, one token
-for `token_revoke`, and the whole account for `session_revoke_all`,
-`token_revoke_all`, `password_change`, `logout`, `account_delete`, and
-`account_purge`; and for `role_grant_revoke` of a global grant, the account's
-sockets on endpoints whose `required_roles` list the role, with
-`WS_CLOSE_PERMISSION_REVOKED` (a socket admitted by a role gate receives every
-push its endpoint sends, which no message dispatch re-checks), and the
-account's audit streams when the stream's role is the one revoked. It acts
-only on `outcome === 'success'` events, to avoid acting on attacker-controlled
-identifiers — see `create_revocation_guard` in `actions/connection_closer.ts`
-for the full rationale.
-
-A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked or an acting actor soft-deleted mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
-
-An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a connection registry. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_action_ws` / `WsEndpointSpec` for the registry the mount creates, or on your own `new ConnectionRegistry({max_connections_per_account})`; passing both the option and a `registry` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
-
-```svelte
-{#if socket.superseded}
-	<p>This connection was closed because the account has too many open.</p>
-	<button type="button" onclick={() => socket.connect()}>reconnect</button>
-{/if}
-```
-
-`socket_status_to_async_status` reads a superseded client as `initial`, the same as one that never connected. An app that connects on its own when its status reads `initial` — a wrapper that opens the socket on first send, say — must also check `superseded`, or it rebuilds the loop the close code exists to stop.
-
-See ./security.md §WebSocket Connection Cap.
-
-What the server has waiting to be written to one socket is held to a byte budget, `DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB): a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW` (4005, `outbound queue overflow`), and `FrontendWebsocketClient` reconnects under its ordinary backoff — re-read whatever state the client tracks when it does, since frames were lost. Pass `outbound_queue_bytes` to change the budget, in the same places as the connection cap; a handler that pushes a large burst at one client in a single synchronous run needs a budget that holds it (./security.md §Outbound Bounds).
-
-`register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
+  `socket_status_to_async_status` reads a superseded client as `initial`, so an
+  app that connects on its own when its status reads `initial` must also check
+  `superseded`, or it rebuilds the loop the close code exists to stop
+  (./security.md §WebSocket Connection Cap).
+- **`WS_CLOSE_OUTBOUND_OVERFLOW`** — the server had more waiting for the socket
+  than its `outbound_queue_bytes` budget (`DEFAULT_WS_OUTBOUND_QUEUE_BYTES`).
+  The client reconnects under its ordinary backoff; re-read whatever state it
+  tracks, since frames were lost. A handler that pushes a large burst at one
+  client in one synchronous run needs a budget that holds it (./security.md
+  §Outbound Bounds).
 
 ### Backend-initiated fan-out
 
-`ConnectionRegistry` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every admitted connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every admitted socket bound to one account (session, bearer, and daemon-token alike, mirroring an `account` close target) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection. A connection still pending admission receives nothing — see ./security.md §Connection Admission.
+`ConnectionRegistry` pushes from handlers or audit-event callbacks:
+`send_to_account(account_id, message)` to every admitted socket of one
+account, and `broadcast_filtered(message, predicate)` to every admitted
+connection whose `ConnectionIdentity` the predicate admits (a subscription
+ACL). The count either returns is bookkeeping, not a delivery receipt: a flow
+that needs durable delivery persists the event and hydrates from storage on
+reconnect.
 
-Handlers send through `ctx.notification_sender`, the narrow `NotificationSender` (`@fuzdev/fuz_app/actions/notification_sender.ts`) over every WS registry `create_app_server` mounts — no factory takes a sender. Offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoked` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. The notifications reach the surface through the WS endpoint: when its RPC list holds the role_grant_offer actions, `to_ws_actions` appends the handler-less `role_grant_offer_notification_actions`, so the endpoint lists them as `remote_notification` methods (the revokee's `role_grant_revoked` beside the admin's `role_grant_revoke` action, whose method it doesn't share), and an inbound frame for one is answered `method_not_found`. They are not SSE events: `role_grant_offer_notification_specs` holds them as `EventSpec`s only for a consumer that broadcasts them on an SSE channel of its own. Under DEV each params object is checked against its spec's `input` (./architecture.md §Fire-and-Forget Pending Effects); production sends unchecked.
-
-Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'account_deleted'` + `cause_id`, and goes to every live party to the superseded offer — its grantor and its recipient — but a removed account and an accept's own caller; on a removal, a recipient's `cause_id` is the offer's `from_actor_id`). `role_grant_revoked` carries `{role_grant_id, role, scope_kind, scope_id, reason}` — the grant's `scope_kind` and `scope_id`, both `null` for a global grant, and `reason` `null` when none was given — with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
+Handlers send through `ctx.notification_sender`, the `NotificationSender`
+over every WS registry the server mounts, from inside
+`emit_after_commit(ctx, fn)` (`@fuzdev/fuz_app/http/pending_effects.ts`), so a
+send fires only after the commit and never for a rolled-back change
+(`src/lib/http/CLAUDE.md` §Pending Effects). The role-grant-offer actions
+send their lifecycle notifications this way; when an endpoint's RPC list
+holds them, `to_ws_actions` lists the notifications on the endpoint as
+`remote_notification` methods. Their payloads are
+`src/lib/auth/CLAUDE.md` §WS notifications.
 
 ### Server→client requests
 
-Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of ActionPeer. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `ConnectionRegistry.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client _answers_ an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
+A WebSocket handler can **send a request to its own client and await the
+typed reply** with `ctx.request_client(method, params, {timeout_ms?})`. It is
+`undefined` on HTTP RPC, where there's no return socket — a handler depending
+on it should refuse, as `peer/ping` does with `peer_no_transport`. It
+returns a `PeerRequestOutcome` (`{ok: true, value}` or `{ok: false, error}`)
+and never throws. `FrontendWebsocketTransport` answers `peer/ping` itself and
+routes any other inbound request through `peer.receive`. Correlation, the
+in-flight cap, the timeout, and the targeted
+`ConnectionRegistry.request_connection` are in `actions/peer_request.ts` and
+`src/lib/actions/CLAUDE.md` §`ConnectionRegistry`.
 
 ### Cooperating with `ctx.signal`
 
@@ -1123,16 +930,16 @@ for await (const chunk of stream) {
 }
 ```
 
-See `protocol_actions` (`@fuzdev/fuz_app/actions/protocol.ts`) for the
-canonical bundle and `heartbeat.ts` / `cancel.ts` / `peer_ping.ts` for the
-per-action wire format. The convention is symmetric: the same `ctx.signal`
-pattern applies to both HTTP RPC and WebSocket handlers.
+See `heartbeat.ts` / `cancel.ts` / `peer_ping.ts` in `actions/` for the
+per-action wire format.
 
 ## Typed Client Codegen
 
-Consumers that hand-write `src/lib/action_specs.ts` (a spec array) generate the typed surface `create_rpc_client` consumes from it. Under
-`gro gen`, each `.gen.ts` generator emits a sibling `.ts` — the committed
-artifact consumers import from. Canonical output:
+Consumers that hand-write `src/lib/action_specs.ts` (a spec array) generate the
+typed surface `create_rpc_client` consumes from it. Under `gro gen`, each
+`.gen.ts` generator emits a sibling `.ts` — the committed artifact consumers
+import from. The generators and their invariants are
+`src/lib/actions/CLAUDE.md` §Registry + codegen. The baseline output:
 
 - **`ActionInputs`** / **`ActionOutputs`** — method→`Infer<typeof spec.input|output>` maps, the parsed values handlers and receivers read (`action_collections.ts`)
 - **`ActionCallInputs`** — method→`InferInput<typeof spec.input>`, what a caller passes before the parse (a `with_default` field optional), which `FrontendActionsApi` and `BackendActionsApi` take (`action_collections.ts`)
@@ -1186,12 +993,10 @@ export const gen: Gen = ({ origin_path }) => {
 };
 ```
 
-`generate_frontend_actions_api` is the single source of truth for the
-per-method signature shape. It threads `options?:
-RpcClientCallOptions` (`{signal?, transport_name?, queue?}`) onto every
-async method — that's how `{signal}` reaches
-`FrontendWebsocketClient.request` via the typed Proxy, and how per-call
-transport selection and durable-queue opt-outs flow through.
+`generate_frontend_actions_api` threads `options?: RpcClientCallOptions`
+(`{signal?, transport_name?, queue?}`) onto every async method — how `{signal}`
+reaches `FrontendWebsocketClient.request` through the typed Proxy, and how
+per-call transport selection and durable-queue opt-outs flow through.
 
 Wire the generated surface into `create_rpc_client`:
 
@@ -1207,17 +1012,10 @@ const r = await api_result.thing_create({ name: 'foo' }, { signal: abort_control
 if (!r.ok) throw new Error(r.error.message);
 ```
 
-Pass `<FrontendActionsApi>` as the generic to skip the `as unknown as FrontendActionsApi`
-seam — the cast lives inside the helper. Pair with `create_throwing_api`
-when call sites want unwrapped values; or use `create_frontend_rpc_client`
-below to get both shapes from a single bundled factory.
-
-For a frontend-only consumer that just needs the typed Proxy plus the
-default HTTP transport, `create_frontend_rpc_client` bundles
-`ActionRegistry + Transports + ActionDispatcher + create_rpc_client +
-create_throwing_api` into one call. Both Proxy shapes are returned —
-`api` (throwing) and `api_result` (Result) — share the same underlying
-transport so call sites pick per-site at zero construction cost:
+Pair it with `create_throwing_api` when call sites want unwrapped values. For
+a frontend that just needs the typed Proxy over the default HTTP transport,
+`create_frontend_rpc_client` bundles the registry, transports, dispatcher and
+both Proxy shapes into one call:
 
 ```typescript
 import { create_frontend_rpc_client } from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
@@ -1232,24 +1030,17 @@ const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
 // rare branch: const r = await api_result.account_verify(); if (!r.ok) { … }
 ```
 
-`api` is the typed throwing Proxy — every method returns the unwrapped
-value or throws an `Error` carrying `{code, data}` from the JSON-RPC
-error. `api_result` is the typed Result-shaped Proxy — every method
-returns `Result<{value}, {error: JsonrpcErrorObject}>`. Result is the
-protocol primitive (no Error allocation, cheap inspect-error paths);
-throwing is the ergonomic wrapper. Pick per call site; both surfaces
-the same transport and types.
+`api` returns the unwrapped value or throws an `Error` carrying `{code, data}`
+from the JSON-RPC error; `api_result` returns `Result<{value}, {error:
+JsonrpcErrorObject}>`. Both share one transport; pick per call site.
 
 The HTTP transport sends a read (`side_effects: false`) as a `GET` — unless
-its input carries a sensitive value or its path and query exceed
-`max_get_url_length` (4096 by default), which go as `POST` — and the endpoint
-answers every `GET` with `Cache-Control: no-store`. A read's params ride in
-the URL, which proxies and server logs record, so tag a credential-like read
-input `meta(…, {sensitivity: 'secret'})`, or `'personal'` for personal data
-such as a search term about people, to keep it in a `POST` body. Pass `path`
-to override the default `/api/rpc`, `http_headers` for extra headers. A
-hand-built `FrontendHttpTransport` derives the same policy from the
-`lookup_action_spec` it is given; a method the lookup doesn't know is a `POST`.
+its input carries a sensitive value or its URL exceeds `max_get_url_length`,
+which go as `POST`. A read's params ride in the URL, which proxies and server
+logs record, so tag a credential-like read input `meta(…, {sensitivity:
+'secret'})`, or `'personal'` for personal data such as a search term about
+people, to keep it in a `POST` body. Pass `path` to override the default
+`/api/rpc`, `http_headers` for extra headers.
 
 Pass `ws` for a WebSocket lane: you build the client, and every
 `request_response` method routes to it, with HTTP as the fallback while it is
@@ -1272,25 +1063,13 @@ const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
 socket.connect();
 ```
 
-Pass `transport_for_method` for other per-method routing, or `transports` to
-replace the built-in transports entirely.
-
-Pass `on_action_event` for zzz-style consumers that observe every
-dispatched `ActionEvent` through a reactive Cell (`add_from_json` +
-`listen_to_action_event`). The returned `peer` and `environment` are
-exposed for advanced consumers that need to register more transports
-or attach a notification handler registry.
-
-**Extending the baseline with phase-typed handlers.** Consumers building
-event-phase-aware UIs (observable `ActionEvent` transitions, phase-typed
-handler slots) add `generate_action_event_datas` to
-`action_collections.gen.ts`, which emits an `ActionEventDatas` map
-(method→typed-data union), and a `frontend_action_types.gen.ts` that calls
-`generate_typed_action_event_alias` and `generate_frontend_action_handlers`
-(which wraps `generate_phase_handlers`) to narrow `ActionEvent` via that map.
-zzz is the reference. Skip this tier unless the UI consumes the
-`ActionEvent` state machine directly — the baseline generators above are
-enough for typed `app.api.X(input, options?)` calls.
+Pass `transport_for_method` for other per-method routing, `transports` to
+replace the built-in transports, or `on_action_event` to observe every
+dispatched `ActionEvent` (zzz's reactive Cells). A UI built on the
+`ActionEvent` state machine adds the phase-typed generators
+(`generate_action_event_datas`, `generate_typed_action_event_alias`,
+`generate_frontend_action_handlers`); zzz is the reference, and the baseline
+above is enough for typed `app.api.X(input, options?)` calls.
 
 ## Client-authoritative vs server-authoritative dispatch
 
@@ -1307,9 +1086,8 @@ the right behavior is when the socket is temporarily disconnected.
 - **Client-authoritative**: the client has already committed to the
   action (a click, a key press, a gameplay input) and the server is the
   replica that needs to catch up. Dropping the call silently is worse
-  than replaying it when the socket reopens. Durable replay is the
-  happy path; the client's durable queue buffers while disconnected
-  and flushes on reconnect.
+  than replaying it when the socket reopens; the client's durable queue
+  buffers while disconnected and flushes on reconnect.
 
 Flip the default per peer via `ActionDispatcher.default_send_options`, then
 override per-call for exceptions:
@@ -1330,19 +1108,11 @@ const peer = new ActionDispatcher({
 await app.api.move(input, { queue: false });
 ```
 
-The typed Proxy method signature (generated by
-`generate_frontend_actions_api`) threads `queue` alongside
-`signal` / `transport_name` in `RpcClientCallOptions`. The flag bottoms
-out in `FrontendWebsocketTransport`; `FrontendHttpTransport` and the
-backend connection registry ignore it because their underlying sends don't have
-a comparable queue semantic.
-
-`remote_notification` dispatch ignores `queue` and always fails fast
-when the WS is down. `FrontendWebsocketClient.send()` is fire-and-forget
-with no queue semantic, so buffering it would silently lose messages
-while reporting `{ok: true}` at the rpc_client layer — the fail-fast
-path surfaces the drop as `service_unavailable` instead. The queue
-option governs only `request_response` dispatch.
+The flag bottoms out in `FrontendWebsocketTransport`; the HTTP transport and
+the backend connection registry ignore it. It governs only
+`request_response` dispatch: a `remote_notification` always fails fast with
+`service_unavailable` when the WS is down, since its send has no queue and
+buffering it would lose messages while reporting `{ok: true}`.
 
 ## Role grant offer UI
 
@@ -1429,7 +1199,7 @@ by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`), takes a
 scope as the `scope_kind` + `scope_id` pair (or neither, for a global offer),
 and surfaces the RPC error reasons
 (`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`, `role_grant_builtin_scoped`, `role_grant_offer_actor_account_mismatch`, `role_grant_offer_actor_mismatch`)
-distinctly. `RoleGrantOfferHistory` is backed by the new
+distinctly. `RoleGrantOfferHistory` is backed by the
 `role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.
 
@@ -1442,43 +1212,41 @@ silently.
 
 The admin components (`AdminAccounts`, `AdminSessions`, `AdminInvites`,
 `AdminSettings`, `AdminAuditLog`, `AdminRoleGrantHistory`, `AdminOverview`,
-`OpenSignupToggle`) consume four RPC adapters — `AdminAccountsRpc`
+`OpenSignupToggle`) consume the admin RPC adapters — `AdminAccountsRpc`
 (shared by accounts + sessions), `AdminInvitesRpc`, `AuditLogRpc`, and
 `AppSettingsRpc` — through Svelte context, not props. Each state
 module exports a matching `*_rpc_context`; the provisioner (typically
-the admin route shell) adapts the typed RPC client once and calls
-`context.set(() => rpc)` at the shell level. Consumers just mount the
-components:
-
-The shortest path is the `create_admin_rpc_adapters` +
-`provide_admin_rpc_contexts` helper pair. Pass the typed throwing Proxy
-returned by `create_frontend_rpc_client` directly — `Result` is unwrapped
-on every call (preserving `error.data.reason` for form components that
-match on `ERROR_*` constants):
+the admin route shell) adapts the typed RPC client once and sets every
+context. The shortest path is the `create_admin_rpc_adapters` +
+`provide_admin_rpc_contexts` pair, given the typed throwing Proxy from
+`create_frontend_rpc_client` (each call unwraps its `Result`, keeping
+`error.data.reason` for form components that match on `ERROR_*` constants):
 
 ```svelte
 <!-- +layout.svelte for /admin (provisioner) -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import {
 		create_admin_rpc_adapters,
 		provide_admin_rpc_contexts
 	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.ts';
 
-	// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.
-	// One line wires all four admin RPC contexts.
+	const { children }: { children: Snippet } = $props();
+
+	// `api` is the typed throwing Proxy from `create_frontend_rpc_client`;
+	// one call wires every admin RPC context.
 	provide_admin_rpc_contexts(create_admin_rpc_adapters(api));
 </script>
 
-<slot />
+{@render children()}
 ```
 
 The method-name mapping is documented on `create_admin_rpc_adapters`
 itself — `create_role_grant` → `role_grant_offer_create`, `retract_offer` →
-`role_grant_offer_retract`, etc. Consumers that need to override the mapping
-(e.g. a scoped `create_role_grant` that needs a `scope_id` on every call) can
-build the four `*Rpc` objects by hand and pass them directly to
-`provide_admin_rpc_contexts` — the contexts accept any object matching
-the narrow interfaces.
+`role_grant_offer_retract`, etc. A consumer that needs another mapping (a
+scoped `create_role_grant` that needs a `scope_id` on every call) builds the
+`*Rpc` objects by hand and passes them to `provide_admin_rpc_contexts`.
+Consumers then just mount the components:
 
 ```svelte
 <!-- /admin/accounts/+page.svelte -->
@@ -1512,10 +1280,10 @@ admin UI to an account the server refuses. For a scoped check, read
 `auth.active_role_grants` by `scope_id`. The gate shapes the UI; the admin
 actions stay role-gated server-side.
 
-The accessor pattern — context holds `() => Rpc | null`, not the rpc
-directly — lets the provisioner swap the adapter reactively (e.g. on
-auth-state change) without components resubscribing. Inside
-components the canonical shape is:
+Each context holds an accessor, `() => Rpc`, not the rpc itself, so the
+provisioner can swap the adapter reactively (on an auth-state change) without
+components resubscribing. `get()` throws when no provisioner ran above the
+component — the adapter is required. Inside a component:
 
 ```ts
 const get_rpc = admin_accounts_rpc_context.get();
@@ -1524,49 +1292,7 @@ const admin_accounts = new AdminAccountsState({ get_rpc });
 const rpc = $derived(get_rpc());
 ```
 
-Unset context falls back to `() => null`, so components mounted
-outside a provisioner surface the "rpc adapter not wired" path
-instead of throwing. `has_rpc` on each state class reports the
-realized state.
-
-**Known friction — "just call it `rpc`" doesn't compose.** Inside a
-single-domain component the local `const rpc = $derived(get_rpc())` is
-natural. But in a component that consumes two or more domains (see
-`AdminOverview.svelte`, which pulls all four contexts), the short name
-`rpc` collapses and the locals have to regain their domain qualifier —
-`get_accounts_rpc`, `get_invites_rpc`, and so on. The prop-threading
-noise migrated from `$props()` to local bindings; it didn't disappear.
-
-The reference shape for app-wide composition is zzz's `frontend_context`
-(see ~/dev/zzz/src/lib/frontend.svelte.ts):
-
-```ts
-// zzz declares one context holding the whole app cell.
-export const frontend_context = create_context<Frontend>();
-
-export class Frontend extends Cell<typeof FrontendJson> {
-	readonly api: FrontendActionsApi; // Proxy-typed client from `create_rpc_client`
-	readonly peer: ActionDispatcher;
-	readonly action_registry: ActionRegistry;
-	// …plus domain cells: models, chats, threads, providers, diskfiles, etc.
-}
-
-// consumer call sites read cleanly — qualifier comes from `app`, not the local:
-const app = frontend_context.get();
-await app.api.provider_update_api_key({ provider_name, api_key: '…' });
-```
-
-Every action method lives on `app.api.*` — no per-domain adapter type
-has to be threaded into individual components, and the method namespace
-is the source of truth. fuz_app's per-domain contexts fragment that
-namespace because the library currently has no place to declare a
-composed `ClientApi` that spans its own action domains. Whether fuz_app
-should own a sealed `ClientApi` alias composing the per-domain `*Rpc`
-types, or whether consumers should stitch their own app-level surface
-(importing the `*Rpc` types but composing freely), is an open design
-question. Do not paper over the friction by renaming contexts to a
-single `rpc_context` — the per-domain split is load-bearing for narrow
-test stubs and the `has_rpc` gate per state class.
+The per-domain contexts keep each component's test stub narrow.
 
 ## Cell data layer
 
@@ -1581,7 +1307,10 @@ its `data`.
 
 Cells are **opt-in** — they are not part of `create_standard_rpc_actions`.
 A consumer that wants them registers the migration namespace and mounts the
-action factories explicitly.
+action factories explicitly. The verbs' semantics, the hooks, and the
+authorization tiers are the TSDoc of `auth/cell_actions.ts` and
+`auth/cell_grant_actions.ts`, and the action descriptions in
+`auth/cell_action_specs.ts`.
 
 ### Migration
 
@@ -1598,13 +1327,13 @@ const backend = await create_app_backend({
 ```
 
 `CELL_MIGRATION_NS` (namespace `fuz_cell`) creates `cell`, `cell_grant`,
-`cell_field`, and `cell_item`. It FKs into the `actor` table, so it must follow
-the builtin auth namespace.
+`cell_field`, and `cell_item`. It FKs into the `actor` table, which the
+builtin auth namespace, always run first, creates.
 
 ### Action surface
 
-Seventeen generic verbs, aggregated under one cell namespace so codegen and
-UI see a single surface. Mount the full layer with `create_all_cell_actions`
+The generic verbs are aggregated under one cell namespace, so codegen and UI
+see a single surface. Mount the full layer with `create_all_cell_actions`
 into an RPC endpoint's `actions`:
 
 ```typescript
@@ -1613,7 +1342,7 @@ import { create_all_cell_actions } from '@fuzdev/fuz_app/auth/all_cell_actions.t
 const cell_rpc_actions = create_all_cell_actions({ log, audit, validate_data }, { roles });
 ```
 
-`create_all_cell_actions` bundles the five underlying factories
+`create_all_cell_actions` bundles the underlying factories
 (`create_cell_actions` + `cell_grant` / `cell_field` / `cell_item` /
 `cell_audit`) so an HTTP-RPC mount and a WS mount can't diverge on which verbs
 they expose. Compose those factories individually only for a deliberately
@@ -1626,139 +1355,42 @@ partial surface.
 - Items — `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list`
 - Audit — `cell_audit_list`
 
-`cell_field_list` and `cell_item_list` return a page in either direction: up
-to `limit` edges whose other end the caller can view, the view check applied
-before the limit. `limit` defaults to 50 (`CELL_RELATION_LIST_LIMIT_DEFAULT`)
-and caps at 500; the forward lists page on with `name_after` /
-`position_after`, and the reverse lists (`target_id` / `child_id`) have no
-cursor.
-
 For typed-client codegen, the matching specs are aggregated as
 `all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.ts`.
 
-A cell's `kind` is a **top-level field** (`cell.kind` column), not a `data`
-field — it is the write-once capability/identity axis, set at create and
-immutable after (`cell_update` carries no `kind`; a stray `kind` inside `data`
-is rejected `invalid_params` / `cell_kind_in_data`). It is a non-empty tag or
-absent (`null` = typeless cell) — an empty `kind` is rejected
-`invalid_params` / `cell_kind_empty`, so `kind` is always `null` or a non-empty
-string. Content stays duck-typed in `data`.
+A cell's `kind` is a top-level, write-once field (`null` for a typeless cell),
+not part of `data`. The app shapes the layer through optional hooks on the
+factories' deps, each a TSDoc'd type:
 
-`create_cell_actions` takes two optional hooks on its deps:
+- `validate_data(kind, data)` — a per-kind **shape** check on every incoming
+  `data`; it accepts or throws, never rewrites. Omitted, payloads pass
+  unchecked.
+- `authorize_create` (`CellCreateAuthorize`) — a parent-aware gate on
+  `cell_create`, for roots and contributions alike, folding the moderation
+  outcome (born `pending` or `approved`); its `validate_policy` accepts or
+  refuses a root's contribution `policy`. Omitted, create is open and every
+  policy write is refused.
+- `authorize_grant_create` (`CellGrantCreateAuthorize`) — narrows a manager's
+  sharing; it can't widen it.
+- `authorize_grant_revoke` (`CellGrantRevokeAuthorize`) — lets a scope's
+  steward revoke a role-shaped grant shared into the scope.
 
-- `validate_data(kind, data)` — a per-kind **shape** hook; runs on every
-  incoming `data` payload with the cell's `kind` — the input's on create, the
-  existing cell's on update (`kind` is write-once), the source's on each cloned
-  row (on the merged data). It accepts or throws, never rewrites: the handler
-  stores the caller's `data` as sent. A thrown `SchemaError` surfaces as `invalid_params` (`-32602`). Omit to pass payloads through unchecked.
-- `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`),
-  an object of two members. `authorize(auth, {kind, data, parent_id, parent_kind,
-root_id, root_policy}, ctx) => CellCreateVerdict | Promise<CellCreateVerdict>`,
-  where a verdict is `{allow: false}` or `{allow: true, moderation_required}`,
-  runs in `cell_create`
-  after `validate_data` and after the handler resolves the directory tree
-  (`parent_id` → the governing `root_id`, **404**-masking a hidden parent; a
-  missing or soft-deleted root is the same **404** `cell_not_found`, with or
-  without an authorizer mounted). It
-  gates both roots and contributions; a `{allow: false}` for a **viewable**
-  parent / a root creation is **403** `cell_create_forbidden` (the 404 mask is
-  reserved for the hidden-parent case). An `{allow: true}` folds the moderation
-  outcome — `moderation_required: true` → born `pending` + private; `false` →
-  born `approved` at the author's visibility. A directory policy reads the
-  governing root's policy off the handler-supplied `root_policy`, and checks
-  the parent → child edge against `parent_kind` (the parent's `kind`, `null`
-  for a root or a typeless parent), no DB read needed; one needing more reads through `ctx.db`, the request transaction —
-  read-only, which nothing enforces. `validate_policy(policy)` accepts or refuses a root
-  policy before it is written (below); omitted, every policy is refused. Omit
-  the whole gate for open create. The companion `cell_moderate` verb
-  transitions a `pending` contribution (`approved | rejected`), gated on
-  `can_manage` of the governing root — not the contribution, so the author can't
-  self-approve. Approval needs a pending contribution; rejection a pending or
-  approved one (a moderator takes an approved contribution down — it keeps its
-  visibility, hidden by the marker). Any other transition (approving a decided
-  or never-moderated contribution, rejecting a rejected or never-moderated one)
-  answers 400 `cell_not_pending`. The root's manager reads what they moderate through the
-  steward arm (below), so a non-admin root owner reaches the queue and the
-  verb.
-
-A root's contribution policy is its `policy` column — a JSON object the spine
-stores without reading, `null` on every cell with a parent (a table CHECK), and
-readable on `CellJson` by anyone who can view the root. It is never `data`: an
-editor grant can rewrite `data`, and the policy decides who may contribute.
-
-- **Set at create** — `cell_create`'s `policy`, on a root only (beside a
-  `parent_id`: 400 `cell_policy_root_only`).
-- **Changed by `cell_policy_set`** `{cell_id, policy}` (`null` clears) — the
-  404 mask for a caller who can't view the cell, 403
-  `cell_policy_manage_only` for one who can but doesn't manage it (an editor
-  grant included), 400 `cell_policy_root_only` on a contribution. Audited as
-  `cell_policy_set` with the policy written and the one it replaced.
-- **Validated by the authorizer** — every non-null policy passes
-  `authorize_create.validate_policy`, which throws (conventionally
-  `invalid_params` with `cell_policy_invalid`) for one it can't interpret; with
-  no authorizer, or one without `validate_policy`, the write is 400
-  `cell_policy_unsupported`. Clearing needs no authorizer.
-- **A clone is born without one** — cloning a root never copies its governance
-  onto a cell the cloner owns.
-
-`create_cell_grant_actions` takes `roles` (a `create_role_registry()` result) so
-role-shaped grants validate against the app's role vocabulary, and an optional
-`authorize_grant_create` (`CellGrantCreateAuthorize`): `(auth, {cell_id,
-cell_created_by, level, principal}, ctx) => boolean | Promise<boolean>`, asked of a
-manager's `cell_grant_create` after the spine's own gates (the 404 mask, the
-moderation admission, the role registry) and before the write — a level change
-included. `false` is 403 `cell_grant_not_authorized`, writing no grant and no
-audit row. It narrows sharing; it can't widen it.
-
-An optional `authorize_grant_revoke` (`CellGrantRevokeAuthorize`): `(auth,
-{grant_id, cell_id, cell_created_by, role, scope_id, level}, ctx) => boolean |
-Promise<boolean>` widens `cell_grant_revoke` to a scope's steward — the
-role-shaped twin of self-revoke, since a role-shaped grant's grantee is the
-scope (a teacher removing a cell shared into their classroom). It is fenced:
-asked only when the caller neither manages the cell nor holds the grant, and
-only for a role-shaped grant with a non-null `scope_id`, so an actor-shaped
-grant or a scopeless role grant never reaches it, and a soft-deleted cell 404s
-first. `true` revokes as a manager would, the `cell_grant_revoke` audit row
-stamped `steward: true`, its delete matching the level the callback saw (a
-level change in between answers the 404); `false` is the same 404
-`cell_grant_not_found` mask as no hook. A callback needing the database reads
-through `ctx.db`, the request transaction, and only reads.
-`create_all_cell_actions` passes all three on from its deps.
+`create_cell_grant_actions` also takes `roles` (a `create_role_registry()`
+result), so role-shaped grants validate against the app's role vocabulary.
+`create_all_cell_actions` passes every hook on from its deps.
 
 ### Authorization model
 
-Access control is pure predicates over `(auth, cell, grants)` — no DB I/O.
-Owner is the `cell.created_by` actor. Three tiers:
-
-- **`can_view_cell`** — admin, or owner, or `visibility === 'public'`
-  (admits an unauthenticated reader), or any `viewer`+ grant. The public and
-  grant arms also require the cell's `moderation` to admit an audience —
-  unmoderated or `approved` (an allowlist, `db/cell_moderation.ts`) — so a
-  pending or rejected contribution is readable by its author and admins alone,
-  whatever its visibility or grants. `cell_list` applies the same rule in SQL.
-- **`can_steward_cell`** — the governing root's manager (global admin or root
-  owner) reading a `pending` or `rejected` contribution under a live root.
-  A separate arm, composed only where a moderator works: `cell_get`,
-  `cell_moderate`, the cell-scoped fact route, and `cell_list` (so
-  `cell_list({root_id, moderation: 'pending'})` is the root owner's queue).
-  Clone, contribution parents, relation reads, `shared_with: 'me'`, and the
-  grant paths keep `can_view_cell` alone (`auth/cell_steward.ts`).
-- **`can_edit_cell`** — owner, admin, or an `editor` grant. A
-  system-origin cell (`created_by === null`) is never editable by a
-  non-admin, even with an editor grant. The `editor` grant arm requires the
-  same moderation admission as `can_view_cell`, so a grant made while a
-  contribution was approved admits no write once it is rejected.
-- **`can_manage_cell`** — `admin || owner`, not delegable. Gates
-  `visibility` writes, all grant management, and the per-cell audit
-  timeline.
-
-Reads are strict and IDOR-masking: a miss and an unauthorized read both
-return `cell_not_found` so private cells don't leak existence. Relation
-reads (the `cell_get` bundle and the forward/reverse field/item lists)
-filter targets by visibility, so a caller who can view a parent can't
-enumerate hidden children through relation edges. `path` writes are
-admin-only; visibility writes require the manage tier — both deliberately
-return `403` rather than the masking `404`.
+Access control is pure predicates over `(auth, cell, grants)` — no DB I/O —
+in tiers: `can_view_cell` (admin, owner, `public`, or a `viewer`+ grant, the
+last two only for an unmoderated or approved cell), `can_steward_cell` (the
+governing root's manager reading a pending or rejected contribution),
+`can_edit_cell` (owner, admin, or an `editor` grant), and `can_manage_cell`
+(admin or owner, not delegable). Reads are IDOR-masking: a miss and an
+unauthorized read both answer `cell_not_found`, and relation reads filter
+targets by visibility, so hidden children can't be enumerated through edges.
+`path` writes are admin-only and visibility writes need the manage tier — both
+answer `403`, not the masking `404`.
 
 ## Fact store
 
@@ -1768,16 +1400,16 @@ stored embedded in Postgres; large ones are written to a sharded filesystem
 tree and referenced. Cells point into facts — every string value in a cell's
 `data` that is exactly a fact hash (`blake3:` plus 64 lowercase hex, never a
 substring of a longer string) is derived into `cell.refs`, which is how binary
-content (images, documents, snapshots) attaches to cells. A non-admin cell
-write may add a ref only to a fact its acting actor holds — see "Holders"
-below.
+content (images, documents, snapshots) attaches to cells.
 
 The generic store interface lives in `@fuzdev/fuz_util/fact_store.ts`
 (`FactStore`: `put` / `put_stream` / `get` / `has` / `get_meta` / `get_refs` /
 `delete`). fuz_app ships `PgFactStore` (implementing `HeldFactStore` —
 `FactStore`'s reads plus puts that take a required `holder`,
 `HeldFactPutOptions`), plus the HTTP serving plumbing; facts are **opt-in** — a
-consumer wires them at backend assembly.
+consumer wires them at backend assembly. The store's rules are
+`src/lib/db/CLAUDE.md` §Fact layer; serving's are ./security.md §Fact Access
+Control.
 
 ### Migration
 
@@ -1807,38 +1439,22 @@ const fact_store = new PgFactStore({
 deps.fact_store = fact_store;
 ```
 
-`put(bytes, {holder})` is idempotent (same bytes → same hash → one row) and routes by
-size: content at or under `embedded_threshold` is stored in Postgres; larger
-content is written to the disk CAS (a temp file, fsynced, then renamed into the
-shard tree, over any file already there, so a repeat put heals a corrupt one)
-and its row records a `file:<shard>/<rest>` URL.
-`put_stream(stream, max_bytes, {holder})` does the same for an upload without buffering
-it, enforcing `max_bytes` as it reads, and returns the fact `hash` and `size`. A
-fact's own refs (`fact_ref`) are exactly the `refs` its put declares — the bytes
-are never scanned, whatever the `content_type`. Without `disk_root` and `fs` the store
-has nowhere to put content it cannot embed, and an oversize write throws
-(`put_stream` needs `fs` for a body of any size). Reads
-of disk-backed facts verify the hash and return `null` on mismatch. The disk CAS
-is the only place the store reads external bytes from — it makes no network
-request, and a row it cannot read from disk reads as `null`.
+`put(bytes, {holder})` is idempotent and routes by size: embedded at or under
+`embedded_threshold`, else the disk CAS. `put_stream(stream, max_bytes,
+{holder})` does the same for an upload without buffering it. Without
+`disk_root` and `fs` an oversize write throws (`put_stream` needs `fs` for a
+body of any size). Reads of disk-backed facts verify the hash and return
+`null` on a mismatch.
 
 ### Holders
 
-Every put names its `holder`: the acting actor of the request that carried the
-bytes (`ctx.auth.actor.id` in an upload handler), or `null` for a system put
-(seeds, server-side imports). A named holder gets a `fact_holder` row on every
-put — a put of bytes already stored included — in the transaction that writes
-the fact row; a repeat put refreshes the row's `created_at`, so the orphan-fact
-queries keep a fact any holder put within their cutoff window even when the fact
-row itself is old. A system put records no holder, so it refreshes no grace
-window. The cell verbs read those rows: a non-admin `cell_create`,
-`cell_update`, or `cell_clone` whose `data` introduces a ref its acting actor
-holds no row for is refused `403` with reason `cell_ref_not_held`, the same
-answer whether or not the fact is stored. Refs a cell already carries stay
-admitted through `cell_update`, and a clone carries its source's refs; a global
-admin is not gated. So an upload handler passes the uploader as `holder`, and a
-fact a system put stored is referenced through a cell an admin writes, or by an
-actor that puts the same bytes itself. See security.md §"Fact Access Control".
+Every put names its `holder`: the acting actor of the request that carried
+the bytes, or `null` for a system put (seeds, server-side imports). The cell
+verbs read those holder rows: a non-admin write whose `data` introduces a ref
+its acting actor holds no row for is refused `403` `cell_ref_not_held`. So an
+upload handler passes `holder: ctx.auth.actor.id`, and a fact a system put
+stored is referenced through a cell an admin writes, or by an actor that puts
+the same bytes itself.
 
 ### Serving facts
 
@@ -1865,34 +1481,14 @@ create_serve_cell_fact_route_spec(serve_options); // GET /api/cells/:cell_id/fac
 create_serve_fact_route_spec(serve_options); // GET /api/facts/:hash — admin only
 ```
 
-`GET /api/cells/:cell_id/facts/:hash` is the **per-reference read**: it admits
-the caller only when they can view the named cell (`can_view_cell`) and that
-cell references the hash — authz sits on the `(cell, hash)` edge, never unioned
-across the fact's other referrers, so identical bytes another owner publishes
-never expose your private reference. A missing fact, a missing or unviewable
-cell, and a cell that doesn't reference the hash all return the same `404` —
-fact existence never leaks. The bare-hash `GET /api/facts/:hash` is admin-only:
-an admin can already view every cell. Embedded facts stream from Postgres; external facts
-return an `X-Accel-Redirect` header in production (nginx serves the bytes) or
-stream from disk in dev/test. The redirect prefix is wrapped in a validated
-`XAccelConfig` (built via `create_x_accel_config`), which fails loud at boot
-unless the facts nginx `location` is `internal;` — a public facts location
-would serve any fact's bytes to anyone who guesses the path, bypassing every
-cell-visibility check — and a server-level `location ^~` carrying the fact
-hardening headers, since the location's own `add_header` set replaces the
-server-level one. Render them into the location with
-`fact_security_header_directives` (`server/fact_security_headers.ts`);
-security.md §Fact Access Control has the rules and an example block. The fact
-directory and the redirect prefix are the app's own env vars (extend
-`BaseServerEnv`); the spine reads neither, so an app that sets a prefix builds
-the `XAccelConfig` from it at boot.
-
-### Status
-
-The PG `FactStore`, `fact_ref`, serving, and cell integration are shipped.
-The `memo` table ships but **MemoStore** (computation caching) has no
-implementation yet, and orphan-fact GC has query helpers but no wired
-action. The Rust spine twins the fact layer (`fuz_fact`, `fuz_fact_serving`).
+`GET /api/cells/:cell_id/facts/:hash` admits the caller only when they can
+view the named cell and that cell references the hash, every refusal the same
+`404`; the bare-hash route is admin-only. Embedded facts stream from
+Postgres; external facts answer an `X-Accel-Redirect` in production (nginx
+serves the bytes) or stream from disk in dev and tests. The fact directory
+and the redirect prefix are the app's own env vars (extend `BaseServerEnv`);
+the spine reads neither. The nginx rules and an example block are
+./security.md §Fact Access Control.
 
 ## Dev Setup Tasks
 
@@ -1947,47 +1543,10 @@ A URL that isn't Postgres runs neither program: `file://` (PGlite) resets by
 removing the `pglite_data_dir` the caller names, and `memory://` has nothing
 to reset.
 
-On Debian, `createdb` and `dropdb` are links to the `pg_wrapper` script,
-which dispatches on the name it was run as. gro's spawn runs a script by the
-path it was found at from `@fuzdev/gro` 0.232.0; an earlier gro runs it as
-`pg_wrapper`, which exits 0 having done nothing.
-
 ## Testing with Database Factories
 
-```typescript
-import {
-	create_default_db_factory,
-	create_pg_factory,
-	type DbFactory
-} from '@fuzdev/fuz_app/testing/db.ts';
-import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
-import { AUTH_MIGRATION_NS } from '@fuzdev/fuz_app/auth/migrations.ts';
-
-const init_schema = async (db: Db) => {
-	await run_migrations(db, [AUTH_MIGRATION_NS]);
-};
-const factories: Array<DbFactory> = [
-	create_default_db_factory(init_schema),
-	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL)
-];
-
-for (const factory of factories) {
-	describe(factory.name, () => {
-		if (factory.skip) return; // skips pg when TEST_DATABASE_URL not set
-		let db: Db;
-		beforeEach(async () => {
-			db = await factory.create();
-		});
-		afterEach(async () => {
-			await factory.close();
-		});
-
-		test('creates a thing', async () => {
-			/* use db */
-		});
-	});
-}
-```
+The database factories (`create_default_db_factory`, `create_pg_factory`, …)
+and a `describe_db` fixture are ./testing.md §DB Fixture Setup.
 
 ## Origin Pattern Syntax
 
@@ -2010,32 +1569,20 @@ http://localhost:*
 https://example.com,https://*.example.com,http://localhost:*
 ```
 
-A wildcard admits pages the server doesn't serve, and it trusts them all, so
-one boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true` (exactly `true` or
-`false`, anything else fails the env schema). `validate_server_env` reads the
-flag into `allow_origin_wildcards`, which `create_app_server` takes: without
-it assembly throws, naming each wildcard entry and what it admits; with it
-each is logged at `warn` on every boot. `validate_server_env` refuses one
-without the flag too, so an env-driven server fails before its backend
-touches the database. A `ws_endpoints` spec's own `allowed_origins` gets the
-same check. `create_app_server` classifies only the matchers
-`parse_allowed_origins` built, and throws on any other matcher, flag or not.
-The Rust spine applies the same rule, in the same words.
+A wildcard admits pages the server doesn't serve, and trusts them all, so one
+boots only with `FUZ_ALLOW_ORIGIN_WILDCARDS=true`, and is logged at `warn` on
+every boot. `validate_server_env` reads the flag into `allow_origin_wildcards`,
+which the consumer passes to `create_app_server`; a `ws_endpoints` spec's own
+`allowed_origins` gets the same check. Nothing is normalized: an entry a
+browser would never send (a trailing slash, a path, a non-ASCII host, the
+scheme's default port, …) is refused at boot, and `validate_server_env`
+reports every refused entry. The full grammar, shared with the Rust spine's
+`AllowedOrigins::parse`, is in `http/origin.ts` (`parse_allowed_origins`'s
+TSDoc, `OriginPatternErrorKind`, `ALLOWED_ORIGINS_ERROR_MESSAGES`), pinned by
+`testing/cross_backend/origin_conformance.json`.
 
-Nothing is normalized. An entry a browser would never send is refused at boot,
-and `validate_server_env` reports every refused entry, not just the first: a
-blank value or a stray comma, a non-ASCII host (write its punycode), a scheme
-other than http or https (`null`, `file://`), a path or trailing slash,
-userinfo, a partial wildcard (`*foo.example.com`), an IPv4 address not written
-as four decimal numbers (`127.1`), an IPv6 address not in the form a browser
-sends (`[0:0:0:0:0:0:0:1]` — write `[::1]`), a port with leading zeros, and the
-scheme's default port (`https://example.com:443` — write it without the port).
-The Rust spine's `AllowedOrigins::parse` accepts and refuses the same entries;
-`testing/cross_backend/origin_conformance.json` is the shared table.
-
-Requests without an `Origin` header pass the origin check — direct
-curl/CLI access still works. An `Origin` that isn't visible ASCII, an empty
-one, or a repeated one, is refused. `verify_request_source` is Origin-only; the
-`Referer` header is not consulted. Bearer middleware separately treats
-`Referer` presence as a browser-context indicator and silently discards the
-bearer token — that's a different axis from origin allowlisting.
+Requests without an `Origin` header pass the origin check, so direct curl and
+CLI access still works; an empty or repeated `Origin` is refused. The
+`Referer` header is not consulted by the origin check — the bearer middleware
+separately treats an `Origin` or `Referer` as a browser context and discards
+the bearer token, a different axis from origin allowlisting.

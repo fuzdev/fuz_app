@@ -8,17 +8,39 @@ For consumer wiring (client-authoritative vs server-authoritative dispatch,
 role-grant-offer UI integration), see ../../../docs/usage.md §Deriving
 Event Specs from Action Specs, §Single JSON-RPC 2.0 Endpoint, §WebSocket Endpoint. For
 DEV-only output validation semantics see ../../../docs/architecture.md
-§DEV-only Output Validation. For the SAES binding matrix and middleware
-ordering see the root ../../../CLAUDE.md §Action Spec System (SAES) and
-§Middleware Ordering.
+§DEV-only Output Validation. For the phase order and middleware ordering see
+the root ../../../CLAUDE.md §Action Spec System (SAES) and §Middleware
+Ordering. The WS security properties (admission, the per-account cap, request
+and outbound bounds, closing on revocation) are ../../../docs/security.md's.
 
 **CLAUDE.md is a map; TSDoc is the detail.** Per-symbol semantics
-(parameters, options, lifecycle methods, narrowing rules) live on TSDoc next
-to the code. This file documents the cross-cutting invariants and the
-shapes that span multiple files.
+(parameters, options, defaults, lifecycle methods, narrowing rules) live on
+TSDoc next to the code. This file says what each module is, when to reach for
+it, and the cross-cutting rules a caller would miss.
 
 Every exported schema is a `@fuzdev/fuz_schema` schema paired with a
 same-named `Infer` type export. New schemas keep the pair invariant.
+
+## Module map
+
+- `action_spec.ts` — `ActionSpec`, its three kinds, `ActionSpecUnion`, the kind / initiator / phase enums
+- `action_types.ts` — the handler-side surface: `Action`, `RpcAction`, `ActionContext` and its narrowed tiers, the handler signatures, `HandlerForSpec`, `rpc_action`. Kept free of server-only imports so composable primitives (`heartbeat_action`) can name the types
+- `compile_action_registry.ts` — the registration checks both dispatchers run
+- `action_registry.ts`, `action_codegen.ts` — `ActionRegistry` and the codegen helpers
+- `action_rpc.ts` — `create_rpc_endpoint` (HTTP JSON-RPC), `RPC_GET_CACHE_CONTROL`, `RPC_GET_UNDECODABLE_QUERY_REASON`
+- `perform_action.ts` — the transport-agnostic dispatch core and `serialize_action_result`
+- `ws_endpoint_spec.ts` — `WsEndpointSpec`, `resolve_ws_endpoints`
+- `register_action_ws.ts` — the WS upgrade route; `ws_socket_session.ts` — one upgraded socket's events
+- `connection_registry.ts` — `ConnectionRegistry`; `ws_outbound_writer.ts` — one connection's outbound queue; `peer_request.ts` — server→client request correlation
+- `connection_closer.ts` — `ConnectionCloser`, `RealtimeCloser`, the revocation guard; `notification_sender.ts` — `NotificationSender`
+- `room_registry.ts`, `room_action_specs.ts`, `room_actions.ts`, `room_client.svelte.ts` — rooms
+- `protocol.ts`, `heartbeat.ts`, `cancel.ts`, `peer_ping.ts` — the protocol actions
+- `action_event_types.ts`, `action_event_data.ts`, `action_event_helpers.ts`, `action_event.ts`, `action_dispatcher.ts` — the event state machine
+- `transports.ts`, `transports_http.ts`, `transports_ws.ts` — `Transport`, the frontend transports, the WS close codes
+- `socket.svelte.ts` — `FrontendWebsocketClient`
+- `rpc_client.ts`, `frontend_rpc_client.ts` — the typed RPC clients
+- `broadcast_api.ts` — `create_broadcast_api`
+- `action_bridge.ts` — `create_action_event_spec`
 
 ## Action specs (`actions/action_spec.ts`)
 
@@ -26,11 +48,8 @@ Canonical source of truth. Specs are plain objects typed by TS interfaces
 (`ActionSpec` and its three kinds, `ActionSpecUnion`), written with
 `satisfies` so their literals survive; nothing parses a spec at runtime, so
 every required field is spelled — no defaults. `input` / `output` are a
-`@fuzdev/fuz_schema` schema (`AnySchema`). `ActionKind`,
-`ActionInitiator` and `ActionEventPhase` are fuz_schema `one_of`s
-(`ActionEventData` validates with them), built from the const lists `ACTION_KINDS`,
-`ACTION_INITIATORS` and `ACTION_EVENT_PHASES`; `is_action_spec` reads
-`ACTION_KINDS`. Three concrete kinds discriminate on `kind`:
+`@fuzdev/fuz_schema` schema (`AnySchema`). Three concrete kinds discriminate
+on `kind`:
 
 - `request_response` — `auth: RouteAuth` (non-null), `side_effects` arbitrary, `output` arbitrary, `async: true`.
 - `remote_notification` — `auth: null`, `side_effects: true`, `output` fuz_schema's void schema, `s.void`, `async: true`.
@@ -38,16 +57,13 @@ every required field is spelled — no defaults. `input` / `output` are a
 
 `RouteAuth` is the flat record
 `{account, actor, roles?, credential_types?, required_scope?}` from
-`http/auth_shape.ts` — same shape governs `RouteSpec.auth` so one auth
-surface drives routes and SAES. Cross-axis invariants: roles imply
-`actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no
-accountless actors in v1); the unrestricted leaf
-(`account: 'none', actor: 'none'`) cannot declare roles or credential
-gates — checked at registration time via `assert_route_auth_invariants`, on
-action and route specs alike (a spec is a plain object nothing parses). The
-biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`
-is enforced at registration time via `assert_route_auth_acting_biconditional`.
-`required_scope` is the one axis actions cannot use — see §Registry compile.
+`http/auth_shape.ts` — one auth shape drives routes and SAES. Its cross-axis
+invariants (roles imply `actor: 'required'`; `account: 'none'` implies
+`actor: 'none'`, no accountless actors; the unrestricted leaf declares no
+roles or credential gates) and the biconditional
+`actor !== 'none' ⟺ input declares acting?: ActingActor` are checked at
+registration (§Registry compile). `required_scope` is the one axis actions
+cannot use.
 
 Optional fields:
 
@@ -59,17 +75,15 @@ Optional fields:
   caught per-module by source-scanning unit tests (e.g.
   ../../test/auth/role_grant_offer_actions.error_reasons.test.ts).
 - `rate_limit?: 'ip' | 'account' | 'both'` — opts the action into the
-  dispatcher's per-action rate-limit hook. **Throttle-requests semantics**
-  — every invocation records regardless of outcome (different from REST
-  login's throttle-failures), and the gate fires ahead of param validation
-  so malformed calls are charged too. `'account'` / `'both'` rejected at
-  registration when paired with `auth.account !== 'required'`. Limiters configured via
-  `AppServerOptions.action_ip_rate_limiter` / `action_account_rate_limiter`
-  and threaded into both dispatchers automatically.
+  dispatcher's per-action rate limit. **Throttle-requests semantics**: every
+  invocation records regardless of outcome (unlike REST login's
+  throttle-failures), ahead of param validation so malformed calls are
+  charged too. The limiters are `AppServerOptions.action_ip_rate_limiter` /
+  `action_account_rate_limiter`, threaded into both dispatchers.
 
-Canonical spec shape: module-scope `satisfies` declaration with
-`{method}_action_spec` naming, preserving the literal `method` type and
-dropping per-spec `*_METHOD` constants (readers dereference `.method`). See
+Canonical spec shape: module-scope `satisfies` declaration named
+`{method}_action_spec`, preserving the literal `method` type (readers
+dereference `.method`; no `*_METHOD` constants). See
 ../../../docs/usage.md §Canonical action-spec shape.
 
 ## Kind → binding matrix
@@ -101,530 +115,251 @@ registry-only.
 
 ## Registry + codegen (`actions/action_registry.ts`, `actions/action_codegen.ts`)
 
-**Symmetric design — universal calling abstraction.** SAES is one spec
-shape driving dispatch across (a) network boundaries (frontend ⇄ backend
-over HTTP / WS) and (b) within the same runtime (`local_call` actions).
-`ActionDispatcher` is symmetric on both sides (`send` + `receive`). Typed
-surfaces are paired: `FrontendActionsApi` is "what the frontend can call"
-(typed Proxy from `create_rpc_client`); `BackendActionsApi` is "what the
-backend can call" (typed object from `create_broadcast_api` today;
-broader runtime constructors will join). Remaining asymmetry:
-`create_broadcast_api` returns `Promise<void>` while `FrontendActionsApi`
-methods return `Promise<Result<...>>`. Closing those gaps is on the
-deferred follow-up set from the SAES RPC closeout work
-— wait for a second backend runtime case.
+This is the home of the codegen docs; signatures and options are on each
+function's TSDoc. The typed surfaces come in pairs: `FrontendActionsApi`
+(what the frontend can call, the typed Proxy from `create_rpc_client`) and
+`BackendActionsApi` (what the backend can call, from `create_broadcast_api`).
 
-### `ActionRegistry`
+`ActionRegistry` is a query/filter wrapper over `ActionSpecUnion[]`. The
+getter groups codegen reads (each pairs `_specs` with `_methods`): kind-narrow
+(the `*ActionMethod` enums), `*_handled` (`BackendActionHandlers`),
+`specs_relevant_to_*` (the typed-Proxy method enums), and `broadcast`
+(`remote_notification`, not frontend-initiated, streams excluded —
+`BackendActionsApi`).
 
-Query/filter wrapper over `ActionSpecUnion[]`. Codegen-relevant getter
-groups (each pairs `_specs` with matching `_methods`):
+The helpers, used by consumer `*.gen.ts` producers, not the runtime:
+`ImportBuilder`, `compose_gen_file`, `create_namespace_qualifier`, and a
+`generate_*` per emitted block — `generate_action_method_enums`,
+`generate_action_specs_record`, `generate_action_inputs_outputs`,
+`generate_frontend_actions_api`, `generate_backend_actions_api`,
+`generate_action_event_datas`, `generate_typed_action_event_alias`,
+`generate_phase_handlers`, `generate_frontend_action_handlers`. The default
+paths are `DEFAULT_COLLECTIONS_PATH` and siblings.
 
-- Kind-narrow — filter by `kind`; drives `*ActionMethod` enums.
-- `*_handled` — `request_response` + handler-side initiator; drives `BackendActionHandlers` map.
-- `specs_relevant_to_*` — everything the side might encounter; drives typed-Proxy method enums.
-- `broadcast` — `remote_notification`, `initiator !== 'frontend'`, excludes streams; drives `BackendActionsApi` interface.
-- `backend_initiated` — forward-looking kind-agnostic broadcast; same content today.
+The rules a consumer acts on:
 
-Other getters (auth filters, initiator-direction filters) are pre-built API
-surface unused by codegen today.
-
-### Codegen helpers (`actions/action_codegen.ts`)
-
-Used by consumer `*.gen.ts` producers, not the runtime. Detailed signatures
-and options on each function's TSDoc.
-
-- `ImportBuilder` — class managing value/type/namespace imports; auto-tree-shakes type-only.
-- `get_executor_phases(spec, executor)` — phases an executor participates in for the spec.
-- `get_handler_return_type` — TS type a phase handler must return; side-effect imports `ActionOutputs`.
-- `generate_phase_handlers` — per-action typed handler-map fragment.
-- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface. A void or null input (`is_void_schema`, `is_null_schema`) emits `input?: void`; otherwise each method's `input?:` follows `action_input_is_optional` (by `parse`) — the schema accepts `undefined`, or accepts `{}` and is not marked `meta(…, {empty_input_handler_guarded: true})` (read by `is_empty_input_handler_guarded` in `schema_meta.ts` — set on `cell_get`, `cell_field_list` and `cell_item_list`, whose `{}` reaches a handler guard that refuses it with a declared reason, so their input stays required; a consumer marks its own the same way); an input-shape invariant test reads the same rule. Each input is typed `ActionCallInputs[method]`, the schema's input type — what a caller passes before the parse, so a `with_default` field is optional at the call.
-- `generate_action_method_enums` — up to nine `@fuzdev/fuz_schema` `one_of` + `Infer` pairs, importing `{one_of, type Infer}` from `@fuzdev/fuz_schema/schema.ts`; a const's `def` is its method array.
-- `generate_typed_action_event_alias` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias.
-- `generate_action_specs_record` — `ActionSpecs` runtime const + type + `action_specs` array. The const is annotated with the type (`readonly` members), so a consumer's declaration emit names the type instead of writing every spec's schema types out, which past enough specs is TS7056. The type is an alias, not an interface: an alias has an implicit index signature, so `Object.values(ActionSpecs)` stays typed and `action_specs` checks each spec against `ActionSpecUnion` (over an interface it is `any[]`).
-- `generate_action_inputs_outputs` — the `ActionInputs`, `ActionCallInputs` and `ActionOutputs` interfaces, types only (a const's inferred type would be written out whole in a declaration file, TS7056 past enough specs; the schemas are read off `ActionSpecs`), importing `Infer` and `InferInput`; a value that is no schema throws naming the method. The two sides of a call see one input schema differently, so its types split by side: `ActionInputs` is each input's output type (`Infer<typeof …>`) — the parsed value a handler, an action event (`ActionEventDatas`) or a notification receiver reads, defaults filled and transforms applied; `ActionCallInputs` is its input type (`InferInput<typeof …>`) — what a caller passes, which the call surfaces (`FrontendActionsApi`, `BackendActionsApi`) take, so a `with_default` field is optional there and required in `ActionInputs`. `ActionOutputs` is each output's output type, what a caller receives.
-- `generate_action_event_datas` — `ActionEventDatas` interface; per-spec variants.
-- `generate_frontend_action_handlers` — `FrontendActionHandlers` interface (Tier 2 only).
-- `generate_backend_actions_api` — `BackendActionsApi` interface + `broadcast_action_specs` array.
-- `compose_gen_file` — wrapper: banner + `imports.build()` + blocks join.
-- `create_namespace_qualifier(sources, imports)` — multi-source consumer helper; registers `import * as ns` per source.
-
-Shared defaults: `collections_path` is `'./action_collections.ts'`,
-`specs_module` is `'./action_specs.ts'`, and `metatypes_path` is
-`'./action_metatypes.ts'`.
-
-### Codegen invariants
-
-**Protocol actions filtered by default.** Every spec-iterating helper
-accepts `{include_protocol_actions?: boolean}` (default `false`) and drops
-`heartbeat` / `cancel` / `peer/ping`. Protocol actions ship from fuz_app and spread into
-each consumer's `actions` array at registration time (via
-`protocol_actions` from `actions/protocol.ts`); they should not appear in
-consumer-owned typed surfaces. Pass `include_protocol_actions: true` only
-if a consumer genuinely owns protocol actions in their typed API.
-
-**Consumer tiers.** Single-source consumers (zzz) drop into the helpers
-and accept the default `* as specs` namespace import. Multi-source
-consumers (stitching local specs with `all_admin_action_specs` /
-`all_role_grant_offer_action_specs` / `all_account_action_specs` /
-`all_self_service_role_action_specs` from fuz_app) call
-`create_namespace_qualifier` once, then pass the returned
-`qualify_spec` callback to multi-source helpers.
-
-**Tier 1** (HTTP-only) emits a smaller surface — typically
-`ActionMethod` + `FrontendActionsApi` + `ActionInputs` / `ActionOutputs`.
-Never calls `generate_typed_action_event_alias` or
-`generate_frontend_action_handlers`. **Tier 2** (`TypedActionEvent`-aware,
-zzz) emits the full set including `ActionEventDatas`, `TypedActionEvent`,
-and `FrontendActionHandlers`.
+- **Protocol actions are filtered by default.** Every spec-iterating helper
+  takes `{include_protocol_actions?: boolean}` (default `false`) and drops the
+  `PROTOCOL_ACTION_METHODS` (`heartbeat`, `cancel`, `peer/ping`): they ship
+  from fuz_app and spread into each consumer's `actions` at registration
+  (§Protocol actions), not into consumer-owned typed surfaces.
+- **Call inputs vs handler inputs.** `ActionCallInputs` is each input
+  schema's input type (`InferInput`) — what a caller passes, so a
+  `with_default` field is optional; `ActionInputs` is its output type
+  (`Infer`) — what a handler, an action event or a notification receiver
+  reads. The call surfaces (`FrontendActionsApi`, `BackendActionsApi`) take
+  `ActionCallInputs`.
+- **Optional input.** `generate_frontend_actions_api` makes a method's input
+  optional when its schema accepts `undefined`, or accepts `{}` and is not
+  marked `meta(…, {empty_input_handler_guarded: true})` (`schema_meta.ts`).
+  Mark an input whose `{}` reaches a handler guard that refuses it with a
+  declared reason, as `cell_get`, `cell_field_list` and `cell_item_list` do,
+  so its input stays required.
+- **Consumer tiers.** Single-source consumers (zzz) take the default
+  `* as specs` namespace import. Multi-source consumers (local specs plus
+  fuz_app's `all_*_action_specs`) call `create_namespace_qualifier` once and
+  pass its `qualify_spec` to the helpers. **Tier 1** (HTTP-only) emits
+  `ActionMethod` + `FrontendActionsApi` + `ActionInputs` / `ActionOutputs`;
+  **Tier 2** (`TypedActionEvent`-aware, zzz) adds `ActionEventDatas`,
+  `TypedActionEvent` and `FrontendActionHandlers`.
 
 ## Single JSON-RPC 2.0 endpoint (`actions/action_rpc.ts`)
 
-`create_rpc_endpoint({path, actions, log, action_ip_rate_limiter, action_account_rate_limiter, notification_sender}): RouteSpec[]`
-produces **two** route specs on the same path (GET + POST) that share one
-internal dispatcher. The two limiters are required `RateLimiter | null` with
-no default — `null` is the explicit off switch — and the same holds on
-`register_action_ws`, so a hand mount can't run
-unthrottled by omission. `create_app_server` passes its own to every endpoint
-it mounts (../../../docs/usage.md §Rate limiters). `notification_sender` is
-required on both the same way (§Notification sender). Per-action auth lives inside the dispatcher; the outer routes
-use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
+`create_rpc_endpoint(options): RouteSpec[]` produces **two** route specs on
+one path (GET + POST) sharing one dispatcher; per-action auth lives inside
+it, so the outer routes are `auth: {account: 'none', actor: 'none'}`,
+`transaction: false`. `create_app_server` mounts every `rpc_endpoints` entry
+itself. The two action limiters and `notification_sender` are required with
+no default (`null` limiter is the explicit off switch), the same on
+`register_action_ws`, so a hand mount can't run unthrottled by omission
+(../../../docs/usage.md §Rate limiters).
 
-The HTTP RPC dispatcher is a thin shim around `perform_action`
-(`actions/perform_action.ts`). The shim owns wire-shape concerns (envelope
-parsing, GET vs POST split, the envelope responses — each a `route_raw` data result); the
-auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
+The HTTP dispatcher is a thin shim around `perform_action`: it owns the wire
+shape — envelope parsing (`parse_json_text`, so JSON the Rust spine refuses
+is refused here too), the GET vs POST split, method lookup
+(`method_not_found`), and the envelope responses, each a `route_raw` result
+built by `serialize_action_result`. GET's query-reading rules (first
+occurrence wins, an undecodable query is `invalid_request` with
+`RPC_GET_UNDECODABLE_QUERY_REASON`) are the cross-impl contract, on the
+module's TSDoc and pinned by the `query_shape` cross suite.
 
-**Phase order: 401 → authz → 403 → 429 → 400 → handler.** Authorize first,
-throttle, validate after — a caller the authority gates refuse never learns
-the action's input shape, the coarse authority facts settle before the fine
-ones, and a malformed flood burns the budget it should. The Rust spine's
-dispatcher enforces the same order: after the rate limit it refuses a
-non-object `params` (which only `GET`'s `?params=` can carry past the
-envelope) and validates the `acting` selector, and leaves every other field
-to the handlers. So an anonymous `GET` with `?params=42` is a 401 on both
-spines, and an authorized one is `invalid_params`.
-
-Shim responsibilities (per-request):
-
-1. Parse envelope (POST body / GET query string, each through `parse_json_text`, `http/json_text.ts`, so JSON the Rust spine refuses is refused here too); parse errors → `parse_error` 400, a `GET` `params` that is no JSON `invalid_params`. GET reads `method` / `id` / `params` with `query_first` over `route.query_pairs` (the query decoded strictly, `http/request_target.ts`) — a query holding an escape that doesn't decode is `invalid_request` on `id: null` with reason `undecodable query string` (`RPC_GET_UNDECODABLE_QUERY_REASON`), ahead of the method lookup; first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
-2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
-3. GET read restriction — GET rejected for `side_effects: true` actions. Every answer of the GET route carries `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`), declared as the spec's `response_headers`, so the handler's refusals and the error catch's 500 carry it too; a refusal by middleware ahead of the route, like the origin 403, does not: a read answers one caller at one moment.
-4. Build `PerformActionInput` from the route context: `route.credential`, `route.client_ip`, `route.signal`. The test-preset escape hatch reads `route.has_test_context_preset` and `route.auth`.
-5. Call `perform_action` (shared core).
-6. Bind result via `serialize_action_result(id, result, method, log)` (`actions/perform_action.ts`, shared with WS) → `{body, status}`, spelled with `c.json`'s bytes and content type as a `route_raw` data result, as is every envelope the shim answers: no REST definition describes one.
-
-Error paths: `ThrownJsonrpcError` (recognized through
-`to_thrown_jsonrpc_error` in `http/jsonrpc_errors.ts` by its realm-global
-brand, so one from a second fuz_app copy — e.g. a consumer like zzz resolving
-its own — matches where `instanceof` misses; the REST catch layer, the frontend
-transports, and `ActionEvent` read thrown errors the same way) preserves code +
-data verbatim. Anything else takes the generic path: a foreign error class
-carrying a JSON-RPC `code`, a `ThrownJsonrpcError` whose `code` was cast
-outside the JSON-RPC set, a `DOMException`. Generic throws become
-`internal_error` 500; message is the raw error under `DEV`, "internal server
-error" otherwise.
-
-A result that cannot be serialized (a `bigint`, a cycle) answers the same
-`internal_error` 500 rather than throwing (`serialize_action_result`, which the
-WS dispatcher shares). By then `perform_action` has
-committed, and a throw would have the route wrapper
-(`dispatch_with_post_commit_rollback`) discard the handler's
-`post_commit_effects` — the connection closes of a revocation that did land.
-
-### Per-request handler shape
-
-Unified across HTTP RPC + WS via `ActionContext` (`actions/action_types.ts`):
-
-```ts
-interface ActionContext {
-	auth: RequestContext | null; // null for public actions
-	request_id: JsonrpcRequestId;
-	connection_id?: Uuid; // populated on WS, undefined on HTTP
-	request_client?: RequestClient; // WS only: initiate a server→client request + await the reply (ActionPeer); undefined on HTTP
-	db: Db; // transaction for mutations, pool for reads
-	pending_effects: Array<Promise<void>>; // eager — see http/CLAUDE.md §Pending Effects
-	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
-	client_ip: string;
-	credential_type: BuiltinCredentialType | null; // same value the credential_types gate consumed
-	log: Logger;
-	notify: (method, params) => void; // HTTP: DEV-mode warn + drop; WS: socket-scoped
-	notification_sender: NotificationSender; // every socket of an account, on every mounted registry; never null
-	signal: AbortSignal; // HTTP: client-disconnect; WS: AbortSignal.any([socket_close, request_cancel])
-}
-
-interface RpcAction {
-	spec: RequestResponseActionSpec;
-	handler: ActionHandler;
-}
-```
+- **GET is for reads.** A `side_effects: true` action is refused over GET.
+  Every answer of the GET route carries `Cache-Control: no-store`
+  (`RPC_GET_CACHE_CONTROL`, declared as `response_headers`); a refusal by
+  middleware ahead of the route does not.
+- **Phase order: 401 → authz → 403 → 429 → 400 → handler.** Authorize first,
+  throttle, validate after — a caller the authority gates refuse never learns
+  the action's input shape, the coarse authority facts settle before the fine
+  ones, and a malformed flood burns the budget it should. The Rust spine's
+  dispatcher keeps the same order (it refuses a non-object `params` and
+  validates the `acting` selector after the rate limit), so an anonymous
+  `GET` with `?params=42` is a 401 on both spines and an authorized one is
+  `invalid_params`.
+- **Errors.** A `ThrownJsonrpcError` (recognized by its realm-global brand,
+  `http/CLAUDE.md` §JSON-RPC) keeps its code and data; any other throw is
+  `internal_error` 500, its message the raw error only under `DEV`. A result
+  that can't be serialized answers the same 500 rather than throwing: the
+  action has committed by then, and a throw would discard the handler's
+  `post_commit_effects` — the connection closes of a revocation that landed.
 
 ### `rpc_action(spec, handler)` — typed binder
 
-`rpc_action<TSpec extends RequestResponseActionSpec>(spec, handler)` pins
-the handler's input / output types to `Infer<TSpec['input']>` /
-`Infer<TSpec['output']>` and tightens `ctx.auth` per the conditional
-`HandlerForSpec<TSpec>`, built on `RequestContextForAuth`
-(`auth/request_context.ts`) — the same narrowing a REST handler's
-`route.auth` takes:
+`rpc_action` pins the handler's input / output types to the spec's schemas
+and narrows `ctx.auth` through `HandlerForSpec<TSpec>`, built on
+`RequestContextForAuth` (`auth/request_context.ts`) — the narrowing a REST
+handler's `route.auth` takes:
 
 - `auth.actor === 'required'` → `ctx.auth: RequestActorContext`.
 - `auth.account === 'required' && auth.actor === 'none'` → `ctx.auth: RequestContext`.
 - else (public, optional axes) → `ctx.auth: RequestContext | null`.
 
-Use at every spec → handler binding site so handler-type errors surface
-at the factory call instead of at runtime. The bracketed form
-`[T] extends ['required']` defeats distributive conditionals so a degraded
-`AuthAxisState` union (when the spec was typed without preserving its
-literal) falls through to the loosest tier instead of the narrowest.
-
-fuz_app's handlers close over factory-captured deps (`log`, `audit`,
-`options.max_tokens`), so per-pair typing via `rpc_action()` is the shape
-that fits.
+Use it at every spec → handler binding site so handler-type errors surface
+at the factory call. A spec typed without its literal `auth` falls through to
+the loosest tier. fuz_app's handlers close over factory-captured deps (`log`,
+`audit`, options), so per-pair typing is the shape that fits.
 
 ## Shared dispatch core (`actions/perform_action.ts`)
 
-The transport-agnostic post-parse pipeline. Each transport assembles a
-`PerformActionInput` from its wire envelope + connection identity, calls
-`perform_action(input, deps)`, and binds the discriminated
-`PerformActionResult` to its wire shape.
-
-Pipeline (401 → authz → 403 → 429 → 400 → handler):
+The transport-agnostic post-parse pipeline: each transport assembles a
+`PerformActionInput` (the request's `ResolvedAuth`, client IP, signal,
+`notify`, the WS connection and peer client) and binds the
+`PerformActionResult` to its wire shape. `ActionContext`
+(`actions/action_types.ts`) is the one handler context on both transports;
+fields on TSDoc. The steps, in the phase order above:
 
 1. Pre-authorization auth (401)
-2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
-3. Post-authorization auth (403) — credential-type gate, then token scope, then role
-4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
-5. Validate params (400) — first, one walk of object params (`scan_json_value` in `http/schema_helpers.ts`, iterative) refuses, on every input, an own `__proto__` key at any depth with `data.reason` `params_proto_key` (`ERROR_PARAMS_PROTO_KEY`), then U+0000 in any string or key with `params_nul` (`ERROR_PARAMS_NUL` — Postgres refuses it in `text` and `jsonb`); the Rust twin walks after its params-shape check, so a non-object `params` stays the schema's reasonless refusal; then `spec.input` parses them (`parse`) with void / `?? {}` rules; a void input (`is_void_schema`: `s.void`) reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_input_params` in `http/schema_helpers.ts`, via `to_void_params`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` runs the same normalizer) and refuses any other shape. A refusal is `to_invalid_params_error`: the generic `invalid params`, `data.reason` when the first issue's field declares an `invalid_reason` in its `meta` and no issue sits on the input itself, such as an unknown key (`resolve_issues_invalid_reason`, `schema_meta.ts` — see ../../../docs/architecture.md §Error Schema System), and the issues DEV-only, as `WireIssue`s (`to_wire_issues`)
-6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
+2. Authorization phase — `apply_authorization_phase` against the account and `read_acting(auth, raw_params)`, which reads the selector off the raw params (malformed reads as omitted) since validation runs later
+3. Post-authorization auth (403) — credential-type gate, then token scope (`rpc:<method>`), then role
+4. Rate limit (429) — charged ahead of validation, so a throttled caller pays no schema work
+5. Validate params (400) — `to_input_params` (`http/schema_helpers.ts`: the `__proto__` and NUL refusals, the void-input normalization, `http/CLAUDE.md` §Schema Helpers), then `spec.input`; a refusal is `to_invalid_params_error`, its `data.reason` the field's declared `invalid_reason` (../../../docs/architecture.md §Error Schema System)
+6. Dispatch — `spec.side_effects` picks a transaction or the pool; DEV-only output validation
 
-`PerformActionInput` carries `credential` (the request's `ResolvedAuth`, `null` for
-anonymous — the authorization phase reads its account, the post-authorization
-gates its type and scope, `ActionContext` its type and session hash),
-`client_ip`, `signal`, `notify`, optional `connection_id`, optional `preset`.
-`PerformActionDeps` carries `db` (pool-level), `pending_effects`, `log`,
-the two rate limiters, and `notification_sender` — put on the context, wrapped
-under DEV in `create_validated_notification_sender` once per dispatch. Audit writes are out-of-band: factories close over
-`AppDeps.audit` independently.
+Rules a handler author would miss:
 
-Authorization-phase resolution failures from the auth domain come back as
-`AuthorizationResult.ok === false` carrying `{status, body}` — folded into
-a JSON-RPC envelope where `error.code` maps from
-`http_status_to_jsonrpc_error_code(result.status)`, `error.message` is the
-reason string, and `error.data: {reason, ...rest}` flattens diagnostic
-fields. REST emits the same `body` directly via `c.json(body, status)` for
-surface consistency.
+- **A success audit row needs `side_effects: true`.** Handlers audit through
+  `deps.audit.emit(ctx, …)`, which refuses a success row with no transaction
+  open, and the dispatcher opens one only for a `side_effects: true` action
+  (`auth/CLAUDE.md` §Audit emitter).
+- **Post-commit work goes on `ctx.post_commit_effects`** (`emit_after_commit`,
+  `queue_connection_close`); the queue is discarded when the action rolls
+  back. The eager and deferred queues have one home: `http/CLAUDE.md`
+  §Pending Effects.
+- **Authorization refusals fold to JSON-RPC.** The auth domain's
+  `{status, body}` becomes an error whose code is
+  `http_status_to_jsonrpc_error_code(status)` and whose `data` carries the
+  body's `reason` and fields; REST answers the same `body` directly.
 
 ## DEV-only output validation — uniform across surfaces
 
-Critical invariant: every action-handler surface applies DEV-only output
-validation and produces the **same failure mode** as REST routes'
-`wrap_output_validation` (`http/route_spec.ts`) — log an error, return
-the response unchanged, do not throw, do not mutate status.
-
-- HTTP RPC + WebSocket dispatch — `actions/perform_action.ts` `if (DEV) parse(spec.output, output)` inside the shared dispatch core. Production hot path short-circuits (no parse).
-
-Caller-facing `input` schemas are validated **always** (DEV + production)
-— they're the contract with external callers. Server-authored `output`
-schemas are internal data. See ../../../docs/architecture.md §DEV-only Output
-Validation for full rationale.
+Every action-handler surface validates output in DEV only and fails the way
+REST's `wrap_output_validation` does — log an error, return the response
+unchanged, never throw or change the status. `input` schemas are validated
+always: they are the contract with external callers. Rationale:
+../../../docs/architecture.md §DEV-only Output Validation.
 
 ## Transports
 
-`Transport` is the unifying interface — overloaded `send(message, options?)`
-returning `Promise<JsonrpcResponseOrError>` for requests and
-`Promise<JsonrpcErrorResponse | null>` for notifications, plus `is_ready()`,
-optional `queues` (a request sent with `queue` waits on it while not ready —
-`FrontendWebsocketTransport`, while its connection `will_reconnect`), and
-optional `dispose()`. All transports share
-`TransportSendOptions`:
+`Transport` is the unifying interface: overloaded `send(message, options?)`,
+`is_ready()`, optional `queues` and `dispose()`. `TransportSendOptions` is
+`{signal?, queue?}` — `signal` cancels one call (a WS `cancel` notification,
+or `fetch`'s abort); `queue` is honored only by `FrontendWebsocketTransport`
+on requests. `Transports` holds transports by name, the first registered the
+default; `get_transport` picks the named or default one when it is ready (or
+queues for a queued request), else the first ready one.
 
-- `signal?: AbortSignal` — per-call cancel. Bottoms out at
-  `FrontendWebsocketClient.request({signal})` on WS (sends `cancel`
-  notification on abort) and at `fetch({signal})` on HTTP.
-- `queue?: boolean` — per-call durable-queue opt-in. Honored only by
-  `FrontendWebsocketTransport` on the `request_response` path (default
-  `false`). HTTP and WS notifications ignore it.
+**Queue routing.** `ActionDispatcher.send` resolves a request's `queue` once
+(the call's, else `default_send_options.queue`, else off), and it drives both
+the transport choice and the send. A WS request queues only while a reconnect
+is coming (`will_reconnect`); after a close that reopens nothing on its own
+(4004, 4006, `disconnect()`, `cancel_reconnect()`, auto-reconnect off) it falls
+back to a ready transport. A notification never queues. The RPC layer defaults
+`queue` off; `FrontendWebsocketClient.request` defaults it on. Consumer
+framing: ../../../docs/usage.md §Client-authoritative vs server-authoritative
+dispatch.
 
-`Transports` holds transports by name; the first registered is the default.
-`get_transport(name?, {queue?})` returns the preferred transport — the named
-one, else the default — when it is ready, or when it is not but the call is a
-queued request and it `queues`; otherwise the first ready transport, the
-default first. Explicit `transport_for_method` (on `rpc_client`) or
-`default_send_options.transport_name` (on `ActionDispatcher`) names it.
+- `actions/transports_http.ts` — `FrontendHttpTransport` (`frontend_http_rpc`). It owns the request policy, derived from the spec its `lookup_action_spec` returns, so a hand-built transport can't drop a rule: POST by default; a read (`side_effects: false`) is a GET unless its input carries a `'secret'` or `'personal'` value at any depth (`schema_has_sensitive_field` — a GET puts params in the URL) or the URL passes `max_get_url_length`. On a non-OK status it keeps a JSON-RPC error body for its request as-is (the status → code map is lossy) and synthesizes one otherwise.
+- `actions/transports_ws.ts` — `FrontendWebsocketTransport` (`frontend_websocket_rpc`) over a `WebsocketRpcConnection` (default `FrontendWebsocketClient`), plus `to_same_origin_ws_url`. A notification fails fast while disconnected, whatever `queue` says. It answers inbound server→client requests: `peer/ping` through the built-in `peer_ping_responder`, any other through `peer.receive`.
 
-**Queue routing.** `ActionDispatcher.send` resolves a request's `queue` once —
-the call's, else `default_send_options.queue`, else off — and it drives both
-the transport choice and the send, so a WS-routed request on a disconnected
-socket waits in the client's durable queue and replays on reconnect (or
-rejects when its `signal` aborts; the queue is size-bounded, not timed). It
-queues only while a reconnect is coming: `FrontendWebsocketTransport.queues`
-reads the connection's `will_reconnect` (`FrontendWebsocketClient`:
-`connecting` or `reconnecting`), so after a close that reopens nothing on its
-own — superseded (4004), permission revoked (4006), `disconnect()`,
-`cancel_reconnect()`, auto-reconnect off — the request falls back to a ready
-transport (HTTP) rather than wait for a `connect()`. (Requests already queued
-before a `cancel_reconnect()` or `set_reconnect(false)` stay queued for the
-next `connect()`.) A notification never queues: it fails fast, or falls back to
-a ready transport.
-The RPC layer defaults it off; a client-authoritative app opts in on the peer
-(`create_frontend_rpc_client`'s `ws.queue`). `FrontendWebsocketClient`'s own
-raw `request()` keeps its default-on queue.
+**WS message cap.** `DEFAULT_WS_MAX_MESSAGE_BYTES` (`actions/transports.ts`,
+equal to `DEFAULT_BODY_LIMIT_BYTES`, the Rust spine's value) bounds one
+message both ways. The server (`max_message_bytes`) closes the socket with
+`WS_CLOSE_MESSAGE_TOO_BIG` on a larger inbound message, before parsing; the
+client (`FrontendWebsocketTransportOptions.max_message_bytes`) answers an
+oversized outbound message locally with `invalid_request` /
+`payload_too_large` and never sends it, since the close would fail every
+request in flight. A consumer that raises the server cap passes the same value
+to the client.
 
 ### WS close codes (`actions/transports.ts`)
 
-- `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth (reason `WS_CLOSE_SESSION_REVOKED_REASON`, `Session revoked`); client enters permanent `revoked` state, no reconnect. Also the close for an upgrade refused at admission because its credential was revoked, or its acting actor soft-deleted, mid-upgrade — indistinguishable on the wire by design — and for a socket whose credential expired while open, with reason `WS_CLOSE_CREDENTIAL_EXPIRED_REASON` (`Credential expired`), which the client treats as the same `revoked` state.
-- `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`), with reason `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT_REASON` (`client heartbeat timeout`). TS-only reason: the client is the same against either spine.
-- `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_WS_RECEIVE_TIMEOUT` (60s), with reason `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT_REASON` (`server heartbeat timeout`). Twin of the Rust spine's constants.
-- `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `WS_CLOSE_CONNECTION_LIMIT_REASON`, `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
-- `WS_CLOSE_OUTBOUND_OVERFLOW = 4005` — the server had more waiting to be written to this socket than its outbound budget holds (reason `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`, `outbound queue overflow`); what was waiting is dropped. Not a revocation, and nothing took the connection's place: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
-- `WS_CLOSE_PERMISSION_REVOKED = 4006` — the socket's account lost a role its endpoint's `required_roles` lists: a revoked global grant (reason `WS_CLOSE_PERMISSION_REVOKED_REASON`, `Permission revoked`), mid-life or at admission. Nothing is sent after it. Not a revocation of the credential: the client stays `closed` until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests `forbidden`. Twin of the Rust spine's constant.
-- `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_connections`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
-- `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big"), with reason `WS_CLOSE_MESSAGE_TOO_BIG_REASON` (`message too big`). Twin of the Rust spine's constants.
-- `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget (reason `WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON`). TS-only: the Rust spine reads no frame before admission (they wait in the socket for its loop), so it has no pre-admission queue to overflow and never sends 1008.
-- `WS_CLOSE_INTERNAL_ERROR = 1011` — the admission credential re-check itself failed or opening the socket threw (reason `WS_CLOSE_INTERNAL_ERROR_REASON`, `internal error` — shared with the Rust spine), `on_socket_open` threw (`WS_CLOSE_SOCKET_OPEN_FAILED_REASON`, `socket bootstrap failed`), or the socket's connection was removed from the transport without a close (`WS_CLOSE_CONNECTION_UNREGISTERED_REASON`, `connection unregistered`) — the last two TS-only. Not a revocation: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
+Each constant's TSDoc carries its reason string and when it is sent; the
+client's reaction is §`FrontendWebsocketClient`.
 
-### Transport modules
+| Code | Constant | Client reconnects? |
+| --- | --- | --- |
+| 4001 | `WS_CLOSE_SESSION_REVOKED` (also a credential expiry, `WS_CLOSE_CREDENTIAL_EXPIRED_REASON`) | no — terminal `revoked` |
+| 4002 | `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` (client-side, TS-only reason) | yes |
+| 4003 | `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` | yes |
+| 4004 | `WS_CLOSE_CONNECTION_LIMIT` (evicted past the per-account cap) | no — `superseded` until `connect()` |
+| 4005 | `WS_CLOSE_OUTBOUND_OVERFLOW` (fell behind its outbound budget) | yes |
+| 4006 | `WS_CLOSE_PERMISSION_REVOKED` (lost a role the endpoint gates on) | no — `closed` until `connect()` |
+| 1001 | `WS_CLOSE_GOING_AWAY` (shutdown) | yes |
+| 1008 | `WS_CLOSE_POLICY_VIOLATION` (pre-admission overflow, TS-only) | yes |
+| 1009 | `WS_CLOSE_MESSAGE_TOO_BIG` | yes |
+| 1011 | `WS_CLOSE_INTERNAL_ERROR` (admission re-check failed, `on_socket_open` threw, connection unregistered) | yes |
 
-- `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter over `FrontendHttpTransportOptions` (`{url, headers?, lookup_action_spec, max_get_url_length?}`). The transport owns the request policy, derived from the spec `lookup_action_spec` returns, so a hand-built transport can't drop a rule: POST by default; a read (`side_effects: false`) is a GET with no `content-type`, unless its input carries a `'secret'` or `'personal'` value at any depth (`schema_has_sensitive_field`, walked once per spec — a GET puts the params in the URL, which proxies and logs record) or its path and query exceed `max_get_url_length` (`DEFAULT_MAX_GET_URL_LENGTH`, 4096), which go as POST. A method the lookup doesn't know is a POST. The endpoint answers every GET with `Cache-Control: no-store` (`RPC_GET_CACHE_CONTROL`).
-- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`), `queues` while the connection `will_reconnect`. Also `to_same_origin_ws_url(path)`, the page-origin WebSocket URL a same-origin backend is reached at (`path` itself off the browser). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
-- `actions/connection_registry.ts` — `ConnectionRegistry`, server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; the broadcast target of `create_broadcast_api` (`broadcast`, `broadcast_filtered`). Not a `Transport`: it sends nothing a client requested. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
-- `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the registry sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
+A refused admission is indistinguishable on the wire from a revocation (4001)
+by design.
 
-`FrontendHttpTransport` on non-OK HTTP returns the body as-is when it's a
-JSON-RPC error response for the request (same `id` compared as strings since GET sends it as a query param, or `null`) — the
-status → code map is lossy (`queue_overflow` and `rate_limited` share 429), so
-the server's code, message, and data must survive. Any other body gets an
-envelope synthesized via `http_status_to_jsonrpc_error_code`. DEV warns when
-`jsonrpc_error_code_to_http_status(code)` disagrees with the status, or when an
-error envelope arrives with a 2xx.
+## `ConnectionRegistry` (`actions/connection_registry.ts`)
 
-`FrontendWebsocketTransport` notification sends fail-fast when disconnected
-regardless of `queue` — `connection.send()` has no queue semantic, so
-buffering would masquerade as success at the rpc_client layer. Requests
-route via `queue`.
+The server-side WS state of one or more endpoints: connections keyed by a
+`connection_id` (the only handle — there is no socket → id lookup, since an
+adapter may hand each socket event its own `WSContext`), each matched for
+revocation by its `ConnectionIdentity` (`session_hash`, `account_id`,
+`api_token_id`, and the `required_roles` its endpoint gated the upgrade on).
+Twin of the Rust `fuz_realtime::ConnectionRegistry`, same method names. Not a
+`Transport`: it sends nothing a client requested.
 
-**WS message cap.** `DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, in
-`actions/transports.ts`, equal to `DEFAULT_BODY_LIMIT_BYTES` and the twin of the
-Rust spine's constant) bounds one message both ways. `register_action_ws`
-(`max_message_bytes`, also on `WsEndpointSpec`) closes the socket with
-`WS_CLOSE_MESSAGE_TOO_BIG` on a larger inbound message, before parsing — no
-per-message reply, like the Rust spine. The check runs after the runtime
-adapter has buffered the message, so it bounds dispatch work, not memory.
-`FrontendWebsocketTransport`'s optional third argument
-(`FrontendWebsocketTransportOptions.max_message_bytes`, same default) answers
-an outbound request or notification whose JSON encoding exceeds it (in UTF-8
-bytes) locally with an `invalid_request` error carrying
-`data.reason: 'payload_too_large'` (`create_message_too_large_error`) and never
-sends it — otherwise the close would fail every request in flight on the
-socket. A consumer that raises the server cap passes the same value to the
-client; `null` skips the client-side measurement.
-
-### `ConnectionRegistry` — server-side WS state
-
-One map keyed by `connection_id` (branded `Uuid`), in registration order:
-`#connections: Map<Uuid, ConnectionEntry>`, each entry `{ws, identity,
-admitted, abort_controller, writer}`. `identity` is the `ConnectionIdentity`
-`{session_hash, account_id, api_token_id, required_roles}` (session sets
-`session_hash`, bearer sets `api_token_id`, daemon-token sets both null;
-`required_roles` is what the endpoint gated the upgrade on, per registration,
-since endpoints with different gates can share one registry).
-
-The id is the connection's only handle — `register_pending` / `add_connection`
-return it and `admit` / `remove_connection` / `is_registered` take it. There is
-no socket → id lookup: a runtime adapter may hand each socket event its own
-`WSContext` (`@hono/bun` builds one per event), so the object a close event
-carries can't identify the connection. `register_action_ws` captures the id on
-open and removes by it.
-
-**Two-phase registration.** An upgrade resolves its credential before the
-socket exists, and a revocation closes only the connections *registered* under
-what it revoked — so a one-step registration leaves a window in which a
-revocation closes nothing and the socket is then admitted on a dead credential.
-The registry splits registration to close it (the twin of the Rust
-`fuz_realtime` `ConnectionRegistry`, same method names):
-
-- `register_pending(ws, identity, abort_controller?)` (`identity: ConnectionIdentity`, as
-  the Rust `register_pending(sender, identity, signal)`; `add_connection` takes the same)
-  inserts the entry **un-admitted**. Every `close_connections` matches it
-  from that instant. Otherwise it is inert: no `broadcast`,
-  `broadcast_filtered` (the predicate never sees it), `send_to_account`, or
-  `request_connection` (`connection_gone`) reaches it; `connection_count`
-  and `is_registered` don't see it
-  (`pending_connection_count` does); the cap neither counts nor evicts it.
-- the caller re-reads the credential (`revalidate_resolved_auth`).
-- `take_pending_close_code(connection_id)` — after a refused `admit`, the
-  close code the registry closed the pending entry with (4001, 4006, 1001),
-  read once; what `register_action_ws` logs the refusal by.
-- `admit(connection_id)` returns `false` when the entry is gone — a revocation
-  closed it while pending — and evicts nothing; otherwise it enforces the cap
-  (counting admitted connections only) and marks the entry admitted.
-
-Nothing is queued for a pending entry, so a server-initiated message sent
-between the handshake and admission is not delivered — the same as one sent
-before the handshake. `add_connection` is the one-step form (register and admit
-together) for a connection with nothing revocable behind it: tests and
-harnesses that register a socket directly. An upgrade that authenticated a session or token
-uses the two-phase form.
-
-**Abort at close time.** The `abort_controller` passed at registration is the
-socket's per-connection controller. The registry aborts it when it closes the
-connection — a revocation or a cap eviction — so in-flight handlers see
-`signal.aborted` at once, not when the close handshake lands.
-`remove_connection` only removes: it neither closes nor aborts.
-
-**Per-account connection cap.** `new ConnectionRegistry({max_connections_per_account})`
-— default `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50), `null` disables, anything
-but a positive integer throws. The policy is **evict-oldest**: admission always
-admits the new connection, first closing the account's oldest admitted ones
-(registration order) with `WS_CLOSE_CONNECTION_LIMIT` so the account never
-holds more than the cap. It keys on `account_id` across every credential type —
-session, bearer, and daemon-token connections all count, none exempt. Refusing
-the newcomer instead would let half-open sockets lock a user out with their
-own dead connections, and let a stolen credential hold every slot ahead of the
-real user. The check runs at **admission** (`admit`, or `add_connection`),
-which `register_action_ws` reaches in `onOpen` — after every upgrade gate
-(origin, auth, token scope, acting actor, role) and the credential re-read — so a refused or
-just-revoked request never closes someone's socket. An evicted connection
-leaves the registry's map at once — no broadcast or peer request reaches it,
-its pending peer requests drain as `connection_gone`, it stops counting toward
-the cap, its controller is aborted, and `register_action_ws` dispatches nothing
-more on it — while the socket itself is only closed once the close handshake
-completes. Its `on_socket_close` fires when the close lands, and the
-`remove_connection` before it is a no-op. An eviction logs
-`ws: connection cap closed oldest` at
-info with `{account_id, closed, max}` (the Rust spine's line) through the
-registry's `log` (a `[ws]` logger when unset, `null` silences;
-`register_action_ws` passes its own to the registry it creates). The cap is per registry:
-endpoints sharing one registry share one count per account. The twin of the
-Rust `fuz_realtime` `ConnectionRegistry`'s cap — same default, same policy,
-same close code and reason — pinned on both by the
-`describe_ws_connection_cap_cross_tests` suite.
-
-**Outbound bound.** Every frame the server sends a connection goes through
-its `WsOutboundWriter` (`actions/ws_outbound_writer.ts`), reached by one path:
-`send_to(connection_id, frame)` — which `register_action_ws` uses for every
-response, error frame, and socket-scoped notification — and the fan-outs
-(`send`, `broadcast_filtered`, `send_to_account`, `request_connection`). The
-one way around it is a consumer sending on the raw `SocketOpenContext.ws`,
-which bypasses the budget. A send never waits and never throws.
-
-- **What waits.** A frame sent to an idle connection — nothing waiting,
-  nothing unwritten in the runtime's socket buffer, no other frame sent in the
-  same synchronous run — goes straight to the socket. Everything else waits in
-  the writer's queue: the rest of a burst sent in one synchronous run (a loop
-  with no `await` gives the pump no turn), and anything sent while the socket's
-  buffer is at or over `WS_WRITE_HIGH_WATER_BYTES`. The pump hands waiting
-  frames over in order, on the microtask after a send and as the buffer drains.
-  So a second send in one synchronous run reaches the socket a microtask later.
-- **The budget.** What waits is held to `outbound_queue_bytes`
-  (`new ConnectionRegistry({outbound_queue_bytes})`, default
-  `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`, 4 MiB — its own constant, not derived from
-  `max_message_bytes`; anything but a positive integer throws): each waiting
-  frame is charged its UTF-8 length plus `OUTBOUND_FRAME_OVERHEAD_BYTES` (64),
-  and a frame is always accepted when nothing is waiting. Nothing counts
-  frames (`OutboundBudget`, `realtime/outbound_budget.ts`).
-- **Overflow.** A frame that does not fit closes the connection with
-  `WS_CLOSE_OUTBOUND_OVERFLOW`: the entry leaves the map in the same
-  synchronous step (the overflowing send returns `false` / is not counted,
-  later sends miss it, the count accessors and the cap stop seeing it), its
-  pending peer requests drain as `connection_gone`, its controller is aborted,
-  and what was waiting is discarded. Frames already handed to the socket may
-  still reach the client ahead of the close frame; nothing follows it.
-- **Deadlines.** Bytes a socket still holds `WS_WRITE_STALL_TIMEOUT` (10 s)
-  after they were handed to it drop the connection with no close frame
-  (`terminate()` on Node's `ws` and Bun; the client sees 1006), removing it and
-  aborting its controller the same way. A close frame gets
-  `WS_CLOSE_WRITE_TIMEOUT` (1 s), after which a socket still holding unwritten
-  bytes is cut. A socket with no `terminate` (a web-standard `WebSocket`)
-  cannot be cut, so there a stalled connection is closed with
-  `WS_CLOSE_OUTBOUND_OVERFLOW` instead, the close deadline cuts nothing, and
-  the runtime keeps the socket until it or the client ends it. The timers are
-  unref'd and cleared when the socket's close arrives (`remove_connection`,
-  which is for a socket that has closed).
-- **Other closes.** A revocation, a cap eviction, the shutdown, and
-  `close_connection` run the pump's rule once more: the frames still waiting
-  are handed to the socket ahead of the close frame while its buffer is below
-  `WS_WRITE_HIGH_WATER_BYTES` (64 KiB), and the rest are discarded. A reply
-  sent to an otherwise idle connection just before a self-revoking close still
-  arrives; one queued behind a backed-up socket does not.
-- **After a close.** A closed or dropped connection is out of the map, so the
-  per-account cap does not count it while its socket is still closing. Where
-  the runtime reports its buffer, what it holds for that socket is less than
-  the high-water mark plus one frame, and the close frame — for the close
-  deadline on Node and Bun, and on a socket that cannot be cut until the
-  runtime or the client ends it.
-- **Logging.** One `warn` per overflow (`ws: outbound queue overflow, closing
-  the connection`, the Rust spine's line) or stall (`ws: write stalled,
-  dropping the connection`), with `{connection_id, account_id, queued_bytes,
-  queued_frames, …}`. No audit row: a client can provoke either at will.
-
-The twin of the Rust `fuz_realtime` outbound queue — same budget, charge,
-rule, close code, reason, and deadlines, pinned on both by
-`describe_ws_outbound_overflow_cross_tests`. Where they differ (the Rust spine
-queues every frame and discards the whole backlog at every close) is listed in
-../../../docs/security.md §Outbound Bounds.
-
-`close_connection(connection_id, code, reason)` closes one connection, pending
-or admitted — removal, abort, then the close through the writer — and answers
-`false` for an id that names nothing. `register_action_ws` makes its own closes
-with it (heartbeat timeout, oversized message, failed `on_socket_open`, refused
-admission).
-
-Targeted closure is `close_connections(target)` (`ConnectionCloser`, below):
-it returns the socket count closed, matches pending and admitted entries alike
-by `connection_identity_matches(identity, target)` — the twin of the Rust
-`ConnectionIdentity::matches` — and aborts each closed connection's
-controller. A `session` (`session_hash`), `token` (`api_token_id`), or
-`account` (`account_id` — coarse, covers session + bearer + daemon-token)
-target closes with `WS_CLOSE_SESSION_REVOKED`; a `role` target closes the
-account's connections whose `required_roles` include `role` with
-`WS_CLOSE_PERMISSION_REVOKED` instead — over-closing an any-of gate (the loss
-of any listed role closes, whether or not the account still holds another).
-
-`close_all_connections()` closes every connection, pending and admitted, with
-`WS_CLOSE_GOING_AWAY` instead — the shutdown close, removing and aborting each
-the same way — and leaves the registry **closing** for good (`is_closing()`):
-every later registration is **born closed**. `register_pending` and
-`add_connection` then insert nothing, abort the caller's controller, and close
-the socket with `WS_CLOSE_GOING_AWAY` before returning an id that names
-nothing, so `admit` refuses it — an upgrade in flight when the server shuts
-down is closed rather than outliving it. The flag is set in the same
-synchronous step as the closes, so an admission that finds its entry gone
-during shutdown reads the shutdown, never a revocation. Twin of the Rust
-registry's closing flag.
-
-Fan-out, to admitted connections only, each returning how many connections
-accepted the message: `broadcast(notification)` to every connection;
-`broadcast_filtered(message, predicate)` runs per-connection ACL predicate over
-`ConnectionIdentity`; `send_to_account` wraps `broadcast_filtered` and
-structurally satisfies `NotificationSender` (§Notification sender; the
-role-grant-offer sends: `auth/CLAUDE.md` §WS notifications). A server→client request has no broadcast form; it targets one
-connection (`request_connection`, below).
-
-Server→client request/response (ActionPeer): `request_connection(connection_id,
-method, params, {timeout_ms?})` sends a `{jsonrpc, method, params, id}` frame to
-exactly one socket and awaits the reply, returning a `PeerRequestOutcome`
-(`{ok: true, value}` | `{ok: false, error: PeerRequestError}` —
-`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`, the last carrying
-the client's error as `parse_inbound_jsonrpc_error` reads it). The registry
-owns the socket + the send; the correlation registry — id allocation, the pending
-map (nested `connection_id → s{n}` id, the nesting being the per-connection
-isolation guarantee), deadlines, and the in-flight cap — is `PendingPeerRequests`
-in **`actions/peer_request.ts`** (also home to the peer types/constants +
-`audit_unmatched_peer_response`), composed as `#pending` and unit-tested without a
-socket. `register_action_ws` routes inbound responses back via
-`resolve_peer_response` (→ `#pending.resolve`); connection close drains pending as
-`connection_gone`. Defaults: `DEFAULT_PEER_REQUEST_TIMEOUT` (10s),
-`DEFAULT_MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION` (256). Threaded to handlers as
-`ActionContext.request_client` (WS only; `undefined` on HTTP RPC). The `peer/ping`
-protocol action drives it; see `actions/peer_ping.ts`. An inbound reply matching
-no pending entry (unsolicited / cross-connection / late) is dropped + audited via
-`audit_unmatched_peer_response` (sampled warn — first 8, then 1/256; twin of the
-Rust `audit_unmatched_response`).
-
-Return values are bookkeeping, not delivery receipts — `0` means no live
-sockets, non-zero means the connection's outbound queue accepted the frame. Durable delivery requires
-persistence + rehydration by the consumer.
+- **Two-phase registration.** A revocation closes only *registered*
+  connections, so an upgrade registers pending (`register_pending`), re-reads
+  its credential, then `admit`s; a pending entry is matched by every close but
+  receives nothing and doesn't count toward the cap. `admit` answers `false`
+  when a revocation closed the entry meanwhile. `add_connection` is the
+  one-step form, for a connection with nothing revocable behind it (tests,
+  harnesses).
+- **Per-account cap.** Evict-oldest at admission, across every credential
+  type, closing with `WS_CLOSE_CONNECTION_LIMIT`; per registry, so endpoints
+  sharing one share one count. Rationale and default:
+  ../../../docs/security.md §WebSocket Connection Cap.
+- **Outbound bound.** Every frame goes through the connection's
+  `WsOutboundWriter` — `send_to` (every response and socket-scoped
+  notification) and the fan-outs. A consumer sending on the raw
+  `SocketOpenContext.ws` bypasses the budget. A send never waits or throws;
+  a frame past `outbound_queue_bytes` closes the connection with
+  `WS_CLOSE_OUTBOUND_OVERFLOW` (not a revocation). Charge, deadlines, closes
+  and the TS-vs-Rust differences: ../../../docs/security.md §Outbound Bounds.
+- **Closing.** Every close the registry makes (a revocation, an eviction, an
+  overflow, `close_connection`) removes the entry and aborts the
+  connection's controller in the same step, so in-flight handlers see
+  `signal.aborted` at once and nothing more reaches it; `remove_connection`
+  only removes, for a socket that has closed. `close_connections(target)`
+  (§Connection closer) matches pending and admitted entries alike.
+  `close_all_connections()` is the shutdown (`WS_CLOSE_GOING_AWAY`) and
+  leaves the registry closing for good: every later registration is born
+  closed.
+- **Fan-out** to admitted connections: `broadcast`, `broadcast_filtered`
+  (a per-connection predicate over `ConnectionIdentity`), and
+  `send_to_account`, which makes the registry a `NotificationSender`. Return
+  values count connections whose outbound queue accepted the frame —
+  bookkeeping, not delivery receipts; durable delivery needs the consumer's
+  persistence.
+- **Server→client requests** (the ActionPeer capability):
+  `request_connection(connection_id, method, params, {timeout_ms?})` targets
+  one socket and resolves a `PeerRequestOutcome`, never throwing. Correlation
+  (ids nested per connection, deadlines, the in-flight cap, auditing an
+  unmatched reply) is `PendingPeerRequests` in `actions/peer_request.ts`.
+  Handlers reach it as `ctx.request_client`, WS only.
 
 ## Connection closer (`actions/connection_closer.ts`)
 
@@ -645,122 +380,64 @@ type ConnectionCloseTarget =
 	| {kind: 'role'; account_id: Uuid; role: string}; // a revoked global grant
 ```
 
-`ConnectionRegistry` satisfies it structurally;
-`create_sse_connection_closer(registry, required_role)` (`realtime/audit_log_sse.ts`) adapts
-an `SseRegistry` (`close_all_connections` is `SseRegistry.close_all`;
-a `role` target closes the account's streams when `role` is the
-registry's gating role). The role revokes (`role_grant_revoke` of a global
-grant, a self-service disable) queue that close themselves, and the revocation
-guard (below) repeats it.
-Closing is idempotent and synchronous. `close_all_connections` is the one method no
-revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
-every live connection of the backend at shutdown, and it has no
-`ConnectionCloseTarget` variant. It also leaves each member closing — the WS connection
-registry and `SseRegistry` refuse every later registration (born
-closed) — so a closed connection registry or SSE registry hosts nothing more. Its Rust
-counterpart is `ShutdownCloser::close_all_connections`, a supertrait of
-`ConnectionCloser`.
+A `session`, `token` or `account` target closes with
+`WS_CLOSE_SESSION_REVOKED`; a `role` target closes the account's connections
+whose `required_roles` include the role with `WS_CLOSE_PERMISSION_REVOKED`
+(over-closing an any-of gate). `ConnectionRegistry` satisfies it structurally;
+`create_sse_connection_closer` (`realtime/audit_log_sse.ts`) adapts an
+`SseRegistry`. Closing is idempotent and synchronous. `close_all_connections`
+is the one method no revocation calls — `AppServer.close` runs it.
 
 **Every revocation closes after its commit.** A handler inside a route or
 action transaction never calls a closer inline: it calls
-`queue_connection_close(ctx, deps.connection_closer, target)`,
-which puts the close on the request's post-commit queue (`emit_after_commit`).
-The close runs once the handler's transaction has committed and is discarded
-when the handler throws — a rolled-back revocation closes nothing. `target` is
-a `ConnectionCloseTarget`; `closer.close_connections(target)` is the
-immediate form the queue runs. A
-handler with no wrapping transaction (`/login`, `/password`) opens its own
-around its writes and closes straight after that commit with
-`close_connections_after_commit(closer, target, log)`, which logs a failing
-close as the post-commit flush does. Twin of `queue_connection_close` /
-`ConnectionCloseTarget`.
-
-The order is load-bearing for admission: a connection registers, then re-reads
-its credential, so a close that missed the registration must belong to a
-revocation the re-read can see — true only if the close came after the commit
-(../../../docs/security.md §Closing on Revocation).
-
-The close does not depend on the audit row's announcement (a row written
-outside a transaction — `/login`, `/password` — is fail-open). Failure outcomes (`revoked: false`, a 404) queue no close — they
-carry caller-supplied ids.
+`queue_connection_close(ctx, deps.connection_closer, target)`, which puts the
+close on the post-commit queue, so a rolled-back revocation closes nothing. A
+handler that opens its own transaction (`/login`, `/password`) calls
+`close_connections_after_commit(closer, target, log)` straight after that
+commit. The order is load-bearing for admission: a connection registers, then
+re-reads its credential, so a close that missed the registration must belong
+to a revocation the re-read can see (../../../docs/security.md §Closing on
+Revocation). Failure outcomes queue no close — they carry caller-supplied ids.
 
 **One closer for every transport.** `create_realtime_closer()` returns a
-`RealtimeCloser` — a `ConnectionCloser` plus `add(closer)` and `member_count()`
-— whose every close fans out to each member and returns the sum. Membership is
-by reference: a closer added twice is one member, reached once. `add` returns a
-remover for that addition (idempotent); additions are counted, so the closer
-stays a member until every addition is removed — one owner releasing a shared
-registry leaves it reachable for the others.
-`create_app_backend` puts one on `AppDeps.connection_closer`; `create_app_server`
-adds each mounted WS connection registry and the audit stream registry itself (passing
-`connection_closer: null` to the mount functions so it holds the removers),
-registers the revocation guard on it, and removes them when its assembly fails
-or `AppServer.close` runs — after `close_all_connections` across them all. Twin of
-`RealtimeCloser`. A member that throws does not stop the fan-out — every
-member is called, then the first error is thrown for the caller to log;
-`ConnectionRegistry` and `SseRegistry.close_by_identity` treat a
-throwing socket or stream the same way. `noop_connection_closer` is a `ConnectionCloser` that closes
-nothing, for hand-built action-factory deps on a backend with no
-live-connection surface.
+`RealtimeCloser`, a `ConnectionCloser` that fans each close out to its members
+(`add` returns a remover; membership rules on its TSDoc). `create_app_backend`
+puts one on `AppDeps.connection_closer`; `create_app_server` adds each mounted
+WS registry and the audit stream registry, registers the revocation guard on
+it, and releases them on a failed assembly or `AppServer.close`.
+`noop_connection_closer` is for hand-built factory deps on a backend with no
+live connections.
 
-It is required where it is read, so it can't be forgotten:
-`RevokingActionFactoryDeps.connection_closer` (`create_account_actions`,
-`create_admin_actions`, `create_role_grant_offer_actions`,
-`create_self_service_role_actions`, `create_standard_rpc_actions`), `AppDeps` /
-`RouteFactoryDeps` (`create_account_route_specs`),
-`AuthCleanupDeps.connection_closer` (the auth cleanup's session sweep closes
-the connections of each expired session it deletes — `auth/CLAUDE.md`
-§Cleanup), and the
+The closer is required where it is read, so it can't be forgotten:
+`RevokingActionFactoryDeps.connection_closer` (the account, admin,
+role-grant-offer, self-service-role and standard action factories),
+`AppDeps` / `RouteFactoryDeps` (`create_account_route_specs`),
+`AuthCleanupDeps.connection_closer` (`auth/CLAUDE.md` §Cleanup), and the
 `connection_closer: RealtimeCloser | null` option of `register_action_ws` /
-`create_audit_log_sse`, which add their registry to it
-(`null` is the explicit opt-out, or for a caller that adds the registry itself
-to hold the remover, as `create_app_server` does).
+`create_audit_log_sse`, which add their registry to it (`null` opts out, or
+lets the caller add the registry itself to hold the remover, as
+`create_app_server` does).
 
 ### Revocation guard (`create_revocation_guard`)
 
-The audit-listener half of revocation: `create_revocation_guard(closer, log)`
-returns an `on_audit_event` callback that repeats a revocation's close when its
-audit row is announced. It covers a revocation emitted by code that holds no
-closer; for the builtin handlers it is a repeat of the close they already
-queued. A success row is announced only after its request's transaction commits
-(`auth/CLAUDE.md` §Audit emitter), so the guard's close is post-commit too. Its
-closes reach a connection still pending admission.
+`create_revocation_guard(closer, log)` returns an `on_audit_event` listener
+that repeats a revocation's close when its audit row is announced (after its
+commit). It covers a revocation emitted by code that holds no closer; for the
+builtin handlers it is a repeat of the close they already queued, which is
+the primary — the handler's close does not wait on the row's announcement.
+`to_connection_close_target(event)` maps a row to a target by the
+`RevocationScope` its event declares in `audit_event_revocation_scopes`
+(`auth/audit_log_schema.ts`); the mapping is on its TSDoc. Only `success` rows
+act: a failure carries attacker-controlled identifiers, and reacting to it
+would let a caller close another user's connection by guessing a session hash
+or token id. Twin of the Rust `register_revocation_guard`.
 
 **One guard, on the fan-out.** `create_app_server` registers one on
 `deps.connection_closer` when it mounts a WS endpoint or the audit stream —
 after the audit stream's broadcast listener, so a revocation's row reaches the
-stream before the close — and the fan-out carries each close to every member:
-each WS connection registry and the audit stream registry (`create_sse_connection_closer`).
-A consumer wiring outside `create_app_server` registers its own, over a closer
-holding its transports, inside its `audit_factory` body.
-
-It maps each row to a close target with `to_connection_close_target(event)` —
-the twin of the Rust `ConnectionCloseTarget::from_audit_event` — then calls
-`closer.close_connections(target)`. The mapping dispatches on the
-`RevocationScope` each event declares in `audit_event_revocation_scopes`
-(`auth/audit_log_schema.ts`), and a row missing its key (an empty string
-included) maps to nothing:
-
-- `session` (`session_revoke`, `logout`) → `{kind: 'session', session_hash: metadata.session_id}`
-- `token` (`token_revoke`) → `{kind: 'token', api_token_id: metadata.token_id}`
-- `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
-  `account_delete`, `account_purge`) →
-  `{kind: 'account', account_id: target_account_id ?? account_id}`
-- `role` (`role_grant_revoke`) → `{kind: 'role', account_id: target_account_id ??
-  account_id, role: metadata.role}` when the revoked grant was global
-  (`to_global_role_revocation`); a scoped revoke closes nothing. Per-message
-  dispatch re-authorizes each request against its own action, but nothing
-  re-checks what a connection admitted by a role gate receives — every push its
-  endpoint sends, every row the stream sends — so a socket closes with
-  `WS_CLOSE_PERMISSION_REVOKED` and a stream gated on the role ends. The role
-  revokes queue the same close themselves; this is its repeat.
-- `none` → nothing — every other event, and any event type fuz_app doesn't
-  define
-
-Only `outcome === 'success'` events act — a failure carries attacker-controlled
-identifiers, and an outcome outside the enum is no revocation. Reacting to them would let an authenticated caller close
-another user's connection by guessing a session hash or token id. Twin of the
-Rust spine's `register_revocation_guard`.
+stream before the close. A consumer wiring outside `create_app_server`
+registers its own, over a closer holding its transports, inside its
+`audit_factory` body.
 
 ## Notification sender (`actions/notification_sender.ts`)
 
@@ -773,47 +450,28 @@ one fan-out over every WS registry (twin of the Rust
 mounts and removes it on `close` or a failed assembly. Both dispatchers
 require it; a hand mount passes `backend.deps.notification_sender` (or
 `noop_notification_sender`) and adds its own registry
-(../../../docs/usage.md §WebSocket Endpoint). Membership and failure rules:
+(§`register_action_ws` — the endpoint). Membership and failure rules:
 TSDoc. The role-grant-offer sends: `auth/CLAUDE.md` §WS notifications.
 
 ## WebSocket endpoints
 
-### `create_app_server.ws_endpoints` — canonical mount surface
+### `ws_endpoints` — the mount surface
 
-Mirror of `rpc_endpoints` for WebSocket endpoints. Accepts either an array
-of `WsEndpointSpec` or a factory
-`(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`; factory form
-runs after server context is assembled so action lists can depend on
-`ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is auto-mounted via
-`register_action_ws` against the assembled Hono app, and its registry added to
-`deps.notification_sender` and `deps.connection_closer`.
-
-`upgrade_websocket: UpgradeWebSocket` is the Hono runtime adapter's
-module-level helper — `upgradeWebSocket` from `@hono/bun`, or from
-`@hono/node-server` on Node, whose `serve` must then be given a `ws`
-`WebSocketServer` built with `noServer: true` (`websocket: {server}`).
-`create_app_server` throws when `ws_endpoints` resolves non-empty but the
-helper is missing; a `ws_endpoints` factory returning `[]` does NOT trip the check, so
-feature-flag gated WS surfaces stay safe.
-
-What every auto-mount gets, so no hand mount has to remember it: the
-`action_ip_rate_limiter` / `action_account_rate_limiter` instances the RPC
-endpoints charge (one budget per action across transports), the server's
-`allowed_origins` when the spec sets none and the sole RPC endpoint's actions
-when it omits `actions` (`resolve_ws_endpoints`, read by both the mount and the
-surface), registration ahead of `post_route_middleware` and `static_serving`,
-the surface entry, and the revocation guard. A `ws_endpoints` or `rpc_endpoints`
-path outside the auth middleware's scope (`AUTH_MIDDLEWARE_PATH`, `'/api/*'`,
-from `auth/middleware.ts` — matched with `middleware_applies`, so `/api` itself
-is inside) throws at assembly (`assert_endpoint_in_auth_scope`, which
-`create_test_app_surface_spec` also runs): there no session or bearer is
-parsed and every caller would be unauthenticated.
-
-`WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
-`actions?`, `required_roles?`, `registry?`, `max_connections_per_account?`,
-`outbound_queue_bytes?`, `receive_timeout?`, `max_message_bytes?`,
-`on_socket_open?`, `on_socket_close?`. Every mounted registry is added to
-`deps.connection_closer`.
+`AppServerOptions.ws_endpoints` mirrors `rpc_endpoints`: an array of
+`WsEndpointSpec` (fields on its TSDoc) or a factory over the server context.
+`create_app_server` mounts each through `register_action_ws`, ahead of
+`post_route_middleware` and the static fallback, and gives it what a hand
+mount would have to remember: the RPC endpoints' action limiters (one budget
+per action across transports), the server's `allowed_origins` when the spec
+sets none, the surface entry, the revocation guard, and its registry on
+`deps.notification_sender` and `deps.connection_closer`, reachable at
+`app_server.ws_endpoints[path]`. Assembly throws on an endpoint path outside
+`AUTH_MIDDLEWARE_PATH` (no credential is parsed there), duplicate paths, a
+`GET` route at the same path, a non-empty `ws_endpoints` with no
+`upgrade_websocket` (the runtime adapter's helper; on Node, `serve` needs a
+`noServer` `ws` server), and a registry option (`max_connections_per_account`,
+`outbound_queue_bytes`) passed beside a supplied `registry`, which carries its
+own.
 
 **One action set across transports.** A spec that omits `actions` serves the
 actions of the server's sole `rpc_endpoints` entry through `to_ws_actions`
@@ -823,587 +481,234 @@ caller is refused `peer_no_transport` rather than `method_not_found`). One set
 of handler closures then runs on both transports. When the RPC list holds
 `role_grant_offer_create`, the handler-less
 `role_grant_offer_notification_actions` follow, so the WS surface lists what
-the role_grant_offer actions push as `remote_notification` methods; with no
-handler they never dispatch, and an inbound frame for one is answered
-`method_not_found`. Assembly throws when a spec omits `actions` and
-no RPC endpoint, or more than one, resolves.
-
-`max_connections_per_account` sets the per-account connection cap on the
-registry the mount creates (`RegisterActionWsOptions` carries the same field).
-It throws alongside `registry` — a supplied registry carries its own cap, set
-where it was constructed, and an option that silently did nothing would read as
-enforced. `outbound_queue_bytes` sets the per-connection outbound budget on that
-registry the same way (default `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`; zero or a
-non-positive value throws at assembly, as does passing it alongside
-`registry`).
-
-Mounted registry reachable at `app_server.ws_endpoints[path]`
-(`Readonly<Record<string, ConnectionRegistry>>`). Duplicate paths
-across `WsEndpointSpec`s throw at assembly, before any endpoint mounts.
-Cross-surface collisions (same `GET <path>` on both `RouteSpec` and
-`WsEndpointSpec`) throw with exact-string match. Pattern overlap (e.g.
-`GET /api/:resource` vs `/api/ws`) is not detected — Hono's specific-before-wildcard routing keeps
-those working but avoid the overlap.
-
-`AppSurfaceWsEndpoint.methods` surfaces `request_response` +
-`remote_notification` specs only — `local_call` specs are filtered out
-because they don't dispatch over WS.
+those actions push; an inbound frame for one is `method_not_found`. Assembly
+throws when a spec omits `actions` and no RPC endpoint, or more than one,
+resolves. The surface's `AppSurfaceWsEndpoint.methods` lists
+`request_response` and `remote_notification` specs only.
 
 ### `register_action_ws` — the endpoint
 
-Mounts one `GET path` route, its guards in the route-spec pipeline's
-coarse-to-fine order (from `fuz_auth_guard_resolver` over the upgrade's auth
-shape `{account: 'required', actor: 'required', roles?, required_scope:
-'surface:ws_upgrade'}`):
+Mounts one `GET path` route whose guards run the route pipeline's order over
+the upgrade's auth shape `{account: 'required', actor: 'required', roles?,
+required_scope: 'surface:ws_upgrade'}`: origin (403), auth (401), token scope
+(a narrowed token cannot hold a socket), the authorization phase (the acting
+actor from `?acting=`), `required_roles` when gated (any-of), then the
+upgrade. Any other method on the path is the app's 405. Returns `{registry}`.
+Consumers reach for `ws_endpoints`; call it directly only outside
+`create_app_server`. `create_ws_test_harness` drives the dispatcher without
+the guards.
 
-1. `verify_request_source(allowed_origins)` — 403
-2. `require_auth` — 401
-3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket (403 `token_scope_required`)
-4. The authorization phase (`run_authorization_phase`, `auth/request_context.ts`) — resolves the acting actor (`?acting=` through `parse_acting`; malformed reads as omitted, and the route declares no query schema, so a credential-less `?acting=garbage` is still the 401; a query holding an escape that doesn't decode is refused here, 400 `invalid_query_params`, after the 401 and the scope gate), seeds `REQUEST_CONTEXT_KEY`
-5. `require_role(required_roles)` when the endpoint is gated — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
-6. `upgradeWebSocket`
+The per-socket half is `actions/ws_socket_session.ts`
+(`create_ws_socket_events`): admission, the pre-admission queue, the receive
+watchdog, the credential deadline, frame dispatch and close, each on its
+TSDoc. Frame dispatch parses with `parse_json_text`, refuses a batch, and
+classifies with `classify_jsonrpc_message` — the one classifier both
+transports run (`http/CLAUDE.md` §JSON-RPC) — then routes a reply to its
+pending peer request, a `cancel` to the request's controller, and a request
+to `perform_action` with a socket-scoped `notify` and
+`AbortSignal.any([socket_close, request_cancel])` as its signal. A request
+reusing a live id, or past `MAX_INBOUND_DISPATCHES_PER_CONNECTION`, is
+refused undispatched (../../../docs/security.md §WebSocket Request Bounds).
 
-Only `GET` is mounted (Hono serves `HEAD` through it, guards included), so any
-other method on the path is the app's 405 (`Allow: GET, HEAD`; `server/unmatched_route.ts`), and a `GET` asking for no upgrade its 404. Takes
-`allowed_origins` (required — `create_app_server` passes the server's), the
-required `connection_closer` and action limiters, and optional
-`required_roles`; returns `{registry}`. Most consumers reach for
-`ws_endpoints` above; call it directly only to mount a WS endpoint outside
-`create_app_server`'s assembly. Tests drive the dispatcher without the
-guards through `create_ws_test_harness`, which invokes the captured events
-factory directly.
+The rules a caller would miss:
 
-The per-socket half lives in `actions/ws_socket_session.ts`:
-`create_ws_socket_events(endpoint, upgrade)` returns the `WSEvents` for one
-upgraded socket — admission, the pre-admission queue, the receive watchdog,
-the credential deadline, frame dispatch, and close. `register_action_ws` reads
-the Hono context at upgrade into a `WsSocketUpgrade` and derives the
-endpoint's `WsSocketEndpoint` once; the module never touches the Hono app.
-Its exports include the socket bounds (`MAX_PRE_ADMISSION_FRAMES`,
-`PRE_ADMISSION_QUEUE_BYTES_FACTOR`, `MAX_INBOUND_DISPATCHES_PER_CONNECTION`),
-the duplicate-id and overflow wire strings, and the `on_socket_open` /
-`on_socket_close` contexts (`SocketOpenContext`, `SocketCloseContext`).
-
-Per-message dispatch delegates to `perform_action` — the shared core that
-HTTP RPC also calls. The socket session owns only WS-specific concerns:
-
-- **Wire envelope parsing** — `parse_json_text` (`http/json_text.ts`: what the Rust spine's `serde_json` refuses is a `parse_error` here too) → batch rejection → `classify_jsonrpc_message` (`http/jsonrpc_helpers.ts`, the twin of the Rust `fuz_http::classify`, the same classifier the HTTP POST path runs) → per-arm handling: an `invalid` answers its error on its id; a `response` routes to the socket's pending peer request; a `notification` routes `cancel` and is otherwise dropped; a `request` goes on to the duplicate-id and in-flight checks and dispatch. The classifier runs the twin's order — version, then the `method` axis, then `id`, then the `JsonrpcRequest` envelope — so `{method: 'x'}` and `{jsonrpc: '1.0', method: 'x'}` answer `invalid_request` rather than being dropped as notifications; a response is the twin's shape exactly (no string `method`, a string/number `id`, exactly one of `result` / `error`), so a hybrid like `{method, id, result}` stays a dispatchable request; and `params: null`, an array `params`, or a non-string/number `id` answers `invalid_request` (-32600) on both transports rather than reaching the dispatcher as `invalid_params`. Notifications stay unvalidated (they carry no id to echo). A non-object frame answers `id: null`. POST answers a notification or a response `invalid_request` on `id: null`, as the Rust spine does.
-- **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
-- **Duplicate live ids refused** — a request whose id names a request still running on the socket is answered `invalid_request` with `data.reason` `ERROR_DUPLICATE_REQUEST_ID` and not dispatched; the running request keeps its controller, its cancel entry, and its reply id. An id is free again once its request is answered. Same refusal on the Rust spine
-- **In-flight ceiling** — at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests run at once per socket (`@hono/node-server` does not await `onMessage`, so nothing else bounds them); one more is answered `queue_overflow` (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open and keeps reading — a reply to a server-initiated request still gets through. The duplicate check runs first; neither refusal reaches `perform_action`, so neither charges the action rate limiters. Same cap, message, and order as the Rust spine's `MAX_INBOUND_DISPATCHES_PER_CONNECTION`
-- **Socket-scoped notify** — `(method, params) => registry.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
-- **Every send through the registry** — responses, error frames, and notifications all go through `registry.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
-- **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
-- **Connection lifecycle** — admission (`registry.register_pending` → `recheck_admission` → `registry.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
-- **The inbound gate** — frames queue until the socket is admitted and `on_socket_open` has completed; frames on a socket the server closed are dropped
-
-**Admission.** `onOpen` registers the connection pending (synchronously, with
-the socket's `AbortController`), re-reads what the gates read
-(`recheck_admission({db}, {resolved, request_context, required_roles})`,
-`auth/resolved_auth.ts`, which the audit stream shares: the credential —
-session row / token row / account row, no touch — the acting actor, and the
-role; `resolved` is `get_resolved_auth(c)`, the value the auth middleware
-set), then `registry.admit`s. A dead credential, or a pending entry a revocation closed
-meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
-revoked socket gets; a re-check that throws closes it with
-`WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
-unchecked. A soft-deleted acting actor is refused like a dead credential. An
-endpoint with `required_roles` re-reads them beside the credential — the acting
-actor's grants afresh (`refresh_role_grants`), a global grant of any listed role
-admitting, as the gate in front did — and refuses a lost role with
-`WS_CLOSE_PERMISSION_REVOKED`; a failed role read is the same 1011. During shutdown a refusal is the shutdown's instead: an upgrade
-pending at the close-all was closed by it with `WS_CLOSE_GOING_AWAY` and its
-controller aborted, so the refusal after the re-read — even one the closing
-database failed — writes nothing more; an upgrade that registers after it is
-born closed and skips the re-read. A refused socket gets nothing else written
-to it, evicts nothing, and runs neither lifecycle hook. An upgrade with no resolved credential on its
-context, or one on another account than its request context, throws before the
-socket exists. The test-preset escape hatch
-(`TEST_CONTEXT_PRESET_KEY`) skips the re-read — a pre-baked credential has no
-rows behind it — so `create_ws_test_harness` admits synchronously. Admission
-leaves no interleaving that admits a revoked credential, because every
-revocation closes only after its commit — see
-../../../docs/security.md §Connection Admission and §Closing on Revocation.
-
-`connection_closer: RealtimeCloser | null` is a required option: the endpoint's
-registry is added to it, so the revocation handlers' post-commit closes reach
-the sockets opened here. The add is the mount's last step, so a mount that
-throws (a registry that fails to compile) adds nothing; the addition is
-permanent, its remover not returned. `null` is for a registry no revocation
-has to reach (a harness driving the dispatcher directly), or one the caller
-adds itself to hold the remover — `create_app_server` passes `null` and adds
-the registry after the mount returns, releasing it when assembly fails or
-the server closes.
-
-Because `onOpen` awaits, an adapter can deliver `onMessage` before admission
-(`@hono/node-server` doesn't await `onOpen` at all). Those frames are **queued, not
-dispatched** — nothing runs on a credential that has not been re-read — and
-dispatch in arrival order, back to back, once the socket is admitted and
-`on_socket_open` has completed; a refusal drops them unread. The Rust spine
-gets the same ordering from starting its read loop at admission, with the
-kernel socket buffer as the queue; here the queue is in memory, bounded by
-count (`MAX_PRE_ADMISSION_FRAMES`, 256) and by bytes
-(`PRE_ADMISSION_QUEUE_BYTES_FACTOR`, 4, times the endpoint's
-`max_message_bytes`) — the frame that would pass either closes the socket with
-`WS_CLOSE_POLICY_VIOLATION` (reason `WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON`).
-The byte budget is what bounds memory: pending sockets are not capped per
-account. A consumer that raises the client's durable queue above the frame cap
-makes a full reopen flush overflow it. The `onMessage` call for a queued frame
-returns a promise that settles when the frame was dispatched or dropped.
-
-The queue holds **every** inbound frame, replies to server-initiated requests
-included — so an `on_socket_open` hook that awaits
-`registry.request_connection` on its own connection gets no reply until it
-returns (it times out); start such a request without awaiting it.
-
-**A server-closed socket dispatches nothing.** An adapter can keep delivering
-frames after the server calls `ws.close(…)`, until the close handshake
-completes — `@hono/node-server` does, for up to the `ws` close timeout when the
-client withholds its close frame. So every server-side close removes the
-connection from the registry and aborts the socket's controller **at close
-time**: the registry does both for a revocation or a cap eviction, and
-`ws_socket_session.ts`'s `end_socket` does both — through
-`registry.close_connection` — for a heartbeat timeout, a credential
-expiry, an oversized message, a failed `on_socket_open`, and a refused
-admission.
-`onMessage` then drops any frame whose socket has ended — no dispatch, no
-error reply. A connection the registry no longer holds though nothing closed
-its socket (a bare `registry.remove_connection`; `registry.is_registered` is
-the twin of the Rust `is_registered`) is ended on its next frame with
-`WS_CLOSE_INTERNAL_ERROR` (`WS_CLOSE_CONNECTION_UNREGISTERED_REASON`), so it can't linger as a
-socket that reads everything, answers nothing, and — being chatty — is never
-reaped by the heartbeat. Only a frame that is queued or dispatched counts as
-heartbeat activity.
-
-**Per-message authorization phase.** `perform_action` calls
-`apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
-changes during a connection lifetime are picked up on the next message —
-no in-place refresh. A revoked global grant of a role the endpoint's
-`required_roles` lists closes the socket (`WS_CLOSE_PERMISSION_REVOKED` —
-the revoking handler through `connection_closer`, the revocation guard
-repeating it), since nothing else re-checks what it
-receives. Authentication
-invalidation (a session or token revoke, `password_change`, a logout, an
-account delete, a cap eviction) still closes the socket — the revoking
-handler through `connection_closer`, the revocation guard again on the
-audit row.
-
-Per-message side-effect queues: `pending_effects` (eager) and
-`post_commit_effects` (deferred — pushed by handlers via
-`emit_after_commit`) drain through `flush_request_effects`, the flush the
-HTTP middleware shares. Both flush in the same `try/finally` that releases
-the request controller, after the reply is sent; every rejection is logged
-and reaches `on_effect_error` (`create_app_server` threads its own to the
-endpoints it mounts) with `{transport: 'ws', method, path}`. Nothing orders that
-flush against other frames: frames on an admitted socket are not serialized
-(`handle_frame` calls aren't chained, and an adapter need not await
-`onMessage` — `@hono/node-server` doesn't), so a message's effects can still be
-in flight when the caller reads its reply and when the next message
-dispatches. A test that reads the audit log after a WS reply awaits
-`_testing_drain_effects` first, which awaits the emitter's in-flight writes
-(`src/lib/testing/CLAUDE.md`). The deferred thunks are
-invoked first and the eager writes awaited after, so a revocation's close never
-waits on a slow audit INSERT — held behind one, the socket would stay open on a
-credential already committed gone and dispatch its next frame. The deferred
-queue is **discarded on rollback** before it reaches that flush (a
-rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
-§Pending Effects.
-
-**Reply before flush.** The response is sent before either queue flushes. A
-handler that revokes the credential its own socket runs on queues a close of
-that socket on `post_commit_effects`, so the caller reads its reply and then the
-`WS_CLOSE_SESSION_REVOKED` close — flushing first would strand it without an
-answer. The close hands the frames still waiting in the connection's outbound
-queue to the socket ahead of the close frame while the socket's buffer is below
-`WS_WRITE_HIGH_WATER_BYTES`, so the reply arrives when it was queued behind
-another frame of the same run on a socket that is keeping up, and is discarded
-when the socket is backed up past that mark. (The Rust spine drains first but marks the reply owed beforehand, and its
-socket loop writes that reply ahead of the close — the same order on the wire,
-held by the cross-backend WS suite.)
-
-**Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
-fires once the connection is admitted and before the first message dispatches
-(frames sent meanwhile wait); awaited; throws log + an `internal_error` frame +
-close with `WS_CLOSE_INTERNAL_ERROR` and `WS_CLOSE_SOCKET_OPEN_FAILED_REASON`, unregistering
-the connection.
-`on_socket_close({ws, connection_id, identity})` fires — only for a socket that
-was admitted — after
-`registry.remove_connection(connection_id)` — a slow hook never holds a dead
-entry that broadcasts still target and the per-account cap still counts.
-`connection_id` and `identity` are the values captured at open, so the hook
-reads them the same way after a client close, a revocation, or a connection-cap
-eviction; its `ws` is the close event's context, which on some adapters is not
-the object `on_socket_open` received. Errors logged and swallowed.
-
-**Receive timeout** (`receive_timeout?: number | null`, ms): default-on at
-`DEFAULT_WS_RECEIVE_TIMEOUT` (60s) — the twin of the Rust spine's
-`ActionWsOptions.receive_timeout` — `null` keeps silent sockets open, and a
-value that is not positive, or is past `WS_RECEIVE_TIMEOUT_MAX` (2³¹ − 1 ms,
-the longest delay a timer honors; TS-only), throws at registration. Any
-inbound message resets `last_receive_time` — chatty clients never trip it. The
-timer starts at admission, and the first timeout window after it is exempt
-(cold-start grace).
-Tick interval is `timeout / 2`, so event-loop blockage pauses the timer itself.
-A timeout unregisters the connection and aborts its signal along with the
-`WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` close.
-
-**Credential deadline.** From admission, a timer closes the socket when the
-credential it upgraded on expires (`ResolvedAuth.credential_deadline` — the
-earlier of a session's cookie and row expiry, an API token's row; none for an
-eternal token or the daemon token): `WS_CLOSE_SESSION_REVOKED` with
-`WS_CLOSE_CREDENTIAL_EXPIRED_REASON`, through `end_socket`. Expiry writes
-nothing a revocation listener hears, so the socket watches its own deadline.
-The wait is `schedule_credential_deadline`'s chain of timers of at most an
-hour (a 30-day session is past `setTimeout`'s ceiling), each also checking the
-wall clock so a host suspend does not extend the deadline, cancelled when the
-socket ends. Twin of the Rust loop's `WsLoopOptions::credential_deadline`.
-
-Two abort signals composed via `AbortSignal.any`:
-
-- `socket_abort_controller` — per-socket, fires when the socket ends: at the server's close (revocation, cap eviction, heartbeat timeout, …) or the client's. Registered with the registry, which aborts it on the closes it makes. Drives every handler's `ctx.signal`.
-- `pending_controllers: Map<JsonrpcRequestId, AbortController>` — per-request. Registered before dispatch (one entry per running request — a duplicate live id is refused — so its size is the in-flight count the ceiling bounds), cleared in `finally` so late cancels for a completed id (or a reused id) can't null-abort the wrong handler. Unknown cancels no-op.
+- **Admission re-reads the credential.** `onOpen` registers pending, runs
+  `recheck_admission` (`auth/resolved_auth.ts`, shared with the audit
+  stream: the credential, the acting actor, the endpoint's roles), then
+  admits. A dead credential is closed `WS_CLOSE_SESSION_REVOKED`, a lost role
+  `WS_CLOSE_PERMISSION_REVOKED`, a failed re-read `WS_CLOSE_INTERNAL_ERROR` —
+  fail closed. A refused socket evicts nothing and runs neither hook
+  (../../../docs/security.md §Connection Admission).
+- **Frames wait for admission and `on_socket_open`.** Frames arriving earlier
+  are queued (bounded; overflow closes 1008) and dispatched in order after, so
+  an `on_socket_open` hook that awaits `registry.request_connection` on its
+  own connection deadlocks until it times out — start such a request without
+  awaiting it.
+- **A server-closed socket dispatches nothing.** Every server-side close
+  removes the connection and aborts its controller at close time, so frames
+  an adapter keeps delivering until the close handshake are dropped. A
+  connection removed without a close is ended on its next frame.
+- **Per-message authorization.** Each message re-runs the authorization
+  phase, so a role grant change is picked up on the next one. What a
+  connection receives is not re-checked, so a credential revocation, a lost
+  endpoint role, or a cap eviction closes the socket — a logout only the
+  sockets of the session it ends.
+- **Reply before flush.** The reply is sent before the message's effect
+  queues flush, so a handler that revokes its own socket's credential gets its
+  reply and then the close. The deferred thunks run before the eager writes
+  are awaited, so a revocation's close never waits on an audit INSERT. Frames
+  on a socket are not serialized, so a message's effects can still be in
+  flight when its reply is read: a test reading the audit log after a WS
+  reply awaits `_testing_drain_effects` first (`src/lib/testing/CLAUDE.md`).
+  The queues themselves: `http/CLAUDE.md` §Pending Effects.
+- **Hooks.** `on_socket_open` runs once admitted, before the first dispatch,
+  awaited; a throw closes 1011. `on_socket_close` runs only for an admitted
+  socket, after `remove_connection`, with the `connection_id` and identity
+  captured at open; its errors are logged.
+- **Timers.** The receive timeout (`receive_timeout`, default
+  `DEFAULT_WS_RECEIVE_TIMEOUT`, `null` disables) closes a silent socket with
+  `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT`; any inbound frame resets it. The
+  credential deadline closes the socket when its credential expires
+  (`WS_CLOSE_CREDENTIAL_EXPIRED_REASON`) — expiry writes nothing a revocation
+  listener hears, so the socket watches its own.
 
 ## Rooms (`actions/room_registry.ts`, `actions/room_action_specs.ts`, `actions/room_actions.ts`)
 
 A generic live-room primitive over one WS endpoint's `ConnectionRegistry` —
 the TS twin of the Rust spine's `fuz_realtime::RoomRegistry` and
 `fuz_actions::room`, one wire, held to it by the `rooms_ws` cross suite. Each
-module doc holds the detail; the cross-cutting shape:
+module doc holds the detail; the shape:
 
-- **`RoomRegistry`** (`new RoomRegistry(connections, options)`) — rooms keyed
-  by a consumer's `RoomId` (1–`ROOM_ID_MAX_LENGTH` printable ASCII), holding
-  seats (random `MemberId` per join, keyed by connection and actor) and watches
-  (one per connection and room, for whichever actor last asked). Options:
-  `exclusive` (one seat per actor across the registry, newest admitted wins,
-  with the rejoin tombstone — `ROOM_REJOIN_TOMBSTONE_TTL_MS`,
-  `ROOM_REJOIN_TOMBSTONES_PER_ACTOR`), `max_members_per_room`,
-  `max_payload_bytes`, `max_state_bytes`, `max_watches_per_connection`
-  (`DEFAULT_ROOM_*`), `topology`. Every method runs without an `await`, so no
-  check is separated from its mutation (the Rust registry's one lock). Each
-  room's events carry a per-room `seq`; an empty room is deleted. Refusals are
-  a `RoomResult` (`RoomError`), not throws.
-- **Two-phase join and watch** — `reserve_seat` / `reserve_watch` before the
-  consumer's authorizer reads, `admit_seat` / `admit_watch` after, so an
-  eviction committing mid-authorizer still reaches the request (an actor or
-  room target refuses it, a scope target poisons it, at most
-  `MAX_POISONED_SCOPES`). The admit consumes the pending entry; a caller that
-  never reaches it calls `withdraw` in a `finally` (the Rust guard's drop). A
-  TS join keeps running after its socket closes, so the admit reads the
-  socket's signal and the close marks every join in flight.
-- **Disconnect** — the first reserve on a connection adds one listener to
-  `ConnectionRegistry.socket_signal(connection_id)` (the registered
-  `abort_controller`'s signal, which every close path aborts; `null` while
-  pending or once gone); its abort releases every seat (`room_member_left`
-  reason `disconnected`), watch, and join in flight on the next microtask, so a
-  close inside a fan-out (an overflow) never re-enters the registry mid-step.
-- **Eviction** — `evict(target, reason)` by `actor`, `actor_in_scope`, `room`,
-  or `scope` (`RoomEvictTarget`), covering seats, watches, and joins in flight;
-  the consumer calls it after its authority change commits
-  (`emit_after_commit`). `clear()` drops everything silently, for a test reset.
-- **The verbs** — `create_room_actions({registry, authorize, limiter},
-  {join_extra?})` returns the `room_*` `RpcAction`s
-  (`all_room_action_specs`), **WS-only**: mount them on a `ws_endpoints` entry
-  (with `room_notification_actions` for the surface), never an RPC endpoint.
-  Actor-required, `side_effects: false`; `room_join` and `room_watch` carry
-  `rate_limit: 'account'`. `RoomAuthorize.authorize({actor_id, account_id,
-  room_id, access}, db)` gets the caller's ids and the pool `db`, never the
-  request's role grants (loaded before the reserve, so possibly older than an
-  eviction); `{allow: false}` answers `room_not_found`, the IDOR mask.
-  `RoomRateLimiter` (`DEFAULT_ROOM_RATE_LIMIT`: 300 requests and 1 MiB per
-  10 s) is per connection, two refilling buckets charged on join, send, and
-  state set — one request plus the payload's or state's `json_escaped_len`,
-  the bytes it adds to each frame — but not watch; `create_room_actions` throws
-  when the limiter can't cover a max-size payload or state
-  (`check_room_limits`). Refusals: the `ERROR_ROOM_*` reasons
-  (`to_room_jsonrpc_error`), `rate_limited` with `data.retry_after`, and
-  `request_cancelled` for a cancelled join or a closed socket.
-- **Notifications** — `room_member_joined`, `room_member_left`,
-  `room_member_state` (to the other members and the watchers),
-  `room_message` (addressee, or the room minus the sender), `room_seat_lost`
-  (the displaced or evicted seat's own connection, `moved_to` for a move), and
-  `room_watch_ended` — each a `remote_notification` spec with its params schema.
-
-### Room client (`actions/room_client.svelte.ts`)
-
-The frontend side, one `RoomClient` per socket and actor (`acting`), holding a
-reactive `RoomState` per room (`client.room(room_id)`): `members`, `seat`
-(`RoomSeat` — `member_id`, `topology`, `extra`), `seat_status`
-(`RoomSeatStatus`), `watching`, `ended` (`RoomSeatEnded`), `watch_ended`,
-`error`, `local_state`. The module doc holds the reasoning; the shape:
-
-- **Verbs** — `create_room_rpc(socket)` builds the `RoomRpc` the client takes:
-  the room verbs straight over `FrontendWebsocketClient.request`, unqueued,
-  answers parsed with the output schemas forward-compatibly
-  (`safe_parse_dropping_unknown_keys`), never through the RPC client's
-  transports (which fall back to HTTP while the socket is down, where no room
-  verb is mounted), plus `connection` — the open `WebSocket`, else `null`.
-- **Wants, converged one request at a time** — `join`, `leave`, `watch`,
-  `unwatch`, `set_state` record a want; one runner per room sends the requests
-  that close the gap, waiting for each answer (the server dispatches a
-  socket's requests concurrently, so a leave could otherwise overtake its
-  join). Nothing is sent while the socket is down. `send` goes out at once.
-  Every verb runs in `untrack`, so a page's `$effect` may call one (with its
-  opposite in the teardown) without depending on room state.
-- **`seq`** — events before the first join or watch answer buffer, then replay
-  past its `seq`; a live room drops events at or below its last `seq`. A
-  message reaching a live watch while the join is in flight is held for the
-  seat and delivered after `seated`.
-- **Connections** — the client follows `RoomRpc.connection` itself, an
-  `$effect.root` made in the constructor (a no-op on the server) and ended by
-  `dispose`, calling `sync_connection()`, which compares it by identity, so a
-  close and reopen in one batch still counts; `sync_connection` stays public
-  and runs before each request and notification. A seat lost to the old
-  connection is rejoined with `rejoin_of`; a `room_seat_moved` refusal ends it
-  as moved, and a `rate_limited` one is retried after its `retry_after`, up
-  to `ROOM_REJOIN_RATE_LIMITED_RETRIES_MAX` times (`set_timeout` /
-  `clear_timeout` in `RoomClientOptions`). `room_seat_lost` (moved, evicted,
-  room closed) is never rejoined. Watches are taken again.
-- **Notifications** — `receive(method, params)` from the RPC client's
-  `'receive'` handlers (`is_room_notification_method`), parsing each with its
-  params schema. `RoomListener` (`add_listener`) hears `seated`, `unseated`
-  (`RoomUnseatedReason`), member events, and messages, in `seq` order except
-  a message held for the seat, heard once it is taken —
-  `rtc/rtc_mesh.svelte.ts`'s `RtcMesh` follows a room through it. A listener
-  that throws is logged; the others still hear, and the join or replay
-  carries on.
-- **`dispose()`** leaves every seat, drops every watch, and stops following
-  the connection.
+- **`RoomRegistry`** — rooms keyed by a consumer's `RoomId`, holding seats
+  (a random `MemberId` per join) and watches; options for exclusivity (one
+  seat per actor, newest wins), member, payload, state and watch bounds, and
+  topology. Every method runs without an `await`, so no check is separated
+  from its mutation (the Rust registry's one lock). Each room's events carry a
+  per-room `seq`. Refusals are a `RoomResult`, not throws.
+- **Two-phase join and watch** — `reserve_*` before the consumer's authorizer
+  reads, `admit_*` after, so an eviction committing mid-authorizer still
+  reaches the request; a caller that never admits calls `withdraw` in a
+  `finally`. A disconnect (the connection's `socket_signal`) releases every
+  seat, watch and join in flight.
+- **Eviction** — `evict(target, reason)` by actor, actor in scope, room or
+  scope, called after the consumer's authority change commits
+  (`emit_after_commit`).
+- **The verbs** — `create_room_actions` returns the `room_*` actions,
+  **WS-only**: mount them on a `ws_endpoints` entry (with
+  `room_notification_actions` for the surface), never an RPC endpoint.
+  `RoomAuthorize.authorize` gets the caller's ids and the pool `db`, never the
+  request's role grants (possibly older than an eviction); a refusal answers
+  `room_not_found`, the IDOR mask. `RoomRateLimiter` charges per connection.
+- **`RoomClient`** (`actions/room_client.svelte.ts`) — the frontend side, one
+  per socket and actor, with a reactive `RoomState` per room. Verbs record a
+  want, and one runner per room sends the requests that close the gap, one at
+  a time, straight over the socket (`create_room_rpc`), never through the RPC
+  client's transports, whose HTTP fallback mounts no room verb. It follows the
+  socket's connection, rejoins a seat lost to a reconnect, replays buffered
+  events past each answer's `seq`, and hears notifications through the RPC
+  client's `'receive'` handlers. `RtcMesh` (`rtc/`) follows a room through its
+  listener.
 
 ## Protocol actions (`actions/protocol.ts`)
 
-Three shared `{spec, handler}` tuples that every consumer spreads into both
-sides' `actions` arrays — disconnect detection, per-request cancel, and the
-server→client `peer/ping` round-trip work identically across every repo
-without per-consumer ping plumbing.
+Wire-protocol actions shipped by fuz_app, not consumer domain logic:
+`heartbeat_action` (`heartbeat.ts`, the client's activity-aware liveness
+request), `cancel_action` (`cancel.ts`, a handler-less notification — cancel
+is dispatcher-owned; snake_case `cancel` + `{request_id}`, not MCP's
+`$/cancelRequest`), and `peer_ping_action` (`peer_ping.ts`, which drives the
+server→client direction: the handler pings the calling client through
+`ctx.request_client` and returns its echo; over HTTP it refuses
+`peer_no_transport`). Their reason codes and `PingResponse` are the cross-impl
+wire contract, on the modules' TSDoc.
 
-The category is wire-protocol concerns shipped by fuz_app, not consumer
-domain logic. Protocol vs domain: a future clock-skew probe or
-reconnect-resume token belongs here; a `payment_charge` action does not.
-
-Two const arrays:
-
-- `protocol_actions: ReadonlyArray<Action>` — for the server's `register_action_ws` `actions`. Spread before consumer-owned actions.
-- `protocol_action_specs: ReadonlyArray<ActionSpecUnion>` — derived via `.map(a => a.spec)` so the two arrays cannot drift. For the frontend `ActionRegistry`.
-
-Asymmetry intentional — server runs handlers (heartbeat echo, peer/ping
-round-trip; cancel is dispatcher-owned), frontend registry only stores specs. Both
-bundles plus the codegen `include_protocol_actions: false` default form a
-three-leg contract; `PROTOCOL_ACTION_METHODS` (in `actions/action_codegen.ts`)
-is the method-name set that drives both the codegen filter and the action-manifest
-exclusion.
-
-**Not auto-spread by `create_frontend_rpc_client` or `register_action_ws`** —
-bundled helpers stay pure factories so the dispatch surface stays
-grep-traceable at every registration site and consumers can override
-individual protocol actions without an opt-out flag.
-
-### Individual actions
-
-- **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: {account: 'required', actor: 'none'}`, `side_effects: false`, parameterless `void` input (absent / `null` / `{}` params — the Rust `require_void_params` shapes), empty-object output. Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
-- **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = object({request_id: JsonrpcRequestId})`. **No handler** (`cancel_action = {spec}`) — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
-- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`with_default`, `{}` for an omitted input — the client's pre-send parse of a no-arg call); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. A client's error reply reaches the caller as `parse_inbound_jsonrpc_error` reads it (a base-set code, else `internal_error`; a string message, else `'peer error'`; `data` as sent), as on the Rust spine. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` imports nothing from the dispatch core, so `protocol_action_specs` doesn't drag it into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
+A three-leg contract keeps them out of consumer surfaces: `protocol_actions`
+(the server's handlers), `protocol_action_specs` (derived from it, for the
+frontend `ActionRegistry`), and the codegen filter, all keyed by
+`PROTOCOL_ACTION_METHODS` (`actions/action_codegen.ts`), which the action
+manifest excludes too. `create_frontend_rpc_client` and `register_action_ws`
+don't spread them — every registration site stays grep-traceable and can
+override one; a `ws_endpoints` entry that omits `actions` does, via
+`to_ws_actions`. None of them imports the dispatch core, so
+`protocol_action_specs` doesn't drag it into frontend bundles.
 
 ## Event state machine
 
-Five modules (`action_event_types.ts`, `action_event_data.ts`,
-`action_event_helpers.ts`, `action_event.ts`, `action_dispatcher.ts`) define a
-discriminated-union-based state machine used by the reactive client to
-track an action through its lifecycle. Per-symbol semantics on TSDoc;
-high-level shapes that span modules:
+`action_event_types.ts`, `action_event_data.ts`, `action_event_helpers.ts`,
+`action_event.ts` and `action_dispatcher.ts` define the discriminated-union
+state machine (`ActionEventDataUnion`, over `kind` + `phase` + `step`) the
+reactive client tracks an action through; `validate_step_transition` and
+`validate_phase_transition` throw on illegal moves. Per-symbol semantics on
+TSDoc. The rules a reader would miss:
 
-- **Discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step`, a variant per lifecycle point of each kind. Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
-- **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
-- **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_transition` enforces.
-- **`ActionEvent.parse()`** — `initial → parsed` via `parse(spec.input, …)`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers); their `invalid_params` `data` is `{validation_errors, reason?}`, `reason` the declared `invalid_reason` the server would answer. Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
-- **Handler throws** — `ThrownJsonrpcError` keeps code/message/data; any other throw becomes `internal_error` carrying the thrown message. When the error answers a remote caller (`receive_request` / `send_response`), the raw message goes through `dev_only` like the server dispatch core.
-- **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.
+- **Input validation fails immediately**, without an error phase — a
+  client-side programming error. Handler errors route through `send_error` /
+  `receive_error`.
+- **A success response's `result` is validated always** (inbound data, not
+  DEV-only), undeclared keys dropped; a mismatch moves the event to
+  `receive_error` with `internal_error` and `ERROR_RESPONSE_OUTPUT_INVALID` —
+  a remote contract break, distinct from bad caller input.
 
-`ActionDispatcher` (`actions/action_dispatcher.ts`) is symmetric send + receive
-over a `Transports` registry and `ActionEventEnvironment`. `default_send_options`
-excludes `signal` deliberately — a shared signal would abort every subsequent
-call after the first trip. `transport_name` and `queue` can be defaulted here
-once to flip the dispatcher into client-authoritative mode. Diagnostics (failed
-sends, inbound notifications that fail to parse or whose handler throws, unknown
-methods) go to `environment.log`; unset falls back to `console_action_log`
-(warn/error to `console`, debug dropped) so failures are never silent, and
-`log: null` opts out (`resolve_action_log`). An inbound request or notification
-reads its params through the server dispatch core's normalizer
-(`to_input_params`): for a void input (`s.void`),
-absent, `null`, and `{}` alike are the no-arg call; for any other input,
-absent or `null` params are `{}` (so an all-optional object input accepts a
-call that omits them).
-
-**Naming.** `ActionDispatcher` is the (frontend) send/receive coordinator class.
-"ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is
-the _capability_ it participates in: the bidirectional peer request/response
-feature. It's a concept, not a symbol. The server→client half of that capability
-is `ConnectionRegistry.request_connection` + `PendingPeerRequests` (see
-`actions/peer_request.ts`), not this class.
+`ActionDispatcher` is the frontend's symmetric send + receive coordinator over
+`Transports`. `default_send_options` can fix `transport_name` and `queue`
+once (client-authoritative mode) but excludes `signal`, which would abort
+every later call. Diagnostics go to `environment.log`, `console_action_log`
+when unset, nothing with `log: null`. Inbound params go through the server
+core's normalizer (`to_input_params`). The server→client half of ActionPeer is
+`ConnectionRegistry.request_connection`, not this class.
 
 ## Reactive frontend client
 
 ### `FrontendWebsocketClient` (`actions/socket.svelte.ts`)
 
-Portable, Svelte-reactive (`$state.raw` for `ws`, `status`, `reconnect_count`,
-etc.). Plain class — no Cell inheritance, no app coupling. Implements
-`WebsocketConnection` + `WebsocketRpcConnection`, and is `Disposable`.
+Portable, Svelte-reactive, no app coupling; implements `WebsocketConnection`
++ `WebsocketRpcConnection` and is `Disposable`. Three primitives, default-on:
 
-Ships three correctness primitives default-on:
+1. **Promise-based `request`** — rejects with a `ThrownJsonrpcError` whose code the transport preserves exactly (the codes on its TSDoc).
+2. **Durable queue** — `request()` while disconnected buffers (bounded, overflow rejects `queue_overflow`) and flushes on reopen; `{queue: false}` rejects at once. Raw `send(data)` drops while disconnected.
+3. **Activity-aware heartbeat** — the `heartbeat` request fires when either direction has been idle past the interval; receive-silence past the receive timeout closes with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`. The receive timeout is raised to cover the interval, so a long interval alone is safe.
 
-1. **Promise-based `request`** — auto-assigned monotonic id; pending map keyed by id; resolved via intercept on the message path. Rejects `ThrownJsonrpcError` with specific codes (`unauthenticated`, `request_cancelled`, `queue_overflow`, `service_unavailable`, `internal_error`, or the server's wire code verbatim). The transport catch block preserves `.code` exactly so `FrontendWebsocketTransport` never collapses to `internal_error`.
-2. **Durable queue** — `request()` calls while disconnected buffer up to `DEFAULT_QUEUE_MAX_SIZE = 100` and flush on reopen. Overflow rejects `queue_overflow`. Pass `{queue: false}` to reject immediately (used internally by the heartbeat — it must not fight the queue for the disconnect-detection slot). Raw `send(data)` is **drop-on-disconnect** by design (fire-and-forget notifications want that).
-3. **Activity-aware heartbeat** — the shared `heartbeat` request fires when either direction has been idle past `DEFAULT_HEARTBEAT_INTERVAL = 30_000` (send-only silence would trip the server's detector, receive-only silence this client's). Receive-silence past the receive timeout closes with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`. Tick runs at `interval / 2` so event-loop blockage pauses the timer itself — so a heartbeat can leave up to 1.5 × `interval` after the last receive, and `resolve_heartbeat_receive_timeout` raises the receive timeout (`DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60_000` unless given) to at least `HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR` (2) × `interval`. A long `interval` alone is therefore safe. At most one heartbeat is outstanding — an unanswered one is left to the receive timeout rather than repeated.
+Every close reconnects with exponential backoff except three:
 
-`last_send_time` / `last_receive_time` are reactive epoch-ms stamps of the most
-recent frame each way — every frame, including heartbeats and the responses
-`request` consumes — for diagnostics UI.
+- `WS_CLOSE_SESSION_REVOKED` — **terminal**: sets `revoked`, `connect()` is a no-op, pending and queued requests reject `unauthenticated`.
+- `WS_CLOSE_PERMISSION_REVOKED` — `closed` until `connect()` (a reconnect would meet the role gate); pending and queued requests reject `forbidden`.
+- `WS_CLOSE_CONNECTION_LIMIT` — sets `superseded`, `closed` until `connect()`: reconnecting would evict the newer socket, so clients past the cap would close each other in a loop. Pending and queued requests reject `service_unavailable`; UI reads `superseded` to explain the close and offer the reconnect.
 
-Reconnect policy (exponential backoff): `delay = DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** (attempts-1)`,
-capped at `DEFAULT_RECONNECT_DELAY_MAX`. Every other close reconnects —
-`WS_CLOSE_OUTBOUND_OVERFLOW` included, the server's notice that this client
-fell behind and missed messages. Three close codes never reconnect:
-
-- `WS_CLOSE_SESSION_REVOKED` is **terminal** — sets `revoked`, no reconnect
-  loop on 401, and `connect()` becomes a no-op. Pending and queued requests
-  reject `unauthenticated`.
-- `WS_CLOSE_PERMISSION_REVOKED` is **closed until the user acts** too — status
-  `closed`, no reconnect scheduled (a reconnect would be refused at the role
-  gate), neither `revoked` nor `superseded` set (the credential is still
-  good), pending and queued requests reject `forbidden`. `last_close_code`
-  says why; `connect()` reopens.
-- `WS_CLOSE_CONNECTION_LIMIT` is **closed until the user acts** — sets
-  `superseded` (reactive), status `closed`, no reconnect scheduled: the server
-  closed this socket to admit a newer one on the same account, and
-  reconnecting would close that one in turn, so clients past the cap would
-  close each other in a loop. The credential is still good, so `revoked` stays
-  `false` and an explicit `connect()` reopens and clears `superseded`. Pending
-  and queued requests reject `service_unavailable`; requests made while
-  superseded buffer in the durable queue like any call on a closed client. UI
-  reads `superseded` to say why the connection is closed and offer the
-  reconnect.
-
-Live policy swaps (behave like constructor — whole policy atomic, missing
-fields fall back to defaults, not "keep current"): `set_reconnect`,
-`set_heartbeat`, `cancel_reconnect`.
-
-`SocketStatus = 'initial' | 'connecting' | 'connected' | 'reconnecting' | 'closed'`.
-`socket_status_to_async_status(status, revoked)` collapses to fuz_util's
-4-way `AsyncStatus`: `closed` reads `failure` when revoked and `initial`
-otherwise — a `superseded` close included, since the client is not trying and
-`connect()` reopens it.
+`socket_status_to_async_status(status, revoked)` collapses `SocketStatus` to
+fuz_util's `AsyncStatus` (`closed` reads `failure` only when revoked).
 
 ## RPC client (`actions/rpc_client.ts`)
 
-`create_rpc_client({peer, environment, actions?, transport_for_method?})` —
-returns a Proxy-based typed API. Per-kind dispatch:
+`create_rpc_client({peer, environment, on_action_event?, transport_for_method?})`
+returns a Proxy-based typed API, one method per spec: `request_response` and
+`remote_notification` go through `peer.send`, async `local_call` runs locally,
+each returning a `Result` with no Error allocation; a sync `local_call`
+returns its value and throws. `on_action_event` fires once per dispatched
+action with the live `ActionEvent` (zzz wires reactive history here);
+`transport_for_method` picks a transport per method.
 
-- **`local_call` sync** — `parse().handle_sync()`, return value directly. Throws on error (sync can't return `Result`). Ignores `signal`.
-- **`local_call` async** — `parse().handle_async()`, return `Result<{value}, {error}>`. Pre-flight `signal.aborted` check short-circuits.
-- **`request_response`** — builds `ActionEvent`, runs `parse().handle_async()` to produce the request, calls `peer.send(request, {transport_name, signal, queue})`, transitions to `receive_response`, wires the response, parses (may transition to `receive_error`), runs handler, extracts `Result`.
-- **`remote_notification`** — builds event, creates notification, `peer.send(notification, {transport_name, signal, queue})`. Returns `Result<{value: void}, {error}>`.
-
-`RpcClientCallOptions extends ActionDispatcherSendOptions` — `{signal?, queue?, transport_name?}`.
-`transport_for_method: (method) => TransportName | undefined` for per-method
-selection. `on_action_event(event)` fires once per dispatched action with
-the live `ActionEvent` (zzz wires reactive history here).
-
-### Throwing variants
-
-- `create_throwing_rpc_call` — shape `(method, input?) => Promise<T>`. Use at adapter wiring (e.g. `ui/admin_rpc_adapters.ts`) — method comes from a map.
-- `create_throwing_api` — typed Proxy over `FrontendActionsApi`. Use at direct call sites — `await api.foo(input)` keeps full inference.
-
-**Layered design.** `Result` is the protocol primitive —
-`create_rpc_client` returns `Result<{value}, {error}>` with no Error
-allocation. The throwing wrappers sit _above_ it as ergonomic adapters;
-both shapes share the same underlying transport and call sites pick
-per-site. `Result` is preferable when the call site inspects
-`error.data.reason` (no allocation, no try/catch) or when overhead matters
-(reconnect storms, hot paths). Throwing is preferable when the call site
-doesn't inspect — `await api.foo()` reads cleaner than `if (!r.ok) throw …`.
-
-Hardening on both: only `{code, data}` cross onto the Error, leaving
-`name` / `stack` as the native Error's own so attacker-shaped
-`result.error` payloads cannot overwrite them.
-
-`ThrowingApi<TApi>` (the mapped type returned by `create_throwing_api`)
-strips `Promise<Result<{value: T}, {error: JsonrpcErrorObject}>>` to
-`Promise<T>` on every method matching the `request_response` / async
-`local_call` return shape; `remote_notification` and sync `local_call`
-methods pass through. The Proxy inspects each call's result shape at
-runtime and only unwraps when it sees a Result.
-
-Both helpers throw `"rpc method not found: <name>"` on invocation of an
-unknown method. Symbol props and `then` stay `undefined` so the Proxy
-doesn't get probed as a thenable by `await`.
+**Throwing variants** sit above the `Result` primitive:
+`create_throwing_rpc_call` (`(method, input?) => Promise<T>`, for adapter
+wiring like `ui/admin_rpc_adapters.ts`) and `create_throwing_api` (a typed
+Proxy, `ThrowingApi<TApi>`, for direct call sites). Use `Result` where the
+call site inspects `error.data.reason` or overhead matters, throwing where it
+doesn't. Only `{code, data}` cross onto the thrown Error, so an
+attacker-shaped `result.error` can't overwrite `name` or `stack`.
 
 ### Frontend factory (`actions/frontend_rpc_client.ts`)
 
-`create_frontend_rpc_client<TApi>({specs, path?, http_headers?, max_get_url_length?, ws?, transports?, transport_for_method?, on_action_event?, lookup_action_handler?, log?})`
-bundles `ActionRegistry + ActionEventEnvironment + Transports + ActionDispatcher +
-create_rpc_client + create_throwing_api` boilerplate every consumer
-repeats — plus the `lookup_action_handler: () => undefined` stub (frontend
-never registers `request_response` handlers; every method dispatches over
-the wire).
+`create_frontend_rpc_client<TApi>(options)` bundles the `ActionRegistry`,
+environment, `Transports`, `ActionDispatcher`, `create_rpc_client` and
+`create_throwing_api` boilerplate, returning `api` (throwing), `api_result`
+(`Result`-shaped), `peer`, `environment` and `socket`. Its transports: a
+`FrontendHttpTransport` on `path ?? '/api/rpc'`, and with
+`ws: {client, queue?, max_message_bytes?}` a `FrontendWebsocketTransport`
+over the caller's client, which `request_response` methods route to (HTTP
+the fallback while the socket is down). The caller builds and connects the
+client, so an HTTP-only bundle never imports `socket.svelte.ts`. `ws.queue`
+sets the peer's default `queue` (§Transports). `transports` replaces the
+built-ins.
 
-Returns both Proxy shapes from one factory call:
+`lookup_action_handler` defaults to `() => undefined`; pass one to receive
+WS-pushed notifications (`'receive'`, what `RoomClient` relies on) or hook
+`receive_error`. A `local_call` spec no-ops unless it resolves an
+`'execute'` handler.
 
-- `api: ThrowingApi<TApi>` — typed throwing Proxy. Default for hot-path call sites.
-- `api_result: TApi` — typed Result-shaped Proxy. For sites that inspect `error.data.reason` without try/catch.
-- `peer`, `environment` — exposed for advanced consumers.
-- `socket` — the `ws.client`, or `null`.
-
-Transports: a `FrontendHttpTransport` on `path ?? '/api/rpc'` over the
-registry's `lookup_action_spec` (a hand-built transport passes its own
-environment's), so a read goes as a GET; and, with `ws: {client, queue?, max_message_bytes?}`, a
-`FrontendWebsocketTransport` over the caller's client, registered after it,
-which every `request_response` method routes to unless `transport_for_method`
-says otherwise (HTTP stays the fallback while the socket is down). The caller
-builds and connects the client — `new
-FrontendWebsocketClient(to_same_origin_ws_url('/api/ws'))` — so the factory
-never imports `socket.svelte.ts` and an HTTP-only bundle stays socket-free.
-`ws.queue` sets the peer's default `queue` (Queue routing above). Pass
-`transports` to replace the built-ins (exclusive with `ws`, `http_headers`,
-`max_get_url_length`). `local_call` specs in `specs` silently no-op because
-`lookup_action_handler` always returns `undefined`.
-
-`all_standard_action_specs` (in `auth/standard_action_specs.ts`) is
-transport-agnostic — when a consumer spreads `create_standard_rpc_actions`
-into both `rpc_endpoints` AND `ws_endpoints`, `transport_for_method` can
-route per-call (e.g. return `'frontend_websocket_rpc'` for `account_*` /
-`admin_*` methods to bind them to the live WS connection). See
-`auth/CLAUDE.md` §Standard RPC bundle.
+`all_standard_action_specs` (`auth/standard_action_specs.ts`) is
+transport-agnostic: with the standard actions on both endpoints,
+`transport_for_method` can bind `account_*` / `admin_*` methods to the live
+WS connection (`auth/CLAUDE.md` §Standard RPC bundle).
 
 ## Broadcast API (`actions/broadcast_api.ts`)
 
-`create_broadcast_api({registry, specs, log?, should_deliver?})` — builds a
-typed `{method: (input) => Promise<void>}` object from a list of action
-specs. Counterpart to `register_action_ws`: that handles frontend-initiated
-request-scoped dispatch, this handles backend-initiated broadcast.
-Request-scoped streaming stays on `ctx.notify` inside a handler.
-
-Per-method call: validates input against `spec.input`
-(`parse`; logs + returns on failure), wraps in `JsonrpcNotification`, and sends it on `registry` — a
-`BroadcastTarget`, `Pick<ConnectionRegistry, 'broadcast' |
-'broadcast_filtered'>`, typically `app_server.ws_endpoints[path]` or the
-registry a `WsEndpointSpec` supplies. No `Transports` collection and no fallback:
-broadcast is 1→N over one named registry. No connections reaches nobody.
-
-`should_deliver: (identity, method, input) => boolean` — optional
-per-connection ACL predicate. When set, fans out via
-`registry.broadcast_filtered`; otherwise `registry.broadcast`. Errors logged
-but never thrown — broadcasts are fire-and-forget.
-
-Typed surface: consumers declare an explicit `interface BackendActionsApi`
-and pin via `create_broadcast_api<BackendActionsApi>({...})` — unchecked
-cast, so interface and `specs` array must stay in sync (codegen is a
-natural fit).
-
-## Shared type surface (`actions/action_types.ts`)
-
-Sits above `action_spec.ts` (types and the kind enums) and below the dispatchers. Extracted
-so composable primitives (e.g. `heartbeat_action`) can name the types
-without pulling in server-only modules.
-
-- `Action<TSpec>` — `{spec: TSpec, handler?: ActionHandler}`. Polymorphic on `kind`: `request_response` specs require a handler for dispatch; `remote_notification` specs are dispatcher-handled (e.g. `cancel`, which has no handler); `local_call` specs never reach a network dispatcher.
-- `ActionContext` + its narrowed tiers (`ActionAuthContext`, `ActionActorContext`), the handler signatures (`ActionHandler`, `AuthActionHandler`, `ActorActionHandler`), `HandlerForSpec`, and the `rpc_action` binder — the handler-side surface every action factory names. `actions/action_rpc.ts` keeps only `create_rpc_endpoint` + its options.
-- `RpcAction` — `{spec: RequestResponseActionSpec, handler: ActionHandler}`, what the dispatchers accept (`create_rpc_endpoint`, `register_action_ws`) and the `rpc_action` binder produces.
+`create_broadcast_api({registry, specs, log?, should_deliver?})` builds a
+typed `{method: (input) => Promise<void>}` object for backend-initiated
+broadcast — the counterpart to `register_action_ws`'s request-scoped
+dispatch (request-scoped streaming stays on `ctx.notify`). Each call validates
+input against `spec.input` (logging and returning on failure) and sends a
+`JsonrpcNotification` on one `BroadcastTarget` registry
+(`app_server.ws_endpoints[path]`), through `broadcast_filtered` when
+`should_deliver` is set. Errors are logged, never thrown. Its return is
+`Promise<void>`, not the `Result` the frontend API returns. Pin the type with
+`create_broadcast_api<BackendActionsApi>` — an unchecked cast, so the
+interface and `specs` must stay in sync (codegen's
+`generate_backend_actions_api`).

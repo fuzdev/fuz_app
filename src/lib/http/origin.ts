@@ -1,14 +1,13 @@
 /**
  * Request source verification middleware for API protection.
  *
- * Verifies requests carry an `Origin` the server allows, or none.
- * CSRF protection is `SameSite: strict` on session cookies
- * (see `auth/session_middleware.ts`) plus the CORS simple-request refusal
- * (`http/simple_request.ts`) — `SameSite` alone admits same-site pages, which
- * include every other port on the same host. This module provides origin
- * allowlisting for locally-running services — preventing untrusted websites
- * from making requests as the user browses the web — and is the only gate on
- * the WebSocket upgrade, which is never preflighted.
+ * Verifies requests carry an `Origin` the server allows, or none. The origin
+ * check is one of three CSRF layers, beside `SameSite: strict` session
+ * cookies (`auth/session_middleware.ts`) and the JSON-only `POST` refusal
+ * (`http/simple_request.ts`): `SameSite` alone admits same-site pages, which
+ * include every other port on the same host, and the origin check refuses an
+ * untrusted page's request before any handler runs. It is the only one of the
+ * three that guards the WebSocket upgrade, which is never preflighted.
  *
  * The allowlist grammar is shared with the Rust spine entry for entry:
  * `parse_allowed_origins` accepts and refuses the same entries, naming each

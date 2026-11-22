@@ -493,8 +493,7 @@ export const audit_metadata_schemas = Object.freeze({
 	// tombstone), `purge` = hard (irreversible cascading removal). Known
 	// fields are optional so the same schema validates the success
 	// snapshot and the not-found failure shape (`reason` /
-	// `attempted_account_id`). See `auth/CLAUDE.md` §Account/actor deletion
-	// (delete = soft, purge = hard).
+	// `attempted_account_id`). See `auth/CLAUDE.md` §Admin actions.
 	account_delete: loose_object({
 		username: meta(optional(string), { description: 'Username at soft-delete time.' }),
 		email: meta(optional(nullable(string)), {
@@ -587,10 +586,11 @@ export interface AuditLogEvent {
 	 * declares `acting?: ActingActor` or its auth requires role_grants
 	 * (`role` / `keeper`). Account-grain operations declare neither,
 	 * so no actor is resolved and `actor_id` is null: login (also
-	 * pre-credential), logout, signup, bootstrap, password_change,
-	 * session/token revoke, app_settings_update, invite events.
-	 * Role grant events, admin actions, and actor-targeted offers
-	 * populate this with the initiator's actor.
+	 * pre-credential), logout, password_change, session/token revoke,
+	 * app_settings_update. Signup and bootstrap name the actor they
+	 * create. Role grant events, offer events a request initiates, and
+	 * the other admin actions (the invite events included) populate this
+	 * with the initiator's actor.
 	 */
 	actor_id: Uuid | null;
 	account_id: Uuid | null;
@@ -612,8 +612,11 @@ export interface AuditLogEvent {
 	 *   carry the actor when the offer was actor-targeted at create time
 	 *   (`role_grant_offer.to_actor_id` set), null when the offer was
 	 *   account-grain (any actor on `to_account_id` may accept).
-	 * - Not populated: admin actions, account-shape events (login,
-	 *   logout, signup, bootstrap, password_change, session/token
+	 * - Populated with the removed actor: the per-actor `actor_delete` /
+	 *   `actor_purge` / `actor_undelete` rows an account removal or
+	 *   reactivation writes.
+	 * - Not populated: other admin actions and account-shape events
+	 *   (login, logout, signup, bootstrap, password_change, session/token
 	 *   revoke, app_settings_update, invite events) — subject is the
 	 *   account or no specific resource, not an actor-bound role_grant.
 	 * - Not populated: events whose principal isn't an actor-bound
@@ -626,9 +629,11 @@ export interface AuditLogEvent {
 	 * holds uniformly across every populated event including decline
 	 * (the grantor's account is joined into the decline RETURNING) and
 	 * the supersede cascade (the recipient account is known on
-	 * `role_grant_offer.to_account_id`). `target_account_id` stays the
-	 * SSE/WS socket-close key because sessions remain account-grain
-	 * after multi-actor lands.
+	 * `role_grant_offer.to_account_id`). An `account`- or
+	 * `role`-scoped connection close keys on `target_account_id ??
+	 * account_id`, since sessions are account-grain; a `session` or `token`
+	 * close keys on the row's metadata (`to_connection_close_target` in
+	 * `actions/connection_closer.ts`).
 	 */
 	target_actor_id: Uuid | null;
 	ip: string | null;

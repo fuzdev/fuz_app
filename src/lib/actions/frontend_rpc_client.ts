@@ -78,7 +78,7 @@ export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	 * cannot constrain runtime membership, so consumers must keep this list
 	 * in sync with the typed surface (codegen recommended).
 	 *
-	 * Protocol actions (`heartbeat`, `cancel`) are **not** auto-spread —
+	 * Protocol actions (`heartbeat`, `cancel`, `peer/ping`) are **not** auto-spread —
 	 * they're filtered out of generated `action_specs` by codegen's
 	 * `include_protocol_actions: false` default and consumers spread them
 	 * in explicitly so the contract stays visible at every registration
