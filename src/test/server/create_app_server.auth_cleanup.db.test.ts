@@ -36,7 +36,8 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '#lib/auth/cleanup.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
-import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
+import { create_test_session_row } from '#lib/testing/db_entities.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '#lib/actions/notification_sender.ts';
 import type { Db } from '#lib/db/db.ts';
@@ -139,7 +140,7 @@ const seed_accounts = async (db: Db): Promise<Seeded> => {
 /** Seed a session an hour past its expiry and return its id. */
 const seed_expired_session = async (db: Db, name: string, account_id: Uuid): Promise<string> => {
 	const id = hash_session_token(name);
-	await query_create_session({ db }, id, account_id, new Date(Date.now() - hour_ms));
+	await create_test_session_row(db, id, account_id, -hour_ms / 1000);
 	return id;
 };
 

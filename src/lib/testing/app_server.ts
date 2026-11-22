@@ -33,9 +33,9 @@ import { query_create_role_grant } from '../auth/role_grant_queries.ts';
 import {
 	generate_session_token,
 	hash_session_token,
-	AUTH_SESSION_LIFETIME_MS,
 	query_create_session
 } from '../auth/session_queries.ts';
+import { create_test_session_row } from './db_entities.ts';
 import { query_create_api_token } from '../auth/api_token_queries.ts';
 import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
 import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
@@ -198,16 +198,12 @@ export const create_test_account_with_credentials = async (
 		token_scope_full()
 	);
 
-	// Create session (account-scoped — acting actor is per-request).
-	// Shares the mint primitive with `mint_test_session` / the
-	// `_testing_mint_session` action; here with the standard 30-day lifetime.
-	const { session_cookie } = await mint_test_session({
-		db,
-		keyring,
-		session_options,
-		account_id: account.id,
-		expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000
-	});
+	// Create session (account-scoped — acting actor is per-request), through
+	// the production insert (`query_create_session`, the full lifetime on the
+	// database clock), as the Rust reset seeds through its production minter.
+	const session_token = generate_session_token();
+	await query_create_session({ db }, hash_session_token(session_token), account.id);
+	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
 
 	return {
 		account: { id: account.id, username: account.username },
@@ -256,8 +252,7 @@ export const mint_test_session = async (
 	const { db, keyring, session_options, account_id, expires_in_seconds } = options;
 	const session_token = generate_session_token();
 	const session_hash = hash_session_token(session_token);
-	const expires_at = new Date(Date.now() + expires_in_seconds * 1000);
-	await query_create_session({ db }, session_hash, account_id, expires_at);
+	await create_test_session_row(db, session_hash, account_id, expires_in_seconds);
 	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
 	return { session_cookie, session_hash };
 };

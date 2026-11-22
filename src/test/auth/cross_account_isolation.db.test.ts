@@ -16,8 +16,7 @@ import {
 	query_session_revoke_for_account,
 	query_session_revoke_all_for_account,
 	query_session_get_valid,
-	hash_session_token,
-	AUTH_SESSION_LIFETIME_MS
+	hash_session_token
 } from '#lib/auth/session_queries.ts';
 import {
 	query_create_api_token,
@@ -62,10 +61,9 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const alice = await create_user(db, 'iso_alice');
 		const bob = await create_user(db, 'iso_bob');
 
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('alice_s1'), alice.account_id, expires);
-		await query_create_session(deps, hash_session_token('alice_s2'), alice.account_id, expires);
-		await query_create_session(deps, hash_session_token('bob_s1'), bob.account_id, expires);
+		await query_create_session(deps, hash_session_token('alice_s1'), alice.account_id);
+		await query_create_session(deps, hash_session_token('alice_s2'), alice.account_id);
+		await query_create_session(deps, hash_session_token('bob_s1'), bob.account_id);
 
 		const alice_sessions = await query_session_list_for_account(deps, alice.account_id);
 		const bob_sessions = await query_session_list_for_account(deps, bob.account_id);
@@ -88,9 +86,8 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const alice = await create_user(db, 'iso_alice_rev');
 		const bob = await create_user(db, 'iso_bob_rev');
 
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 		const alice_hash = hash_session_token('alice_protected');
-		await query_create_session(deps, alice_hash, alice.account_id, expires);
+		await query_create_session(deps, alice_hash, alice.account_id);
 
 		// bob tries to revoke alice's session
 		const revoked = await query_session_revoke_for_account(deps, alice_hash, bob.account_id);
@@ -108,10 +105,9 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const alice = await create_user(db, 'iso_alice_ra');
 		const bob = await create_user(db, 'iso_bob_ra');
 
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('alice_ra1'), alice.account_id, expires);
-		await query_create_session(deps, hash_session_token('alice_ra2'), alice.account_id, expires);
-		await query_create_session(deps, hash_session_token('bob_ra1'), bob.account_id, expires);
+		await query_create_session(deps, hash_session_token('alice_ra1'), alice.account_id);
+		await query_create_session(deps, hash_session_token('alice_ra2'), alice.account_id);
+		await query_create_session(deps, hash_session_token('bob_ra1'), bob.account_id);
 
 		const count = await query_session_revoke_all_for_account(deps, alice.account_id);
 		assert.strictEqual(count, 2);

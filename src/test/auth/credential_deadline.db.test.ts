@@ -35,6 +35,7 @@ import {
 	query_create_session,
 	query_session_get_valid
 } from '#lib/auth/session_queries.ts';
+import { create_test_session_row } from '#lib/testing/db_entities.ts';
 import { token_scope_full } from '#lib/auth/token_scope.ts';
 import type { Db } from '#lib/db/db.ts';
 
@@ -115,7 +116,7 @@ describe_db('credential deadline', (get_db) => {
 		const db = get_db();
 		const account_id = await create_account(db);
 		const token_hash = hash_session_token(generate_session_token());
-		await query_create_session({ db }, token_hash, account_id, new Date(Date.now() + DAY_MS));
+		await query_create_session({ db }, token_hash, account_id);
 		await set_expiry(db, 'auth_session', 3);
 		const session = await query_session_get_valid({ db }, token_hash);
 		assert.ok(session);
@@ -150,12 +151,7 @@ describe_db('credential deadline', (get_db) => {
 		const app = create_deadline_app(db);
 		const account_id = await create_account(db);
 		const session_token = generate_session_token();
-		await query_create_session(
-			{ db },
-			hash_session_token(session_token),
-			account_id,
-			new Date(Date.now() + DAY_MS)
-		);
+		await create_test_session_row(db, hash_session_token(session_token), account_id, DAY_S);
 		const cookie = await create_session_cookie_value(keyring, session_token, fuz_session_config);
 		const headers = { cookie: `${fuz_session_config.cookie_name}=${cookie}` };
 

@@ -35,7 +35,8 @@ import {
 	run_auth_cleanup,
 	type AuthCleanupDeps
 } from '#lib/auth/cleanup.ts';
-import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
+import { create_test_session_row } from '#lib/testing/db_entities.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
@@ -426,18 +427,13 @@ describe_db('auth_cleanup', (get_db) => {
 		// One expired session beside a live one of the same account.
 		const expired_session = hash_session_token('cleanup-expired');
 		const live_session = hash_session_token('cleanup-live');
-		await query_create_session(
-			{ db },
+		await create_test_session_row(
+			db,
 			expired_session,
 			accounts.recipient_account_id,
-			past(hour_ms)
+			-hour_ms / 1000
 		);
-		await query_create_session(
-			{ db },
-			live_session,
-			accounts.recipient_account_id,
-			future(hour_ms)
-		);
+		await create_test_session_row(db, live_session, accounts.recipient_account_id, hour_ms / 1000);
 		// Two expired offers.
 		await insert_offer(
 			db,

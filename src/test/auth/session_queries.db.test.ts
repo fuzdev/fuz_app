@@ -22,7 +22,10 @@ import {
 	AUTH_SESSION_LIFETIME_MS
 } from '#lib/auth/session_queries.ts';
 import type { Db } from '#lib/db/db.ts';
-import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
+import {
+	create_test_account_with_actor,
+	create_test_session_row
+} from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
 
@@ -94,14 +97,55 @@ describe('generate_session_token', () => {
 });
 
 describe_db('AuthSessionQueries', (get_db) => {
+	test('a session expires a whole lifetime after its creation, on the database clock', async () => {
+		const db = get_db();
+		const { account_id } = await create_test_account(db, 'alice');
+		const token_hash = hash_session_token(generate_session_token());
+		await query_create_session({ db }, token_hash, account_id);
+		const [row] = await db.query<{ lifetime_s: string | number }>(
+			`SELECT EXTRACT(EPOCH FROM expires_at - created_at) AS lifetime_s
+			 FROM auth_session WHERE id = $1`,
+			[token_hash]
+		);
+		assert.ok(row);
+		assert.strictEqual(Number(row.lifetime_s), AUTH_SESSION_LIFETIME_MS / 1000);
+	});
+
+	test('the lifetime is elapsed time, whatever the session time zone and its DST shifts', async (ctx) => {
+		const db = get_db();
+		const [version] = await db.query<{ version: string }>(`SELECT version() AS version`);
+		if (version!.version.includes('(pglet)')) {
+			ctx.skip('pglet has no time zone but UTC, where a day is always 24 hours');
+		}
+		const { account_id } = await create_test_account(db, 'alice');
+		const token_hash = hash_session_token(generate_session_token());
+		const [row] = await db.transaction(async (tx) => {
+			const [today] = await tx.query<{ doy: number }>(
+				`SELECT EXTRACT(DOY FROM NOW() AT TIME ZONE 'UTC')::int AS doy`
+			);
+			// a POSIX zone that springs forward two weeks out and falls back half a
+			// year on: a change inside the lifetime, whatever today is
+			const start = ((today!.doy + 14) % 365) + 1;
+			const end = ((today!.doy + 194) % 365) + 1;
+			await tx.query(`SET LOCAL TimeZone = '<-05>5<-04>,J${start},J${end}'`);
+			await query_create_session({ db: tx }, token_hash, account_id);
+			return tx.query<{ lifetime_s: string | number }>(
+				`SELECT EXTRACT(EPOCH FROM expires_at - created_at) AS lifetime_s
+				 FROM auth_session WHERE id = $1`,
+				[token_hash]
+			);
+		});
+		assert.ok(row);
+		assert.strictEqual(Number(row.lifetime_s), AUTH_SESSION_LIFETIME_MS / 1000);
+	});
+
 	test('create and get_valid returns the session', async () => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'alice');
 		const token = generate_session_token();
 		const token_hash = hash_session_token(token);
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, token_hash, account_id, expires);
+		await query_create_session(deps, token_hash, account_id);
 
 		const session = await query_session_get_valid(deps, token_hash);
 		assert.ok(session);
@@ -114,8 +158,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'bob');
 		const token_hash = hash_session_token('expired_token');
-		const past = new Date(Date.now() - 1000);
-		await query_create_session(deps, token_hash, account_id, past);
+		await create_test_session_row(db, token_hash, account_id, -1);
 
 		const session = await query_session_get_valid(deps, token_hash);
 		assert.strictEqual(session, undefined);
@@ -133,12 +176,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'charlie');
 		const token_hash = hash_session_token('revoke_me');
-		await query_create_session(
-			deps,
-			token_hash,
-			account_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, token_hash, account_id);
 
 		await query_session_revoke_by_hash_unscoped(deps, token_hash);
 		const session = await query_session_get_valid(deps, token_hash);
@@ -155,18 +193,8 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const { account_id: bob_id } = await create_test_account(db, 'bob_unscoped');
 		const alice_hash = hash_session_token('alice_trust_boundary');
 		const bob_hash = hash_session_token('bob_trust_boundary');
-		await query_create_session(
-			deps,
-			alice_hash,
-			alice_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
-		await query_create_session(
-			deps,
-			bob_hash,
-			bob_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, alice_hash, alice_id);
+		await query_create_session(deps, bob_hash, bob_id);
 
 		// bob has no relationship to alice's session, but revoke_by_hash succeeds
 		// because it operates on hash alone — this is intentional
@@ -193,10 +221,9 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'dave');
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('session1'), account_id, expires);
-		await query_create_session(deps, hash_session_token('session2'), account_id, expires);
-		await query_create_session(deps, hash_session_token('session3'), account_id, expires);
+		await query_create_session(deps, hash_session_token('session1'), account_id);
+		await query_create_session(deps, hash_session_token('session2'), account_id);
+		await query_create_session(deps, hash_session_token('session3'), account_id);
 
 		const count = await query_session_revoke_all_for_account(deps, account_id);
 		assert.strictEqual(count, 3);
@@ -209,9 +236,8 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'eve');
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('first'), account_id, expires);
-		await query_create_session(deps, hash_session_token('second'), account_id, expires);
+		await query_create_session(deps, hash_session_token('first'), account_id);
+		await query_create_session(deps, hash_session_token('second'), account_id);
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 2);
@@ -227,12 +253,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'frank');
 		const token_hash = hash_session_token('touch_me');
-		await query_create_session(
-			deps,
-			token_hash,
-			account_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, token_hash, account_id);
 
 		const before = await query_session_get_valid(deps, token_hash);
 		assert.ok(before);
@@ -250,13 +271,11 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'grace');
-		const past = new Date(Date.now() - 1000);
-		const future = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 		const expired_1 = hash_session_token('expired1');
 		const expired_2 = hash_session_token('expired2');
-		await query_create_session(deps, expired_1, account_id, past);
-		await query_create_session(deps, expired_2, account_id, past);
-		await query_create_session(deps, hash_session_token('active'), account_id, future);
+		await create_test_session_row(db, expired_1, account_id, -1);
+		await create_test_session_row(db, expired_2, account_id, -1);
+		await query_create_session(deps, hash_session_token('active'), account_id);
 
 		// the ids are the token hashes a caller closes connections by; the
 		// delete returns them in no order worth pinning
@@ -274,12 +293,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'iris');
 		const token_hash = hash_session_token('own_session');
-		await query_create_session(
-			deps,
-			token_hash,
-			account_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, token_hash, account_id);
 
 		const revoked = await query_session_revoke_for_account(deps, token_hash, account_id);
 		assert.strictEqual(revoked, true);
@@ -294,12 +308,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const { account_id: alice_id } = await create_test_account(db, 'alice_rfa');
 		const { account_id: bob_id } = await create_test_account(db, 'bob_rfa');
 		const token_hash = hash_session_token('alice_session');
-		await query_create_session(
-			deps,
-			token_hash,
-			alice_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, token_hash, alice_id);
 
 		// Bob tries to revoke Alice's session
 		const revoked = await query_session_revoke_for_account(deps, token_hash, bob_id);
@@ -323,12 +332,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'heidi');
-		await query_create_session(
-			deps,
-			hash_session_token('cascade_me'),
-			account_id,
-			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-		);
+		await query_create_session(deps, hash_session_token('cascade_me'), account_id);
 
 		await query_purge_account(deps, account_id);
 
@@ -340,9 +344,8 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'limit_under');
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('s1'), account_id, expires);
-		await query_create_session(deps, hash_session_token('s2'), account_id, expires);
+		await query_create_session(deps, hash_session_token('s1'), account_id);
+		await query_create_session(deps, hash_session_token('s2'), account_id);
 
 		const evicted = await query_session_enforce_limit(deps, account_id, 5);
 		assert.strictEqual(evicted.length, 0);
@@ -415,11 +418,10 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id: alice_id } = await create_test_account(db, 'limit_alice');
 		const { account_id: bob_id } = await create_test_account(db, 'limit_bob');
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('alice_s1'), alice_id, expires);
-		await query_create_session(deps, hash_session_token('alice_s2'), alice_id, expires);
-		await query_create_session(deps, hash_session_token('alice_s3'), alice_id, expires);
-		await query_create_session(deps, hash_session_token('bob_s1'), bob_id, expires);
+		await query_create_session(deps, hash_session_token('alice_s1'), alice_id);
+		await query_create_session(deps, hash_session_token('alice_s2'), alice_id);
+		await query_create_session(deps, hash_session_token('alice_s3'), alice_id);
+		await query_create_session(deps, hash_session_token('bob_s1'), bob_id);
 
 		await query_session_enforce_limit(deps, alice_id, 1);
 
@@ -445,12 +447,11 @@ describe_db('AuthSessionQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { account_id } = await create_test_account(db, `matrix_${name.replaceAll(' ', '_')}`);
-			const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 
 			for (let i = 0; i < session_count; i++) {
 				const token = generate_session_token();
 				const token_hash = hash_session_token(token);
-				await query_create_session(deps, token_hash, account_id, expires);
+				await query_create_session(deps, token_hash, account_id);
 			}
 
 			const evicted = await query_session_enforce_limit(deps, account_id, limit);
@@ -481,12 +482,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 			);
 			const token = generate_session_token();
 			const token_hash = hash_session_token(token);
-			await query_create_session(
-				deps,
-				token_hash,
-				owner_id,
-				new Date(Date.now() + AUTH_SESSION_LIFETIME_MS)
-			);
+			await query_create_session(deps, token_hash, owner_id);
 
 			const account_id_to_use = use_own_id ? owner_id : other_id;
 			const revoked = await query_session_revoke_for_account(deps, token_hash, account_id_to_use);
@@ -505,12 +501,10 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'limit_expired');
-		const past = new Date(Date.now() - 1000);
-		const future = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 		// 2 expired + 1 active = 3 total
-		await query_create_session(deps, hash_session_token('expired_a'), account_id, past);
-		await query_create_session(deps, hash_session_token('expired_b'), account_id, past);
-		await query_create_session(deps, hash_session_token('active'), account_id, future);
+		await create_test_session_row(db, hash_session_token('expired_a'), account_id, -1);
+		await create_test_session_row(db, hash_session_token('expired_b'), account_id, -1);
+		await query_create_session(deps, hash_session_token('active'), account_id);
 
 		// max 3 — no eviction because expired sessions count toward the total
 		const evicted = await query_session_enforce_limit(deps, account_id, 3);
@@ -529,13 +523,11 @@ describe_db('AuthSessionQueries', (get_db) => {
 		const deps = { db };
 		const { account_id: alice_id } = await create_test_account(db, 'active_alice');
 		const { account_id: bob_id } = await create_test_account(db, 'active_bob');
-		const future = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		const past = new Date(Date.now() - 1000);
 
 		// Alice gets an active session
-		await query_create_session(deps, hash_session_token('alice_active'), alice_id, future);
+		await query_create_session(deps, hash_session_token('alice_active'), alice_id);
 		// Bob gets an expired session
-		await query_create_session(deps, hash_session_token('bob_expired'), bob_id, past);
+		await create_test_session_row(db, hash_session_token('bob_expired'), bob_id, -1);
 
 		const active_sessions = await query_session_list_all_active(deps);
 

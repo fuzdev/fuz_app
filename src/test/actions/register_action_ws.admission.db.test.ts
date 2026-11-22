@@ -158,7 +158,7 @@ const create_session = async (
 ): Promise<{ session_token: string; token_hash: string }> => {
 	const session_token = generate_session_token();
 	const token_hash = hash_session_token(session_token);
-	await query_create_session({ db }, token_hash, account_id, new Date(Date.now() + 3_600_000));
+	await query_create_session({ db }, token_hash, account_id);
 	return { session_token, token_hash };
 };
 

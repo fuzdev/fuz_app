@@ -21,13 +21,14 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuthCleanupDeps } from '#lib/auth/cleanup.ts';
-import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
+import { create_test_session_row } from '#lib/testing/db_entities.ts';
 import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { RecordedClose } from '#lib/testing/connection_closer_helpers.ts';
 
 const log = new Logger('cleanup-sessions-test', { level: 'off' });
-const hour_ms = 60 * 60 * 1000;
+const hour_s = 60 * 60;
 
 export interface TestAccounts {
 	account_id: Uuid;
@@ -58,12 +59,7 @@ export const seed_session = async (
 	expired: boolean
 ): Promise<string> => {
 	const id = hash_session_token(name);
-	await query_create_session(
-		{ db },
-		id,
-		account_id,
-		new Date(Date.now() + (expired ? -hour_ms : hour_ms))
-	);
+	await create_test_session_row(db, id, account_id, expired ? -hour_s : hour_s);
 	return id;
 };
 

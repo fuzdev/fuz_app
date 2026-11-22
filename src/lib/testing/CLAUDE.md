@@ -99,6 +99,12 @@ is `query_admin_account_list`, whose actors sort `created_at, name, id`: it
 keeps one actor per account, and a data key ahead of the random id picks the
 same one on two backends holding the same rows (under the same text collation).
 
+`create_test_session_row(db, token_hash, account_id, expires_in_seconds)`
+inserts an `auth_session` row expiring that many seconds past the database's
+`NOW()` — negative for one already expired — the statement the Rust
+`_testing_mint_session` runs; `mint_test_session` writes through it. For a
+test needing a lifetime other than `query_create_session`'s full one.
+
 `create_test_role_grant_direct(db, input)` wraps `query_create_role_grant`
 for tests needing an active role_grant seeded directly, bypassing the
 production offer/accept consent flow. Use only when the test focuses on

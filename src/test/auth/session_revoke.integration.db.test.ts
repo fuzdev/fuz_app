@@ -16,8 +16,7 @@ import {
 	query_session_revoke_by_hash_unscoped,
 	query_session_revoke_all_for_account,
 	generate_session_token,
-	hash_session_token,
-	AUTH_SESSION_LIFETIME_MS
+	hash_session_token
 } from '#lib/auth/session_queries.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { create_request_context_middleware, require_auth } from '#lib/auth/request_context.ts';
@@ -39,8 +38,7 @@ describe_db('session revoke blocks access', (get_db) => {
 
 		const token = generate_session_token();
 		const token_hash = hash_session_token(token);
-		const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, token_hash, account.id, expires);
+		await query_create_session(deps, token_hash, account.id);
 
 		// build a minimal app: session token pre-set → request context middleware → require_auth guard
 		const create_app = (session_token: string | null): Hono => {
@@ -84,12 +82,11 @@ describe_db('session revoke blocks access', (get_db) => {
 			// Create two sessions for the same account
 			const token_a = generate_session_token();
 			const token_hash_a = hash_session_token(token_a);
-			const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-			await query_create_session(deps, token_hash_a, account.id, expires);
+			await query_create_session(deps, token_hash_a, account.id);
 
 			const token_b = generate_session_token();
 			const token_hash_b = hash_session_token(token_b);
-			await query_create_session(deps, token_hash_b, account.id, expires);
+			await query_create_session(deps, token_hash_b, account.id);
 
 			const create_app = (session_token: string | null): Hono => {
 				const app = new Hono();
@@ -133,14 +130,13 @@ describe_db('session revoke blocks access', (get_db) => {
 			});
 			await query_create_role_grant(deps, { actor_id: actor.id, role: 'admin', granted_by: null });
 
-			const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
 			const tokens: Array<{ raw: string; hash: string }> = [];
 
 			// Create three sessions
 			for (let i = 0; i < 3; i++) {
 				const raw = generate_session_token();
 				const hash = hash_session_token(raw);
-				await query_create_session(deps, hash, account.id, expires);
+				await query_create_session(deps, hash, account.id);
 				tokens.push({ raw, hash });
 			}
 

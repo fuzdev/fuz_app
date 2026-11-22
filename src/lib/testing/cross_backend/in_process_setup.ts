@@ -226,11 +226,13 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 				});
 				return `${cookie_name}=${session_cookie}`;
 			},
-			// The mints, revocations and the expiry go through the queries the
-			// production paths (and the expiry backdoor) write with, so the rows
-			// match what the cross-process accessors leave; each credential is
-			// proven live first, so its refusal can only be the revocation or the
-			// expiry.
+			// The session mint writes what the Rust `_testing_mint_session` writes
+			// (`mint_test_session`: a full lifetime past the database's `NOW()`);
+			// the token mints, the revocations and the expiry go through the
+			// queries the production paths (and the expiry backdoor) write with,
+			// so the rows match what the cross-process accessors leave. Each
+			// credential is proven live first, so its refusal can only be the
+			// revocation or the expiry.
 			mint_revoked_session: async () => {
 				const db = test_app.backend.deps.db;
 				const account_id = test_app.backend.account.id;

@@ -57,13 +57,9 @@ const create_account = async (db: Db): Promise<string> => {
 };
 
 /** A live session row on `account_id`, as the session middleware resolves it. */
-const resolve_session = async (
-	db: Db,
-	account_id: string,
-	expires_at = new Date(Date.now() + HOUR_MS)
-): Promise<ResolvedSessionAuth> => {
+const resolve_session = async (db: Db, account_id: string): Promise<ResolvedSessionAuth> => {
 	const session_hash = hash_session_token(generate_session_token());
-	await query_create_session({ db }, session_hash, account_id, expires_at);
+	await query_create_session({ db }, session_hash, account_id);
 	return {
 		account: create_test_account({ id: account_id }),
 		credential_type: 'session',

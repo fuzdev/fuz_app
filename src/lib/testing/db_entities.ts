@@ -123,3 +123,29 @@ export const create_test_extra_actor = async (
  */
 export const soft_delete_test_actor = async (db: Db, actor_id: string): Promise<boolean> =>
 	query_actor_soft_delete({ db }, actor_id, null);
+
+/**
+ * Insert an `auth_session` row expiring `expires_in_seconds` after the
+ * database's `NOW()` — negative for a session already expired. For tests
+ * that need a session of a given lifetime, past or future, which
+ * `query_create_session` (always a full `AUTH_SESSION_LIFETIME_MS`) can't
+ * write. The same statement as the Rust `_testing_mint_session`.
+ *
+ * @param db - the database
+ * @param token_hash - the session's id, the token's hash (`hash_session_token`)
+ * @param account_id - the account the session belongs to
+ * @param expires_in_seconds - the expiry's offset from `NOW()`, in seconds
+ * @mutates `db` — inserts one `auth_session` row
+ */
+export const create_test_session_row = async (
+	db: Db,
+	token_hash: string,
+	account_id: string,
+	expires_in_seconds: number
+): Promise<void> => {
+	await db.query(
+		`INSERT INTO auth_session (id, account_id, expires_at)
+		 VALUES ($1, $2, NOW() + ($3::double precision * INTERVAL '1 second'))`,
+		[token_hash, account_id, expires_in_seconds]
+	);
+};

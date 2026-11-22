@@ -17,6 +17,9 @@ import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_
 import type { AuthSession, SessionId } from './account_schema.ts';
 import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
 
+/** The session lifetime in whole seconds, which the insert's interval spells. */
+const AUTH_SESSION_LIFETIME_SECONDS = 30 * 24 * 60 * 60;
+
 /**
  * Session lifetime in milliseconds (30 days).
  *
@@ -25,7 +28,7 @@ import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
  * window renews a leaked cookie forever; see `docs/security.md` §Session
  * Security). The cookie's `SESSION_AGE_MAX` mirrors this value.
  */
-export const AUTH_SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+export const AUTH_SESSION_LIFETIME_MS = AUTH_SESSION_LIFETIME_SECONDS * 1000;
 
 /**
  * Hash a session token to its storage key using blake3.
@@ -50,25 +53,36 @@ export const generate_session_token = (): string => {
 };
 
 /**
- * Create a new auth session.
+ * `AUTH_SESSION_LIFETIME_MS` as the SQL interval the session insert adds to
+ * `NOW()` — `INTERVAL '2592000 seconds'`, the Rust spine's literal. Elapsed
+ * seconds, not `'30 days'`: a day interval is calendar time in the session's
+ * time zone, so a session crossing a DST change would live an hour more or
+ * less.
+ */
+const AUTH_SESSION_LIFETIME_SQL = `INTERVAL '${AUTH_SESSION_LIFETIME_SECONDS} seconds'`;
+
+/**
+ * Create a new auth session, expiring `AUTH_SESSION_LIFETIME_MS` after the
+ * database's `NOW()` — the clock the validity check (`expires_at > NOW()`)
+ * reads, and the one `created_at` takes, so the expiry sits a whole lifetime
+ * past the row's creation and every session one transaction creates shares
+ * it. Twin of the Rust `query_create_session`, same statement.
  *
  * @param deps - query dependencies
  * @param token_hash - blake3 hash of the session token (use `hash_session_token`)
  * @param account_id - the account this session belongs to
- * @param expires_at - when the session expires
  * @mutates `auth_session` table - inserts a row keyed by `token_hash`
  */
 export const query_create_session = async (
 	deps: QueryDeps,
 	token_hash: string,
-	account_id: string,
-	expires_at: Date
+	account_id: string
 ): Promise<void> => {
-	await deps.db.query(`INSERT INTO auth_session (id, account_id, expires_at) VALUES ($1, $2, $3)`, [
-		token_hash,
-		account_id,
-		expires_at.toISOString()
-	]);
+	await deps.db.query(
+		`INSERT INTO auth_session (id, account_id, expires_at)
+		 VALUES ($1, $2, NOW() + ${AUTH_SESSION_LIFETIME_SQL})`,
+		[token_hash, account_id]
+	);
 };
 
 /**
@@ -429,8 +443,7 @@ export const create_capped_session = async (
 	const { keyring, deps, account_id, session_options, max_sessions } = options;
 	const session_token = generate_session_token();
 	const token_hash = hash_session_token(session_token);
-	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-	await query_create_session(deps, token_hash, account_id, expires_at);
+	await query_create_session(deps, token_hash, account_id);
 
 	const evicted =
 		max_sessions != null ? await query_session_enforce_limit(deps, account_id, max_sessions) : [];
