@@ -58,6 +58,103 @@ const role_grant_expr = iso8601_timestamp_expr(ROLE_GRANT_COLUMNS, [
 ])('');
 
 /**
+ * The first half of every scope lock's key (`scope_advisory_lock_key`): the
+ * ASCII of `fuzs`. Reserved for scope locks — no other lock in the spine takes it.
+ *
+ * Two-`int4` keys, `pg_advisory_xact_lock(int4, int4)`, sit a key space apart
+ * from the single `bigint` key the migration runner takes (`pg_locks.objsubid`
+ * 2 against 1), and this half differs from the purge lock's
+ * (`ACCOUNT_PURGE_ADVISORY_LOCK_KEY`, `fuz_`), so a scope lock meets neither.
+ * Twin of the Rust `fuz_auth::role_grant_offer_queries::SCOPE_ADVISORY_LOCK_CLASS`.
+ */
+export const SCOPE_ADVISORY_LOCK_CLASS = 0x6675_7a73;
+
+/**
+ * The advisory lock key of `scope_id`: `SCOPE_ADVISORY_LOCK_CLASS`, then the
+ * UUID's four big-endian 32-bit words folded by XOR into one signed `int4`.
+ *
+ * Every word counts — a UUIDv7 leads with its timestamp, so a prefix would put
+ * the scopes made in one millisecond on one key. Two scopes can still share a
+ * key; they then take turns, which costs a wait and nothing else. Twin of the
+ * Rust `fuz_auth::role_grant_offer_queries::scope_advisory_lock_key`, pinned on
+ * both sides by the same vectors.
+ *
+ * @param scope_id - the scope
+ * @returns the `(int4, int4)` pair `pg_advisory_xact_lock` takes
+ * @throws Error if `scope_id` is not a UUID's 32 hex digits
+ */
+export const scope_advisory_lock_key = (scope_id: Uuid): [number, number] => {
+	const hex = scope_id.replaceAll('-', '');
+	if (!/^[0-9a-f]{32}$/i.test(hex)) {
+		throw new Error(`scope lock key: not a UUID: ${scope_id}`);
+	}
+	let folded = 0;
+	for (let i = 0; i < 32; i += 8) {
+		folded ^= Number.parseInt(hex.slice(i, i + 8), 16);
+	}
+	return [SCOPE_ADVISORY_LOCK_CLASS, folded];
+};
+
+/**
+ * Take `scope_id`'s scope lock shared, until the transaction ends.
+ *
+ * The lock orders a scope's teardown against every write that brings a grant
+ * or an offer into the scope: `query_role_grant_revoke_for_scope` takes it
+ * exclusive as its first statement, and the scoped writes take it shared —
+ * `query_create_role_grant` and `query_role_grant_offer_create` first thing,
+ * `query_accept_offer` after its unlocked head read, before any row, and the
+ * `role_grant_offer_create` and `role_grant_assign` handlers before the
+ * consumer's authorizer runs. A write
+ * that reads its scope after the lock sees a teardown that committed first,
+ * and one holding the lock makes a teardown wait and then end what it wrote.
+ * Writers take turns with a teardown only, not with each other. Re-entrant:
+ * a second take in one transaction is free.
+ *
+ * Take it first, holding no row: the teardown holds it while it waits on offer
+ * and grant rows and on whatever its consumer's scope delete cascades into (an
+ * invite or a request at the scope), so a transaction that waits on it holding
+ * one of those deadlocks. The scope id may come from an unlocked read of a
+ * column that never changes, as the accept's head read does. Use it on a
+ * consumer path that reads its own scope row and then brings something into the
+ * scope (an invite accept, a join decision): the lock, then the read. A
+ * transaction never takes two scope locks here; one that must should take them
+ * in key order. Twin of the Rust
+ * `fuz_auth::role_grant_offer_queries::query_scope_lock_shared`.
+ *
+ * @param deps - query dependencies (must be the writing transaction)
+ * @param scope_id - the scope
+ */
+export const query_scope_lock_shared = async (deps: QueryDeps, scope_id: Uuid): Promise<void> => {
+	await deps.db.query('SELECT pg_advisory_xact_lock_shared($1, $2)', [
+		...scope_advisory_lock_key(scope_id)
+	]);
+};
+
+/**
+ * Take `scope_id`'s scope lock exclusive, until the transaction ends: every
+ * scoped write (`query_scope_lock_shared`) waits until then, and this waits for
+ * every one in flight.
+ *
+ * `query_role_grant_revoke_for_scope` takes it as its first statement. A
+ * consumer's teardown that must hold the lock before that — to read or lock
+ * its own scope row first — takes it here, holding no row, then calls the
+ * cascade (which takes it again, free) — never after taking it shared in the
+ * same transaction: two shared holders that both upgrade deadlock. Twin of the
+ * Rust `fuz_auth::role_grant_offer_queries::query_scope_lock_exclusive`.
+ *
+ * @param deps - query dependencies (must be the teardown's transaction)
+ * @param scope_id - the scope
+ */
+export const query_scope_lock_exclusive = async (
+	deps: QueryDeps,
+	scope_id: Uuid
+): Promise<void> => {
+	await deps.db.query('SELECT pg_advisory_xact_lock($1, $2)', [
+		...scope_advisory_lock_key(scope_id)
+	]);
+};
+
+/**
  * Grant a role_grant to an actor.
  * Idempotent — if an active (unrevoked and unexpired) role_grant already
  * exists for this actor, role, and scope, returns it instead of creating a
@@ -78,6 +175,14 @@ const role_grant_expr = iso8601_timestamp_expr(ROLE_GRANT_COLUMNS, [
  * `role_grant_scope_kind_paired` CHECK; mismatched pairs raise at the DB
  * layer rather than producing silent rows.
  *
+ * A scoped grant takes the scope lock shared first (`query_scope_lock_shared`),
+ * so a teardown of the scope (`query_role_grant_revoke_for_scope`) in flight
+ * is waited for, and one that starts after it waits for this transaction and
+ * then revokes the grant. Run it inside the caller's transaction, holding no
+ * row unless the transaction already holds this scope's lock (the lock's
+ * rule; a re-take is free); a caller that judged the scope live takes the
+ * lock before that read.
+ *
  * @param deps - query dependencies
  * @param input - the role_grant fields
  * @returns the created or existing active role_grant
@@ -87,6 +192,7 @@ export const query_create_role_grant = async (
 	deps: QueryDeps,
 	input: CreateRoleGrantInput
 ): Promise<RoleGrant> => {
+	if (input.scope_id != null) await query_scope_lock_shared(deps, input.scope_id);
 	// an expired row still holds the partial unique slot (`revoked_at IS NULL`)
 	await deps.db.query(
 		`UPDATE role_grant SET revoked_at = NOW(), revoked_by = NULL, revoked_reason = 'expired'
@@ -513,16 +619,26 @@ export interface RevokeForScopeResult {
  * orphan role_grants and offers. The cascade is **role-agnostic**: anything
  * attached to the destroyed scope is cleaned up.
  *
- * Both updates run as separate statements inside the caller's transaction,
- * the scope's pending offers locked in id order first, then the `role_grant`
- * revoke, then the supersede of the offers that lock returned — offers before
- * grants, as `query_revoke_role_grant` takes them. No account row keeps a new
- * offer at the scope out (the scope's offers span accounts), so the supersede
- * writes only the rows it locked: an offer made at the scope after the lock is
- * left pending rather than taken out of order. The two halves are
- * independent — orphan pending offers can exist at a scope with no active
- * role_grants, so the supersede half always runs even when no role_grant was
- * revoked.
+ * Its first statement takes the scope lock exclusive
+ * (`query_scope_lock_exclusive`): every write that brings a grant or an offer
+ * into the scope takes it shared (`query_scope_lock_shared` has the list), so
+ * one in flight commits first and is ended here, and one after waits for this
+ * transaction. A write whose consumer authorizer reads the scope reads it after
+ * its lock, so once this teardown has removed the scope row and committed, the
+ * write is refused. Call it before the transaction touches the scope row or
+ * any other row a writer's authorizer locks — a teardown holding such a row
+ * while it waits here on a writer that waits on that row deadlocks — or take
+ * `query_scope_lock_exclusive` first.
+ *
+ * Then the updates run as separate statements, the scope's pending offers
+ * locked in id order first, then the `role_grant` revoke, then the supersede
+ * of the offers that lock returned — offers before grants, as
+ * `query_revoke_role_grant` takes them. The supersede writes only the rows it
+ * locked; an offer written at the scope after that without the scope lock (a
+ * raw insert, which no query here makes) is left pending rather than taken
+ * out of order. The two halves are independent — orphan pending offers can
+ * exist at a scope with no active role_grants, so the supersede half always
+ * runs even when no role_grant was revoked.
  *
  * @param deps - query dependencies
  * @param scope_id - the scope whose role_grants and offers to terminate
@@ -531,6 +647,7 @@ export interface RevokeForScopeResult {
  * @returns the revoked role_grants (with `account_id` for fan-out) and superseded offers (with `from_account_id` for fan-out)
  * @mutates `role_grant` table - sets `revoked_at`/`revoked_by`/`revoked_reason` on every active row at `scope_id`
  * @mutates `role_grant_offer` table - stamps `superseded_at` on every pending row at `scope_id` its lock took
+ * @mutates the scope lock - holds `scope_id`'s advisory lock exclusive until the transaction ends
  */
 export const query_role_grant_revoke_for_scope = async (
 	deps: QueryDeps,
@@ -538,12 +655,11 @@ export const query_role_grant_revoke_for_scope = async (
 	revoked_by: Uuid | null,
 	reason?: string | null
 ): Promise<RevokeForScopeResult> => {
-	// Revoke every active role_grant at the scope. CTE returns `actor_id` directly
-	// from the role_grant row (drives `target_actor_id` audit envelopes); a join
-	// against `actor` resolves `account_id` for `target_account_id`
-	// + WS/SSE socket-close fan-out, all in one round-trip.
+	// The scope lock first, holding nothing: every scoped writer holds it
+	// shared until its commit, and none waits here holding a row we lock next.
+	await query_scope_lock_exclusive(deps, scope_id);
 	// The scope's pending offers first, in id order — before the grants, for
-	// the reason `query_revoke_role_grant` locks its offers before its grant
+	// the reason `query_revoke_role_grant` locks its offers before its grant.
 	const at_scope = `scope_id = $1 AND ${offer_pending_predicate('')}`;
 	const locked_ids = (
 		await deps.db.query<{ id: Uuid }>(
@@ -551,6 +667,10 @@ export const query_role_grant_revoke_for_scope = async (
 			[scope_id]
 		)
 	).map((row) => row.id);
+	// Revoke every active role_grant at the scope. CTE returns `actor_id` directly
+	// from the role_grant row (drives `target_actor_id` audit envelopes); a join
+	// against `actor` resolves `account_id` for `target_account_id`
+	// + WS/SSE socket-close fan-out, all in one round-trip.
 	const revoked = await deps.db.query<{
 		role_grant_id: Uuid;
 		role: string;

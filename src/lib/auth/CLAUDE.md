@@ -251,11 +251,16 @@ cannot disagree.
 ### Row locks
 
 One class order in every transaction — accounts, then offers, then grants and
-actors — and id order within a class. Every writer of an account takes its row
-first (two mints of one account take turns there, so the caps hold) — a
-delete and a purge after their last-admin guard, which an admin target's row
-is locked within, then the guards again; a multi-row write locks its rows in
-one id-ordered statement before writing.
+actors — and id order within a class, behind a scope's advisory lock where one
+is taken (`query_scope_lock_shared` / `query_scope_lock_exclusive`: a scope's
+teardown exclusive, the scoped offer, assign, grant and accept writes shared;
+every spine path takes it before any row, a later re-take in the same
+transaction being free, and a direct caller of these queries must too, unless
+its transaction already holds the scope lock). Every writer of an account takes its row first (two mints of one
+account take turns there, so the caps hold) — a delete and a purge after their
+last-admin guard, which an admin target's row is locked within, then the
+guards again; a multi-row write locks its rows in one id-ordered statement
+before writing.
 Each lock's strength and reason is on its query's TSDoc; the rule set:
 ../../../docs/security.md §Row Locks. `lock_pins.cross.test.ts` pins them on
 both spines (../../test/CLAUDE.md).

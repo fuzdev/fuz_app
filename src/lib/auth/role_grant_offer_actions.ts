@@ -105,7 +105,8 @@ import {
 	query_account_has_global_role,
 	query_count_active_accounts_with_global_role_locked,
 	query_create_role_grant,
-	query_role_grant_find_active_role_for_actor
+	query_role_grant_find_active_role_for_actor,
+	query_scope_lock_shared
 } from './role_grant_queries.ts';
 import { query_account_lock_live_many, query_active_actors_by_account } from './account_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
@@ -231,6 +232,18 @@ export const emit_supersede_audits = async (
  * check, say) reads through it. **Read-only** — the callback decides, it never
  * writes; a write would commit or roll back with the request, and nothing
  * enforces this but the callback.
+ *
+ * **Runs under the scope lock** when the input is scoped: both verbs take
+ * `scope_id`'s lock shared (`query_scope_lock_shared`) before calling it, so
+ * a scope-existence read sees every teardown that committed first — under READ
+ * COMMITTED, where each statement takes a fresh snapshot; under REPEATABLE
+ * READ the snapshot predates the lock's wait and the read would miss it — and
+ * a teardown still to come waits for the request to commit. That holds only
+ * for a consumer teardown that goes through
+ * `query_role_grant_revoke_for_scope` before it removes the scope row, or
+ * takes `query_scope_lock_exclusive` first; one that removes the row first
+ * leaves the window open, and one that locks the row first deadlocks with a
+ * callback that locks it.
  */
 export type RoleGrantOfferCreateAuthorize = (
 	auth: RequestContext,
@@ -450,6 +463,11 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
+		// A scoped offer takes the scope lock before the callback reads the scope,
+		// so a teardown that committed first is seen (the callback refuses the
+		// dead scope) and one still to come waits for this offer, then supersedes
+		// it. The query takes it again, free.
+		if (input.scope_id != null) await query_scope_lock_shared(ctx, input.scope_id);
 		const authorized = await authorize(
 			auth,
 			{
@@ -943,7 +961,11 @@ export const create_role_grant_offer_actions = (
 		// The consumer's offer policy binds the immediate path too: assign is an
 		// offer the grantee doesn't get to decline, so a grant the `authorize`
 		// callback would refuse as an offer (a scope that doesn't exist, a role
-		// that must be scoped) is refused here, with the offer path's reason.
+		// that must be scoped) is refused here, with the offer path's reason. A
+		// scoped grant takes the scope lock first, as offer-create does, so the
+		// callback reads the scope after any teardown that committed first, and a
+		// teardown still to come waits for this grant and then revokes it.
+		if (input.scope_id != null) await query_scope_lock_shared(ctx, input.scope_id);
 		const authorized = await authorize(
 			auth,
 			{

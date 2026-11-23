@@ -318,6 +318,8 @@ export const query_account_lock_live = async (deps: QueryDeps, id: string): Prom
  * The two-`int4` form, `pg_advisory_xact_lock(int4, int4)`, a key space apart
  * from the single `bigint` key the migration runner's per-namespace
  * `pg_advisory_xact_lock(bigint)` takes, so no namespace's hash can collide with it.
+ * Its first half is reserved to this lock; the scope locks take `fuzs`
+ * (`SCOPE_ADVISORY_LOCK_CLASS` in `auth/role_grant_queries.ts`).
  * Twin of the Rust `fuz_auth::account_queries::ACCOUNT_PURGE_ADVISORY_LOCK_KEY`.
  */
 export const ACCOUNT_PURGE_ADVISORY_LOCK_KEY: readonly [number, number] = [

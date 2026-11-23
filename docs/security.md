@@ -1563,7 +1563,9 @@ as `role_grant_offer_supersede` with its `reason` and `cause_id`:
   (`account_deleted`; purge before its cascade, so each leaves a row), and no
   offer can be created to a deleted account or actor;
 - destroying a consumer scope row (`query_role_grant_revoke_for_scope`)
-  supersedes every pending offer at the scope (`scope_destroyed`).
+  supersedes every pending offer at the scope (`scope_destroyed`), and the
+  scope lock (§Row Locks) keeps an offer or grant authorized against the
+  scope before the teardown from landing after it.
 
 Net property: accepting a pending offer means the offer survived every
 revoke between its creation and acceptance. An attacker cannot accept a
@@ -2236,8 +2238,32 @@ realtime feeds.
 
 Every transaction takes rows in one class order — accounts, then offers,
 then grants and actors — and within a class in id order, so no two
-transactions meet the same rows in opposite orders.
+transactions meet the same rows in opposite orders. A scope lock, where one
+is taken, comes before them all.
 
+- **The scope lock first.** A transaction-scoped advisory lock per scope
+  (`scope_advisory_lock_key`: `fuzs`, then the scope UUID's four 32-bit
+  words folded by XOR) orders a scope's teardown against the writes that
+  bring a grant or an offer into it. `query_role_grant_revoke_for_scope`
+  takes it exclusive as its first statement; a scoped
+  `role_grant_offer_create` and `role_grant_assign` take it shared before
+  the consumer's `authorize` callback reads the scope,
+  `query_role_grant_offer_create` and `query_create_role_grant` take it
+  shared first thing (re-entrant, so the handlers' second take is free), and
+  `query_accept_offer` after its unlocked head read, before any row. A write
+  whose callback reads the scope after a teardown committed is refused (403
+  `role_grant_offer_not_authorized`); a teardown after a write waits for it
+  and then ends what it wrote. Every spine path takes it before any row (a
+  later re-take in the same transaction is free); a direct caller of these
+  queries must too, unless its transaction already holds the scope lock. The
+  teardown takes no row a
+  writer holds while waiting on it, so the lock adds no cycle; the accept
+  takes it before its claim, since a teardown holding it waits on the
+  claimed offer. A consumer's own path that reads its scope row and then
+  brings something into the scope takes `query_scope_lock_shared` before the
+  read, and a consumer teardown calls the cascade before it touches its
+  scope row (or takes `query_scope_lock_exclusive` first). No path here
+  takes two scope locks.
 - **Accounts first.** Every writer of an account takes its row before the
   rows that hang off it: a login and a token creation through their
   re-check (`FOR NO KEY UPDATE`, so two mints of one account take turns and

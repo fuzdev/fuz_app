@@ -429,10 +429,10 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 	});
 
 	// A holder of the scope's grant stalls the teardown's grant update after its
-	// offer lock; the holder then writes a new offer at the scope and commits.
-	// The teardown supersedes the offers its lock took, and leaves the new one
-	// pending: nothing keeps an offer at a scope out, so an offer it didn't lock
-	// is one it would take out of order.
+	// offer lock; the holder then writes a new offer at the scope by a raw insert
+	// and commits. The teardown supersedes the offers its lock took, and leaves
+	// the new one pending: the scope lock keeps out every offer a query writes,
+	// and one written past it is one the teardown would take out of order.
 	test('a scope teardown supersedes only the offers its lock took', async () => {
 		const db = get_db();
 		const g = await account(db, 'lo_sco_g');

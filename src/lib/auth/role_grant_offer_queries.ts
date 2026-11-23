@@ -25,7 +25,11 @@ import {
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
 	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
-import { query_create_role_grant, query_role_grant_by_id } from './role_grant_queries.ts';
+import {
+	query_create_role_grant,
+	query_role_grant_by_id,
+	query_scope_lock_shared
+} from './role_grant_queries.ts';
 import {
 	offer_pending_predicate,
 	offer_rows_locked_in_id_order,
@@ -232,6 +236,13 @@ export class RoleGrantOfferGrantorNotActiveError extends Error {
  * spans. The self-target check comes first, so an offer to one's own account
  * is refused as that whatever else it names.
  *
+ * A scoped offer takes the scope lock shared before anything else
+ * (`query_scope_lock_shared`), so a teardown of the scope
+ * (`query_role_grant_revoke_for_scope`) in flight is waited for, and one that
+ * starts after it waits for this transaction and then supersedes the offer. A
+ * caller that judged the scope live takes the lock before that read, holding
+ * no row; the spine's handler does.
+ *
  * @mutates `role_grant_offer` table - inserts a new offer or upserts the matching pending row
  * @throws RoleGrantOfferSelfTargetError if the offering actor belongs to `to_account_id`
  * @throws RoleGrantOfferRecipientNotActiveError if `to_account_id` is missing, soft-deleted, or has no active actor
@@ -242,6 +253,7 @@ export const query_role_grant_offer_create = async (
 	deps: QueryDeps,
 	input: CreateRoleGrantOfferInput
 ): Promise<RoleGrantOffer> => {
+	if (input.scope_id != null) await query_scope_lock_shared(deps, input.scope_id);
 	// Self-target check resolves the **grantor** actor's account and
 	// compares against to_account_id. This is multi-actor-correct:
 	// a single account may host many actors, and self-target means
@@ -599,8 +611,10 @@ export interface AcceptOfferResult {
  * creating a duplicate or throwing — while that grant is still held. A grant
  * revoked since the accept, or gone, makes the offer terminal.
  *
- * Lock order — accounts, then offers, then the grant: the recipient's account
- * row (and, for an unscoped `admin` offer, the grantor's) in id order
+ * Lock order — the scope, then accounts, then offers, then the grant: a
+ * scoped offer's scope lock shared (`query_scope_lock_shared`), the
+ * recipient's account row (and, for an unscoped `admin` offer, the grantor's)
+ * in id order
  * (`query_account_lock_for_offer_accept`), then the offer and the pending
  * siblings it supersedes in one id-ordered claim, then the grant insert. The
  * accounts first, as every removal of either account takes them first, so a
@@ -614,7 +628,11 @@ export interface AcceptOfferResult {
  * `query_account_lock_for_revoke`, whether or not its last-admin guard ran; a
  * delete through its write of the row; a purge through its last-admin guard
  * and `query_account_lock_for_purge`; the DB browser's delete, which takes
- * none of them, excepted).
+ * none of them, excepted). The scope lock comes first because the grant insert
+ * takes it (`query_create_role_grant`): taken there, after the claim, it would
+ * wait on a teardown that waits on the claimed offer. Taken first, a teardown
+ * in flight is waited for and the claim then finds the offer superseded, and
+ * one that starts after waits for this accept and then revokes its grant.
  *
  * Error map:
  * - `RoleGrantOfferNotFoundError` — offer does not exist, or belongs to a
@@ -668,6 +686,10 @@ export const query_accept_offer = async (
 	if (!head) {
 		throw new RoleGrantOfferNotFoundError(offer_id);
 	}
+	// A scoped offer's scope lock, holding nothing yet — before the claim, since
+	// the grant insert takes it again, and a teardown holding it waits on the
+	// claimed offer.
+	if (head.scope_id !== null) await query_scope_lock_shared(deps, head.scope_id);
 	// An unscoped `admin` offer's grantor must still hold a global `admin` when
 	// the grant is minted.
 	const needs_grantor_admin = head.role === ROLE_ADMIN && head.scope_id === null;
