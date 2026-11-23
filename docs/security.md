@@ -1210,8 +1210,9 @@ A body with no declared length is measured as it arrives and refused once past
 the cap.
 
 **Runtime floors.** The `Connection: close` is what makes the runtime close at
-once. **Bun 1.4.4 is the tested floor**: a Bun older than 1.4.3 kept the
-connection after the 413 and served the next request, so run Bun deployments,
+once. **Bun 1.4.4 is the tested floor** (CI's pin, where the test server's
+clean shutdown is verified); the close after the 413 needs 1.4.3 — an older
+Bun kept the connection and served the next request — so run Bun deployments,
 and the Bun leg of the cross-backend suites, at the floor or later. The parser
 behavior the defense-in-depth checks were measured against is Node 24.14.1
 and Bun 1.4.3; the Rust spine's `Transfer-Encoding` + `Content-Length`

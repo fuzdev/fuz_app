@@ -51,9 +51,9 @@
  *   untouched and arriving within the window, reads it off and serves the
  *   next request.
  * - **Bun** closes at once, the body unread, honouring the header. Bun 1.4.4
- *   is the tested floor: a Bun older than 1.4.3 kept the connection after the
- *   `413` and served the next request (correctly framed), so run Bun at the
- *   floor or later.
+ *   is the tested floor (CI's pin); the close needs 1.4.3 — an older Bun kept
+ *   the connection after the `413` and served the next request (correctly
+ *   framed) — so run Bun at the floor or later.
  *
  * @module
  */
