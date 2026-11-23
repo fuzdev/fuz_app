@@ -63,9 +63,8 @@ import { in_process_capabilities, type BackendCapabilities } from './capabilitie
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import {
 	assert_credential_authenticates,
-	EXPIRED_SESSION_OFFSET_SECONDS,
-	EXPIRED_TOKEN_SHORTEN_SECONDS,
-	EXPIRED_TOKEN_WAIT_MS,
+	EXPIRED_CREDENTIAL_SHORTEN_SECONDS,
+	EXPIRED_CREDENTIAL_WAIT_MS,
 	to_test_account,
 	type SetupTest,
 	type TestFixture,
@@ -117,7 +116,7 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
  * Move every session and API token row of an account back by `ms` — each
  * timestamp the row carries, so their order holds: what the rows would read
  * had they been written `ms` earlier. How the in-process `mint_expired_token`
- * stands in for the cross-process fixture's wait.
+ * and `mint_expired_session` stand in for the cross-process fixture's wait.
  *
  * @mutates `auth_session` and `api_token` - the account's rows' timestamps
  */
@@ -224,6 +223,36 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 			extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 		}
 
+		// The expired-credential mints' shared shape: a fresh account, its
+		// credential proven live, then every credential of the account pulled
+		// in with the expiry backdoor's statement — refused for the expiry alone.
+		const mint_expired_account = async (
+			accessor: string,
+			kind: 'sessions' | 'api_tokens',
+			credential: (account: TestAccount) => Record<string, string>
+		): Promise<TestAccount> => {
+			const db = test_app.backend.deps.db;
+			const other = await test_app.create_account();
+			await assert_credential_authenticates({
+				transport: in_process_fetch_transport(test_app.app),
+				rpc_path: account_verify_rpc_path(accessor),
+				headers: credential(other),
+				account_id: other.account.id,
+				accessor
+			});
+			const shortened = await query_shorten_credential_expiry(
+				db,
+				other.account.id,
+				EXPIRED_CREDENTIAL_SHORTEN_SECONDS
+			);
+			if (shortened[kind] < 1) throw new Error(`${accessor}: the expiry rewrote no ${kind} row`);
+			// in place of the cross-process wait: the account's credential rows
+			// moved back by it whole, as if minted, used and shortened that long
+			// ago — so `expires_at` lands past, still after `created_at`
+			await backdate_account_credentials(db, other.account.id, EXPIRED_CREDENTIAL_WAIT_MS);
+			return other;
+		};
+
 		const fixture: TestFixture = {
 			transport: in_process_fetch_transport(test_app.app),
 			// In-process the wrapper is stateless and never auto-adds Origin —
@@ -240,24 +269,18 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 			extra_actors,
 			reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys ?? false,
 			assert_db_invariants: test_app.assert_db_invariants,
-			// Forge directly against the live backend's DB + keyring — no wire
-			// hop needed in-process.
 			mint_expired_session: async () => {
-				const { session_cookie } = await mint_test_session({
-					db: test_app.backend.deps.db,
-					keyring: test_app.backend.keyring,
-					account_id: test_app.backend.account.id,
-					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS
-				});
-				return `${cookie_name}=${session_cookie}`;
+				const other = await mint_expired_account('mint_expired_session', 'sessions', (account) => ({
+					cookie: `${cookie_name}=${account.session_cookie}`
+				}));
+				return `${cookie_name}=${other.session_cookie}`;
 			},
-			// The session mint writes what the Rust `_testing_mint_session` writes
-			// (`mint_test_session`: a full lifetime past the database's `NOW()`);
-			// the token mints, the revocations and the expiry go through the
-			// queries the production paths (and the expiry backdoor) write with,
-			// so the rows match what the cross-process accessors leave. Each
-			// credential is proven live first, so its refusal can only be the
-			// revocation or the expiry.
+			// The revoked-session mint writes its row with `mint_test_session` (a
+			// full lifetime past the database's `NOW()`); the token mints, the
+			// revocations and the expiries go through the queries the production
+			// paths (and the expiry backdoor) write with, so the rows match what
+			// the cross-process accessors leave. Each credential is proven live
+			// first, so its refusal can only be the revocation or the expiry.
 			mint_revoked_session: async () => {
 				const db = test_app.backend.deps.db;
 				const account_id = test_app.backend.account.id;
@@ -305,30 +328,9 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 				return token;
 			},
 			mint_expired_token: async () => {
-				const other = await test_app.create_account();
-				await assert_credential_authenticates({
-					transport: in_process_fetch_transport(test_app.app),
-					rpc_path: account_verify_rpc_path('mint_expired_token'),
-					headers: { authorization: `Bearer ${other.api_token}` },
-					account_id: other.account.id,
-					accessor: 'mint_expired_token'
-				});
-				const shortened = await query_shorten_credential_expiry(
-					test_app.backend.deps.db,
-					other.account.id,
-					EXPIRED_TOKEN_SHORTEN_SECONDS
-				);
-				if (shortened.api_tokens < 1) {
-					throw new Error('mint_expired_token: the expiry rewrote no token row');
-				}
-				// in place of the cross-process wait: the account's credential rows
-				// moved back by it whole, as if minted, used and shortened that long
-				// ago — so `expires_at` lands past, still after `created_at`
-				await backdate_account_credentials(
-					test_app.backend.deps.db,
-					other.account.id,
-					EXPIRED_TOKEN_WAIT_MS
-				);
+				const other = await mint_expired_account('mint_expired_token', 'api_tokens', (account) => ({
+					authorization: `Bearer ${account.api_token}`
+				}));
 				return other.api_token;
 			}
 		};

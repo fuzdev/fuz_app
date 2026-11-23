@@ -6,12 +6,11 @@
  * exercised the pre-DB `parse_session_from_cookies` gate) to a cross-process assertion
  * against the authoritative server-side **DB-row** expiry gate
  * (`query_session_get_valid` — `WHERE expires_at > NOW()`). The
- * `expired_session` principal mints a backdated `auth_session` row behind a
- * still-valid signed cookie via `_testing_mint_session`, so resolution
- * clears the cookie-payload gate and is refused by the DB-row gate — the
- * one the in-process payload-expiry tests never reached and the one that
- * structurally needs a server-side mint (the cross-process driver has no
- * keyring).
+ * `expired_session` principal is a fresh account's session, proven live,
+ * then expired through `_testing_shorten_credential_expiry` behind its
+ * still-valid signed cookie, so resolution clears the cookie-payload gate
+ * and is refused by the DB-row gate — the one the in-process payload-expiry
+ * tests never reached.
  *
  * Two rows: a read path (RPC `account_verify`) and a mutation path (REST
  * `POST /logout`). The two byte-identical in-process `account_verify`

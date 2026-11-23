@@ -144,9 +144,9 @@ export const to_test_account = (
  * Transport-agnostic: in-process and cross-process producers return the
  * same shape. Behaviors that once needed raw backend access (keyring for
  * forging cookies) are reached through wire-shaped seams instead —
- * `mint_expired_session()` mints over the `_testing_mint_session` channel
- * cross-process and directly in-process, so suite bodies never branch on
- * the transport.
+ * `mint_expired_session()` expires a session over the
+ * `_testing_shorten_credential_expiry` channel cross-process and with its
+ * statement in-process, so suite bodies never branch on the transport.
  *
  * **Keeper ≠ admin.** `fixture.account` / `fixture.actor` refer to the
  * **fresh keeper** seeded per test. The keeper account holds
@@ -227,15 +227,16 @@ export interface TestFixture {
 	 */
 	readonly extra_actors: ReadonlyArray<{ readonly id: Uuid; readonly name: string }>;
 	/**
-	 * Forge an *expired server-side session* for the keeper account and
-	 * return the ready-to-send `Cookie` header value (`name=value`). The
-	 * minted `auth_session` row is backdated while the signed cookie payload
-	 * stays valid — so resolution clears the cookie-payload gate
-	 * (`parse_session_from_cookies`) and is refused at the authoritative DB-row gate
-	 * (`query_session_get_valid` — `WHERE expires_at > NOW()`). Backs the
-	 * `expired_session` conformance principal. In-process mints directly via
-	 * `mint_test_session`; cross-process drives the `_testing_mint_session`
-	 * RPC over the keeper's daemon-token channel (the driver has no keyring).
+	 * Return the ready-to-send `Cookie` header value (`name=value`) of a
+	 * session that authenticated and whose row is now past its `expires_at`:
+	 * the signed cookie still verifies, so resolution clears the cookie gate
+	 * (`parse_session_from_cookies`) and is refused at the authoritative
+	 * DB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`).
+	 * Backs the `expired_session` conformance principal. The shape of
+	 * `mint_expired_token`: a fresh account (`create_account`, so the keeper's
+	 * own credentials live on) whose session is proven live, then expired as a
+	 * real one is — `_testing_shorten_credential_expiry` and a wait
+	 * cross-process, its statement and a backdate in-process.
 	 */
 	readonly mint_expired_session: () => Promise<string>;
 	/**
@@ -264,15 +265,16 @@ export interface TestFixture {
 	 * `expires_at`. Backs the `expired_token` conformance principal. Both
 	 * fixtures mint an account (`create_account`, so the keeper's own
 	 * credentials live on), prove its eternal token authenticates, then pull
-	 * the account's credential expiries in to `EXPIRED_TOKEN_SHORTEN_SECONDS`
+	 * the account's credential expiries in to `EXPIRED_CREDENTIAL_SHORTEN_SECONDS`
 	 * from now with the statement behind `_testing_shorten_credential_expiry`
 	 * (`query_shorten_credential_expiry`), so the row expires as a real one
 	 * does: `expires_at` after `created_at`, then passed. Cross-process the
 	 * statement runs through the backdoor, which the backend must mount, and
-	 * the fixture waits `EXPIRED_TOKEN_WAIT_MS`. In-process it runs directly
+	 * the fixture waits `EXPIRED_CREDENTIAL_WAIT_MS`. In-process it runs directly
 	 * and, holding the database, moves the account's credential rows back by
 	 * that wait instead — every timestamp of each row, so `expires_at` stays
-	 * after `created_at`, a row a lifetime writes.
+	 * after `created_at`, a row a lifetime writes. `mint_expired_session` is
+	 * the same mint over the account's session.
 	 */
 	readonly mint_expired_token: () => Promise<string>;
 	/**
@@ -762,35 +764,26 @@ export const capture_migration_tracker = async (
 	capture_via_daemon(handle, '_testing_migration_tracker', MigrationTracker);
 
 /**
- * Backdating offset (seconds) the `mint_expired_session` seam passes to
- * `mint_test_session` / `_testing_mint_session`. A minute in the past is
- * comfortably past `NOW()` for the DB-row expiry gate without depending on
- * clock precision.
- */
-export const EXPIRED_SESSION_OFFSET_SECONDS = -60;
-
-/** Structural subset of `_testing_mint_session`'s output. */
-const MintSessionResponseShape = strip_object({ session_cookie: string });
-
-/**
- * The seconds `mint_expired_token` pulls a token's expiry in to — over
+ * The seconds `mint_expired_token` and `mint_expired_session` pull a
+ * credential's expiry in to — over
  * `_testing_shorten_credential_expiry` cross-process, with its statement
  * in-process — the backdoor's floor
  * (`TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS`, which this module does not
  * import: its module carries the in-process backend), so the wait is as short
  * as the backdoor allows; a floor raised past it fails the call loud.
  */
-export const EXPIRED_TOKEN_SHORTEN_SECONDS = 1;
+export const EXPIRED_CREDENTIAL_SHORTEN_SECONDS = 1;
 
 /**
- * How long the cross-process `mint_expired_token` waits after the shorten
- * answers: the row's `expires_at` is `EXPIRED_TOKEN_SHORTEN_SECONDS` past the
+ * How long the cross-process `mint_expired_token` and `mint_expired_session`
+ * wait after the shorten answers: the row's `expires_at` is
+ * `EXPIRED_CREDENTIAL_SHORTEN_SECONDS` past the
  * database's `NOW()` of a statement that ran before the answer, so once this
  * much has passed on the same clock the row is expired when the token is sent.
  * The margin covers the timer firing early by its rounding. The in-process
  * fixture moves the rows back by it rather than waiting.
  */
-export const EXPIRED_TOKEN_WAIT_MS = EXPIRED_TOKEN_SHORTEN_SECONDS * 1000 + 50;
+export const EXPIRED_CREDENTIAL_WAIT_MS = EXPIRED_CREDENTIAL_SHORTEN_SECONDS * 1000 + 50;
 
 /** The account id an `account_verify` answer names, all a liveness check reads of it. */
 const VerifyResponseShape = strip_object({ id: string });
@@ -866,7 +859,7 @@ const SessionListResponseShape = strip_object({
 const RevokeResponseShape = strip_object({ revoked: literal(true) });
 
 /** Structural subset of `_testing_shorten_credential_expiry`'s output. */
-const ShortenResponseShape = strip_object({ api_tokens: number });
+const ShortenResponseShape = strip_object({ sessions: number, api_tokens: number });
 
 /** Output shape of a `_testing_reset` seeded account (keeper or extra). */
 interface SeededAccountResponse {
@@ -1417,6 +1410,43 @@ export const default_cross_process_setup = (
 			extra_accounts[username] = to_test_account(seeded, cookie_name);
 		}
 
+		// The expired-credential mints' shared shape: a fresh account, its
+		// credential proven live, then every credential of the account pulled
+		// in through the backdoor and waited out — refused for the expiry alone.
+		const mint_expired_account = async (
+			accessor: string,
+			kind: 'sessions' | 'api_tokens',
+			credential: (account: TestAccount) => Record<string, string>
+		): Promise<TestAccount> => {
+			const other = await create_account();
+			await assert_credential_authenticates({
+				transport: create_fetch_transport({ base_url: handle.config.base_url, origin: null }),
+				rpc_path: handle.config.rpc_path,
+				headers: credential(other),
+				account_id: other.account.id,
+				accessor
+			});
+			const shortened = parse_capture_answer(
+				'_testing_shorten_credential_expiry',
+				ShortenResponseShape,
+				await rpc_via_transport(
+					refreshed_handle.keeper_daemon_transport,
+					handle.config.rpc_path,
+					'_testing_shorten_credential_expiry',
+					{ account_id: other.account.id, seconds: EXPIRED_CREDENTIAL_SHORTEN_SECONDS },
+					handle.config.name,
+					{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
+				)
+			);
+			if (shortened[kind] < 1) {
+				throw new Error(
+					`${accessor}: _testing_shorten_credential_expiry(${handle.config.name}) shortened no ${kind}`
+				);
+			}
+			await new Promise((resolve) => setTimeout(resolve, EXPIRED_CREDENTIAL_WAIT_MS));
+			return other;
+		};
+
 		// Per-test transport — fresh jar carrying the new keeper's cookie
 		// so requests authenticate as the keeper without callers having to
 		// thread cookies manually. Tests acting as the fresh keeper use
@@ -1454,26 +1484,11 @@ export const default_cross_process_setup = (
 				);
 				assert_db_invariant_rows(answer.rows, handle.config.name, exclude_db_invariants);
 			},
-			// Forge over the wire — the cross-process driver has no keyring,
-			// so `_testing_mint_session` mints the backdated row + signs the
-			// cookie server-side over the keeper's daemon-token channel.
 			mint_expired_session: async () => {
-				const raw = await rpc_via_transport(
-					refreshed_handle.keeper_daemon_transport,
-					handle.config.rpc_path,
-					'_testing_mint_session',
-					{ account_id: keeper.account.id, expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS },
-					handle.config.name,
-					{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
-				);
-				const parsed = parse(MintSessionResponseShape, raw);
-				if (!parsed.ok) {
-					throw new Error(
-						`_testing_mint_session(${handle.config.name}) returned unexpected result: ` +
-							`${JSON.stringify(raw)} (${format_issues(parsed.issues)})`
-					);
-				}
-				return `${cookie_name}=${parsed.value.session_cookie}`;
+				const other = await mint_expired_account('mint_expired_session', 'sessions', (account) => ({
+					cookie: `${cookie_name}=${account.session_cookie}`
+				}));
+				return `${cookie_name}=${other.session_cookie}`;
 			},
 			mint_revoked_session: async () => {
 				// a second keeper session over the production login, so the
@@ -1573,32 +1588,9 @@ export const default_cross_process_setup = (
 				return minted.token;
 			},
 			mint_expired_token: async () => {
-				const other = await create_account();
-				await assert_credential_authenticates({
-					transport: create_fetch_transport({ base_url: handle.config.base_url, origin: null }),
-					rpc_path: handle.config.rpc_path,
-					headers: { authorization: `Bearer ${other.api_token}` },
-					account_id: other.account.id,
-					accessor: 'mint_expired_token'
-				});
-				const shortened = parse_capture_answer(
-					'_testing_shorten_credential_expiry',
-					ShortenResponseShape,
-					await rpc_via_transport(
-						refreshed_handle.keeper_daemon_transport,
-						handle.config.rpc_path,
-						'_testing_shorten_credential_expiry',
-						{ account_id: other.account.id, seconds: EXPIRED_TOKEN_SHORTEN_SECONDS },
-						handle.config.name,
-						{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
-					)
-				);
-				if (shortened.api_tokens < 1) {
-					throw new Error(
-						`mint_expired_token: _testing_shorten_credential_expiry(${handle.config.name}) shortened no token`
-					);
-				}
-				await new Promise((resolve) => setTimeout(resolve, EXPIRED_TOKEN_WAIT_MS));
+				const other = await mint_expired_account('mint_expired_token', 'api_tokens', (account) => ({
+					authorization: `Bearer ${account.api_token}`
+				}));
 				return other.api_token;
 			}
 		};

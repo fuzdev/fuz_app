@@ -95,10 +95,6 @@ import type { SessionCookieEffect } from './session_cookie_effect.ts';
  * - `wrong_role` — a seeded `extra_accounts` principal holding a role
  *   other than the one a route requires; named via
  *   `ConformanceTableOptions.principals.wrong_role`.
- * - `expired_session` — the keeper account presented via an *expired
- *   server-side session* cookie (minted by `fixture.mint_expired_session()`:
- *   a backdated `auth_session` row behind a still-valid signed cookie
- *   payload, so the authoritative DB-row expiry gate is what refuses it).
  *
  * The dead credentials — each presented alone, on a fresh jar, so the request
  * carries that credential and nothing else; each arrives anonymous, so a row
@@ -116,6 +112,10 @@ import type { SessionCookieEffect } from './session_cookie_effect.ts';
  * - `revoked_session` — a session cookie that verifies, whose `auth_session`
  *   row has been revoked (`fixture.mint_revoked_session()`). The cookie alone
  *   shows nothing wrong, so it is not cleared.
+ * - `expired_session` — a session cookie that authenticated and whose
+ *   `auth_session` row has since expired (`fixture.mint_expired_session()`):
+ *   the signed cookie payload still verifies, so the authoritative DB-row
+ *   expiry gate is what refuses it.
  * - `revoked_token` — an API token that was minted and then revoked
  *   (`fixture.mint_revoked_token()`), with no `Origin`.
  * - `expired_token` — an API token whose row is past its `expires_at`

@@ -270,7 +270,7 @@ export const perform_action = async (
 				read_acting(action_auth, raw_params)
 			);
 		} catch (err) {
-			return thrown_error_result(err, `authorization phase error: ${spec.method}`, log);
+			return thrown_error_result(err, `authorization phase error: ${spec.method}`, log, signal);
 		}
 		if (!result.ok) {
 			// an account removed since its credential was read: the dead
@@ -407,17 +407,36 @@ export const perform_action = async (
 			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db)
 		);
 	} catch (err) {
-		return thrown_error_result(err, `unhandled action handler error: ${spec.method}`, log);
+		return thrown_error_result(err, `unhandled action handler error: ${spec.method}`, log, signal);
 	}
 };
 
 /**
  * The dispatcher's answer to a thrown value: the JSON-RPC error it carries
  * (`to_thrown_jsonrpc_error` — a `ThrownJsonrpcError` from any copy of
- * fuz_app, or a failed pool checkout's `service_unavailable`), else a logged,
- * masked `internal_error`.
+ * fuz_app, or a failed pool checkout's `service_unavailable`); else, once the
+ * request's `signal` has aborted, `request_cancelled`, since nobody is waiting
+ * on the answer; else a logged, masked `internal_error`.
+ *
+ * A throw after the abort is logged by what it is. The cancellation itself
+ * (`is_cancellation`: the signal's own reason, or an `AbortError`) is the
+ * handler bailing as it should, at debug. Any other throw may be a genuine
+ * fault that happened to land after the cancel, so it is logged at warn:
+ * visible, but not an error line, since its caller has gone. A handler that
+ * bails on a cancel throws the cancellation (`ctx.signal.throwIfAborted()`) or
+ * `jsonrpc_errors.request_cancelled`.
+ *
+ * **Twin difference:** the Rust dispatcher answers a handler's `Err` as it is,
+ * so a Rust handler that returns `internal_error` after its cancel answers
+ * `internal_error`, logged at error where it was built (`actions/CLAUDE.md`
+ * §Errors).
  */
-const thrown_error_result = (err: unknown, context: string, log: Logger): PerformActionResult => {
+const thrown_error_result = (
+	err: unknown,
+	context: string,
+	log: Logger,
+	signal: AbortSignal
+): PerformActionResult => {
 	const thrown = to_thrown_jsonrpc_error(err);
 	if (thrown) {
 		// a failed checkout is the server's to see, though the caller gets the 503
@@ -427,6 +446,14 @@ const thrown_error_result = (err: unknown, context: string, log: Logger): Perfor
 			status: jsonrpc_error_code_to_http_status(thrown.code),
 			error: thrown
 		};
+	}
+	if (signal.aborted) {
+		if (is_cancellation(err, signal)) {
+			log.debug(`${context}: the request was cancelled`, err);
+		} else {
+			log.warn(`${context} after its request was cancelled`, err);
+		}
+		return error_result(jsonrpc_error_messages.request_cancelled());
 	}
 	log.error(context, err);
 	// Raw exception messages can leak internals (paths, SQL, secrets in a
@@ -464,6 +491,16 @@ export const to_invalid_params_error = (
 		reason === undefined ? issues_data : { reason, ...issues_data }
 	);
 };
+
+/**
+ * Whether a throw is the request's cancellation itself: the aborted signal's
+ * own reason (what `signal.throwIfAborted()` and a `fetch` given the signal
+ * reject with), or any `AbortError` (a `DOMException` from an API that names
+ * no reason).
+ */
+const is_cancellation = (err: unknown, signal: AbortSignal): boolean =>
+	err === signal.reason ||
+	(typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError');
 
 const error_result = (error: JsonrpcErrorObject): PerformActionResult => ({
 	kind: 'error',

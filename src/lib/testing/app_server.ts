@@ -234,13 +234,11 @@ export interface MintTestSessionOptions {
 /**
  * Mint a real `auth_session` row for an existing account and return a
  * validly-signed session cookie value referencing it, with the row's id (the
- * token's hash) for a caller that revokes it. Test-only — the
- * forge behind the cross-backend expiry conformance cases (the
- * `expired_session` principal): pass a negative `expires_in_seconds` to
- * produce an *expired server-side session* whose signed cookie envelope is
- * still well-formed. Both the TS `_testing_mint_session` action and the
- * in-process `fixture.mint_expired_session()` seam call this so the write
- * semantics match across transports.
+ * token's hash) for a caller that revokes it. Test-only: pass a negative
+ * `expires_in_seconds` to produce an *expired server-side session* whose
+ * signed cookie envelope is still well-formed — what the TS
+ * `_testing_mint_session` action writes through, so its rows match the Rust
+ * twin's.
  *
  * @mutates `options.db` — inserts one `auth_session` row.
  */

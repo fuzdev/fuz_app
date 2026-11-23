@@ -11,7 +11,8 @@
  * @module
  */
 
-import { assert, describe, test } from 'vitest';
+import { assert, describe, test, vi } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { is, object } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
@@ -22,6 +23,7 @@ import {
 } from '#lib/actions/cancel.ts';
 import { create_ws_test_harness } from '#lib/testing/ws_round_trip.ts';
 import { expect_logged_error } from '#lib/testing/logged_errors.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 
 describe('cancel_action', () => {
 	test('spec has the expected method + shape', () => {
@@ -73,17 +75,24 @@ const wait_for_abort = (signal: AbortSignal): Promise<void> =>
 		signal.addEventListener('abort', () => resolve(), { once: true });
 	});
 
+/** A silent logger whose `debug` and `warn` calls the test reads. */
+const create_spied_log = () => {
+	const log = new Logger('[cancel-test]', { level: 'off' });
+	return { log, debug: vi.spyOn(log, 'debug'), warn: vi.spyOn(log, 'warn') };
+};
+
 describe('cancel via register_action_ws', () => {
 	test('cancel notification aborts the matching in-flight handler', async () => {
-		expect_logged_error('unhandled action handler error: slow Error: aborted mid-stream');
+		const { log, debug, warn } = create_spied_log();
 		const harness = create_ws_test_harness({
+			log,
 			actions: [
 				cancel_action,
 				{
 					spec: slow_spec,
 					handler: async (_input, ctx) => {
 						await wait_for_abort(ctx.signal);
-						throw new Error('aborted mid-stream');
+						ctx.signal.throwIfAborted();
 					}
 				}
 			]
@@ -105,8 +114,82 @@ describe('cancel via register_action_ws', () => {
 			(msg): msg is { jsonrpc: '2.0'; id: number; error: { code: number; message: string } } =>
 				typeof msg === 'object' && msg !== null && 'id' in msg && 'error' in msg
 		);
+		// a throw after the cancel is the handler bailing, answered as the
+		// cancellation and logged at debug — the per-test gate fails on an error line
 		assert.strictEqual(frame.id, 42);
-		assert.match(frame.error.message, /aborted mid-stream/);
+		assert.strictEqual(frame.error.code, JSONRPC_ERROR_CODES.request_cancelled);
+		assert.strictEqual(frame.error.message, 'request cancelled');
+		assert.ok(
+			debug.mock.calls.some(([line]) => String(line).includes('slow: the request was cancelled')),
+			'the cancellation is logged at debug'
+		);
+		assert.strictEqual(warn.mock.calls.length, 0, 'the cancellation is no fault');
+	});
+
+	test('a throw after the cancel that is not the cancellation is logged at warn', async () => {
+		const { log, debug, warn } = create_spied_log();
+		const harness = create_ws_test_harness({
+			log,
+			actions: [
+				cancel_action,
+				{
+					spec: slow_spec,
+					handler: async (_input, ctx) => {
+						await wait_for_abort(ctx.signal);
+						throw new Error('a fault after the cancel');
+					}
+				}
+			]
+		});
+		const client = await harness.connect();
+		void client.send({ jsonrpc: '2.0', id: 44, method: 'slow', params: {} });
+		await Promise.resolve();
+		await client.send({
+			jsonrpc: '2.0',
+			method: cancel_action_spec.method,
+			params: { request_id: 44 }
+		});
+		const frame = await client.wait_for(
+			(msg): msg is { jsonrpc: '2.0'; id: number; error: { code: number } } =>
+				typeof msg === 'object' && msg !== null && 'id' in msg && 'error' in msg
+		);
+		// still the cancellation's answer — nobody is waiting on it — but the
+		// fault is visible at warn, not passed off as the cancellation at
+		// debug, and it is no error line
+		assert.strictEqual(frame.id, 44);
+		assert.strictEqual(frame.error.code, JSONRPC_ERROR_CODES.request_cancelled);
+		const warned = warn.mock.calls.find(([line]) =>
+			String(line).includes('unhandled action handler error: slow after its request was cancelled')
+		);
+		assert.ok(warned, 'the fault is logged at warn');
+		assert.include(String(warned[1]), 'a fault after the cancel');
+		assert.ok(
+			!debug.mock.calls.some(([line]) => String(line).includes('the request was cancelled')),
+			'not passed off as the cancellation'
+		);
+	});
+
+	test('a throw with no cancel is still the unhandled error, logged at error', async () => {
+		expect_logged_error('unhandled action handler error: slow Error: a genuine failure');
+		const harness = create_ws_test_harness({
+			actions: [
+				cancel_action,
+				{
+					spec: slow_spec,
+					handler: () => {
+						throw new Error('a genuine failure');
+					}
+				}
+			]
+		});
+		const client = await harness.connect();
+		void client.send({ jsonrpc: '2.0', id: 43, method: 'slow', params: {} });
+		const frame = await client.wait_for(
+			(msg): msg is { jsonrpc: '2.0'; id: number; error: { code: number } } =>
+				typeof msg === 'object' && msg !== null && 'id' in msg && 'error' in msg
+		);
+		assert.strictEqual(frame.id, 43);
+		assert.strictEqual(frame.error.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
 	test('cancel for unknown/completed request id is a no-op (idempotent)', async () => {
@@ -156,8 +239,6 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('cancel on one socket does not abort a different socket’s pending request', async () => {
-		expect_logged_error('unhandled action handler error: slow Error: a aborted');
-		expect_logged_error('unhandled action handler error: slow Error: b aborted');
 		const saw_abort: { a: boolean; b: boolean } = { a: false, b: false };
 		const harness = create_ws_test_harness({
 			actions: [
@@ -168,7 +249,7 @@ describe('cancel via register_action_ws', () => {
 						const tag = ctx.request_id === 'a' ? 'a' : 'b';
 						await wait_for_abort(ctx.signal);
 						saw_abort[tag] = true;
-						throw new Error(`${tag} aborted`);
+						ctx.signal.throwIfAborted();
 					}
 				}
 			]
@@ -204,7 +285,7 @@ describe('cancel via register_action_ws', () => {
 				typeof msg === 'object' && msg !== null && 'error' in msg && 'id' in msg
 		);
 		assert.strictEqual(frame.id, 'a');
-		assert.match(frame.error.message, /a aborted/);
+		assert.strictEqual(frame.error.message, 'request cancelled');
 		assert.strictEqual(saw_abort.a, true);
 		assert.strictEqual(saw_abort.b, false);
 
@@ -213,7 +294,6 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('socket close aborts in-flight handler via the socket_abort chain', async () => {
-		expect_logged_error('unhandled action handler error: slow Error: aborted via close');
 		// a holder, so TS doesn't narrow a binding the handler assigns later to `null`
 		const captured: { signal: AbortSignal | null } = { signal: null };
 		const harness = create_ws_test_harness({
@@ -224,7 +304,7 @@ describe('cancel via register_action_ws', () => {
 					handler: async (_input, ctx) => {
 						captured.signal = ctx.signal;
 						await wait_for_abort(ctx.signal);
-						throw new Error('aborted via close');
+						ctx.signal.throwIfAborted();
 					}
 				}
 			]
@@ -241,8 +321,6 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('per-request signals are isolated — cancel id=1 does not abort id=2', async () => {
-		expect_logged_error('unhandled action handler error: slow Error: id=1 aborted');
-		expect_logged_error('unhandled action handler error: slow Error: id=2 aborted');
 		const signals: Map<number, AbortSignal> = new Map();
 		const harness = create_ws_test_harness({
 			actions: [
@@ -252,7 +330,7 @@ describe('cancel via register_action_ws', () => {
 					handler: async (_input, ctx) => {
 						signals.set(ctx.request_id as number, ctx.signal);
 						await wait_for_abort(ctx.signal);
-						throw new Error(`id=${String(ctx.request_id)} aborted`);
+						ctx.signal.throwIfAborted();
 					}
 				}
 			]

@@ -46,7 +46,7 @@ export interface ResolvedConformancePrincipal {
 	readonly suppress_default_origin?: boolean;
 	/**
 	 * The actor of the account the credential names — what the `principal`
-	 * acting binding writes. Absent for principals that present no account.
+	 * acting binding writes. Absent for principals that present no live account.
 	 */
 	readonly actor_id?: string;
 }
@@ -295,18 +295,14 @@ export const resolve_conformance_principal = async (
 				actor_id: account.actor.id
 			};
 		}
-		case 'expired_session': {
-			// The keeper presented via an expired server-side session — fresh
-			// jar so only the (expired) cookie this seam returns is sent. The
-			// minted cookie payload is valid; the backdated `auth_session` row
-			// is what the DB-row expiry gate refuses.
-			const cookie = await fixture.mint_expired_session();
+		case 'expired_session':
+			// fresh jar, so the expired cookie is the only one sent: its signed
+			// payload verifies, and its row's passed `expires_at` is what the
+			// DB-row expiry gate refuses
 			return {
 				transport: fixture.fresh_transport(),
-				headers: { cookie },
-				actor_id: fixture.actor.id
+				headers: { cookie: await fixture.mint_expired_session() }
 			};
-		}
 		case 'tampered_cookie': {
 			// fresh jar, so the tampered cookie is the only one sent
 			const { cookie } = fixture.create_session_headers();

@@ -14,7 +14,7 @@ import { assert, test, vi } from 'vitest';
 import { SESSION_COOKIE_NAME } from '#lib/auth/session_cookie.ts';
 import { hash_api_token } from '#lib/auth/api_token.ts';
 import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
-import { EXPIRED_TOKEN_WAIT_MS } from '#lib/testing/cross_backend/setup.ts';
+import { EXPIRED_CREDENTIAL_WAIT_MS } from '#lib/testing/cross_backend/setup.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints
@@ -40,7 +40,7 @@ describe_db('in-process mint_expired_token', (get_db) => {
 			token = await fixture.mint_expired_token();
 			assert.notInclude(
 				timers.mock.calls.map((call) => call[1]),
-				EXPIRED_TOKEN_WAIT_MS,
+				EXPIRED_CREDENTIAL_WAIT_MS,
 				'the mint sleeps out no lifetime'
 			);
 		} finally {

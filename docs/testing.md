@@ -957,10 +957,9 @@ A config's `log` (`BackendLogConfig`, `testing/cross_backend/backend_log.ts`)
 has `spawn_backend` tee the child's stdout and stderr into a file, and
 teardown fails the run on each error-level line there — a fuz_util `Logger`
 error, a `tracing` `ERROR` event, or a Rust panic — that no `log.allow_errors`
-entry names, listing the lines. A Rust spine with request tracing logs
-`tower_http::trace::on_failure` at `ERROR` for every 5xx it answers, so a
-suite that provokes a 500 on purpose allows that line narrowed to its route,
-e.g. `uri=/api/my_route version=HTTP/1.1}: tower_http::trace::on_failure`. The
+entry names, listing the lines. A Rust spine's request tracing reports a 5xx
+at `WARN` (`tower_http::trace::on_failure`), so a suite that provokes a 500 on
+purpose allows only the error its cause logs, if it logs one. The
 family builders set it to `backend.log` under the backend's temp root,
 allowing `SPINE_CROSS_SUITE_BACKEND_ERRORS`, the errors the shipped cross
 suites provoke on purpose; add what your own suites provoke with

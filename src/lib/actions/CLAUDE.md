@@ -196,8 +196,20 @@ module's TSDoc and pinned by the `query_shape` cross suite.
   `GET` with `?params=42` is a 401 on both spines and an authorized one is
   `invalid_params`.
 - **Errors.** A `ThrownJsonrpcError` (recognized by its realm-global brand,
-  `http/CLAUDE.md` §JSON-RPC) keeps its code and data; any other throw is
-  `internal_error` 500, its message the raw error only under `DEV`. A result
+  `http/CLAUDE.md` §JSON-RPC) keeps its code and data. Any other throw is
+  `internal_error` 500, its message the raw error only under `DEV`, unless
+  the request's `signal` has aborted (a WS `cancel`, the socket closing, an
+  HTTP client gone): then it is `request_cancelled`, in the authorization
+  phase and the handler alike, logged at debug when the throw is the
+  cancellation itself (the signal's reason or an `AbortError`) and at warn
+  when it is anything else — a fault that landed after the cancel.
+  **Twin difference:** the Rust dispatcher answers a handler's `Err` as
+  returned, so over WS, with a per-request `cancel` and the socket still open,
+  a Rust handler that bails with `internal_error` answers `internal_error` and
+  logs at error where the error is built (`internal_error_with_source`); the
+  twin's answer is `request_cancelled`. Rust can't twin the log, which is
+  written at construction, before the dispatcher sees the error; a Rust
+  handler bails with `request_cancelled`. A result
   that can't be serialized answers the same 500 rather than throwing: the
   action has committed by then, and a throw would discard the handler's
   `post_commit_effects` — the connection closes of a revocation that landed.

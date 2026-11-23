@@ -456,7 +456,7 @@ test harness, where a background pass deletes rows and writes audit rows
 mid-test. A cross-process test binary may schedule it only when
 nothing its suites seed is already expired: fuz_app's own test binary and the
 Rust `testing_spine_stub` schedule it `'off'` (`AuthCleanupSchedule::Off`), because the conformance
-`expired_session` principal seeds a backdated session. A server assembled by
+`expired_session` and `expired_token` principals leave expired credential rows. A server assembled by
 hand, or one that wants the passes on its own scheduler, uses `auth/cleanup.ts`
 directly, in the process that holds the connections (`auth/cleanup.ts`'s TSDoc
 has why):

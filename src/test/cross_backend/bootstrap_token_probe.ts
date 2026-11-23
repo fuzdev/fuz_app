@@ -39,18 +39,13 @@ import { SPINE_ACCOUNT_STATUS_PATH } from '#lib/testing/cross_backend/spine_surf
 
 /**
  * What the burn case makes a backend log, allowed in its log
- * (`with_backend_log_allowances`): the rolled-back bootstrap, and on the Rust
- * spine the 500 `tower_http` reports.
+ * (`with_backend_log_allowances`): the rolled-back bootstrap. Its 500 is no
+ * error line on either spine — the Rust request log reports a 5xx at `WARN`.
  */
 export const BOOTSTRAP_TOKEN_PROBE_BACKEND_ERRORS: ReadonlyArray<BackendLogAllowance> = [
 	{
 		pattern: 'bootstrap rolled back: could not delete the token file',
 		reason: 'the burn case makes the token directory unwritable'
-	},
-	{
-		pattern:
-			'uri=/api/account/bootstrap version=HTTP/1.1}: tower_http::trace::on_failure: response failed classification=Status code: 500',
-		reason: "the burn case's 500 `token_file_undeletable`"
 	}
 ];
 

@@ -6,8 +6,9 @@ import '../assert_dev_env.ts';
  * The daemon-token-authed actions bundled by `create_testing_actions`:
  * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
  * (effects barrier), **`_testing_mint_session`** (forge an
- * expired-by-construction server-side session for the expiry conformance
- * cases), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
+ * expired-by-construction server-side session on any account, a dead session
+ * no wire path leaves — the database-invariant twin check's session on a
+ * deleted account), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
  * suite), **`_testing_schema_snapshot`** (introspect the live schema for
  * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot),
  * **`_testing_migration_tracker`** (dump the `schema_version` tracker rows for
@@ -276,10 +277,10 @@ export const testing_drain_effects_action_spec = {
  * auth resolution therefore passes the
  * cookie-payload gate (`parse_session_from_cookies`) and is refused by the authoritative
  * DB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —
- * the gate the in-process payload-expiry tests never reach and the one that
- * structurally needs a server-side mint (the cross-process driver has no
- * keyring / DB access). The `expired_session` conformance principal drives
- * this.
+ * the gate the in-process payload-expiry tests never reach. It forges a dead
+ * session no wire path leaves (the database-invariant twin check's session on
+ * a deleted account); a session that lived and then expired is the
+ * `expired_session` principal's, over `_testing_shorten_credential_expiry`.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset` —
  * effectively keeper-only. Like its siblings the action is internally
@@ -736,8 +737,9 @@ export const testing_shorten_credential_expiry_action_spec = {
  * and `api_token` row of the account gets `LEAST(expires_at, NOW() + seconds)`,
  * so nothing moves later and an eternal token gains an expiry.
  *
- * Shared by the action and the in-process fixture's `mint_expired_token`, so
- * both fixtures expire a token with one statement. Unbounded here; the
+ * Shared by the action and the in-process fixture's `mint_expired_token` and
+ * `mint_expired_session`, so both fixtures expire a credential with one
+ * statement. Unbounded here; the
  * action's input holds `seconds` to its range.
  *
  * @param db - the database, a request transaction or the pool

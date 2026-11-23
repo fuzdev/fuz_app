@@ -254,7 +254,11 @@ describe('the transcript fetch patch', () => {
 			transport: create_fetch_transport({ base_url: BASE_URL }),
 			fresh_transport: () => create_fetch_transport({ base_url: BASE_URL }),
 			mint_expired_session: async () => {
-				await send('/api/rpc', { jsonrpc: '2.0', id: 1, method: '_testing_mint_session' });
+				await send('/api/rpc', {
+					jsonrpc: '2.0',
+					id: 1,
+					method: '_testing_shorten_credential_expiry'
+				});
 				return 'c=expired';
 			},
 			mint_revoked_session: async () => {
