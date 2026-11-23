@@ -24,10 +24,20 @@ import '../assert_dev_env.ts';
  * a cleared session cookie kept as `name=` would be re-sent as an invalid
  * cookie, which both spines answer by clearing it again.
  *
+ * A request naming a credential of its own (`Authorization`, `X-Daemon-Token`)
+ * while the jar holds a cookie throws unless it names its `Cookie` too: the
+ * jar would ride along, so a dead token beside it would authenticate as the
+ * jar's principal and a refusal the test expects would never be reached. A
+ * test sends such a request over a cookie-free transport, or both credentials
+ * on purpose by passing `Cookie` itself.
+ *
  * @module
  */
 
 import type { RpcTestTransport } from '../rpc_helpers.ts';
+
+/** The request headers that carry a credential of their own, besides `Cookie`. */
+const CREDENTIAL_HEADERS = ['Authorization', 'X-Daemon-Token'] as const;
 
 /** Construction options for `create_fetch_transport`. */
 export interface FetchTransportOptions {
@@ -120,6 +130,9 @@ const apply_set_cookie = (jar: Map<string, string>, raw: string): void => {
  * - `Origin` is set to `options.origin ?? base_url` unless the caller
  *   already provided one.
  * - `Cookie` is set from the jar unless the caller already provided one.
+ *
+ * @throws Error when a request names `Authorization` or `X-Daemon-Token`,
+ *   no `Cookie`, and the jar is non-empty
  */
 export const create_fetch_transport = (options: FetchTransportOptions): FetchTransport => {
 	const { base_url, initial_cookies, origin } = options;
@@ -138,6 +151,16 @@ export const create_fetch_transport = (options: FetchTransportOptions): FetchTra
 			headers.set('Origin', default_origin);
 		}
 		if (!headers.has('Cookie') && jar.size > 0) {
+			const named = CREDENTIAL_HEADERS.find((name) => headers.has(name));
+			if (named !== undefined) {
+				throw new Error(
+					`fetch_transport: ${init.method ?? 'GET'} ${url} names its own credential (${named}) ` +
+						`but no Cookie, and the jar holds ${Array.from(jar.keys()).join(', ')} — ` +
+						'the jar would ride along and the request could authenticate as its principal. ' +
+						'Send it over a cookie-free transport (`fixture.fresh_transport()`), ' +
+						'or pass `Cookie` explicitly to send both credentials on purpose'
+				);
+			}
 			headers.set('Cookie', Array.from(jar.values()).join('; '));
 		}
 		const response = await fetch(target, { ...init, headers });

@@ -508,7 +508,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 - `admin_only_field_blocklist` — `['updated_by', 'created_by']`; never in non-admin response bodies.
 - `collect_json_keys_recursive(value)` — deep walk; returns `Set<string>` of every key at every nesting depth.
 - `assert_no_sensitive_fields_in_json(body, blocklist, context)` — rejects any key in the blocklist at any depth.
-- `to_principal_transport(principal, fixture)` — the transport a principal's request goes through, so it carries that principal's credential and nothing else: cookie-free with no `Origin` for the daemon token, cookie-free for a public call, the fixture's own for a session principal (whose `Cookie` header replaces the jar's). A bearer or anonymous probe over the fixture's transport authenticates as the keeper, whose cookie its jar carries — send those through `fixture.fresh_transport()`.
+- `to_principal_transport(principal, fixture)` — the transport a principal's request goes through, so it carries that principal's credential and nothing else: cookie-free with no `Origin` for the daemon token, cookie-free for a public call, the fixture's own for a session principal (whose `Cookie` header replaces the jar's). An anonymous probe over the fixture's transport authenticates as the keeper, whose cookie its jar carries, and a bearer one throws (`fetch_transport.ts`) — send those through `fixture.fresh_transport()`.
 - `pick_auth_headers(spec, test_app, authed_account, admin_account)` — `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.
 
 ## Attack surface suites
@@ -1603,7 +1603,10 @@ Conventions that hold across them:
   updates on every response's `Set-Cookie` and re-sends on every request;
   `Origin` defaults to `base_url` (`origin: null` disables for bearer-only
   paths). A cookie cleared with `Max-Age` of zero or less leaves the jar, as
-  it leaves a browser's. Exposes `cookies()` so `ws_transport` can thread the session
+  it leaves a browser's. A request naming `Authorization` or `X-Daemon-Token`
+  and no `Cookie` throws while the jar is non-empty, since the jar's cookie
+  would authenticate beside a dead token; send it over a cookie-free
+  transport, or pass `Cookie` to send both on purpose. Exposes `cookies()` so `ws_transport` can thread the session
   cookie onto the WS upgrade.
 - `testing/transports/bootstrap.ts` — stateless `bootstrap({transport, config})`
   POSTs `/api/account/bootstrap` against the running binary, parses the

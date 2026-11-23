@@ -90,3 +90,54 @@ describe('create_fetch_transport cookie jar', () => {
 		}
 	);
 });
+
+describe('create_fetch_transport credential guard', () => {
+	const jarred = () =>
+		create_fetch_transport({ base_url: BASE_URL, initial_cookies: ['s=keeper'] });
+
+	test('a credential header named in any case or input form, with no Cookie, throws while the jar holds a cookie', async () => {
+		const sent = stub_fetch([]);
+		const transport = jarred();
+		for (const headers of [
+			{ Authorization: 'Bearer dead' },
+			{ authorization: 'Bearer dead' },
+			{ 'x-daemon-token': 'dead' },
+			{ 'X-DAEMON-TOKEN': 'dead' },
+			[['AUTHORIZATION', 'Bearer dead']] as Array<[string, string]>,
+			new Headers({ 'X-Daemon-Token': 'dead' }),
+			{ authorization: '' }
+		] as Array<HeadersInit>) {
+			let message = '';
+			try {
+				await transport('/api/x', { headers });
+			} catch (e) {
+				message = String(e);
+			}
+			assert.include(message, 'names its own credential', JSON.stringify(headers));
+		}
+		assert.deepStrictEqual(sent, [], 'no request reached the wire');
+	});
+
+	test('a named Cookie, or an empty jar, sends the credential', async () => {
+		const sent = stub_fetch([[], [], []]);
+		await jarred()('/api/x', { headers: { authorization: 'Bearer t', cookie: 's=other' } });
+		await jarred()('/api/x', { headers: { authorization: 'Bearer t', cookie: '' } });
+		await create_fetch_transport({ base_url: BASE_URL })('/api/x', {
+			headers: { authorization: 'Bearer t' }
+		});
+		assert.deepStrictEqual(sent, ['s=other', '', null]);
+	});
+
+	test('a jar filled by a response makes the next credentialed request throw', async () => {
+		stub_fetch([['s=late; Max-Age=60'], []]);
+		const transport = create_fetch_transport({ base_url: BASE_URL });
+		await transport('/api/login', {});
+		let threw = false;
+		try {
+			await transport('/api/x', { headers: { 'X-Daemon-Token': 't' } });
+		} catch {
+			threw = true;
+		}
+		assert.ok(threw);
+	});
+});
