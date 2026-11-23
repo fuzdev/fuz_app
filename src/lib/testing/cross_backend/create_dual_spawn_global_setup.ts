@@ -91,8 +91,10 @@ export const create_dual_spawn_global_setup = ({
 			b = await bootstrap_backend(configs.b(), { before_bootstrap });
 			await after_bootstrap?.(b, 'b');
 		} catch (err) {
-			await b?.teardown();
-			await a.teardown();
+			// the setup's error is the report; a teardown that also failed is
+			// logged beside it
+			const failures = await teardown_each(b ? [b, a] : [a]);
+			for (const failure of failures) console.error(failure);
 			throw err;
 		}
 		const spawned_b = b;
@@ -100,8 +102,29 @@ export const create_dual_spawn_global_setup = ({
 		provide(provide_keys.a, serialize_bootstrapped_handle(a));
 		provide(provide_keys.b, serialize_bootstrapped_handle(spawned_b));
 		return async () => {
-			await spawned_b.teardown();
-			await a.teardown();
+			// both, whichever fails — a failed exit of one must not strand the other
+			const failures = await teardown_each([spawned_b, a]);
+			if (failures.length === 1) throw failures[0];
+			if (failures.length > 1) {
+				throw new Error(
+					failures.map((f) => (f instanceof Error ? f.message : String(f))).join('\n')
+				);
+			}
 		};
 	};
+};
+
+/** Tear each handle down in turn, returning the failures rather than stopping at the first. */
+const teardown_each = async (
+	handles: ReadonlyArray<Pick<BootstrappedBackendHandle, 'teardown'>>
+): Promise<Array<unknown>> => {
+	const failures: Array<unknown> = [];
+	for (const handle of handles) {
+		try {
+			await handle.teardown();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	return failures;
 };

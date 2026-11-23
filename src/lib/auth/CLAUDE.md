@@ -550,8 +550,11 @@ a call. Caps and limits are on the spec modules.
 `auth/cleanup.ts`, twin of the Rust `fuz_auth::auth_cleanup`:
 `run_auth_cleanup` (one pass — the session sweep, which closes the swept
 sessions' connections, then the offer-expiry sweep, audited exactly once)
-and `start_auth_cleanup` (scheduled on `start_periodic`, `periodic.ts`). Off
-by default in `create_app_server`; run it in the process that holds the
-connections, never from another process against a live server's database.
-The rules are the module TSDoc and `periodic.ts`'s (whose `stop()` differs
+and `start_auth_cleanup` (scheduled on `start_periodic`, `periodic.ts`).
+`create_app_server`'s `auth_cleanup` is required, an `AuthCleanupSchedule`
+(`{every_ms}` or `'off'`, twin of the Rust `fuz_auth::AuthCleanupSchedule`);
+`AppServer.close` waits for a pass in progress within its drain bound and
+counts one still running at the bound (`ShutdownDrainGivenUp.upkeep`). Run it
+in the process that holds the connections, never from another process
+against a live server's database. The rules are the module TSDoc and `periodic.ts`'s (whose `stop()` differs
 from the Rust shutdown); wiring is ../../../docs/usage.md §Auth cleanup.

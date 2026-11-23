@@ -31,6 +31,13 @@ import '../assert_dev_env.ts';
  * a startup failure reports it with the exit code or signal, and an exit
  * after startup that teardown didn't cause is logged with it.
  *
+ * Teardown holds the backend to a clean exit: a spine whose graceful
+ * shutdown gave up on work still running, or threw, exits `1` (the TS core's
+ * `start_testing_server`, the Rust spine's `StartupError::ShutdownGivenUp`),
+ * and `teardown` rejects on anything but exit code `0` — naming the backend,
+ * its exit code or signal, and its stderr tail — as it does for a backend
+ * that exited during the run or had to be killed.
+ *
  * Bootstrapping (`POST /api/account/bootstrap`) is a separate concern —
  * the caller composes `bootstrap()` from `testing/transports/bootstrap.ts`
  * against a `FetchTransport` built around `handle.config.base_url`.
@@ -68,6 +75,13 @@ export interface BackendHandle {
 	 * escalating to SIGKILL after a grace window. Idempotent — later calls
 	 * await the same exit. A descendant that left the group — spawned detached,
 	 * or one that called `setsid` — is out of reach and survives teardown.
+	 *
+	 * Rejects unless the child exited `0` on the SIGTERM: an exit code other
+	 * than `0` (a shutdown that gave up or failed), an exit by signal (the
+	 * SIGKILL escalation among them), an exit before teardown (already
+	 * logged when it happened), or a group still running when teardown gave
+	 * up. The error names the backend and the exit, with the stderr tail. The
+	 * group is torn down either way.
 	 */
 	readonly teardown: () => Promise<void>;
 }
@@ -217,6 +231,13 @@ export const create_output_tail = (max_bytes: number): OutputTail => {
 		}
 	};
 };
+
+/**
+ * How teardown's wait on the process group ended: the group exited on the
+ * SIGTERM, exited only after the SIGKILL escalation, or was still running
+ * when the wait gave up.
+ */
+type GroupExitWait = 'exited' | 'killed' | 'gave_up';
 
 /** `code=N` or `signal=SIG` for a child's exit, as `ChildProcess`'s `'exit'` reports it. */
 const format_exit = (code: number | null, signal: NodeJS.Signals | null): string =>
@@ -383,6 +404,8 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		| null = null;
 	let started = false;
 	let teardown_invoked = false;
+	// an exit after startup that teardown didn't cause — a teardown failure
+	let exited_during_run = false;
 
 	// The child leads its own process group (`detached: true`), so its pid is
 	// the group id; a descendant stays in the group after the child exits. Once
@@ -417,6 +440,7 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		// a startup failure is reported by the throw below; an exit teardown
 		// caused is expected
 		if (started && !teardown_invoked) {
+			exited_during_run = true;
 			console.error(
 				`spawn_backend(${config.name}): backend exited unexpectedly (${format_exit(code, signal)})` +
 					format_stderr_tail()
@@ -455,12 +479,51 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		signal_group('SIGTERM');
 	};
 
-	let teardown_done: Promise<void> | null = null;
-	const teardown = (): Promise<void> => {
+	/** Tear the group down, resolving how the wait ended; never rejects. */
+	let stopped: Promise<GroupExitWait> | null = null;
+	const stop = (): Promise<GroupExitWait> => {
 		teardown_sync();
 		live_teardowns.delete(teardown_sync);
-		return (teardown_done ??= wait_for_group_exit());
+		return (stopped ??= wait_for_group_exit());
 	};
+
+	/** Why the child's exit was not the clean one teardown requires, or `null`. */
+	const describe_unclean_exit = (wait: GroupExitWait): string | null => {
+		if (wait === 'gave_up') {
+			return `teardown gave up with the process group still running ${TEARDOWN_SIGKILL_GRACE_MS}ms after SIGKILL`;
+		}
+		if (exit_info === null) return 'never exited';
+		if (exit_info.kind === 'spawn_error') return `failed to spawn (${exit_info.message})`;
+		const exit = format_exit(exit_info.code, exit_info.signal);
+		if (exited_during_run) return `exited during the run (${exit}), before teardown`;
+		const clean = exit_info.signal === null && exit_info.code === 0;
+		// ahead of the clean check: a child that exited 0 can leave its group
+		// running, and the SIGKILL that ended the group is still a failure
+		if (wait === 'killed') {
+			return clean
+				? `exited (${exit}) at teardown, but its process group outlived it and was killed ` +
+						`${TEARDOWN_SIGKILL_GRACE_MS}ms after SIGTERM — a descendant that did not exit on SIGTERM`
+				: `exited (${exit}) at teardown — its shutdown did not finish within ` +
+						`${TEARDOWN_SIGKILL_GRACE_MS}ms of SIGTERM, so its group was killed`;
+		}
+		if (clean) return null;
+		if (exit_info.signal !== null) {
+			return (
+				`died by ${exit} at teardown — the process did not handle SIGTERM ` +
+				'(a wrapper that dies by the signal, e.g. `gro run`)'
+			);
+		}
+		return `exited (${exit}) at teardown, not code=0 — a shutdown that gave up on work still running or failed`;
+	};
+
+	let teardown_done: Promise<void> | null = null;
+	const teardown = (): Promise<void> =>
+		(teardown_done ??= stop().then((wait) => {
+			const unclean = describe_unclean_exit(wait);
+			if (unclean !== null) {
+				throw new Error(`spawn_backend(${config.name}): ${unclean}${format_stderr_tail()}`);
+			}
+		}));
 
 	// Wait for the child and every process left in its group to exit, so callers
 	// can be sure the port is free. A backend that ignores SIGTERM — or whose
@@ -471,24 +534,20 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	// adapter shutdown is the primary fix; this guarantees teardown completes
 	// regardless — bounded at a second grace window after the SIGKILL, which
 	// only a process stuck in the kernel outlasts.
-	const wait_for_group_exit = async (): Promise<void> => {
+	const wait_for_group_exit = async (): Promise<GroupExitWait> => {
 		const kill_at = Date.now() + TEARDOWN_SIGKILL_GRACE_MS;
 		const give_up_at = kill_at + TEARDOWN_SIGKILL_GRACE_MS;
 		let killed = false;
 		while (is_group_running()) {
 			const now = Date.now();
-			if (now >= give_up_at) {
-				console.error(
-					`spawn_backend(${config.name}): teardown gave up with the process group still running`
-				);
-				return;
-			}
+			if (now >= give_up_at) return 'gave_up';
 			if (!killed && now >= kill_at) {
 				killed = true;
 				signal_group('SIGKILL');
 			}
 			await sleep(TEARDOWN_POLL_INTERVAL_MS);
 		}
+		return killed ? 'killed' : 'exited';
 	};
 
 	live_teardowns.add(teardown_sync);
@@ -506,7 +565,8 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		);
 		return { config, child, daemon_token, teardown };
 	} catch (err) {
-		await teardown();
+		// the startup failure is the report, whatever the exit
+		await stop();
 		throw new Error(
 			`spawn_backend(${config.name}) failed: ${(err as Error).message}${format_stderr_tail()}`
 		);

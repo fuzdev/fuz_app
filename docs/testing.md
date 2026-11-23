@@ -1159,7 +1159,10 @@ build_app: async ({prepare_websocket}) => {
 
 Pass the endpoint's `max_message_bytes` to both, so the runtime's frame cap
 leaves a message just over the limit to the per-message check. `close` must
-end live WebSockets, as `AppServer.close` does. The runtime mechanics are in
+end live WebSockets, as `AppServer.close` does, and resolve its
+`ShutdownDrainGivenUp` report: a report that gave up on anything, or a close
+that throws, exits the binary `1`, and the cross-backend teardown fails a
+backend that exits anything but `0`. The runtime mechanics are in
 ../src/lib/testing/CLAUDE.md §Building a TS test-server binary. A
 runtime-specific capability (spawning child processes for a terminal
 surface) is injected at the spawn entry, which knows its runtime, rather than

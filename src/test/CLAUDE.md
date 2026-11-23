@@ -386,7 +386,9 @@ then one summary of counts and failed tests. One `vitest` invocation over
 several projects also works, but runs them one after another: vitest gives a
 project with `fileParallelism` off one worker, a `groupOrder` group runs on
 its projects' worker count, and each project's `globalSetup` is awaited in
-turn. Every spawn logs one `spawn_backend(<name>): healthy in <ms>` line.
+turn. Every spawn logs one `spawn_backend(<name>): healthy in <ms>` line, and
+every teardown holds the backend to exit `0`: a spine whose shutdown gave up
+on work still running exits `1`, and the project fails naming it.
 Every fuz_app global setup is wrapped in `with_legible_setup_failure`
 (`global_setup_helpers.ts`), which prints a failed setup's error and its cause
 chain and rethrows a plain `Error` — vitest otherwise maps the setup's stack

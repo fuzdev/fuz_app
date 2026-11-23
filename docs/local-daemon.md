@@ -34,6 +34,7 @@ import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
 import { create_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
 import { parse_allowed_origins } from '@fuzdev/fuz_app/http/origin.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '@fuzdev/fuz_app/auth/cleanup.ts';
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
 import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
@@ -76,8 +77,8 @@ const { app, close } = await create_app_server({
 	],
 	env_schema: BaseServerEnv,
 	// sweep expired sessions (closing their live connections) and audit
-	// expired offers on a schedule — off by default; `close` stops it
-	auth_cleanup: true
+	// expired offers on a schedule — required; `close` stops it
+	auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS }
 	// event_specs defaults to [] when omitted
 });
 ```

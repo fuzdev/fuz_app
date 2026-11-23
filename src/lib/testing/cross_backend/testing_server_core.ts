@@ -36,6 +36,7 @@ import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
 import { write_daemon_info, read_daemon_info, is_daemon_running } from '../daemon_info.ts';
 import type { RuntimeDeps } from '../../runtime/deps.ts';
+import { shutdown_gave_up, type ShutdownDrainGivenUp } from '../../server/shutdown_drain.ts';
 
 /**
  * Adapter-built handle to a bound HTTP server.
@@ -93,7 +94,15 @@ export interface TestingServerAdapter {
 	pid: number;
 	/** Register SIGINT/SIGTERM listeners that invoke `handler` once each. */
 	register_shutdown_signals: (handler: () => Promise<void>) => void;
-	/** Forceful exit on graceful-shutdown completion or fatal error. */
+	/**
+	 * Forceful exit on graceful-shutdown completion or fatal error: `0` for a
+	 * shutdown that drained everything, `1` for one that gave up or threw.
+	 *
+	 * A give-up's exit still waits for `BuiltTestingApp.close` to return, and
+	 * that closes the database: on `pg`, `pool.end()` waits for a client a
+	 * wedged handler holds, so the exit can wait past teardown's SIGKILL. The
+	 * harness's default databases (pglet, PGlite) have no pool to wait on.
+	 */
 	exit: (code: number) => never;
 }
 
@@ -120,8 +129,10 @@ export interface BuiltTestingApp {
 	 * Tear down backend(s) + DB + any rotation on graceful shutdown. Called
 	 * after the listener stops accepting connections and before its drain is
 	 * awaited, so it must end live WebSockets (`AppServer.close` does).
+	 * Resolves what the shutdown gave up on — `AppServer.close`'s report — and
+	 * a report that gave up on anything exits the process `1`.
 	 */
-	close: () => Promise<void>;
+	close: () => Promise<ShutdownDrainGivenUp>;
 }
 
 /** Options for `start_testing_server`. */
@@ -170,7 +181,9 @@ export const is_loopback_bind_host = (host: string): boolean => {
  * Boot a test-mode server using the supplied runtime adapter.
  *
  * Mirrors a production `start_server` at the surface level — stale-daemon
- * check, daemon-info write, bind, graceful shutdown — but the app is the
+ * check, daemon-info write, bind, graceful shutdown, exiting `1` when the
+ * shutdown gave up on work still running or threw, without waiting for the
+ * listener's drain behind a request it gave up on — but the app is the
  * caller's no-domain (or domain) `StartTestingServerOptions.build_app`
  * and the runtime boundary is the `TestingServerAdapter`. Refuses any
  * non-loopback bind host (the test binary must stay on loopback — see
@@ -218,6 +231,7 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 		if (shutting_down) adapter.exit(1);
 		shutting_down = true;
 		log.info('shutting down...');
+		let failed = false;
 		try {
 			// Stop accepting first so no new request reaches a closed DB, but
 			// don't await the drain yet: live WebSockets hold it open until
@@ -226,12 +240,23 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 			// in flight when the signal lands is waited for by `AppServer.close`
 			// (behind `built.close()`), within its drain bound.
 			const drained = server.shutdown();
-			await built.close();
-			await drained;
+			// awaited only on a clean close, below — never left unhandled
+			drained.catch(() => {});
+			const given_up = await built.close();
+			// `AppServer.close` has logged what it gave up on
+			failed = shutdown_gave_up(given_up);
+			// a request the drain gave up on still holds its connection, which
+			// the listener's close would wait on past teardown's SIGKILL — as
+			// the Rust spine's one bound covers its listener drain too
+			if (!failed) await drained;
 		} catch (error) {
 			log.error('shutdown error:', error);
+			failed = true;
 		}
-		adapter.exit(0);
+		// a shutdown that went wrong is a failed exit, which the cross-backend
+		// teardown reports — twin of the Rust spine's
+		// `StartupError::ShutdownGivenUp`, which exits 1
+		adapter.exit(failed ? 1 : 0);
 	};
 
 	adapter.register_shutdown_signals(shutdown);

@@ -83,7 +83,11 @@
  * that, so the standard assembly is one option:
  *
  * ```ts
- * const server = await create_app_server({backend, auth_cleanup: true, ...});
+ * const server = await create_app_server({
+ *   backend,
+ *   auth_cleanup: {every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS},
+ *   ...
+ * });
  * // on shutdown: stops the schedule, then closes the database
  * await server.close();
  * ```
@@ -103,7 +107,10 @@
  * token is cancelled; a promise cannot be dropped, so `stop` ends the schedule
  * at once and its promise resolves when the pass in progress — if there is
  * one — has finished. Awaiting it before closing the database lets that pass
- * end on a live pool rather than fail on a closed one.
+ * end on a live pool rather than fail on a closed one. `AppServer.close`
+ * waits for it within its drain bound, as the Rust shutdown joins its upkeep,
+ * and counts a pass still running at the bound as given up on
+ * (`ShutdownDrainGivenUp.upkeep`).
  *
  * @module
  */
@@ -310,6 +317,28 @@ export const run_auth_cleanup = async (deps: AuthCleanupDeps): Promise<AuthClean
 	return { expired_sessions, expired_offers };
 };
 
+/**
+ * Whether a server runs the auth cleanup beside itself, and how often —
+ * `create_app_server`'s `auth_cleanup` option.
+ *
+ * A required choice, with no default: every server names it, so none gets or
+ * loses the sweeps without writing it out.
+ *
+ * - `{every_ms}` — `start_auth_cleanup` on that interval: a pass as the
+ *   server finishes assembly, then one per `every_ms`
+ *   (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS` unless the server has a reason to
+ *   differ) — what a production server runs. Must be a positive finite
+ *   number no greater than `PERIODIC_INTERVAL_MS_MAX`.
+ * - `'off'` — no cleanup: an in-process test harness (a background pass
+ *   deletes rows and writes audit rows mid-test), a test server held to a
+ *   spine that schedules none, or a process whose sweeps run elsewhere
+ *   (`run_auth_cleanup` on a schedule of its own).
+ *
+ * Twin of the Rust `fuz_auth::AuthCleanupSchedule` (`Every(Duration)` /
+ * `Off`).
+ */
+export type AuthCleanupSchedule = { every_ms: number } | 'off';
+
 /** Options for `start_auth_cleanup`. */
 export interface AuthCleanupScheduleOptions {
 	/**
@@ -326,7 +355,8 @@ export interface AuthCleanupScheduleOptions {
  *
  * The auth surface's upkeep in one call — start it once migrations have run
  * and stop it before the database closes (see the module doc's § Scheduling).
- * `create_app_server`'s `auth_cleanup` option does both.
+ * `create_app_server`'s `auth_cleanup` option (an `AuthCleanupSchedule`)
+ * does both.
  *
  * Built on `start_periodic`, which fixes the loop's rules: the startup pass
  * starts before this returns, passes never overlap, a slow pass delays the

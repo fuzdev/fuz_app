@@ -1,7 +1,7 @@
 /**
  * Tests for `spawn_backend`'s guards — the refusal of a port something already
  * holds, the stale daemon-token delete, the per-request health-probe timeout,
- * and the exit reporting — driven by tiny `node -e` children standing in for a
+ * the exit reporting, and teardown's hold on a clean exit — driven by tiny `node -e` children standing in for a
  * backend, never a real spine binary.
  *
  * @module
@@ -30,10 +30,30 @@ import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities
  * - `silent` — accepts TCP connections and never answers
  * - `healthy_late_token` — answers every request 200, writes the token 300 ms after listening
  * - `healthy_then_exit` — answers 200, writes the token, then exits 7 with a stderr marker
+ * - `healthy` — answers 200 and writes the token at once
+ * - `ignore_sigterm` — `healthy`, but ignores SIGTERM, so only the SIGKILL escalation ends it
+ * - `no_sigterm_handler` — `healthy`, with no SIGTERM handler, so it dies by the signal
+ * - `stubborn_grandchild` — `healthy`, once it has spawned a grandchild left in its process
+ *   group that ignores SIGTERM and writes its pid to `GRANDCHILD_PID_PATH`, so the child exits
+ *   0 and the group outlives it
  * - `orphan_grandchild` — spawns a long-lived grandchild, left in the child's process group,
  *   and exits 5 without listening once the grandchild is ready: the grandchild writes its pid
  *   to `GRANDCHILD_PID_PATH`, and on SIGTERM writes `GRANDCHILD_SIGTERM_PATH` and exits
+ *
+ * Every listening mode but `ignore_sigterm` and `no_sigterm_handler` exits on SIGTERM with
+ * `SIGTERM_EXIT_CODE` (default `0`), writing a stderr marker first.
  */
+
+/**
+ * The grandchild `stubborn_grandchild` leaves behind: it ignores SIGTERM, a
+ * handler set before it reports its pid.
+ */
+const STUBBORN_GRANDCHILD = [
+	"const fs = require('node:fs');",
+	"process.on('SIGTERM', () => {});",
+	'fs.writeFileSync(process.env.GRANDCHILD_PID_PATH, String(process.pid));',
+	'setInterval(() => {}, 1000);'
+].join(' ');
 
 /** The grandchild `orphan_grandchild` leaves behind — its SIGTERM handler is set before it reports its pid. */
 const GRANDCHILD = [
@@ -44,6 +64,7 @@ const GRANDCHILD = [
 ].join(' ');
 const STAND_IN = `
 const GRANDCHILD = ${JSON.stringify(GRANDCHILD)};
+const STUBBORN_GRANDCHILD = ${JSON.stringify(STUBBORN_GRANDCHILD)};
 const http = require('node:http');
 const net = require('node:net');
 const fs = require('node:fs');
@@ -62,10 +83,24 @@ if (MODE === 'exit_early') {
 } else if (MODE === 'silent') {
 	net.createServer(() => {}).listen(Number(PORT), '127.0.0.1');
 } else {
+	if (MODE === 'stubborn_grandchild') {
+		child_process.spawn(process.execPath, ['-e', STUBBORN_GRANDCHILD], { stdio: 'ignore' });
+		// listen only once the grandchild ignores SIGTERM, so teardown's
+		// SIGTERM can't reach it before its handler is set
+		const tick = new Int32Array(new SharedArrayBuffer(4));
+		while (!fs.existsSync(GRANDCHILD_PID_PATH)) Atomics.wait(tick, 0, 0, 10);
+	}
+	if (MODE !== 'no_sigterm_handler') process.on('SIGTERM', () => {
+		if (MODE === 'ignore_sigterm') return;
+		process.stderr.write('sigterm-marker');
+		process.exit(Number(process.env.SIGTERM_EXIT_CODE ?? 0));
+	});
 	const server = http.createServer((req, res) => res.end('ok'));
 	server.listen(Number(PORT), '127.0.0.1', () => {
 		if (MODE === 'healthy_late_token') {
 			setTimeout(() => write_token('fresh_token'), 300);
+		} else if (['healthy', 'ignore_sigterm', 'no_sigterm_handler', 'stubborn_grandchild'].includes(MODE)) {
+			write_token('fresh_token');
 		} else {
 			write_token('fresh_token');
 			setTimeout(() => {
@@ -252,7 +287,7 @@ describe('spawn_backend', () => {
 		await new Promise((resolve) => handle.child.once('exit', resolve));
 		// the group's id is a pid the kernel may reuse by now
 		const kill = vi.spyOn(process, 'kill');
-		await handle.teardown();
+		await rejection(handle.teardown());
 		const group_signals = kill.mock.calls.filter(([pid]) => pid === -handle.child.pid!);
 		assert.deepStrictEqual(group_signals, []);
 	});
@@ -287,7 +322,7 @@ describe('spawn_backend', () => {
 		const config = await make_config(await free_port(), 'healthy_then_exit');
 		const handle = await spawn_backend(config);
 		await new Promise((resolve) => handle.child.once('exit', resolve));
-		await handle.teardown();
+		await rejection(handle.teardown());
 		assert.strictEqual(error_log.mock.calls.length, 1);
 		const message = String(error_log.mock.calls[0]![0]);
 		assert.include(message, 'backend exited unexpectedly (code=7)');
@@ -298,4 +333,69 @@ describe('spawn_backend', () => {
 		await quiet.teardown();
 		assert.strictEqual(error_log.mock.calls.length, 0, 'a teardown exit is not logged');
 	});
+
+	test('teardown resolves for a backend that exits 0 on SIGTERM', async () => {
+		const handle = await spawn_backend(await make_config(await free_port(), 'healthy'));
+		await handle.teardown();
+		assert.strictEqual(handle.child.exitCode, 0);
+	});
+
+	test('teardown rejects a backend whose shutdown exits 1, naming it, its exit and its stderr', async () => {
+		const base = await make_config(await free_port(), 'healthy');
+		const config = { ...base, env: { ...base.env, SIGTERM_EXIT_CODE: '1' } };
+		const handle = await spawn_backend(config);
+		const error = await rejection(handle.teardown());
+		assert.include(error.message, `spawn_backend(${config.name}): exited (code=1) at teardown`);
+		assert.include(error.message, 'sigterm-marker');
+		// idempotent: a later call reports the same exit
+		assert.strictEqual((await rejection(handle.teardown())).message, error.message);
+	});
+
+	test('teardown rejects a backend that exited during the run', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const config = await make_config(await free_port(), 'healthy_then_exit');
+		const handle = await spawn_backend(config);
+		await new Promise((resolve) => handle.child.once('exit', resolve));
+		const error = await rejection(handle.teardown());
+		assert.include(error.message, 'exited during the run (code=7), before teardown');
+		assert.include(error.message, 'late-exit-marker');
+	});
+
+	test('teardown rejects a backend killed after the grace window, without hanging', async () => {
+		const config = await make_config(await free_port(), 'ignore_sigterm');
+		const handle = await spawn_backend(config);
+		const started_at = Date.now();
+		const error = await rejection(handle.teardown());
+		assert.include(error.message, 'exited (signal=SIGKILL) at teardown');
+		assert.include(error.message, 'so its group was killed');
+		assert.ok(Date.now() - started_at < 6_000, 'bounded by the SIGKILL escalation');
+	}, 10_000);
+
+	test('teardown rejects a backend that dies by the SIGTERM, naming the unhandled signal', async () => {
+		const config = await make_config(await free_port(), 'no_sigterm_handler');
+		const handle = await spawn_backend(config);
+		const error = await rejection(handle.teardown());
+		assert.include(error.message, 'died by signal=SIGTERM at teardown');
+		assert.include(error.message, 'did not handle SIGTERM');
+	});
+
+	test('teardown rejects a child that exited 0 when its process group outlived it and was killed', async () => {
+		const config = await make_config(await free_port(), 'stubborn_grandchild');
+		const grandchild_pid = async (): Promise<number> =>
+			Number(await readFile(config.env.GRANDCHILD_PID_PATH!, 'utf-8'));
+		try {
+			const handle = await spawn_backend(config);
+			const error = await rejection(handle.teardown());
+			assert.include(
+				error.message,
+				'exited (code=0) at teardown, but its process group outlived it'
+			);
+			assert.strictEqual(handle.child.exitCode, 0);
+			assert.ok(!is_process_running(await grandchild_pid()), 'the SIGKILL took the grandchild');
+		} finally {
+			// never leave the grandchild running, whatever the assertions found
+			const pid = await grandchild_pid().catch(() => null);
+			if (pid !== null && pid > 0 && is_process_running(pid)) process.kill(pid, 'SIGKILL');
+		}
+	}, 10_000);
 });

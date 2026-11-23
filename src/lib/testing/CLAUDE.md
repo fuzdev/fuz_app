@@ -271,9 +271,10 @@ logger. Override via `app_options`. `cleanup()` is the assembled server's idempo
 limiters it built, and removes the audit listeners and closer members it
 added.
 
-`auth_cleanup` is left at its default, **off**, here: a background pass would delete rows and
+`auth_cleanup` is `'off'` here: a background pass would delete rows and
 write audit rows mid-test. A suite that opts in through `app_options` has the
-schedule stopped by `cleanup()`, which is the assembled server's `close`.
+schedule stopped by `cleanup()`, which is the assembled server's `close` and
+resolves its `ShutdownDrainGivenUp` report.
 
 A fresh Hono app is created on every call because middleware closures bind
 to the server's deps (db, keyring). Hono assembly is cheap;
@@ -1590,7 +1591,13 @@ Conventions that hold across them:
   (`create_output_tail`) for an early exit's error — with its exit code or
   signal — and for the log line an unexpected exit after startup writes.
   Registers exit-time + signal cleanup so vitest worker death or
-  Ctrl+C kills children before they strand ports.
+  Ctrl+C kills children before they strand ports. `teardown` rejects unless
+  the child exits `0` on its SIGTERM — a non-zero code (a spine whose
+  shutdown gave up or failed), an exit by signal (the SIGKILL escalation), an
+  exit during the run, or a group teardown gave up on — naming the backend,
+  the exit and the stderr tail, so every global setup that awaits it fails
+  the run on an unclean shutdown; the dual-spawn setup tears both down before
+  it throws.
 - `testing/transports/fetch_transport.ts` — cookie-threading HTTP transport
   satisfying `RpcTestTransport`. Carries a name-keyed cookie jar that
   updates on every response's `Set-Cookie` and re-sends on every request;
@@ -1782,7 +1789,7 @@ The reusable shape for standing up a **spawnable TS** cross-process test
 binary (the TS analog of the Rust `testing_spine_stub`), so consumers don't
 re-roll the serve / daemon-info / drain boilerplate:
 
-- `testing/cross_backend/testing_server_core.ts` — `start_testing_server({adapter, daemon_name, host, port, app_version?, build_app})`. Owns the runtime-neutral orchestration: open-host refusal, stale-daemon check, daemon-info write, `serve`, graceful shutdown. Domain-free — the app is the caller's `build_app(context: BuildTestingAppContext): Promise<BuiltTestingApp>` seam (`{app, close}`). WebSocket endpoints mount through `create_app_server`'s `ws_endpoints` on every runtime: the build calls `context.prepare_websocket({max_message_bytes?})`, which has the adapter prepare its WebSocket support for `serve` and returns the runtime's `upgradeWebSocket`, to pass as `upgrade_websocket`. Shutdown starts the listener's `shutdown` (stop accepting), runs `close` — which must end live WebSockets, as `AppServer.close` does — then awaits the drain, since open sockets would otherwise hold it. Exports the `TestingServerAdapter` (`prepare_websocket: (options?: PrepareWebsocketOptions) => UpgradeWebSocket`) / `ServeHandle` / `PrepareWebsocketOptions` / `BuildTestingAppContext` interfaces.
+- `testing/cross_backend/testing_server_core.ts` — `start_testing_server({adapter, daemon_name, host, port, app_version?, build_app})`. Owns the runtime-neutral orchestration: open-host refusal, stale-daemon check, daemon-info write, `serve`, graceful shutdown. Domain-free — the app is the caller's `build_app(context: BuildTestingAppContext): Promise<BuiltTestingApp>` seam (`{app, close}`). WebSocket endpoints mount through `create_app_server`'s `ws_endpoints` on every runtime: the build calls `context.prepare_websocket({max_message_bytes?})`, which has the adapter prepare its WebSocket support for `serve` and returns the runtime's `upgradeWebSocket`, to pass as `upgrade_websocket`. Shutdown starts the listener's `shutdown` (stop accepting), runs `close` — which must end live WebSockets, as `AppServer.close` does, and resolve its `ShutdownDrainGivenUp` report — then, on a clean close, awaits the drain, since open sockets would otherwise hold it, and exits `0`; it exits `1` without that wait when the report gave up on anything (`shutdown_gave_up`) — a given-up request still holds its connection — or the close threw, twin of the Rust spine's `StartupError::ShutdownGivenUp`. On `pg` a give-up's `close` can still wait on `pool.end()` for a client a wedged handler holds; the harness defaults to pglet and PGlite. Exports the `TestingServerAdapter` (`prepare_websocket: (options?: PrepareWebsocketOptions) => UpgradeWebSocket`) / `ServeHandle` / `PrepareWebsocketOptions` / `BuildTestingAppContext` interfaces.
 - `testing/daemon_info.ts` — the `~/.{name}/run/daemon.json` plumbing the core's stale-daemon check and daemon-info write use: `DaemonInfo` (a strict `@fuzdev/fuz_schema` object), `get_app_dir`, `get_daemon_info_path`, `write_daemon_info` (atomic), `read_daemon_info`, `is_daemon_running` (`probe_process`, signal 0 with no program spawned; another user's process or a pid naming no single process reads as not running).
 - `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server`'s `serve` and module-level `upgradeWebSocket`, over a `ws` `WebSocketServer`). Optional peer deps; only test binaries import them. `prepare_websocket` builds the `ws` server (`noServer: true`) with `maxPayload` at twice `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`; `ws`'s own default is 100 MiB), and `serve` hands it to `@hono/node-server`, so a grossly oversized message is refused at the frame layer (`WS_CLOSE_MESSAGE_TOO_BIG` with no reason) before it is buffered whole, while one just over the limit reaches the per-message check, which sends `WS_CLOSE_MESSAGE_TOO_BIG_REASON` as every other backend does. Bun's adapter sets the same multiple as its frame cap (see below).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `ws`; `Bun.serve` is built in). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.

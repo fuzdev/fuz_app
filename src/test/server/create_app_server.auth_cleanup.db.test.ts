@@ -1,16 +1,18 @@
 /**
- * Tests for `create_app_server`'s `auth_cleanup` option — the opt-in
+ * Tests for `create_app_server`'s required `auth_cleanup` option — the
  * `start_auth_cleanup` schedule over `backend.deps`, stopped by
  * `AppServer.close`.
  *
  * Covers:
- * - Off by default: no pass runs and no cleanup timer is set.
- * - `true` runs the startup pass through the server's own deps (its `db`, its
- *   audit emitter, its `connection_closer`) on the default interval, with an
- *   unref'd timer.
- * - `{interval_ms}` keeps sweeping on that interval, and `close()` ends it —
- *   nothing is swept afterwards.
- * - `close()` waits for a pass in progress before it closes the database.
+ * - `'off'`: no pass runs and no cleanup timer is set.
+ * - `{every_ms}` on the default interval runs the startup pass through the
+ *   server's own deps (its `db`, its audit emitter, its `connection_closer`),
+ *   with an unref'd timer.
+ * - A short `every_ms` keeps sweeping on that interval, and `close()` ends it
+ *   — nothing is swept afterwards.
+ * - `close()` waits for a pass in progress before it closes the database,
+ *   within its drain bound; a pass still running at the bound is counted in
+ *   the report's `upkeep`.
  * - `create_test_app` leaves it off, and its `cleanup()` stops a schedule a
  *   suite opted into through `app_options`.
  * - An invalid interval fails assembly.
@@ -29,6 +31,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
+import { shutdown_gave_up } from '#lib/server/shutdown_drain.ts';
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
@@ -81,8 +84,14 @@ interface Harness {
 	backend_closes: () => number;
 }
 
-/** Options over `db`, with the backend's closer, emitter, and `close` observable. */
-const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness => {
+/**
+ * Options over `db`, with the backend's closer, emitter, and `close`
+ * observable. Each test names its `auth_cleanup`.
+ */
+const create_harness = (
+	db: Db,
+	overrides: Partial<AppServerOptions> & Pick<AppServerOptions, 'auth_cleanup'>
+): Harness => {
 	const { closer, calls } = create_recording_closer();
 	const connection_closer = create_realtime_closer();
 	connection_closer.add(closer);
@@ -185,12 +194,12 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		vi.restoreAllMocks();
 	});
 
-	test('is off by default: no pass runs and no cleanup timer is set', async () => {
+	test("'off' runs no pass and sets no cleanup timer", async () => {
 		const db = get_db();
 		const seeded = await seed_accounts(db);
 		const expired = await seed_expired_session(db, 'server-expired', seeded.account_id);
 		const gated = create_gated_db(db);
-		const h = create_harness(gated.db);
+		const h = create_harness(gated.db, { auth_cleanup: 'off' });
 
 		const set_timeout = vi.spyOn(globalThis, 'setTimeout');
 		const server = await create_app_server(h.options);
@@ -210,7 +219,7 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		assert.strictEqual(h.backend_closes(), 1);
 	});
 
-	test('true runs the startup pass through the server deps on the default interval', async () => {
+	test('the default interval runs the startup pass through the server deps', async () => {
 		const db = get_db();
 		const seeded = await seed_accounts(db);
 		const expired = await seed_expired_session(db, 'server-expired', seeded.account_id);
@@ -226,7 +235,9 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 			}
 		);
 		const gated = create_gated_db(db);
-		const h = create_harness(gated.db, { auth_cleanup: true });
+		const h = create_harness(gated.db, {
+			auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS }
+		});
 
 		const set_timeout = vi.spyOn(globalThis, 'setTimeout');
 		const server = await create_app_server(h.options);
@@ -266,7 +277,7 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const seeded = await seed_accounts(db);
 		const at_startup = await seed_expired_session(db, 'server-at-startup', seeded.account_id);
 		const gated = create_gated_db(db);
-		const h = create_harness(gated.db, { auth_cleanup: { interval_ms } });
+		const h = create_harness(gated.db, { auth_cleanup: { every_ms: interval_ms } });
 		const server = await create_app_server(h.options);
 
 		await until(
@@ -303,13 +314,16 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const gated = create_gated_db(db);
 		// hold the startup pass inside its session sweep, the delete uncommitted
 		const hold = gated.hold_commit();
-		const h = create_harness(gated.db, { auth_cleanup: true });
+		const h = create_harness(gated.db, {
+			auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS }
+		});
 		const server = await create_app_server(h.options);
 		await hold.reached;
 
 		let closed = false;
-		const closing = server.close().then(() => {
+		const closing = server.close().then((report) => {
 			closed = true;
+			return report;
 		});
 		// a macrotask: a close that did not wait on the pass resolves in
 		// microtasks, since nothing it does after the pass is I/O here (the
@@ -319,7 +333,11 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const backend_closes_while_held = h.backend_closes();
 		// released before asserting, so a failure here leaves no transaction open
 		hold.release();
-		await closing;
+		assert.deepStrictEqual(
+			await closing,
+			{ requests: 0, audit_writes: 0, upkeep: 0 },
+			'the pass finished within the bound'
+		);
 		assert.strictEqual(closed_while_held, false, 'close waited on the pass');
 		assert.strictEqual(
 			backend_closes_while_held,
@@ -329,10 +347,40 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		assert.strictEqual(h.backend_closes(), 1);
 		// the pass finished on a live database: its delete landed and it closed
 		assert.strictEqual(await session_exists(db, expired), false);
-		// the held pass's close lands before the shutdown closes every connection
+		// the shutdown closes every connection while the pass is held, as the
+		// Rust shutdown closes them before it joins its upkeep, and the held
+		// pass's close lands after
 		assert.strictEqual(h.closes.length, 2);
-		assert_close_call(h.closes[0], { kind: 'session', session_hash: expired });
-		assert_close_call(h.closes[1], { kind: 'all' });
+		assert_close_call(h.closes[0], { kind: 'all' });
+		assert_close_call(h.closes[1], { kind: 'session', session_hash: expired });
+	});
+
+	test('a pass stalled past the drain bound is counted as upkeep, and close returns at the bound', async () => {
+		const db = get_db();
+		const seeded = await seed_accounts(db);
+		await seed_expired_session(db, 'server-stalled', seeded.account_id);
+		const gated = create_gated_db(db);
+		// hold the startup pass inside its session sweep, the delete uncommitted
+		const hold = gated.hold_commit();
+		const h = create_harness(gated.db, {
+			auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS },
+			shutdown_drain_timeout_ms: 20
+		});
+		const server = await create_app_server(h.options);
+		await hold.reached;
+		try {
+			const report = await Promise.race([
+				server.close(),
+				wait(2000).then(() => 'close did not return at its bound' as const)
+			]);
+			assert.ok(typeof report === 'object', 'close did not return at its bound');
+			assert.deepStrictEqual(report, { requests: 0, audit_writes: 0, upkeep: 1 });
+			assert.ok(shutdown_gave_up(report));
+			assert.strictEqual(h.backend_closes(), 1, 'the database closed at the bound');
+		} finally {
+			hold.release();
+			await until(() => gated.open_transactions() === 0, 'the held pass finished');
+		}
 	});
 
 	test('create_test_app leaves it off, and its cleanup stops a schedule a suite opted into', async () => {
@@ -359,7 +407,7 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 			create_route_specs,
 			db: gated_on.db,
 			username: 'keeper_on',
-			app_options: { auth_cleanup: { interval_ms } }
+			app_options: { auth_cleanup: { every_ms: interval_ms } }
 		});
 		await until(
 			async () => !(await session_exists(db, untouched)),
@@ -372,10 +420,10 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 	});
 
 	test('an invalid interval fails assembly', async () => {
-		const h = create_harness(get_db(), { auth_cleanup: { interval_ms: 0 } });
+		const h = create_harness(get_db(), { auth_cleanup: { every_ms: 0 } });
 		await assert_rejects(
 			() => create_app_server(h.options),
-			/interval_ms must be a positive number/
+			/auth_cleanup must be 'off' or \{every_ms\}/
 		);
 	});
 });

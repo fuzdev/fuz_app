@@ -73,8 +73,7 @@ import { ERROR_SERVICE_UNAVAILABLE } from '../http/error_schemas.ts';
 import {
 	create_request_tracker_view,
 	flush_request_effects,
-	type EffectErrorContext,
-	type RequestTracker
+	type EffectErrorContext
 } from '../http/pending_effects.ts';
 import {
 	assert_credential_routes_in_auth_scope,
@@ -96,8 +95,13 @@ import {
 } from '../actions/ws_endpoint_spec.ts';
 import { create_revocation_guard } from '../actions/connection_closer.ts';
 import type { ConnectionRegistry } from '../actions/connection_registry.ts';
-import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
-import type { AuditEmitter } from '../auth/audit_emitter.ts';
+import { start_auth_cleanup, type AuthCleanupSchedule } from '../auth/cleanup.ts';
+import { PERIODIC_INTERVAL_MS_MAX } from '../periodic.ts';
+import {
+	DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
+	drain_effects_on_shutdown,
+	type ShutdownDrainGivenUp
+} from './shutdown_drain.ts';
 
 /**
  * Bootstrap configuration for `AppServerOptions.bootstrap`.
@@ -370,27 +374,34 @@ export interface AppServerOptions {
 	audit_log_sse?: true | { role?: string; keep_alive_ms?: number | null };
 
 	/**
-	 * Schedule the auth cleanup beside the server: `start_auth_cleanup` over
-	 * `backend.deps` — a pass as assembly finishes, then one per interval —
-	 * stopped by `AppServer.close`. Each pass deletes expired sessions and
-	 * closes the connections they opened through `deps.connection_closer`
-	 * (every WebSocket connection registry and audit stream this server mounts), and
-	 * audits each newly expired role_grant offer once.
+	 * Whether the auth cleanup runs beside the server — required, with no
+	 * default, so a server neither gets nor loses the sweeps without writing
+	 * it out. `{every_ms}` runs `start_auth_cleanup` over `backend.deps` — a
+	 * pass as assembly finishes, then one per `every_ms` — stopped by
+	 * `AppServer.close` within its drain bound. Each pass deletes expired
+	 * sessions and closes the connections they opened through
+	 * `deps.connection_closer` (every WebSocket connection registry and audit
+	 * stream this server mounts), and audits each newly expired role_grant
+	 * offer once.
 	 *
-	 * **Off by default; a production server should turn it on.** Without it
-	 * nothing sweeps: expired session rows accumulate and an offer's expiry is
-	 * never audited. Connections do not depend on it — each closes at its
+	 * **A production server passes
+	 * `{every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS}`.** With `'off'` nothing
+	 * sweeps: expired session rows accumulate and an offer's expiry is never
+	 * audited. Connections do not depend on it — each closes at its
 	 * credential's deadline (`auth/credential_deadline.ts`), and the sweep's
-	 * close repeats that one. The Rust spine's servers all schedule the twin
-	 * (`spawn_auth_cleanup`).
+	 * close repeats that one. Twin of the Rust spine's
+	 * `AuthCleanupSchedule::Every`, which a server's backend options carry and
+	 * its backend attaches as a `fuz_auth::AuthCleanup`.
 	 *
-	 * Pass `true` for the default interval
-	 * (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`), or `{interval_ms}` for another.
-	 * Leave it off in an in-process test harness — a background pass deletes
-	 * rows and writes audit rows mid-test — and in a process that runs
+	 * `'off'` in an in-process test harness — a background pass deletes rows
+	 * and writes audit rows mid-test — and in a process that runs
 	 * `run_auth_cleanup` on a schedule of its own.
+	 *
+	 * Checked with the other options, before assembly acquires anything:
+	 * `every_ms` must be a positive finite number of ms no greater than
+	 * `PERIODIC_INTERVAL_MS_MAX`.
 	 */
-	auth_cleanup?: boolean | AuthCleanupScheduleOptions;
+	auth_cleanup: AuthCleanupSchedule;
 
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
 	event_specs?: Array<EventSpec>;
@@ -518,13 +529,13 @@ export interface AppServerOptions {
 	await_pending_effects?: boolean;
 
 	/**
-	 * How long `AppServer.close` waits for the work still in flight — each
-	 * HTTP request and WS message accepted, until its handler has returned and
-	 * its effect queues (failure audit rows, API token usage, post-commit
-	 * thunks) have flushed, and every pool write of `deps.audit` — before it
-	 * closes the database. What is still running then is given up on and
-	 * logged. Default `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`; must be a positive
-	 * number of ms.
+	 * How long `AppServer.close` waits for the work still in flight — an auth
+	 * cleanup pass in progress, each HTTP request and WS message accepted,
+	 * until its handler has returned and its effect queues (failure audit
+	 * rows, API token usage, post-commit thunks) have flushed, and every pool
+	 * write of `deps.audit` — before it closes the database. What is still
+	 * running then is given up on and logged. Default
+	 * `DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`; must be a positive number of ms.
 	 */
 	shutdown_drain_timeout_ms?: number;
 
@@ -569,9 +580,8 @@ export interface AppServer {
 	/**
 	 * Shut the server's resources down, in order:
 	 *
-	 * 1. stop the auth cleanup schedule when the `auth_cleanup` option started
-	 *    one, waiting for a pass in progress — that wait has no bound of its
-	 *    own, so a shutdown with a deadline races it
+	 * 1. stop the auth cleanup schedule when `auth_cleanup` started one: no
+	 *    pass starts from here, and a pass in progress is waited for in step 3
 	 * 2. close every live connection on `deps.connection_closer`
 	 *    (`close_all_connections`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
 	 *    audit stream — including registries supplied through
@@ -581,7 +591,10 @@ export interface AppServer {
 	 *    is left closing, so an upgrade or stream that registers afterward is
 	 *    born closed — refused at once rather than outliving the server — and
 	 *    a closed registry hosts no other server
-	 * 3. wait for the work still in flight on `deps.request_tracker` and
+	 * 3. wait for the auth cleanup pass in progress, if any — JS cannot abort
+	 *    one, so at the bound it is given up on and left to finish against the
+	 *    closing database, where the Rust shutdown aborts its upkeep task —
+	 *    and for the work still in flight on `deps.request_tracker` and
 	 *    `deps.audit`: every HTTP request and WS message accepted, until its
 	 *    handler has returned and its effect queues have flushed (failure
 	 *    audit rows, API token usage, post-commit thunks; production holds no
@@ -591,8 +604,8 @@ export interface AppServer {
 	 *    every pool write of the emitter — a handler still running when the
 	 *    close starts is waited for, then its flush. A WS handler's socket is
 	 *    closed in step 2, which aborts its `signal`; one that runs on is still
-	 *    waited for. Bounded by `shutdown_drain_timeout_ms`, logging what it
-	 *    gives up on. From here a request that arrives is refused — HTTP with
+	 *    waited for. One bound for all of it, `shutdown_drain_timeout_ms`,
+	 *    logging what it gives up on. From here a request that arrives is refused — HTTP with
 	 *    503 `service_unavailable`, and a WS message, on a socket step 2
 	 *    didn't end (a hand mount), with the `service_unavailable` JSON-RPC
 	 *    error — never run against the closing database. The Rust
@@ -614,17 +627,23 @@ export interface AppServer {
 	 *    host another server
 	 * 5. close the database connection (`AppBackend.close`)
 	 *
-	 * Idempotent: a second call settles with the first one's outcome (a failed
-	 * close is not retried), and concurrent calls share one shutdown. Never
-	 * await it from a handler: its own request is held, so the drain waits on
-	 * it until `shutdown_drain_timeout_ms`.
+	 * Resolves what step 3 gave up on at its bound, every count `0` when it
+	 * drained everything; `shutdown_gave_up` reads it. A process that serves
+	 * the app reports a give-up as a failed exit, as the Rust spine's
+	 * `StartupError::ShutdownGivenUp` does.
+	 *
+	 * Idempotent: a second call settles with the first one's outcome — the
+	 * same report, or the same rejection (a failed close is not retried) — and
+	 * concurrent calls share one shutdown. Never await it from a handler: its
+	 * own request is held, so the drain waits on it until
+	 * `shutdown_drain_timeout_ms`.
 	 *
 	 * Stop accepting new HTTP connections first — without awaiting the
 	 * listener's full drain, since live WebSockets hold it open until `close`
 	 * ends them — so no new request reaches a closed database. A request the
 	 * app already accepted is waited for in step 3.
 	 */
-	close: () => Promise<void>;
+	close: () => Promise<ShutdownDrainGivenUp>;
 }
 
 /**
@@ -658,13 +677,6 @@ export const require_audit_sse = (source: { audit_sse: AuditLogSse | null }): Au
  * `fuz_http` `DEFAULT_BODY_LIMIT_BYTES`.
  */
 export const DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
-
-/**
- * Default bound on `AppServer.close`'s wait for the effects still in flight
- * (`AppServerOptions.shutdown_drain_timeout_ms`). Twin of the Rust spine's
- * `DEFAULT_DRAIN_TIMEOUT`.
- */
-export const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
 
 /**
  * Each `AppServerOptions` rate-limiter field, with the defaults an omitted one
@@ -857,13 +869,14 @@ export const collect_config_diagnostics = (
  * so far runs, last acquired first (one that throws is logged and the rest
  * still run), and the original error is rethrown: a failed assembly leaves
  * the backend's emitter, closer and notification sender as it found them and
- * no limiter timer running. When `auth_cleanup` is set, the
+ * no limiter timer running. When `auth_cleanup` is `{every_ms}`, the
  * auth cleanup schedule starts as the last step of assembly — nothing after
  * it can throw, so an assembly that throws leaves no schedule running.
  *
  * The returned `close` owns shutdown: it stops that schedule, closes every
- * live connection on the backend's closer, runs the same releases, and
- * closes the database (`AppServer.close`).
+ * live connection on the backend's closer, waits for the work in flight
+ * within its bound, runs the same releases, closes the database, and
+ * resolves what the wait gave up on (`AppServer.close`).
  *
  * @returns the assembled Hono app with its surface, bootstrap status, migration results,
  *   audit SSE, mounted WS registries, and `close`
@@ -880,61 +893,36 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 };
 
 /**
- * What `drain_effects_on_shutdown` gave up on at its bound, each counted on
- * its own: a request still waiting on its audit writes has those writes
- * counted in `audit_writes` too, so the two are not summed.
- */
-export interface ShutdownDrainGivenUp {
-	/**
-	 * Requests still held — HTTP requests and WS messages alike, each with its
-	 * handler or its effect flush still running, and WS upgrades still opening.
-	 */
-	requests: number;
-	/** Pool writes of the audit emitter still in flight. */
-	audit_writes: number;
-}
-
-/**
- * Wait for the requests held (HTTP requests, WS messages and WS upgrades
- * still opening, one tracker — each until its handler has returned and its
- * flush settled) and then the
- * audit emitter's pool writes, until none is left or `timeout_ms` passes —
- * then log an error naming what was given up on. Never rejects.
+ * Read `auth_cleanup`: `null` for `'off'`, else its `every_ms`.
  *
- * @returns what was given up on, both counts `0` when everything settled
+ * @throws Error unless it is `'off'` or `{every_ms}` with a positive finite
+ *   number no greater than `PERIODIC_INTERVAL_MS_MAX`
  */
-export const drain_effects_on_shutdown = async (
-	requests: Pick<RequestTracker, 'drain_inflight' | 'inflight_count'>,
-	audit: Pick<AuditEmitter, 'drain_inflight' | 'inflight_count'>,
-	timeout_ms: number,
-	log: Logger
-): Promise<ShutdownDrainGivenUp> => {
-	const drain = async (): Promise<void> => {
-		// until both are empty: a flush's post-commit thunk can start an audit
-		// write, and a request accepted meanwhile is held too
-		do {
-			await requests.drain_inflight();
-			await audit.drain_inflight();
-		} while (requests.inflight_count() > 0 || audit.inflight_count() > 0);
-	};
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timed_out = new Promise<void>((resolve) => {
-		timer = setTimeout(resolve, timeout_ms);
-	});
-	try {
-		await Promise.race([drain(), timed_out]);
-	} finally {
-		clearTimeout(timer);
+const parse_auth_cleanup = (auth_cleanup: unknown): number | null => {
+	if (auth_cleanup === 'off') return null;
+	const every_ms: unknown =
+		typeof auth_cleanup === 'object' &&
+		auth_cleanup !== null &&
+		Object.hasOwn(auth_cleanup, 'every_ms')
+			? (auth_cleanup as { every_ms: unknown }).every_ms
+			: undefined;
+	if (
+		typeof every_ms === 'number' &&
+		Number.isFinite(every_ms) &&
+		every_ms > 0 &&
+		every_ms <= PERIODIC_INTERVAL_MS_MAX
+	) {
+		return every_ms;
 	}
-	const given_up: ShutdownDrainGivenUp = {
-		requests: requests.inflight_count(),
-		audit_writes: audit.inflight_count()
-	};
-	if (given_up.requests === 0 && given_up.audit_writes === 0) return given_up;
-	log.error(
-		`create_app_server: shutdown gave up after ${timeout_ms}ms on work still running — ${given_up.requests} request(s) (handler, effect flush, or WS open), ${given_up.audit_writes} audit row write(s)`
+	throw new Error(
+		`create_app_server: auth_cleanup must be 'off' or {every_ms} with a positive finite number of ms no greater than ${PERIODIC_INTERVAL_MS_MAX}, got ${
+			typeof auth_cleanup === 'object' && auth_cleanup !== null
+				? JSON.stringify(auth_cleanup, (_key, value: unknown) =>
+						typeof value === 'number' && !Number.isFinite(value) ? String(value) : value
+					)
+				: String(auth_cleanup)
+		}`
 	);
-	return given_up;
 };
 
 /**
@@ -1007,6 +995,11 @@ const assemble_app_server = async (
 			`create_app_server: shutdown_drain_timeout_ms must be a positive number of ms, got ${shutdown_drain_timeout_ms}`
 		);
 	}
+	// the schedule starts last, so its interval is refused here, before
+	// anything is acquired — as the Rust backend build refuses a zero `Every`
+	// first. A caller of the old option shape (`true`, `{interval_ms}`) lands
+	// here too, rather than on a schedule it didn't name.
+	const auth_cleanup_every_ms = parse_auth_cleanup(options.auth_cleanup);
 
 	// Rate limiters — the ones built here are the server's to dispose, on
 	// close or when assembly fails.
@@ -1464,20 +1457,21 @@ const assemble_app_server = async (
 	// it counts, one added after assembly included
 	app.notFound(create_unmatched_route_handler(app.router));
 
-	// Auth cleanup — opt-in, and last: nothing after it can throw, so a failed
-	// assembly never leaves a schedule running. Its own throw (an invalid
-	// `interval_ms`) comes before any pass starts, and unwinds `releases` like
-	// any other. Its closes go through `deps.connection_closer`, which the
-	// mounts above have filled.
-	const auth_cleanup = options.auth_cleanup
-		? start_auth_cleanup(deps, options.auth_cleanup === true ? undefined : options.auth_cleanup)
-		: null;
+	// Auth cleanup — last: nothing after it can throw, so a failed assembly
+	// never leaves a schedule running, and its interval was checked with the
+	// other options, so it cannot throw either. Its closes go through
+	// `deps.connection_closer`, which the mounts above have filled.
+	const auth_cleanup =
+		auth_cleanup_every_ms === null
+			? null
+			: start_auth_cleanup(deps, { interval_ms: auth_cleanup_every_ms });
 
 	// One shutdown, shared by every call — see `AppServer.close` for the order.
-	let closing: Promise<void> | null = null;
-	const shutdown = async (): Promise<void> => {
-		// the schedule first, so a pass in progress finishes on a live pool
-		if (auth_cleanup) await auth_cleanup.stop();
+	let closing: Promise<ShutdownDrainGivenUp> | null = null;
+	const shutdown = async (): Promise<ShutdownDrainGivenUp> => {
+		// the schedule first: no pass starts from here, and the one in progress
+		// is waited for in the drain below, under its bound
+		const upkeep = auth_cleanup ? [auth_cleanup.stop()] : [];
 		// then the connections, so none outlives the server — a failure here
 		// must not keep the database open
 		try {
@@ -1486,18 +1480,26 @@ const assemble_app_server = async (
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
 		// then the work still in flight, refusing any request that arrives from
-		// here, so a handler still running, a WS upgrade's admission re-read,
+		// here, so the cleanup pass, a handler still running, a WS upgrade's
+		// admission re-read,
 		// and the failure row, token-usage touch or post-commit thunk a request
 		// or WS message started, is not cut off by the closing pool — bounded.
 		// The Rust spine's drain waits for an HTTP request already dispatched
 		// too, but drops a WS message's dispatch still in its handler
 		// (`http/CLAUDE.md` §Pending Effects)
 		request_tracker.close();
-		await drain_effects_on_shutdown(request_tracker, deps.audit, shutdown_drain_timeout_ms, log);
+		const given_up = await drain_effects_on_shutdown(
+			request_tracker,
+			deps.audit,
+			upkeep,
+			shutdown_drain_timeout_ms,
+			log
+		);
 		// then what assembly acquired — the audit listeners and closer members
 		// this server added, and the limiters it built
 		run_releases(releases, log, 'shutdown');
 		await backend.close();
+		return given_up;
 	};
 
 	return {

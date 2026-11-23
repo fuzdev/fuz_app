@@ -38,6 +38,7 @@ import { protocol_actions } from '#lib/actions/protocol.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
+import { PERIODIC_INTERVAL_MS_MAX } from '#lib/periodic.ts';
 import { parse_allowed_origins } from '#lib/http/origin.ts';
 import { origin_wildcard_warning } from '#lib/http/origin_wildcard.ts';
 
@@ -94,6 +95,7 @@ const acquiring_options = (backend: AppBackend): AppServerOptions => ({
 	...create_loopback_app_server_options(),
 	backend,
 	session_cookie_name: 'test_session',
+	auth_cleanup: 'off',
 	create_route_specs: () => [create_health_route_spec()],
 	rate_limiters: 'enforced',
 	audit_log_sse: true,
@@ -361,18 +363,6 @@ describe('a failed assembly releases what it acquired', () => {
 		assert_released(harness, dispose);
 	});
 
-	test('an invalid auth_cleanup interval, after every other acquisition', async () => {
-		const harness = create_harness();
-		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
-		const thrown = await assemble_rejects({
-			...acquiring_options(harness.backend),
-			auth_cleanup: { interval_ms: 0 }
-		});
-		assert.instanceOf(thrown, Error);
-		assert.match(thrown.message, /interval_ms/);
-		assert_released(harness, dispose);
-	});
-
 	test('a release that throws is logged, spares the rest, and the original error wins', async () => {
 		const harness = create_harness();
 		const release_failure = new Error('dispose failed');
@@ -594,6 +584,47 @@ describe('option checks fail before anything is acquired', () => {
 			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
 			dispose.mockRestore();
 		}
+	});
+
+	// what a caller of the old option shape (`true`, `{interval_ms}`) sends too
+	for (const auth_cleanup of [
+		{ every_ms: 0 },
+		{ every_ms: -1 },
+		{ every_ms: Number.NaN },
+		{ every_ms: Number.POSITIVE_INFINITY },
+		{ every_ms: PERIODIC_INTERVAL_MS_MAX + 1 },
+		true,
+		{ interval_ms: 1000 },
+		undefined
+	]) {
+		const label =
+			typeof auth_cleanup === 'object'
+				? `{${Object.entries(auth_cleanup)
+						.map(([key, value]) => `${key}: ${String(value)}`)
+						.join(', ')}}`
+				: String(auth_cleanup);
+		test(`an invalid auth_cleanup: ${label}`, async () => {
+			const harness = create_harness();
+			const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+			const thrown = await assemble_rejects({
+				...acquiring_options(harness.backend),
+				auth_cleanup: auth_cleanup as AppServerOptions['auth_cleanup']
+			});
+			assert.instanceOf(thrown, Error);
+			assert.match(thrown.message, /^create_app_server: auth_cleanup must be/);
+			assert.deepStrictEqual(current(harness), harness.baseline);
+			assert.strictEqual(dispose.mock.contexts.length, 0, 'no limiter was built');
+		});
+	}
+
+	test('auth_cleanup at the interval cap is admitted', async () => {
+		const harness = create_harness();
+		servers.push(
+			await create_app_server({
+				...acquiring_options(harness.backend),
+				auth_cleanup: { every_ms: PERIODIC_INTERVAL_MS_MAX }
+			})
+		);
 	});
 });
 

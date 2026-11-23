@@ -69,6 +69,7 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 			backend,
 			...create_loopback_app_server_options(),
 			session_cookie_name,
+			auth_cleanup: 'off',
 			create_route_specs: () => [
 				define_route({
 					method: 'GET',

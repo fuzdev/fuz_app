@@ -52,6 +52,7 @@ const assemble = async (endpoint: Partial<WsEndpointSpec>): Promise<AppServer> =
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps }),
 		session_cookie_name: 'test_session',
+		auth_cleanup: 'off',
 		create_route_specs: () => [create_health_route_spec()],
 		upgrade_websocket: create_stub_upgrade().upgradeWebSocket,
 		ws_endpoints: [

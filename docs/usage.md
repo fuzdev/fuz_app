@@ -160,6 +160,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 import { load_env } from '@fuzdev/fuz_app/env/load.ts';
 import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
+import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '@fuzdev/fuz_app/auth/cleanup.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_audit_log_config } from '@fuzdev/fuz_app/auth/audit_log_schema.ts';
@@ -247,7 +248,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	],
 	// surface_route: true,  // opt in to GET /api/surface — admin-only, refused to narrowed tokens (for AdminSurface.svelte)
 	audit_log_sse: true, // factory-managed audit SSE (§SSE Endpoints)
-	auth_cleanup: true, // scheduled auth cleanup — off by default, on in production (§Auth cleanup)
+	auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS }, // required; 'off' in a test harness (§Auth cleanup)
 	env_schema: app_env_schema,
 	event_specs: my_event_specs, // audit_log_event_specs auto-appended when audit_log_sse is set
 	// rpc_endpoints: the one source of RPC mounting — the server mounts each
@@ -397,22 +398,31 @@ without awaiting the listener's full drain, since live WebSockets hold it open
 until `close` ends them — so no new request reaches a closed database, then:
 
 ```typescript
-await server.close();
+import { shutdown_gave_up } from '@fuzdev/fuz_app/server/shutdown_drain.ts';
+
+const given_up = await server.close();
+if (shutdown_gave_up(given_up)) process.exitCode = 1;
 ```
 
 It stops the auth cleanup schedule, closes every live connection (each
 WebSocket with `WS_CLOSE_GOING_AWAY`, so clients reconnect rather than treat
-their session as revoked), waits for the work still in flight — every request
-and WS message accepted, until its handler has returned and its effects have
-flushed, each WebSocket still opening (its admission re-read and
-`on_socket_open`), and the audit emitter's writes — bounded by
-`shutdown_drain_timeout_ms` (`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), logging what
+their session as revoked), waits for the work still in flight — the auth
+cleanup's pass in progress, every request and WS message accepted, until its
+handler has returned and its effects have flushed, each WebSocket still
+opening (its admission re-read and `on_socket_open`), and the audit emitter's
+writes — bounded by `shutdown_drain_timeout_ms`
+(`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), one bound for all of it, logging what
 it gives up on — then releases what assembly acquired and closes the
-database. From the drain on, an arriving HTTP request is refused with 503
-`{"error": "service_unavailable"}`. The release leaves the backend's emitter, closer and sender as they
-were before assembly, so a backend whose `close` you own (a test harness) can
-host another server; a closed connection registry hosts nothing more. `close`
-is idempotent. Each step is in the `AppServer.close` TSDoc
+database. It resolves what it gave up on, a `ShutdownDrainGivenUp`
+(`requests`, `audit_writes`, `upkeep`), every count `0` when it drained
+everything; report a give-up as a failed exit, as the Rust spine does
+(`StartupError::ShutdownGivenUp` exits `1`). `shutdown_gave_up(report)` reads
+it. From the drain on, an arriving HTTP request is refused with 503
+`{"error": "service_unavailable"}`. The release leaves the backend's emitter,
+closer and sender as they were before assembly, so a backend whose `close`
+you own (a test harness) can host another server; a closed connection
+registry hosts nothing more. `close` is idempotent — a second call resolves
+the same report. Each step is in the `AppServer.close` TSDoc
 (`server/app_server.ts`).
 
 ### Auth cleanup
@@ -421,26 +431,30 @@ Two things in the auth schema need upkeep, and nothing does it unless the
 server schedules it: expired session rows are deleted and the WebSockets and
 audit streams they opened are closed, and each expired role_grant offer gets
 its `role_grant_offer_expire` audit row. `auth_cleanup` on `create_app_server`
-schedules both — a pass as assembly finishes, then one per interval:
+— an `AuthCleanupSchedule`, twin of the Rust `fuz_auth::AuthCleanupSchedule` —
+schedules both, a pass as assembly finishes, then one per interval:
 
 ```typescript
+import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '@fuzdev/fuz_app/auth/cleanup.ts';
+
 const { app, close } = await create_app_server({
 	// …other options…
-	auth_cleanup: true // every DEFAULT_AUTH_CLEANUP_INTERVAL_MS (10 minutes)
-	// auth_cleanup: {interval_ms: 60_000}, // or your own interval
+	auth_cleanup: { every_ms: DEFAULT_AUTH_CLEANUP_INTERVAL_MS } // 10 minutes
+	// auth_cleanup: 'off', // a test harness, or sweeps run elsewhere
 });
 
-// on shutdown: stops the schedule (waiting for a pass in progress) before
-// closing connections and the database (§Shutdown). The wait has no bound of
-// its own — a shutdown with a deadline races it
+// on shutdown: stops the schedule, then waits for a pass in progress within
+// the drain bound, counting one still running at the bound in the report's
+// `upkeep` (§Shutdown)
 await close();
 ```
 
-It is **off by default** — turn it on in production, and leave it off in an
-in-process test harness, where a background pass deletes rows and writes
-audit rows mid-test. A cross-process test binary may schedule it only when
+It is **required**, with no default, so no server gets or loses the sweeps
+without writing it out: `{every_ms}` in production, `'off'` in an in-process
+test harness, where a background pass deletes rows and writes audit rows
+mid-test. A cross-process test binary may schedule it only when
 nothing its suites seed is already expired: fuz_app's own test binary and the
-Rust `testing_spine_stub` leave it off, because the conformance
+Rust `testing_spine_stub` schedule it `'off'` (`AuthCleanupSchedule::Off`), because the conformance
 `expired_session` principal seeds a backdated session. A server assembled by
 hand, or one that wants the passes on its own scheduler, uses `auth/cleanup.ts`
 directly, in the process that holds the connections (`auth/cleanup.ts`'s TSDoc

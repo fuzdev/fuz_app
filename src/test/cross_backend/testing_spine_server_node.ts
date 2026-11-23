@@ -1,8 +1,11 @@
 /**
  * Node spawn entry for the domain-free TS spine test binary.
  *
- * Run via `gro run src/test/cross_backend/testing_spine_server_node.ts`
- * (the `cross_backend_ts_node` project's `globalSetup` spawns it). Wires the
+ * Run via `node --conditions=development src/test/cross_backend/testing_spine_server_node.ts`
+ * (the `cross_backend_ts_node` project's `globalSetup` spawns it — on plain
+ * Node, since gro's CLI passes a SIGTERM on to the task's process but then
+ * dies by the signal itself, without waiting for the server's exit code, so
+ * teardown would see a signal exit whatever the shutdown exited with). Wires the
  * Node runtime adapter to the shared `build_spine_app`. **Never ships in a
  * release** — `src/test/` is excluded from the package build.
  *

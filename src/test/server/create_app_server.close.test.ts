@@ -22,10 +22,14 @@
  */
 
 import { afterEach, assert, describe, test, vi } from 'vitest';
+import { create_deferred } from '@fuzdev/fuz_util/async.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { define_route } from '#lib/http/route_spec.ts';
+import { route_ok } from '#lib/http/route_result.ts';
 import {
 	APP_SERVER_RATE_LIMITER_KEYS,
 	create_app_server,
@@ -33,6 +37,7 @@ import {
 	type AppServerOptions,
 	type AppServerRateLimiterKey
 } from '#lib/server/app_server.ts';
+import { shutdown_gave_up } from '#lib/server/shutdown_drain.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_stub_app_backend, create_stub_app_deps } from '#lib/testing/stubs.ts';
@@ -84,6 +89,7 @@ const base_options = (
 	AppServerOptions,
 	| 'backend'
 	| 'session_cookie_name'
+	| 'auth_cleanup'
 	| 'allowed_origins'
 	| 'proxy'
 	| 'env_schema'
@@ -92,6 +98,7 @@ const base_options = (
 	...create_loopback_app_server_options(),
 	backend,
 	session_cookie_name: 'test_session',
+	auth_cleanup: 'off',
 	create_route_specs: () => [create_health_route_spec()]
 });
 
@@ -216,6 +223,52 @@ describe('AppServer.close', () => {
 		assert.strictEqual(harness.backend_closes(), 1);
 		assert.strictEqual(recording.calls.length, 1);
 		assert.strictEqual(dispose.mock.calls.length, LIMITER_NAMES.length);
+	});
+
+	test('resolves the give-up report: zeros when the drain finished', async () => {
+		const { server } = await assemble();
+		const report = await server.close();
+		assert.deepStrictEqual(report, { requests: 0, audit_writes: 0, upkeep: 0 });
+		assert.strictEqual(shutdown_gave_up(report), false);
+	});
+
+	test('resolves what it gave up on: a handler stalled past the bound is a request', async () => {
+		const entered = create_deferred<void>();
+		const release = create_deferred<void>();
+		const harness = create_harness();
+		harness.backend.deps.log = new Logger('test', { level: 'off' });
+		const server = await create_app_server({
+			...base_options(harness.backend),
+			shutdown_drain_timeout_ms: 20,
+			create_route_specs: () => [
+				define_route({
+					method: 'GET',
+					path: '/api/stall',
+					auth: { account: 'none', actor: 'none' },
+					description: 'A handler that waits for the test',
+					input: literal(null),
+					output: loose_object({}),
+					handler: async () => {
+						entered.resolve();
+						await release.promise;
+						return route_ok({});
+					}
+				})
+			]
+		});
+		servers.push(server);
+		const answered = server.app.request('/api/stall', { headers: { host: 'localhost' } });
+		try {
+			await entered.promise;
+			const report = await server.close();
+			assert.deepStrictEqual(report, { requests: 1, audit_writes: 0, upkeep: 0 });
+			assert.ok(shutdown_gave_up(report));
+			assert.strictEqual(harness.backend_closes(), 1, 'the database closed at the bound');
+			assert.strictEqual(await server.close(), report, 'a second call returns the same report');
+		} finally {
+			release.resolve();
+			await answered;
+		}
 	});
 
 	test('disposes only the limiters it built, never an injected one', async () => {

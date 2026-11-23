@@ -136,7 +136,8 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	const teardown = await dual_spawn(project);
 	const { a, b } = bootstrap_db_state;
 	if (!a || !b) {
-		await teardown();
+		// the missing probe is the report; a failed teardown is logged beside it
+		await teardown().catch((error: unknown) => console.error(error));
 		throw new Error('parity setup: a bootstrap database read is missing');
 	}
 	project.provide('parity_bootstrap_db_state', { a, b });

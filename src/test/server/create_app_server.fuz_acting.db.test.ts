@@ -44,6 +44,7 @@ describe('a fuz_schema input declaring the ActingActor twin', () => {
 			...create_loopback_app_server_options(),
 			backend: test_server,
 			session_cookie_name,
+			auth_cleanup: 'off',
 			create_route_specs: () => [],
 			rpc_endpoints: [
 				{

@@ -52,6 +52,7 @@ import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { ActingActor } from '#lib/primitive_schemas.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
+import type { ShutdownDrainGivenUp } from '#lib/server/shutdown_drain.ts';
 
 const db = create_stub_db();
 
@@ -489,7 +490,7 @@ describe('the DEV error check outside DEV', () => {
 	// no testing module: under `DEV=false` each refuses to load (`assert_dev_env.ts`)
 	const assemble = async (
 		dev: boolean
-	): Promise<{ app: Hono; logged: Array<string>; close: () => Promise<void> }> => {
+	): Promise<{ app: Hono; logged: Array<string>; close: () => Promise<ShutdownDrainGivenUp> }> => {
 		vi.resetModules();
 		vi.doMock('esm-env', () => ({ DEV: dev, BROWSER: false }));
 		const { create_app_server } = await import('#lib/server/app_server.ts');
@@ -528,6 +529,7 @@ describe('the DEV error check outside DEV', () => {
 				}
 			},
 			session_cookie_name: 'test_session',
+			auth_cleanup: 'off',
 			allowed_origins: origins.origins,
 			env_schema: object({}),
 			proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },

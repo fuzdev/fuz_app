@@ -183,8 +183,12 @@ const login_rate_limit_env = (enable: boolean | undefined): Record<string, strin
 	enable ? { [LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true' } : {};
 
 /**
- * `BackendConfig` for the Node TS spine binary — spawned via `gro run`
- * (Gro's TS loader resolves the entry's relative imports).
+ * `BackendConfig` for the Node TS spine binary — spawned on plain Node (type
+ * stripping, with the `development` condition the testing modules assert),
+ * not under `gro run`: gro's CLI passes a SIGTERM on to the task's process
+ * but then dies by the signal itself, without waiting for the server's exit
+ * code, so teardown — which holds the spawned process to exit `0` — would see
+ * a signal exit whatever the shutdown exited with.
  */
 export const ts_spine_node_backend_config = (
 	options: TsSpineBackendConfigOptions = {}
@@ -200,7 +204,7 @@ export const ts_spine_node_backend_config = (
 		...make_default_ts_backend_config({
 			name,
 			port,
-			start_command: ['gro', 'run', TS_SPINE_NODE_ENTRY],
+			start_command: ['node', '--conditions=development', TS_SPINE_NODE_ENTRY],
 			database_url,
 			paths,
 			daemon_token_dir_env: TS_SPINE_DIR_ENV,

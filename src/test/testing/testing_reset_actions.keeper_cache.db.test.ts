@@ -65,6 +65,7 @@ const create_reset_server = async () => {
 		...create_loopback_app_server_options(),
 		backend,
 		session_cookie_name,
+		auth_cleanup: 'off',
 		rate_limiters: 'disabled_for_testing',
 		await_pending_effects: true,
 		daemon_token_state,

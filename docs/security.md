@@ -290,7 +290,8 @@ legitimate operator.
   request, but a WebSocket or SSE stream it opened does not read it again.
   The auth cleanup deletes expired session rows and closes those connections
   — within one cleanup interval of the expiry when it is scheduled
-  (`auth_cleanup` on `create_app_server`, off by default; see
+  (`auth_cleanup` on `create_app_server`, required — `{every_ms}` in
+  production; see
   [Connection Admission](#connection-admission), "What remains")
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached, and the connections it opened are
@@ -997,7 +998,7 @@ session sweep closes the connections of each expired session it deletes,
 through the same `deps.connection_closer`, after its delete commits, and
 writes no audit row (nobody performed an expiry), so no listener repeats it.
 It runs only where the cleanup is scheduled (`auth_cleanup` on
-`create_app_server`, off by default).
+`create_app_server`, a required `{every_ms}` or `'off'`).
 
 **One closer for every transport.** `deps.connection_closer` is a
 `RealtimeCloser`: each close fans out to every member added to it, and one

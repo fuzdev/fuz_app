@@ -137,6 +137,7 @@ const create_app = async (dev: boolean) => {
 			}
 		},
 		session_cookie_name: 'test_session',
+		auth_cleanup: 'off',
 		allowed_origins: origins.origins,
 		env_schema: object({}),
 		surface_route: true,

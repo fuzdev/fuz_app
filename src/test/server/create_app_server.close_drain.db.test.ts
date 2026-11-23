@@ -20,8 +20,9 @@ import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
 import {
 	DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
-	drain_effects_on_shutdown
-} from '#lib/server/app_server.ts';
+	drain_effects_on_shutdown,
+	shutdown_gave_up
+} from '#lib/server/shutdown_drain.ts';
 import { create_test_app } from '#lib/testing/test_app.ts';
 import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 
@@ -169,14 +170,14 @@ describe('drain_effects_on_shutdown', () => {
 		flushes.accept()!.finish(never.promise);
 		const audit = { drain_inflight: () => never.promise, inflight_count: () => 2 };
 
-		const given_up = await drain_effects_on_shutdown(flushes, audit, 20, log);
+		const given_up = await drain_effects_on_shutdown(flushes, audit, [], 20, log);
 
 		// counted apart: a flush's own audit writes are in both
-		assert.deepStrictEqual(given_up, { requests: 1, audit_writes: 2 });
+		assert.deepStrictEqual(given_up, { requests: 1, audit_writes: 2, upkeep: 0 });
 		assert.strictEqual(errors.length, 1);
 		assert.include(
 			errors[0],
-			'1 request(s) (handler, effect flush, or WS open), 2 audit row write(s)'
+			'1 request(s) (handler, effect flush, or WS open), 2 audit row write(s), 0 upkeep task(s)'
 		);
 	});
 
@@ -195,9 +196,10 @@ describe('drain_effects_on_shutdown', () => {
 			inflight_count: () => 0
 		};
 
-		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
+		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, [], 1000, log), {
 			requests: 0,
-			audit_writes: 0
+			audit_writes: 0,
+			upkeep: 0
 		});
 		assert.deepStrictEqual(order, ['flush', 'audit']);
 		assert.deepStrictEqual(errors, []);
@@ -220,9 +222,10 @@ describe('drain_effects_on_shutdown', () => {
 		flushes.accept()!.finish(first);
 		const audit = { drain_inflight: async () => {}, inflight_count: () => 0 };
 
-		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
+		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, [], 1000, log), {
 			requests: 0,
-			audit_writes: 0
+			audit_writes: 0,
+			upkeep: 0
 		});
 		assert.deepStrictEqual(order, ['first', 'second']);
 		assert.strictEqual(flushes.inflight_count(), 0);
@@ -249,12 +252,58 @@ describe('drain_effects_on_shutdown', () => {
 			inflight_count: () => 0
 		};
 
-		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, 1000, log), {
+		assert.deepStrictEqual(await drain_effects_on_shutdown(flushes, audit, [], 1000, log), {
 			requests: 0,
-			audit_writes: 0
+			audit_writes: 0,
+			upkeep: 0
 		});
 		assert.deepStrictEqual(order, ['late flush']);
 		assert.strictEqual(audit_passes, 2);
+		assert.deepStrictEqual(errors, []);
+	});
+
+	test('one bound for the upkeep and the drain: a stop still pending is counted', async () => {
+		const { log, errors } = capture_log();
+		const never = create_deferred<void>();
+		const flushes = create_request_tracker();
+		const audit = { drain_inflight: async () => {}, inflight_count: () => 0 };
+		const started_at = Date.now();
+
+		const given_up = await drain_effects_on_shutdown(
+			flushes,
+			audit,
+			[Promise.resolve(), never.promise],
+			20,
+			log
+		);
+
+		assert.deepStrictEqual(given_up, { requests: 0, audit_writes: 0, upkeep: 1 });
+		assert.ok(shutdown_gave_up(given_up));
+		assert.ok(Date.now() - started_at < 1_000, 'returned at the bound');
+		assert.strictEqual(errors.length, 1);
+		assert.include(errors[0], '1 upkeep task(s)');
+	});
+
+	test('waits for the upkeep before the requests, so a flush a pass started is drained', async () => {
+		const { log, errors } = capture_log();
+		const flushes = create_request_tracker();
+		const order: Array<string> = [];
+		const stopped = wait(5).then(() => {
+			order.push('upkeep');
+			// a pass's last step tracked work after the drain began
+			flushes.accept()!.finish(
+				wait(5).then(() => {
+					order.push('flush');
+				})
+			);
+		});
+		const audit = { drain_inflight: async () => {}, inflight_count: () => 0 };
+
+		const given_up = await drain_effects_on_shutdown(flushes, audit, [stopped], 1000, log);
+
+		assert.deepStrictEqual(given_up, { requests: 0, audit_writes: 0, upkeep: 0 });
+		assert.ok(!shutdown_gave_up(given_up));
+		assert.deepStrictEqual(order, ['upkeep', 'flush']);
 		assert.deepStrictEqual(errors, []);
 	});
 

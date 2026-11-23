@@ -281,7 +281,8 @@ describe('create_app_server refuses a spec breaking a cross-axis invariant at as
 	const base_options = () => ({
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend(),
-		session_cookie_name: 'test_session'
+		session_cookie_name: 'test_session',
+		auth_cleanup: 'off' as const
 	});
 
 	test('a route spec', async () => {

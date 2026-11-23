@@ -18,10 +18,12 @@
  * invocation fails.
  *
  * Runs on plain Node (type stripping, with the `development` condition the
- * testing modules assert), not under `gro run`: gro forwards no signals, so a
- * signal to a gro layer would orphan this process and its invocations. A
- * `SIGINT`, `SIGTERM` or `SIGHUP` here is passed to every invocation, whose
- * backends' own handlers tear them down, and the runner also stops them when
+ * testing modules assert), not under `gro run`: gro's CLI passes a SIGTERM on
+ * to the task's process but then dies by the signal itself, without waiting
+ * for the task's exit, so a signal to a gro layer would leave this process
+ * and its invocations running past it. A `SIGINT`, `SIGTERM` or `SIGHUP`
+ * here is passed to every invocation, whose backends' own handlers tear them
+ * down, and the runner also stops them when
  * its parent goes away (npm's `sh -c` layer dies on `SIGTERM` without passing
  * it on). On Ctrl+C, npm returns the prompt before the runner prints its
  * summary, which lands after it.

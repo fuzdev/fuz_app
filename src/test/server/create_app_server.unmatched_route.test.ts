@@ -36,6 +36,7 @@ const assemble = async (): Promise<AppServer> => {
 		...create_loopback_app_server_options(),
 		backend: create_stub_app_backend({ deps: create_stub_app_deps() }),
 		session_cookie_name: SESSION_COOKIE_NAME,
+		auth_cleanup: 'off',
 		create_route_specs: () => [
 			define_route({
 				method: 'GET',

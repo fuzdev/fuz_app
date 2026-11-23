@@ -55,6 +55,7 @@ const boot = async (overrides: Partial<AppServerOptions>): Promise<unknown> => {
 			}
 		},
 		session_cookie_name: 'test_session',
+		auth_cleanup: 'off',
 		allowed_origins: origins.origins,
 		env_schema: object({}),
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },

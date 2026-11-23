@@ -21,6 +21,7 @@ import {
 	type AppServerOptions,
 	type BootstrapServerOptions
 } from '../server/app_server.ts';
+import type { ShutdownDrainGivenUp } from '../server/shutdown_drain.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -168,8 +169,8 @@ export interface TestApp {
 	 * @throws Error listing every broken invariant and its rows
 	 */
 	assert_db_invariants: () => Promise<void>;
-	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, disposes the limiters the server built and removes the audit listeners and closer members it added, then the backend's `close`. Idempotent. */
-	cleanup: () => Promise<void>;
+	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, drains the work in flight within its bound, disposes the limiters the server built and removes the audit listeners and closer members it added, then the backend's `close`; resolves what the drain gave up on. Idempotent. */
+	cleanup: () => Promise<ShutdownDrainGivenUp>;
 }
 
 /**
@@ -178,13 +179,22 @@ export interface TestApp {
  */
 const test_app_options = (): Pick<
 	AppServerOptions,
-	'allowed_origins' | 'proxy' | 'env_schema' | 'rate_limiters' | 'await_pending_effects'
+	| 'allowed_origins'
+	| 'proxy'
+	| 'env_schema'
+	| 'rate_limiters'
+	| 'await_pending_effects'
+	| 'auth_cleanup'
 > => ({
 	...create_loopback_app_server_options(),
 	// every limiter off unless `app_options` passes one — a rate-limit test
 	// enables just the limiter it pins
 	rate_limiters: 'disabled_for_testing',
-	await_pending_effects: true
+	await_pending_effects: true,
+	// off: a background pass would delete rows and write audit rows mid-test.
+	// A suite that opts in through `app_options` has the schedule stopped by
+	// `cleanup`.
+	auth_cleanup: 'off'
 });
 
 /** Build request headers carrying `session_cookie` in the `cookie_name` cookie. */
@@ -248,9 +258,6 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
-		// `auth_cleanup` stays at its default, off: a background pass would
-		// delete rows and write audit rows mid-test. A suite that opts in
-		// through `app_options` has the schedule stopped by `cleanup`.
 		...options.app_options,
 		create_route_specs: options.create_route_specs
 	});

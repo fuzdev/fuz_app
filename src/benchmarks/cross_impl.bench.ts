@@ -76,5 +76,9 @@ try {
 	writeFileSync(ARTIFACT_PATH, `${format_cross_impl_json(result)}\n`);
 	console.log(`\nwrote ${ARTIFACT_PATH}`);
 } finally {
-	await Promise.allSettled(handles.map((h) => h.teardown()));
+	const torn_down = await Promise.allSettled(handles.map((h) => h.teardown()));
+	// a backend that exits uncleanly is reported, not hidden behind the results
+	for (const settled of torn_down) {
+		if (settled.status === 'rejected') console.error(settled.reason);
+	}
 }

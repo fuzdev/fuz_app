@@ -191,6 +191,7 @@ const create_test_server = async (
 		...create_loopback_app_server_options(),
 		backend,
 		session_cookie_name,
+		auth_cleanup: 'off',
 		create_route_specs: () => [create_health_route_spec()],
 		upgrade_websocket: stub.upgradeWebSocket,
 		ws_endpoints: [
@@ -1105,9 +1106,7 @@ const wait_for = async (predicate: () => boolean): Promise<void> => {
 };
 
 /** `promise`, with whether it has settled readable synchronously. */
-const track_settled = (
-	promise: Promise<void>
-): { promise: Promise<void>; settled: () => boolean } => {
+const track_settled = <T>(promise: Promise<T>): { promise: Promise<T>; settled: () => boolean } => {
 	let settled = false;
 	const tracked = promise.finally(() => {
 		settled = true;

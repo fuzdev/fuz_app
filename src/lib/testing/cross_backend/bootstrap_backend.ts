@@ -20,7 +20,9 @@ import '../assert_dev_env.ts';
  *
  * If `bootstrap()` throws — typically a bad token, port collision, or
  * keeper-username mismatch — the spawned binary is torn down before the
- * error propagates so vitest doesn't strand the port.
+ * error propagates so vitest doesn't strand the port. The returned handle's
+ * `teardown` rejects unless the binary exits `0` (`BackendHandle.teardown`),
+ * so a global setup that awaits it fails the run on an unclean shutdown.
  *
  * @module
  */
@@ -79,7 +81,11 @@ export const bootstrap_backend = async (
 			keeper_cookies: keeper.cookies
 		};
 	} catch (err) {
-		await handle.teardown();
+		// the bootstrap's error is the report; a teardown that also failed is
+		// logged beside it rather than replacing it
+		await handle.teardown().catch((teardown_error: unknown) => {
+			console.error(teardown_error);
+		});
 		throw err;
 	}
 };

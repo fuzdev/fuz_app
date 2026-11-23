@@ -108,7 +108,8 @@ const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	const a = probes.get(SECURITY_TS.name);
 	const b = probes.get(SECURITY_STUB.name);
 	if (!a || !b) {
-		await teardown();
+		// the missing probe is the report; a failed teardown is logged beside it
+		await teardown().catch((error: unknown) => console.error(error));
 		throw new Error('the bootstrap rate-limit probe did not run on both backends');
 	}
 	project.provide('security_bootstrap_rate_limit', { a, b });

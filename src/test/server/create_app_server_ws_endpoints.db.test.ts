@@ -114,6 +114,7 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 	// the endpoints' own lists name :3000; the server takes both dev ports
 	allowed_origins: parse_origins('http://localhost:3000, http://localhost:5173'),
 	session_cookie_name,
+	auth_cleanup: 'off',
 	create_route_specs: () => [create_health_route_spec()]
 };
 

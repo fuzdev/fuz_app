@@ -51,6 +51,7 @@ import {
 } from '#lib/server/serve_fact_route.ts';
 import { create_app_backend, type AuditFactory } from '#lib/server/app_backend.ts';
 import { create_app_server } from '#lib/server/app_server.ts';
+import type { ShutdownDrainGivenUp } from '#lib/server/shutdown_drain.ts';
 import { create_file_bootstrap_token_store } from '#lib/auth/bootstrap_token_store.ts';
 import {
 	RateLimiter,
@@ -494,27 +495,32 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		await_pending_effects: true,
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);
-		}
-		// `auth_cleanup` stays off (its default): a background pass would delete
-		// rows and write audit rows under a running suite. The Rust
-		// `testing_spine_stub` this binary is compared against leaves its twin
-		// unscheduled too.
+		},
+		// off: a background pass would delete rows and write audit rows under a
+		// running suite, and the Rust `testing_spine_stub` this binary is
+		// compared against schedules its twin `AuthCleanupSchedule::Off`
+		auth_cleanup: 'off',
+		// under `spawn_backend`'s SIGKILL grace (3 s after teardown's SIGTERM),
+		// so a shutdown that gives up logs what it gave up on and exits 1
+		// before the harness kills it — the default 10 s bound would be cut off
+		shutdown_drain_timeout_ms: 2_000
 	});
 
 	// Health probe endpoint — the spawn harness polls this for readiness.
 	// `create_app_server` does not mount one.
 	app_server.app.get(HEALTH_PATH, (c) => c.json({ status: 'ok' }));
 
-	const close = async (): Promise<void> => {
+	const close = async (): Promise<ShutdownDrainGivenUp> => {
 		await daemon_token_rotation.stop();
 		// closes the WS + SSE connections, then the DB
-		await app_server.close();
+		const given_up = await app_server.close();
 		// caller-injected limiters are the caller's to dispose
 		login_ip_rate_limiter?.dispose();
 		login_account_rate_limiter?.dispose();
 		bootstrap_ip_rate_limiter?.dispose();
 		action_ip_rate_limiter?.dispose();
 		action_account_rate_limiter?.dispose();
+		return given_up;
 	};
 
 	return { app: app_server.app, close, surface: app_server.surface_spec.surface };

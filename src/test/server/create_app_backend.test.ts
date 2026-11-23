@@ -32,6 +32,7 @@ const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({
 const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
 	session_cookie_name,
+	auth_cleanup: 'off',
 	create_route_specs: () => [create_health_route_spec()]
 };
 

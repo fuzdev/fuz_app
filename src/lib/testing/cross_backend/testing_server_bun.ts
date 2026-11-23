@@ -97,11 +97,12 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 				//
 				// So initiate a force-close (`true` drops active connections, no
 				// drain) but DON'T await it: awaiting hangs `start_testing_server`'s
-				// shutdown forever — `built.close()` and `exit(0)` never run, and the
-				// spawning harness blocks on a child that never exits (observed as a
+				// shutdown forever — the core's exit never runs, and the spawning
+				// harness blocks on a child that never exits (observed as a
 				// multi-minute hang needing SIGKILL). The force-close still tears the
-				// live sockets down; the `exit(0)` the core fires immediately after
-				// does the real teardown a few ms later. Node doesn't need this — its
+				// live sockets down; the exit the core fires once `built.close()`
+				// returns (`0`, or `1` when it gave up) does the real teardown. Node
+				// doesn't need this — its
 				// `close()` resolves normally. The `.catch` guards a
 				// future Bun that rejects rather than hangs; if a future Bun resolves
 				// the promise after a server-initiated close, revert to

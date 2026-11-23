@@ -82,6 +82,7 @@ test('works with create_app_server', async () => {
 		...create_loopback_app_server_options(),
 		backend: test_server,
 		session_cookie_name,
+		auth_cleanup: 'off',
 		create_route_specs: () => [create_health_route_spec()]
 	});
 
