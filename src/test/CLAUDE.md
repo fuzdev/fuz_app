@@ -190,7 +190,7 @@ the test helpers' route list.
   | --- | --- | --- |
   | `stall(match, {skip?})` | one pool-level query in flight | admission suites (a revocation at the credential re-read) |
   | `hold_begin()` | the next transaction before it begins (`release` / `fail` — a refused `BEGIN`) | `auth/credential_mint_race.db.test.ts`, `auth/rest_audit_in_transaction.db.test.ts` |
-  | `hold_commit()` | the next transaction after its callback, before commit (`release` / `fail`) | `auth/cleanup.sessions.db.test.ts` |
+  | `hold_commit()` | the next transaction after its callback, before commit (`release` / `fail`; `transaction` runs a statement inside it, its backend pid say) | `auth/cleanup.sessions.db.test.ts` |
   | `refuse_in_transaction(match, error)` | throws for the next matching in-transaction statement | `auth/session_cookie_commit.db.test.ts` |
   | `open_transactions()` | counts open transactions | `auth/connection_closer.db.test.ts` |
 - `http/route_raw_refusals.ts` — the raw answers `prepare_route_response` refuses and some it admits, built fresh per call; shared by `http/route_result.test.ts` and `http/route_result.refusal.db.test.ts`.

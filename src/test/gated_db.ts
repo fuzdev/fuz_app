@@ -45,6 +45,11 @@ export interface HeldCommit {
 	/** Let the held transaction commit. */
 	release: () => void;
 	/**
+	 * The held transaction, for a statement run inside it while it is held —
+	 * its backend's `pg_backend_pid()`, say. Resolves with `reached`.
+	 */
+	transaction: Promise<Db>;
+	/**
 	 * Fail the held transaction with `error` instead of committing it: the
 	 * callback has returned, its writes roll back, and the transaction call
 	 * rejects — what its caller sees when a `COMMIT` fails.
@@ -119,7 +124,11 @@ export const create_gated_db = (inner: Db): GatedDb => {
 		held: Promise<void>;
 	} | null = null;
 
-	let armed_commit: { reached: () => void; held: Promise<void> } | null = null;
+	let armed_commit: {
+		reached: () => void;
+		transaction: (tx: Db) => void;
+		held: Promise<void>;
+	} | null = null;
 	let armed_begin: { reached: () => void; held: Promise<void> } | null = null;
 	let armed_refusal: { match: (sql: string) => boolean; error: Error } | null = null;
 	let open_transactions = 0;
@@ -169,6 +178,7 @@ export const create_gated_db = (inner: Db): GatedDb => {
 					const hold = armed_commit;
 					if (hold) {
 						armed_commit = null;
+						hold.transaction(inner_tx);
 						hold.reached();
 						await hold.held;
 					}
@@ -204,8 +214,18 @@ export const create_gated_db = (inner: Db): GatedDb => {
 			// a hold failed after its test stopped waiting must not surface as an
 			// unhandled rejection
 			held.promise.catch(() => {});
-			armed_commit = { reached: reached.resolve, held: held.promise };
-			return { reached: reached.promise, release: held.resolve, fail: held.reject };
+			const transaction = Promise.withResolvers<Db>();
+			armed_commit = {
+				reached: reached.resolve,
+				transaction: transaction.resolve,
+				held: held.promise
+			};
+			return {
+				reached: reached.promise,
+				release: held.resolve,
+				transaction: transaction.promise,
+				fail: held.reject
+			};
 		},
 		hold_begin: () => {
 			const reached = Promise.withResolvers<void>();

@@ -295,9 +295,11 @@ export const query_account_lock_verified = async (
  * lets such writes run together. A delete takes it too, after its last-admin
  * guard and before the guards' second pass (`account_delete` in
  * `admin_actions.ts`): the guard reads whether the target is an admin
- * unlocked. Twin of the Rust `fuz_auth::query_account_lock_live`.
+ * unlocked. And `self_service_role_set` takes it first, so a toggle is refused
+ * on a removed account, or a removal waits for it. Twin of the Rust
+ * `fuz_auth::query_account_lock_live`.
  *
- * @param deps - query dependencies (must be the mint's or the delete's transaction)
+ * @param deps - query dependencies (must be the mint's, the delete's, or the toggle's transaction)
  * @param id - the account the credential is for, or the account the delete removes
  * @returns `true` when the row is locked and not tombstoned, `false` when it was deleted or tombstoned
  */

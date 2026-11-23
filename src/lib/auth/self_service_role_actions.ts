@@ -52,6 +52,8 @@ import {
 import { GRANT_PATH_SELF_SERVICE } from './grant_path_schema.ts';
 import type { RevokingActionFactoryDeps } from './deps.ts';
 import { query_create_role_grant } from './role_grant_queries.ts';
+import { query_account_lock_live } from './account_queries.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '../http/error_schemas.ts';
 import { query_revoke_role_grant } from './role_grant_offer_queries.ts';
 import { emit_supersede_audits } from './role_grant_offer_actions.ts';
 import { is_role_grant_active } from './account_schema.ts';
@@ -165,6 +167,20 @@ export const create_self_service_role_actions = (
 	): Promise<SelfServiceRoleSetOutput> => {
 		const auth = ctx.auth;
 		reject_if_ineligible(input.role);
+
+		// The credential was resolved before the transaction, so a delete or a
+		// purge of the account can commit in between: a toggle after it would
+		// write a grant (or revoke one) on the tombstone, back on an undelete,
+		// or meet a purged actor's foreign key. The account row first — the
+		// class order's first row, which a delete's tombstone and a purge's
+		// `DELETE` write — refuses it as the dead credential it now is, or
+		// makes a removal still to commit wait for the toggle. Both branches,
+		// before the no-op answers: a removed account is told it is removed.
+		if (!(await query_account_lock_live(ctx, auth.account.id))) {
+			throw jsonrpc_errors.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED
+			});
+		}
 
 		if (input.enabled) {
 			// Pre-check for idempotent re-grant. `query_create_role_grant` is itself

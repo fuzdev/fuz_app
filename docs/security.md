@@ -307,7 +307,23 @@ legitimate operator.
   account still holds the hash it verified; the token creation, that the
   session authorizing it still exists), so it either waits for the change
   and is refused — the login exactly as a wrong password is — or commits
-  first and is revoked with the rest. The handler closes the account's WebSockets and SSE streams once
+  first and is revoked with the rest. The change itself verifies
+  `current_password` against the hash read through its own session while it
+  is live, so it never verifies against a later change's hash. Its
+  transaction then takes the account row, reads the session again under it,
+  and writes only with the session live, the account live and the verified
+  hash still stored: a change, a delete or a purge, or a logout or a session
+  revoke of the session it was made on, committed before that lock was
+  granted makes it a lost race — `401 invalid_credentials`, charged to both
+  login limiters, audited as `concurrent_change` — an undelete since
+  included. A delete, a purge or another change committing after the lock
+  waits on the account row, ordered after the change; a logout or a session
+  revoke takes no account row, so one committing after the re-read is
+  ordered at the change's revoke-all, which ends that session with the
+  rest. The second session read is what keeps a
+  revoked session from changing the password: one inside the `UPDATE` alone
+  reads as of the statement's start and misses a revoke that commits while
+  the `UPDATE` waits on the row. The handler closes the account's WebSockets and SSE streams once
   the change commits (see [Closing on Revocation](#closing-on-revocation))
 
 ### Cookie Signing Keys
@@ -2227,7 +2243,9 @@ transactions meet the same rows in opposite orders.
   through `query_account_lock_live` (`FOR NO KEY UPDATE`, its tombstone's
   strength) after its last-admin guard — an admin target's row is then
   already held among every admin's, a non-admin's is the first row the
-  delete takes — then the guards again (§Last-admin guard), a revoke through its revokee's row (`query_account_lock_for_revoke`),
+  delete takes — then the guards again (§Last-admin guard), a
+  `self_service_role_set` through `query_account_lock_live` too (refused on a
+  removed account as the dead credential), a revoke through its revokee's row (`query_account_lock_for_revoke`),
   an offer or invite create through `query_account_lock_live_many`
   (`FOR SHARE`), which `query_role_grant_offer_create` and
   `query_create_invite` take themselves (a caller that locks an actor or

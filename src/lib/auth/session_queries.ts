@@ -172,6 +172,42 @@ export const query_session_is_live = async (
 };
 
 /**
+ * The password hash of the account a live session belongs to — the hash a
+ * password change verifies `current_password` against.
+ *
+ * The change's credential was resolved before this read, and its account row
+ * with it in a separate statement, so a change, a delete or a purge can commit
+ * between the two reads or after them. Each revokes the account's sessions in
+ * the transaction of its write, so while the session lives, the stored hash is
+ * the one the session was resolved under; once it is gone, the credential died
+ * mid-request and there is no hash to verify. Bound to the session in one
+ * statement, the read answers one or the other, never a later change's hash
+ * beside a dead session. The read is no lock: a session that dies after it is
+ * caught by the change's transaction, which takes the account row and then
+ * reads the session again (`query_session_is_live`). No tombstone filter: a
+ * delete revokes the sessions, and the change's transaction refuses a
+ * tombstone itself. Twin of the Rust
+ * `fuz_auth::query_session_live_password_hash`.
+ *
+ * @param deps - query dependencies
+ * @param id - the session's id, its token hash
+ * @param account_id - the account the session must belong to
+ * @returns the account's password hash, or `undefined` when the session is no longer live
+ */
+export const query_session_live_password_hash = async (
+	deps: QueryDeps,
+	id: string,
+	account_id: string
+): Promise<string | undefined> => {
+	const row = await deps.db.query_one<{ password_hash: string }>(
+		`SELECT a.password_hash FROM auth_session s JOIN account a ON a.id = s.account_id
+		 WHERE s.id = $1 AND s.account_id = $2 AND s.expires_at > NOW()`,
+		[id, account_id]
+	);
+	return row?.password_hash;
+};
+
+/**
  * Revoke (delete) a session by its token hash, with no account scoping.
  *
  * The `_unscoped` suffix is the safety signal — there is no `account_id`

@@ -8,7 +8,14 @@
  * completion, then released: it must be refused exactly as a wrong password
  * is, with no session row and no cookie. A password change held there across
  * a delete changes nothing: its write is refused on the tombstone, and the
- * old password holds after the undelete. A token create is held before its
+ * old password holds after the undelete. A password change outlived after its
+ * credential is read — held at the leg's account read (`stall`) while another
+ * session's change commits, or at its hash read while the account is purged —
+ * is a lost race (`concurrent_change`), charged to both limiters, whichever
+ * password it sends. One whose session dies after its hash read — a delete then
+ * an undelete, or a logout, while its verify is held; on real `pg`, a logout
+ * while its write waits on the account row — changes nothing either: it reads
+ * the session again under the account lock. A token create is held before its
  * transaction begins (`hold_begin`) while a delete commits. The mirror order —
  * the mint commits first — ends with the credential revoked. Those run on
  * every driver: nothing is held inside a transaction.
@@ -63,6 +70,7 @@ import type { PasswordHashDeps } from '#lib/auth/password.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_rate_limiter, type RateLimiter } from '#lib/rate_limiter.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
@@ -77,25 +85,35 @@ const HOLD_MS = 300;
 
 const json_headers = { 'content-type': 'application/json', host: 'localhost', origin: TEST_ORIGIN };
 
-const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-	...prefix_route_specs(
-		'/api/account',
-		create_account_route_specs(ctx.deps, {
-			session_cookie_name,
-			login_ip_rate_limiter: null,
-			login_account_rate_limiter: null,
-			login_fail_floor_ms: 0
+/** The login limiters a case charges, `null` for none. */
+interface Limiters {
+	ip: RateLimiter | null;
+	account: RateLimiter | null;
+}
+
+const NO_LIMITERS: Limiters = { ip: null, account: null };
+
+const create_route_specs_with =
+	(limiters: Limiters) =>
+	(ctx: AppServerContext): Array<RouteSpec> => [
+		...prefix_route_specs(
+			'/api/account',
+			create_account_route_specs(ctx.deps, {
+				session_cookie_name,
+				login_ip_rate_limiter: limiters.ip,
+				login_account_rate_limiter: limiters.account,
+				login_fail_floor_ms: 0
+			})
+		),
+		...create_rpc_endpoint({
+			notification_sender: ctx.deps.notification_sender,
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
+			path: RPC_PATH,
+			actions: create_standard_rpc_actions(ctx.deps),
+			log: ctx.deps.log
 		})
-	),
-	...create_rpc_endpoint({
-		notification_sender: ctx.deps.notification_sender,
-		action_ip_rate_limiter: null,
-		action_account_rate_limiter: null,
-		path: RPC_PATH,
-		actions: create_standard_rpc_actions(ctx.deps),
-		log: ctx.deps.log
-	})
-];
+	];
 
 /**
  * `stub_password_deps` whose next `verify_password` after `hold()` waits until
@@ -132,13 +150,17 @@ interface Setup {
 	admin_headers: () => Record<string, string>;
 }
 
-const setup = async (db: Db, exclude_db_invariants?: DbInvariantExclusions): Promise<Setup> => {
+const setup = async (
+	db: Db,
+	exclude_db_invariants?: DbInvariantExclusions,
+	limiters: Limiters = NO_LIMITERS
+): Promise<Setup> => {
 	const latched = create_latched_password();
 	const test_app = await create_test_app({
 		session_cookie_name,
 		db,
 		password: latched.deps,
-		create_route_specs,
+		create_route_specs: create_route_specs_with(limiters),
 		exclude_db_invariants
 	});
 	const admin = await test_app.create_account({ username: 'race_admin', roles: [ROLE_ADMIN] });
@@ -169,14 +191,58 @@ const cookie_of = (response: Response): string => {
 	return line.split(';')[0]!;
 };
 
-const change_password = (test_app: TestApp, cookie: string) =>
+const change_password_with = (
+	test_app: TestApp,
+	cookie: string,
+	current_password: string,
+	new_password: string
+) =>
 	Promise.resolve(
 		test_app.app.request('/api/account/password', {
 			method: 'POST',
 			headers: { ...json_headers, cookie },
-			body: JSON.stringify({ current_password: OLD_PASSWORD, new_password: NEW_PASSWORD })
+			body: JSON.stringify({ current_password, new_password })
 		})
 	);
+
+const change_password = (test_app: TestApp, cookie: string) =>
+	change_password_with(test_app, cookie, OLD_PASSWORD, NEW_PASSWORD);
+
+const logout = (test_app: TestApp, cookie: string) =>
+	Promise.resolve(
+		test_app.app.request('/api/account/logout', {
+			method: 'POST',
+			headers: { ...json_headers, cookie }
+		})
+	);
+
+/**
+ * A change that lost because the session it was made on died after it read
+ * its hash: 401 `invalid_credentials`, one `concurrent_change` failure row,
+ * and the old password still the one that logs in.
+ */
+const assert_change_lost_to_dead_session = async (s: Setup, answer: Response, label: string) => {
+	assert.strictEqual(answer.status, 401, label);
+	assert.deepStrictEqual(await answer.json(), { error: ERROR_INVALID_CREDENTIALS }, label);
+	const changes = await query_audit_log_list(
+		{ db: s.test_app.backend.deps.db },
+		{ event_type: 'password_change', account_id: s.victim_id }
+	);
+	assert.deepStrictEqual(
+		changes.map((row) => [row.outcome, row.metadata?.reason]),
+		[['failure', 'concurrent_change']],
+		`${label}: audited as a lost race, never as a change`
+	);
+	assert.strictEqual((await login(s.test_app, NEW_PASSWORD)).status, 401, `${label}: not changed`);
+	assert.strictEqual((await login(s.test_app, OLD_PASSWORD)).status, 200, `${label}: old holds`);
+};
+
+/** Matches the password change's hash read through its session. */
+const is_session_password_hash_read = (sql: string): boolean =>
+	sql.includes('FROM auth_session s JOIN account a');
+
+/** The address an in-process request's limiters key on. */
+const TEST_CLIENT_IP = '127.0.0.1';
 
 const admin_action = async (s: Setup, method: string) => {
 	const result = await rpc_call({
@@ -312,6 +378,174 @@ describe_db('credential mint race', (get_db) => {
 				200,
 				'the old password still holds after the undelete'
 			);
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	/**
+	 * A password change whose credential is read, then outlived: held at the
+	 * credential leg's account read (`stall`), past its session read, while
+	 * another session's change of the same account commits and revokes it.
+	 * The held change then holds a dead session and the other change's hash;
+	 * it is a lost race (`concurrent_change`), charged to both limiters,
+	 * whichever password it sends — never verified against the new hash, and
+	 * never landing with it.
+	 */
+	const OTHER_PASSWORD = 'other-password-race-3';
+	const LIMIT = 5;
+	for (const sent of ['the old password', "the other change's password"] as const) {
+		test(`a password change outlived by another after its credential is read is a lost race, sending ${sent}`, async () => {
+			const gated = create_gated_db(get_db());
+			const limiters: Limiters = {
+				ip: create_rate_limiter({ max_attempts: LIMIT, window_ms: 60_000 }),
+				account: create_rate_limiter({ max_attempts: LIMIT, window_ms: 60_000 })
+			};
+			const s = await setup(gated.db, undefined, limiters);
+			try {
+				const first = await login(s.test_app, OLD_PASSWORD);
+				const second = await login(s.test_app, OLD_PASSWORD);
+				assert.strictEqual(first.status, 200);
+				assert.strictEqual(second.status, 200);
+				const held = gated.stall((sql) => /\bFROM account WHERE id = \$1\b/.test(sql));
+				const raced = change_password_with(
+					s.test_app,
+					cookie_of(first),
+					sent === 'the old password' ? OLD_PASSWORD : OTHER_PASSWORD,
+					NEW_PASSWORD
+				);
+				await held.reached;
+				const other = await change_password_with(
+					s.test_app,
+					cookie_of(second),
+					OLD_PASSWORD,
+					OTHER_PASSWORD
+				);
+				assert.strictEqual(other.status, 200, 'the other change');
+				held.release();
+
+				const answer = await raced;
+				assert.strictEqual(answer.status, 401, 'the outlived change');
+				assert.deepStrictEqual(await answer.json(), { error: ERROR_INVALID_CREDENTIALS });
+				const failures = await query_audit_log_list(
+					{ db: s.test_app.backend.deps.db },
+					{ event_type: 'password_change', outcome: 'failure', account_id: s.victim_id }
+				);
+				assert.deepStrictEqual(
+					failures.map((row) => row.metadata?.reason),
+					['concurrent_change'],
+					'audited as a lost race'
+				);
+				assert.strictEqual(
+					limiters.account!.check(s.victim_id).remaining,
+					LIMIT - 1,
+					'charged to the account'
+				);
+				assert.strictEqual(
+					limiters.ip!.check(TEST_CLIENT_IP).remaining,
+					LIMIT - 1,
+					'charged to the address'
+				);
+				assert.strictEqual(
+					(await login(s.test_app, OTHER_PASSWORD)).status,
+					200,
+					"the other change's password holds"
+				);
+			} finally {
+				await s.test_app.cleanup();
+			}
+		});
+	}
+
+	test('a password change whose account is purged after its credential is read is a lost race', async () => {
+		const gated = create_gated_db(get_db());
+		const limiters: Limiters = {
+			ip: create_rate_limiter({ max_attempts: LIMIT, window_ms: 60_000 }),
+			account: create_rate_limiter({ max_attempts: LIMIT, window_ms: 60_000 })
+		};
+		const s = await setup(gated.db, undefined, limiters);
+		try {
+			const first = await login(s.test_app, OLD_PASSWORD);
+			assert.strictEqual(first.status, 200);
+			// a verify would mean the route read a hash for the purged account
+			const verify = s.hold();
+			let verified = false;
+			void verify.reached.then(() => {
+				verified = true;
+				verify.release();
+			});
+			// past the credential leg and the account reservation, held at the
+			// route's hash read through the session — the window Rust's case
+			// holds at its next checkout
+			const held = gated.stall(is_session_password_hash_read);
+			const raced = change_password(s.test_app, cookie_of(first));
+			assert.strictEqual(
+				await Promise.race([held.reached.then(() => 'held'), raced.then(() => 'answered')]),
+				'held',
+				'the change is held at its hash read'
+			);
+			const purged = await rpc_call({
+				app: s.test_app.app,
+				path: RPC_PATH,
+				method: 'account_purge',
+				params: { account_id: s.victim_id, confirm: true },
+				headers: s.test_app.create_daemon_token_headers(),
+				suppress_default_origin: true
+			});
+			assert.ok(purged.ok, `the purge: ${JSON.stringify(purged)}`);
+			held.release();
+
+			const answer = await raced;
+			assert.strictEqual(answer.status, 401, 'the change after the purge');
+			assert.deepStrictEqual(await answer.json(), { error: ERROR_INVALID_CREDENTIALS });
+			const failures = await query_audit_log_list(
+				{ db: s.test_app.backend.deps.db },
+				{ event_type: 'password_change', outcome: 'failure', account_id: s.victim_id }
+			);
+			assert.deepStrictEqual(
+				failures.map((row) => row.metadata?.reason),
+				['concurrent_change'],
+				'audited as a lost race'
+			);
+			assert.strictEqual(limiters.account!.check(s.victim_id).remaining, LIMIT - 1);
+			assert.strictEqual(limiters.ip!.check(TEST_CLIENT_IP).remaining, LIMIT - 1);
+			assert.ok(!verified, 'answered at the read, with no hash to verify');
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('a password change held across a delete and an undelete changes nothing', async () => {
+		const s = await setup(get_db());
+		try {
+			const first = await login(s.test_app, OLD_PASSWORD);
+			assert.strictEqual(first.status, 200);
+			// its hash read through its live session, its verify held
+			const held = s.hold();
+			const raced = change_password(s.test_app, cookie_of(first));
+			await held.reached;
+			await admin_action(s, 'account_delete');
+			await admin_action(s, 'account_undelete');
+			held.release();
+			// the account is live again and holds the verified hash, but the
+			// delete revoked the session the change was made on
+			await assert_change_lost_to_dead_session(s, await raced, 'the change across the undelete');
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('a password change held across a logout of its session changes nothing', async () => {
+		const s = await setup(get_db());
+		try {
+			const first = await login(s.test_app, OLD_PASSWORD);
+			assert.strictEqual(first.status, 200);
+			const held = s.hold();
+			const raced = change_password(s.test_app, cookie_of(first));
+			await held.reached;
+			assert.strictEqual((await logout(s.test_app, cookie_of(first))).status, 200, 'the logout');
+			held.release();
+			await assert_change_lost_to_dead_session(s, await raced, 'the change across the logout');
 		} finally {
 			await s.test_app.cleanup();
 		}
@@ -498,6 +732,17 @@ describe_db('credential mint race', (get_db) => {
 	});
 });
 
+/** Backends waiting on a lock `holder_pid` holds. */
+const count_blocked_by = async (db: Db, holder_pid: number): Promise<number> =>
+	Number(
+		(
+			await db.query<{ n: string }>(
+				`SELECT COUNT(*) AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))`,
+				[holder_pid]
+			)
+		)[0]!.n
+	);
+
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
 /**
@@ -532,6 +777,47 @@ const assert_waits_on_held_commit = async (
 
 describe_pg('credential mint race: the lock serializes', (get_db) => {
 	install_audit_drift_guard();
+
+	/**
+	 * A logout committing while the change waits on the account row — a
+	 * transaction holding the row the change's `UPDATE` needs — is seen: the
+	 * change reads its session again once it holds the row, so it is refused
+	 * rather than committing for a session already revoked. A check inside the
+	 * `UPDATE` alone reads its subquery as of the statement's start, before the
+	 * wait, and misses it.
+	 */
+	test('a password change waiting on the account row across a logout of its session changes nothing', async () => {
+		const s = await setup(get_db());
+		const db = s.test_app.backend.deps.db;
+		const first = await login(s.test_app, OLD_PASSWORD);
+		assert.strictEqual(first.status, 200);
+		const release = Promise.withResolvers<void>();
+		const holding = Promise.withResolvers<number>();
+		// a login's or a token mint's lock on the account row, say
+		const holder = db.transaction(async (tx) => {
+			await tx.query(`SELECT id FROM account WHERE id = $1 FOR NO KEY UPDATE`, [s.victim_id]);
+			const [row] = await tx.query<{ pid: number }>(`SELECT pg_backend_pid() AS pid`);
+			holding.resolve(row!.pid);
+			await release.promise;
+		});
+		try {
+			const holder_pid = await holding.promise;
+			const raced = change_password(s.test_app, cookie_of(first));
+			const deadline = Date.now() + 20_000;
+			while ((await count_blocked_by(db, holder_pid)) < 1) {
+				assert.ok(Date.now() < deadline, 'the change never waited on the held row');
+				await wait(5);
+			}
+			assert.strictEqual((await logout(s.test_app, cookie_of(first))).status, 200, 'the logout');
+			release.resolve();
+			await holder;
+			await assert_change_lost_to_dead_session(s, await raced, 'the change that waited');
+		} finally {
+			release.resolve();
+			await holder.catch(() => {});
+			await s.test_app.cleanup();
+		}
+	});
 
 	test('a login waits on an uncommitted password change, then is refused', async () => {
 		const gated = create_gated_db(get_db());

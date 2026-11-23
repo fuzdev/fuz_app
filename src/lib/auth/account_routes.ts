@@ -29,12 +29,15 @@ import {
 } from './account_route_schema.ts';
 import {
 	create_capped_session,
+	query_session_is_live,
+	query_session_live_password_hash,
 	query_session_revoke_all_for_account,
 	query_session_revoke_by_hash_unscoped
 } from './session_queries.ts';
 import {
 	query_account_by_id,
 	query_account_by_username_or_email,
+	query_account_lock_live,
 	query_account_lock_verified,
 	query_update_account_password
 } from './account_queries.ts';
@@ -536,7 +539,45 @@ export const create_account_route_specs = (
 				}
 				account_reservation = account_reserved.reservation;
 
-				const valid = await password.verify_password(current_password, ctx.account.password_hash);
+				// Lost to a concurrent change, a delete or a purge: the caller's
+				// `current_password` may have been right when the request was
+				// authorized, so the row says so rather than "user typoed".
+				// Sessions and tokens were already revoked by the winner; no
+				// cookie clear here either.
+				const lost_race = async () => {
+					ip_reserved.reservation.record();
+					account_reservation?.record();
+					await deps.audit.emit(route, {
+						event_type: 'password_change',
+						outcome: 'failure',
+						account_id: ctx.account.id,
+						ip: route.client_ip,
+						metadata: { reason: 'concurrent_change', credential_type }
+					});
+					return route_fail(REST_INVALID_CREDENTIALS);
+				};
+
+				// the shape admits only a session credential, so this is its hash
+				// (the Rust `account_password` reads the same value)
+				const change_session_hash = resolved_auth_session_hash(route.credential);
+				if (change_session_hash === null) {
+					// a 500 with nothing changed, as the Rust handler answers
+					throw new Error('password: the session gate admitted a caller with no session hash');
+				}
+				// The hash to verify against, read through the session that
+				// authorized the request: a change committed since the credential
+				// leg revoked it, so a dead session has no hash to verify — the
+				// race was lost before the verify — and a live one names the hash
+				// the session was resolved under, never a later change's. Twin of
+				// the Rust spine's read at the same step.
+				const verified_hash = await query_session_live_password_hash(
+					route,
+					change_session_hash,
+					ctx.account.id
+				);
+				if (verified_hash === undefined) return await lost_race();
+
+				const valid = await password.verify_password(current_password, verified_hash);
 				if (!valid) {
 					ip_reserved.reservation.record();
 					account_reservation?.record();
@@ -557,7 +598,7 @@ export const create_account_route_specs = (
 				const new_hash = await password.hash_password(new_password);
 				// Conditional UPDATE keyed on the verified hash: closes the
 				// verify-write race with a concurrent password change that
-				// already committed against the same starting hash. Account-grain
+				// commits after the hash was read. Account-grain
 				// operation — `updated_by` stays null (the per-request actor is
 				// incidental; password is account-level state).
 				//
@@ -568,15 +609,30 @@ export const create_account_route_specs = (
 				// Argon2 verify and hash held no connection). Twin of the Rust
 				// spine's `change_password`. The audit row is written last, so a
 				// refused row changes no password and revokes nothing. `null` when
-				// the UPDATE matched nothing — a concurrent change or a delete
-				// committed first.
+				// the account or the session died since the hash read, or the
+				// UPDATE matched nothing — a concurrent change committed first.
 				const change = await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
+					// The account row first, then the session again under it. The
+					// session died between the hash read and here when a delete
+					// (an undelete since makes the row live again, with the
+					// verified hash) or a logout or a session revoke committed —
+					// before the lock was granted, so this read sees it. A change
+					// by a revoked session would otherwise land. A logout or a
+					// session revoke takes no account row: one after this read
+					// meets the revoke-all at the session row, which ends that
+					// session with the rest. The same pair the token mint takes.
+					if (
+						!(await query_account_lock_live(tx_ctx, ctx.account.id)) ||
+						!(await query_session_is_live(tx_ctx, change_session_hash, ctx.account.id))
+					) {
+						return null;
+					}
 					const updated = await query_update_account_password(
 						tx_ctx,
 						ctx.account.id,
 						new_hash,
 						null,
-						ctx.account.password_hash
+						verified_hash
 					);
 					if (!updated) return null;
 					// revoke all sessions and API tokens (force re-auth everywhere)
@@ -615,26 +671,11 @@ export const create_account_route_specs = (
 				// rather than netting out, which is the intent.
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
 
-				if (!change) {
-					// A concurrent password change committed first — our
-					// `current_password` was correct at read-time but the row's
-					// `password_hash` no longer matches — or a delete did, and the
-					// row is a tombstone. Mirrors the wrong-password
-					// 401 shape; tag the failure metadata so admins reading the
-					// audit log can distinguish "user typoed" from "two clients
-					// raced." Sessions/tokens were already revoked by the winner;
-					// no cookie clear here either.
-					ip_reserved.reservation.record();
-					account_reservation?.record();
-					await deps.audit.emit(route, {
-						event_type: 'password_change',
-						outcome: 'failure',
-						account_id: ctx.account.id,
-						ip: route.client_ip,
-						metadata: { reason: 'concurrent_change', credential_type }
-					});
-					return route_fail(REST_INVALID_CREDENTIALS);
-				}
+				// A concurrent password change committed after the hash was read —
+				// our `current_password` was correct then, but the row's
+				// `password_hash` no longer matches — or a delete or a purge did,
+				// and the row is a tombstone or gone.
+				if (!change) return await lost_race();
 
 				const { sessions_revoked, tokens_revoked } = change;
 

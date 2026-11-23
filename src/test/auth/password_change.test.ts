@@ -59,6 +59,7 @@ const { mock_update_password, mock_revoke_all, mock_revoke_all_tokens } = vi.hoi
 vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_username_or_email: vi.fn(),
 	query_update_account_password: mock_update_password,
+	query_account_lock_live: vi.fn(() => Promise.resolve(true)),
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
 	query_active_actors_by_account: vi.fn(() => Promise.resolve([]))
@@ -70,7 +71,10 @@ vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
 		...actual,
 		query_create_session: vi.fn(() => Promise.resolve()),
 		query_session_enforce_limit: vi.fn(() => Promise.resolve([])),
-		query_session_revoke_all_for_account: mock_revoke_all
+		query_session_revoke_all_for_account: mock_revoke_all,
+		// the hash the session lives under — `fake_account`'s
+		query_session_live_password_hash: vi.fn(() => Promise.resolve('fake_hash')),
+		query_session_is_live: vi.fn(() => Promise.resolve(true))
 	};
 });
 

@@ -97,6 +97,7 @@ let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
+	query_account_lock_live: vi.fn(() => Promise.resolve(true)),
 	query_admin_account_list: vi.fn(() => Promise.resolve([])),
 	// the login's locked re-read finds the account as its verify read it
 	query_account_lock_verified: vi.fn(() => Promise.resolve(true))
@@ -112,7 +113,10 @@ vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
 		query_session_revoke_all_for_account: mock_session_revoke_all,
 		query_session_revoke_for_account: mock_session_revoke_for_account,
 		query_session_list_for_account: mock_session_list_for_account,
-		query_session_list_all_active: mock_session_list_all_active
+		query_session_list_all_active: mock_session_list_all_active,
+		// the hash the session lives under — the fixture account's
+		query_session_live_password_hash: vi.fn(() => Promise.resolve('fake_hash')),
+		query_session_is_live: vi.fn(() => Promise.resolve(true))
 	};
 });
 

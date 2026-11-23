@@ -362,6 +362,11 @@ const RULE_3_DOWNGRADE_SITES: ReadonlyArray<{
 					'`/logout` revokes the session it was called on; its shape admits only a session credential, so no bearer reaches it'
 			},
 			{
+				source: 'const change_session_hash = resolved_auth_session_hash(route.credential);',
+				reason:
+					'`/password` reads the hash it verifies through the session it was called on; its shape admits only a session credential, so no bearer reaches it'
+			},
+			{
 				source: 'const credential_type = route.credential?.credential_type;',
 				reason:
 					'`/password` records the credential type in its audit metadata; credential-gated to the session channel'
