@@ -33,7 +33,7 @@ import {
 } from '#lib/auth/role_grant_queries.ts';
 import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
@@ -57,7 +57,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('session list only returns sessions for the queried account', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice');
 		const bob = await create_user(db, 'iso_bob');
 
@@ -82,7 +82,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('session revoke_for_account rejects cross-account revocation', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_rev');
 		const bob = await create_user(db, 'iso_bob_rev');
 
@@ -101,7 +101,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('session revoke_all only affects the target account', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_ra');
 		const bob = await create_user(db, 'iso_bob_ra');
 
@@ -121,7 +121,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('token list only returns tokens for the queried account', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_tok');
 		const bob = await create_user(db, 'iso_bob_tok');
 
@@ -156,7 +156,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('token revoke_for_account rejects cross-account revocation', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_trev');
 		const bob = await create_user(db, 'iso_bob_trev');
 
@@ -181,7 +181,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('token revoke_all only affects the target account', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_tra');
 		const bob = await create_user(db, 'iso_bob_tra');
 
@@ -216,7 +216,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('validating a token returns the correct account_id', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_val');
 		const bob = await create_user(db, 'iso_bob_val');
 
@@ -239,7 +239,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('role_grant queries are actor-scoped — no cross-actor leakage', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_perm');
 		const bob = await create_user(db, 'iso_bob_perm');
 
@@ -267,7 +267,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('audit log queries are account-scoped — no cross-account metadata leakage', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_audit');
 		const bob = await create_user(db, 'iso_bob_audit');
 
@@ -297,7 +297,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('audit log cross-account events appear for both actor and target', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const admin = await create_user(db, 'iso_admin_audit');
 		const target = await create_user(db, 'iso_target_audit');
 
@@ -306,7 +306,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 			account_id: admin.account_id,
 			actor_id: admin.actor_id,
 			target_account_id: target.account_id,
-			metadata: { role: 'admin', role_grant_id: 'test-1' as Uuid }
+			metadata: { role: 'admin', role_grant_id: create_uuid() }
 		});
 
 		// event visible to both admin (as actor) and target (as target)
@@ -321,7 +321,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('role_grant_revoke audit event is visible to both revoker and revokee', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const admin = await create_user(db, 'iso_admin_revoke');
 		const target = await create_user(db, 'iso_target_revoke');
 
@@ -331,7 +331,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 			actor_id: admin.actor_id,
 			target_account_id: target.account_id,
 			target_actor_id: target.actor_id,
-			metadata: { role: 'admin', role_grant_id: 'rev-1' as Uuid, scope_id: null, reason: 'cleanup' }
+			metadata: { role: 'admin', role_grant_id: create_uuid(), scope_id: null, reason: 'cleanup' }
 		});
 
 		const admin_events = await query_audit_log_list(deps, { account_id: admin.account_id });
@@ -350,7 +350,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('event_type filter combines with account_id — no other-account events leak in', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_combined');
 		const bob = await create_user(db, 'iso_bob_combined');
 
@@ -377,7 +377,7 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 	test('role_grant revoke with wrong actor_id returns null (IDOR guard)', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const alice = await create_user(db, 'iso_alice_idor');
 		const bob = await create_user(db, 'iso_bob_idor');
 

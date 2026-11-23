@@ -38,6 +38,8 @@ import {
 } from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
+const log = new Logger('test', { level: 'off' });
+
 describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 	const { build_app_with_audit } = create_multi_actor_helpers(get_db);
 
@@ -201,7 +203,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			// not via fire-and-forget; assert against the DB.
 			const accept_result = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: offer_a_res.result.offer.id,
 						to_account_id: recipient.account.id,

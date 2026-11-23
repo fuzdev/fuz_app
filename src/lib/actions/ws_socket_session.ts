@@ -811,7 +811,9 @@ export const create_ws_socket_events = (
 		try {
 			json = parse_json_text(String(data));
 		} catch (error) {
-			log.error('JSON parse error:', error);
+			// a client's malformed frame is its own fault, answered `parse_error`: debug, as the
+			// HTTP RPC endpoint and the Rust spine log nothing for it
+			log.debug('JSON parse error:', error);
 			send_error(null, jsonrpc_error_messages.parse_error());
 			return;
 		}

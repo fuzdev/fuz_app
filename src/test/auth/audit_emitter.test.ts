@@ -38,7 +38,7 @@ import {
 	type AuditLogInput
 } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 const log = new Logger('test', { level: 'error' });
 const noop = (): void => {};
@@ -972,7 +972,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 			event_type: 'role_grant_revoke',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: { role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null },
+			metadata: { role: 'admin', role_grant_id: create_uuid(), scope_id: null },
 			outcome: 'success'
 		});
 

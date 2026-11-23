@@ -28,10 +28,12 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
 
+const TEST_ACCOUNT_ID = '00000000-0000-4000-8000-00000000a001' as Uuid;
+
 /** Create a test request context for an authenticated user. */
 const create_test_ctx = (): RequestContext => ({
 	account: {
-		id: 'acc_1' as Uuid,
+		id: TEST_ACCOUNT_ID,
 		username: 'alice',
 		email: 'alice@example.com',
 		email_verified: false,
@@ -44,8 +46,8 @@ const create_test_ctx = (): RequestContext => ({
 		deleted_by: null
 	},
 	actor: {
-		id: 'act_1' as Uuid,
-		account_id: 'acc_1' as Uuid,
+		id: '00000000-0000-4000-8000-00000000b001' as Uuid,
+		account_id: TEST_ACCOUNT_ID,
 		name: 'alice',
 		created_at: '2025-01-01T00:00:00Z',
 		updated_at: null,
@@ -196,7 +198,7 @@ describe('account status authenticated', () => {
 		const res = await app.request('/status');
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.account.id, 'acc_1');
+		assert.strictEqual(body.account.id, TEST_ACCOUNT_ID);
 		assert.strictEqual(body.account.username, 'alice');
 		assert.strictEqual(body.account.email, 'alice@example.com');
 		assert.strictEqual(body.account.created_at, '2025-01-01T00:00:00Z');

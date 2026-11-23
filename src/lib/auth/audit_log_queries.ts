@@ -13,6 +13,8 @@
  */
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
@@ -98,12 +100,20 @@ export const reset_audit_unknown_event_type_failures = (): void => {
 };
 
 /**
+ * Deps for `query_audit_log`, which logs the drift it counts (an unknown
+ * `event_type`, a metadata mismatch) on `log`.
+ */
+export interface AuditLogQueryDeps extends QueryDeps {
+	log: Logger;
+}
+
+/**
  * Insert an audit log entry.
  *
  * Returns the full row (`AUDIT_LOG_COLUMNS`) so callers receive DB-assigned
  * fields (`id`, `seq`, `created_at`). Validates `metadata` against
  * `config.metadata_schemas`; unknown `event_type` and metadata mismatches
- * log + bump their counters
+ * log an error on `deps.log` and bump their counters
  * but write the row anyway. Consumers extend the recognized set via
  * `create_audit_log_config({extra_events})`.
  *
@@ -112,7 +122,7 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * reach for `AppDeps.audit.emit` instead, which picks the transaction or the
  * pool by outcome.
  *
- * @param deps - query dependencies
+ * @param deps - query dependencies and the logger the drift is reported on
  * @param input - the audit event to record
  * @param config - audit-log config. Defaults to `builtin_audit_log_config`.
  * @returns the inserted audit log row
@@ -120,13 +130,13 @@ export const reset_audit_unknown_event_type_failures = (): void => {
  * @mutates drift counters - bumps `audit_unknown_event_type_failures` and/or `audit_metadata_validation_failures` on mismatch
  */
 export const query_audit_log = async <T extends string>(
-	deps: QueryDeps,
+	deps: AuditLogQueryDeps,
 	input: AuditLogInput<T>,
 	config: AuditLogConfig = builtin_audit_log_config
 ): Promise<AuditLogEvent> => {
 	if (!config.event_types.includes(input.event_type)) {
 		audit_unknown_event_type_failures++;
-		console.error(
+		deps.log.error(
 			`[audit_log] unknown event_type '${
 				input.event_type
 			}' — register via create_audit_log_config({extra_events})`
@@ -138,7 +148,7 @@ export const query_audit_log = async <T extends string>(
 			const result = parse(schema, input.metadata);
 			if (!result.ok) {
 				audit_metadata_validation_failures++;
-				console.error(`[audit_log] metadata mismatch for '${input.event_type}':`, result.issues);
+				deps.log.error(`[audit_log] metadata mismatch for '${input.event_type}':`, result.issues);
 			}
 		}
 	}

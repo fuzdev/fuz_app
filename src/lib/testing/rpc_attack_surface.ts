@@ -16,6 +16,7 @@ import './assert_dev_env.ts';
 
 import { test, assert, describe } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type {
 	AppSurfaceRpcEndpoint,
@@ -109,15 +110,34 @@ const to_reached_key = (endpoint_path: string, method_name: string): string =>
 	`${endpoint_path} ${method_name}`;
 
 /**
+ * A stub handler's answer: a value generated to pass the action's output
+ * schema (`generate_valid_body`; `null` for a null output), so DEV output
+ * validation has nothing to report. An output the generator can't reach
+ * makes the handler throw, naming the action — the method's "correct auth
+ * passes" test fails on the 500, and a logged-error gate on the log line.
+ */
+const create_stub_output = (action: RpcAction): (() => unknown) => {
+	try {
+		const output = generate_valid_body(action.spec.output) ?? null;
+		return () => output;
+	} catch (error) {
+		const message = `stub handler for '${action.spec.method}' has no generated output: ${to_error_message(error)}`;
+		return () => {
+			throw new Error(message);
+		};
+	}
+};
+
+/**
  * The route specs with every RPC endpoint's routes rebuilt over its actions,
  * each handler swapped for a stub that records its call in `reached` and
- * answers `null`, so a test that the handler is reached never depends on
- * what the handler would do over stub deps (a live re-read's 401). Each
- * endpoint's routes take the place of its first route in the list, matched
- * on method and path, so another route at the endpoint's path stays; the
- * rest of the list is kept in order. The endpoints mount with no rate limiters,
- * a silent logger (a stub's `null` fails a non-null output schema, which DEV
- * validation only logs), and the no-op notification sender.
+ * answers a generated schema-valid output (`create_stub_output`), so a test
+ * that the handler is reached never depends on what the handler would do
+ * over stub deps (a live re-read's 401). Each endpoint's routes take the
+ * place of its first route in the list, matched on method and path, so
+ * another route at the endpoint's path stays; the rest of the list is kept
+ * in order. The endpoints mount with no rate limiters, a silent logger, and
+ * the no-op notification sender.
  *
  * @param route_specs - the app's route specs, the endpoints' routes among them
  * @param rpc_endpoint_specs - the endpoints whose handlers are stubbed
@@ -135,13 +155,16 @@ const stub_rpc_endpoint_handlers = (
 	for (const endpoint of rpc_endpoint_specs) {
 		const rebuilt = create_rpc_endpoint({
 			path: endpoint.path,
-			actions: endpoint.actions.map((action): RpcAction => ({
-				spec: action.spec,
-				handler: () => {
-					reached.add(to_reached_key(endpoint.path, action.spec.method));
-					return null;
-				}
-			})),
+			actions: endpoint.actions.map((action): RpcAction => {
+				const answer = create_stub_output(action);
+				return {
+					spec: action.spec,
+					handler: () => {
+						reached.add(to_reached_key(endpoint.path, action.spec.method));
+						return answer();
+					}
+				};
+			}),
 			log,
 			action_ip_rate_limiter: null,
 			action_account_rate_limiter: null,
@@ -325,11 +348,13 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 								endpoint.path,
 								create_rpc_post_init(method.name, params)
 							);
+							const text = await res.text();
 							assert.ok(
 								reached.has(key),
-								`${method.name} should reach its handler, got ${res.status}: ${await res.text()}`
+								`${method.name} should reach its handler, got ${res.status}: ${text}`
 							);
-							assert.strictEqual(res.status, 200, `${method.name} should answer 200`);
+							// a stub with no generated output throws, naming why, in the 500's body
+							assert.strictEqual(res.status, 200, `${method.name} should answer 200, got: ${text}`);
 						});
 					}
 				});

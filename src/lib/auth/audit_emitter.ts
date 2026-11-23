@@ -486,7 +486,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		input: AuditLogInput<T>
 	): Promise<AuditLogEvent | null> => {
 		try {
-			return await query_audit_log({ db }, input, audit_log_config);
+			return await query_audit_log({ db, log }, input, audit_log_config);
 		} catch (err) {
 			audit_write_failures++;
 			log.error(
@@ -553,7 +553,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		// Written in the request's transaction, so it commits or rolls back
 		// with the change it reports; a throw here fails the handler. The
 		// fan-out waits for the commit and is discarded on rollback.
-		const event = await query_audit_log({ db: ctx.db }, input, audit_log_config);
+		const event = await query_audit_log({ db: ctx.db, log }, input, audit_log_config);
 		emit_after_commit(ctx, () => notify(event));
 	};
 	// The decorated `emit` is what `emit_role_grant_target` captures below

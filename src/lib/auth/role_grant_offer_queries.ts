@@ -36,7 +36,7 @@ import type {
 	RoleGrantOffer,
 	SupersededOffer
 } from './role_grant_offer_schema.ts';
-import { query_audit_log } from './audit_log_queries.ts';
+import { query_audit_log, type AuditLogQueryDeps } from './audit_log_queries.ts';
 import {
 	query_account_lock_for_offer_accept,
 	query_account_lock_for_revoke,
@@ -649,7 +649,7 @@ export interface AcceptOfferResult {
  * @throws Error if the accepting `actor_id` does not belong to `to_account_id`, or invariant assertions fail
  */
 export const query_accept_offer = async (
-	deps: QueryDeps,
+	deps: AuditLogQueryDeps,
 	input: AcceptOfferInput
 ): Promise<AcceptOfferResult> => {
 	const { offer_id, to_account_id, actor_id, ip } = input;

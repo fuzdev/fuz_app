@@ -11,6 +11,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
@@ -24,10 +25,12 @@ import { describe_db } from '../db_fixture.ts';
 import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
 import { query_role_grant_has_role, select_role_grant_offer } from './auth_test_queries.ts';
 
+const log = new Logger('test', { level: 'off' });
+
 describe_db('role_grant_offer_queries.accept', (get_db) => {
 	test('accept inserts role_grant + stamps resulting_role_grant_id + emits audit events', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_accept');
 		const recipient = await make_account(db, 'recipient_accept');
 
@@ -75,7 +78,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('accept is idempotent on race — second call returns already-created role_grant', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_race');
 		const recipient = await make_account(db, 'recipient_race');
 
@@ -105,7 +108,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('a replay after the grant is revoked throws already_terminal, not the revoked grant', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_replay_revoked');
 		const recipient = await make_account(db, 'recipient_replay_revoked');
 
@@ -130,7 +133,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('accept throws already_terminal for declined / retracted offers', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_terminal');
 		const recipient = await make_account(db, 'recipient_terminal');
 
@@ -149,7 +152,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('accept rejects when to_account_id does not match the offer', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_idor_accept');
 		const recipient = await make_account(db, 'recipient_idor_accept');
 		const attacker = await make_account(db, 'attacker_idor_accept');
@@ -197,7 +200,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		// "for all callers including tests and future direct consumers" — so
 		// pin the contract here.
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_actor_check');
 		const recipient = await make_account(db, 'recipient_actor_check');
 		const stranger = await make_account(db, 'stranger_actor_check');

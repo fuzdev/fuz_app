@@ -11,7 +11,8 @@ import {
 	get_audit_metadata_validation_failures,
 	reset_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
-	reset_audit_unknown_event_type_failures
+	reset_audit_unknown_event_type_failures,
+	type AuditLogQueryDeps
 } from '#lib/auth/audit_log_queries.ts';
 import {
 	create_audit_emitter,
@@ -21,28 +22,29 @@ import {
 import { assert_no_audit_drift } from '#lib/testing/audit_drift_guard.ts';
 import { AuditLogEventJson, create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { query_create_account, query_create_actor } from '#lib/auth/account_queries.ts';
-import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { QueryDeps } from '#lib/db/query_deps.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 const create_test_account = async (
 	db: Db,
 	username: string
 ): Promise<{ account_id: Uuid; actor_id: Uuid }> => {
-	const deps = { db };
+	const deps = { db, log };
 	const account = await query_create_account(deps, { username, password_hash: 'hash' });
 	const actor = await query_create_actor(deps, account.id, username);
 	return { account_id: account.id, actor_id: actor.id };
 };
 
 describe_db('AuditLogQueries', (get_db) => {
-	let deps: QueryDeps;
+	let deps: AuditLogQueryDeps;
 
 	beforeEach(() => {
-		deps = { db: get_db() };
+		deps = { db: get_db(), log };
 	});
 
 	test('log creates an entry', async () => {
@@ -90,7 +92,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: { role: 'admin', role_grant_id: 'test-role_grant-1' as Uuid }
+			metadata: { role: 'admin', role_grant_id: create_uuid() }
 		});
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events[0]!.target_account_id, target.account_id);
@@ -342,19 +344,20 @@ describe_db('AuditLogQueries', (get_db) => {
 	test('list_role_grant_history returns role_grant_create and role_grant_revoke with usernames', async () => {
 		const admin = await create_test_account(get_db(), 'ph_admin');
 		const target = await create_test_account(get_db(), 'ph_target');
+		const role_grant_id = create_uuid();
 		await query_audit_log(deps, {
 			event_type: 'role_grant_create',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: { role: 'admin', role_grant_id: 'test-role_grant-2' as Uuid }
+			metadata: { role: 'admin', role_grant_id }
 		});
 		await query_audit_log(deps, {
 			event_type: 'role_grant_revoke',
 			actor_id: admin.actor_id,
 			account_id: admin.account_id,
 			target_account_id: target.account_id,
-			metadata: { role: 'admin', role_grant_id: 'test-role_grant-2' as Uuid }
+			metadata: { role: 'admin', role_grant_id }
 		});
 		// login event should NOT appear in role_grant history
 		await query_audit_log(deps, {
@@ -382,7 +385,7 @@ describe_db('AuditLogQueries', (get_db) => {
 				actor_id: admin.actor_id,
 				account_id: admin.account_id,
 				target_account_id: target.account_id,
-				metadata: { role: 'admin', role_grant_id: `test-role_grant-${i}` as Uuid }
+				metadata: { role: 'admin', role_grant_id: create_uuid() }
 			});
 		}
 		const limited = await query_audit_log_list_role_grant_history(deps, 2);
@@ -413,7 +416,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			actor_id: doomed.actor_id,
 			account_id: doomed.account_id,
 			target_account_id: target.account_id,
-			metadata: { role: 'admin', role_grant_id: 'test-role_grant-doomed' as Uuid }
+			metadata: { role: 'admin', role_grant_id: create_uuid() }
 		});
 		// delete both accounts
 		await get_db().query(`DELETE FROM account WHERE id = $1`, [doomed.account_id]);
@@ -428,9 +431,7 @@ describe_db('AuditLogQueries', (get_db) => {
 
 	test('metadata mismatch increments counter and writes the row anyway', async () => {
 		reset_audit_metadata_validation_failures();
-		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {
-			// suppress the expected error log
-		});
+		const error_spy = vi.spyOn(log, 'error').mockImplementation(() => {});
 		try {
 			const before = get_audit_metadata_validation_failures();
 			await query_audit_log(deps, {
@@ -444,7 +445,8 @@ describe_db('AuditLogQueries', (get_db) => {
 			const events = await query_audit_log_list(deps);
 			assert.strictEqual(events.length, 1);
 			assert.strictEqual(events[0]!.event_type, 'login');
-			assert.ok(error_spy.mock.calls.length >= 1);
+			assert.strictEqual(error_spy.mock.calls.length, 1);
+			assert.match(String(error_spy.mock.calls[0]![0]), /metadata mismatch for 'login'/);
 		} finally {
 			error_spy.mockRestore();
 			reset_audit_metadata_validation_failures();
@@ -515,9 +517,7 @@ describe_db('AuditLogQueries', (get_db) => {
 
 	test('consumer event type with metadata mismatch increments counter (fail-open)', async () => {
 		reset_audit_metadata_validation_failures();
-		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {
-			// suppress
-		});
+		const error_spy = vi.spyOn(log, 'error').mockImplementation(() => {});
 		try {
 			const config = create_audit_log_config({
 				extra_events: {
@@ -532,6 +532,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			);
 			const after = get_audit_metadata_validation_failures();
 			assert.strictEqual(after - before, 1);
+			assert.match(String(error_spy.mock.calls[0]![0]), /metadata mismatch for 'classroom_create'/);
 			// row was still written
 			const events = await query_audit_log_list(deps);
 			assert.strictEqual(events.length, 1);
@@ -562,7 +563,7 @@ describe_db('AuditLogQueries', (get_db) => {
 
 	test('builtin event types still validate against builtin schemas with consumer config', async () => {
 		reset_audit_metadata_validation_failures();
-		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const error_spy = vi.spyOn(log, 'error').mockImplementation(() => {});
 		try {
 			const config = create_audit_log_config({ extra_events: { classroom_create: null } });
 			const before = get_audit_metadata_validation_failures();
@@ -574,6 +575,7 @@ describe_db('AuditLogQueries', (get_db) => {
 			);
 			const after = get_audit_metadata_validation_failures();
 			assert.strictEqual(after - before, 1);
+			assert.match(String(error_spy.mock.calls[0]![0]), /metadata mismatch for 'login'/);
 		} finally {
 			error_spy.mockRestore();
 			reset_audit_metadata_validation_failures();
@@ -582,13 +584,14 @@ describe_db('AuditLogQueries', (get_db) => {
 
 	test('unregistered event_type increments the unknown-event-type counter (fail-open)', async () => {
 		reset_audit_unknown_event_type_failures();
-		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const error_spy = vi.spyOn(log, 'error').mockImplementation(() => {});
 		try {
 			const before = get_audit_unknown_event_type_failures();
 			// emitting with the builtin config — 'classroom_create' is unregistered
 			await query_audit_log(deps, { event_type: 'classroom_create', metadata: { anything: true } });
 			const after = get_audit_unknown_event_type_failures();
 			assert.strictEqual(after - before, 1);
+			assert.match(String(error_spy.mock.calls[0]![0]), /unknown event_type 'classroom_create'/);
 			// row was still written
 			const events = await query_audit_log_list(deps);
 			assert.strictEqual(events.length, 1);
@@ -634,7 +637,6 @@ describe_db('AuditLogQueries', (get_db) => {
 				classroom_create: s.loose_object({ classroom_id: s.string, name: s.string })
 			}
 		});
-		const log = new Logger('test', { level: 'off' });
 		const pending_effects: Array<Promise<void>> = [];
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const seen: Array<string> = [];
@@ -669,7 +671,6 @@ describe_db('AuditLogQueries', (get_db) => {
 
 	test('a write the database refuses is counted, announced to no listener, and trips the drift check', async () => {
 		reset_audit_write_failures();
-		const log = new Logger('test', { level: 'off' });
 		const seen: Array<string> = [];
 		const audit = create_audit_emitter({
 			db: get_db(),

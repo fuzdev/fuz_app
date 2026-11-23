@@ -36,6 +36,7 @@ import {
 import { create_test_resolved_auth } from './resolved_auth.ts';
 import { create_stub_db } from './stubs.ts';
 import { create_sse_stream } from '../realtime/sse.ts';
+import { flush_request_effects } from '../http/pending_effects.ts';
 import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
 
 /**
@@ -48,7 +49,9 @@ export const create_test_request_context = (role?: string): RequestContext => ({
 });
 
 /**
- * Create a Hono test app from route specs with optional auth context.
+ * Create a Hono test app from route specs with optional auth context. Each
+ * request's pending and post-commit effects are flushed before its response
+ * returns, as `create_test_app` awaits them.
  *
  * @param route_specs - the route specs to register
  * @param auth_ctx - optional request context to inject via middleware
@@ -61,9 +64,12 @@ export const create_test_app_from_specs = (
 ): Hono => {
 	const app = new Hono();
 	const db = create_stub_db();
+	const log = new Logger('test', { level: 'off' });
 	app.use('/*', async (c, next) => {
-		c.set('pending_effects', []);
-		c.set('post_commit_effects', []);
+		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
+		c.set('pending_effects', pending_effects);
+		c.set('post_commit_effects', post_commit_effects);
 		if (auth_ctx) {
 			c.set(
 				RESOLVED_AUTH_KEY,
@@ -75,16 +81,19 @@ export const create_test_app_from_specs = (
 			c.set(REQUEST_CONTEXT_KEY, auth_ctx);
 			c.set(TEST_CONTEXT_PRESET_KEY, TEST_CONTEXT_PRESET);
 		}
-		await next();
+		// flushed as the server's pending-effects layer flushes them, and awaited
+		// as `await_pending_effects: true` awaits them, so a handler's effects
+		// run within the request that queued them
+		try {
+			await next();
+		} finally {
+			await flush_request_effects(pending_effects, post_commit_effects, log);
+		}
 	});
-	apply_route_specs(
-		app,
-		route_specs,
-		fuz_auth_guard_resolver,
-		new Logger('test', { level: 'off' }),
-		db,
-		{ authorize: create_fuz_authorization_handler({ db }), open_sse: create_sse_stream }
-	);
+	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db, {
+		authorize: create_fuz_authorization_handler({ db }),
+		open_sse: create_sse_stream
+	});
 	return app;
 };
 

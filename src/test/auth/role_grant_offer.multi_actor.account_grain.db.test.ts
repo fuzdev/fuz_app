@@ -9,6 +9,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { role_grant_offer_create_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
@@ -19,6 +20,8 @@ import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { RPC_PATH } from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 describe_db('role_grant_offer.multi_actor — account_grain', (get_db) => {
 	const { build_app_with_audit, add_second_actor } = create_multi_actor_helpers(get_db);
@@ -44,7 +47,7 @@ describe_db('role_grant_offer.multi_actor — account_grain', (get_db) => {
 			// where any actor on `to_account_id` may accept.
 			const accepted = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,

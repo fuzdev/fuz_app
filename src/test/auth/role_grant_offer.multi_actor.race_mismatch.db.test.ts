@@ -12,6 +12,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_test_app } from '#lib/testing/test_app.ts';
@@ -30,6 +31,8 @@ import {
 	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 	const { add_second_actor } = create_multi_actor_helpers(get_db);
@@ -63,7 +66,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			// Actor A wins the race.
 			const winner = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
@@ -80,7 +83,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			const err = await assert_rejects(() =>
 				get_db().transaction(async (tx) =>
 					query_accept_offer(
-						{ db: tx },
+						{ db: tx, log },
 						{
 							offer_id: create_res.result.offer.id,
 							to_account_id: recipient.account.id,
@@ -118,7 +121,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 
 			const first = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
@@ -129,7 +132,7 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			);
 			const second = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,

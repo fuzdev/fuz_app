@@ -59,7 +59,8 @@ const {
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
 	mock_create_account_with_actor,
-	mock_app_settings_load
+	mock_app_settings_load,
+	created_account_with_actor
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn((..._args: Array<any>) => Promise.resolve(null)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
@@ -73,8 +74,20 @@ const {
 	),
 	mock_invite_claim: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(true)),
 	mock_create_account_with_actor: vi.fn((..._args: Array<any>): Promise<any> =>
-		Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
+		Promise.reject(new Error('set per test'))
 	),
+	/**
+	 * What `query_create_account_with_actor` returns, as far as signup reads
+	 * it: the new rows' ids and the account's username, the one it was given.
+	 */
+	created_account_with_actor: (
+		_deps: unknown,
+		input: { username: string }
+	): Promise<{ account: { id: string; username: string }; actor: { id: string } }> =>
+		Promise.resolve({
+			account: { id: '00000000-0000-4000-8000-00000000a001', username: input.username },
+			actor: { id: '00000000-0000-4000-8000-00000000b001' }
+		}),
 	mock_app_settings_load: vi.fn((..._args: Array<any>): Promise<any> =>
 		Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
 	)
@@ -1227,11 +1240,7 @@ const create_signup_app = (
 		);
 	mock_invite_find_unclaimed_match.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_invite_claim.mockReset().mockImplementation(() => Promise.resolve(true));
-	mock_create_account_with_actor
-		.mockReset()
-		.mockImplementation(() =>
-			Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
-		);
+	mock_create_account_with_actor.mockReset().mockImplementation(created_account_with_actor);
 	mock_session_create.mockReset().mockImplementation(() => Promise.resolve());
 	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve([]));
 

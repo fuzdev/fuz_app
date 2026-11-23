@@ -9,6 +9,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	query_accept_offer,
@@ -28,6 +29,8 @@ import {
 	hour
 } from './role_grant_offer_queries.fixtures.ts';
 
+const log = new Logger('test', { level: 'off' });
+
 describe_db('role_grant_offer_queries.list', (get_db) => {
 	test('list filters out every terminal state plus expired-pending', async () => {
 		// Each terminal column (accepted_at / declined_at / retracted_at /
@@ -36,7 +39,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// each path so a refactor that drops one of the IS NULL checks fails
 		// here rather than leaking terminal rows into a recipient's inbox.
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_list');
 		const recipient = await make_account(db, 'recipient_list');
 
@@ -51,7 +54,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		});
 		await db.transaction((tx) =>
 			query_accept_offer(
-				{ db: tx },
+				{ db: tx, log },
 				{
 					offer_id: acceptable.id,
 					to_account_id: recipient.account_id,
@@ -92,7 +95,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 
 	test('sweep returns only expired pending offers', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_sweep');
 		const recipient = await make_account(db, 'recipient_sweep');
 
@@ -115,7 +118,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// urgent offer. Three rows with distinct deadlines pin both order
 		// and stability.
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_list_order');
 		const recipient = await make_account(db, 'recipient_list_order');
 		// Insert in reverse expiry order so the result depends on ORDER BY,
@@ -144,7 +147,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 
 	test('sweep_expired orders by expires_at ASC (oldest expiry first)', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_sweep_order');
 		const recipient = await make_account(db, 'recipient_sweep_order');
 		const newer = await create_pending_offer(db, grantor, recipient, {

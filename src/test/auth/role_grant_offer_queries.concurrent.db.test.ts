@@ -11,6 +11,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { query_accept_offer, query_revoke_role_grant } from '#lib/auth/role_grant_offer_queries.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
@@ -20,6 +21,8 @@ import { create_describe_db } from '#lib/testing/describe_db.ts';
 
 import { pg_factory } from '../db_fixture.ts';
 import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 /**
  * Run a transactional op, retrying once on Postgres deadlock_detected
@@ -64,13 +67,13 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		const [first, second] = await Promise.all([
 			db.transaction((tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id }
 				)
 			),
 			db.transaction((tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id }
 				)
 			)
@@ -128,7 +131,7 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 			),
 			run_with_deadlock_retry(db, (tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{
 						offer_id: offer.id,
 						to_account_id: recipient.account_id,

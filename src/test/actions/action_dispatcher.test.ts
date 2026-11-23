@@ -29,7 +29,9 @@ const ping_spec = {
 	initiator: 'both',
 	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
-	input: literal(null),
+	// a void input, the parameterless form — a `request_response` spec may not
+	// take `literal(null)`, which absent params (read as `{}`) never satisfy
+	input: fuz_void,
 	output: object({ pong: literal(true) }),
 	async: true,
 	description: 'Health check'
@@ -161,9 +163,7 @@ describe('ActionDispatcher', () => {
 		const peer = new ActionDispatcher({ environment: env });
 
 		const result = await peer.receive({ jsonrpc: '2.0', method: 'ping', id: 42 });
-		assert.ok(result);
-		// The response is a JSON-RPC response — either result or error
-		assert.ok('result' in result || 'error' in result);
+		assert.deepEqual(result, { jsonrpc: '2.0', id: 42, result: { pong: true } });
 	});
 
 	test('receive returns method_not_found for unknown method', async () => {

@@ -37,6 +37,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
@@ -58,6 +59,8 @@ import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { pg_factory } from '../db_fixture.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 /** How long the query may take to show it waits, a bound on a hang only. */
 const LOCK_WAIT_DEADLINE_MS = 20_000;
@@ -198,7 +201,7 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 			},
 			(tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id: sent, to_account_id: r.account_id, actor_id: r.actor_id }
 				),
 			async (tx) => {
@@ -230,7 +233,7 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 			},
 			(tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id: offer, to_account_id: r.account_id, actor_id: r.actor_id }
 				),
 			async (tx) => {
@@ -269,7 +272,7 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 			},
 			(tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id: offer, to_account_id: r.account_id, actor_id: r.actor_id }
 				),
 			async (tx) => {

@@ -270,7 +270,7 @@ export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): 
 			// sweep, so `ip` stays null.
 			written.push(
 				await query_audit_log(
-					{ db: tx },
+					{ db: tx, log: deps.log },
 					{
 						event_type: 'role_grant_offer_expire',
 						actor_id: offer.from_actor_id,

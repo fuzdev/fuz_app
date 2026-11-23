@@ -14,6 +14,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
@@ -42,10 +43,12 @@ import {
 } from './role_grant_offer_queries.fixtures.ts';
 import { select_role_grant_offer } from './auth_test_queries.ts';
 
+const log = new Logger('test', { level: 'off' });
+
 describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	test('two grantors produce distinct pending offers for same (to_account, role, scope)', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'coexist_a');
 		const grantor_b = await make_account(db, 'coexist_b');
 		const recipient = await make_account(db, 'coexist_recipient');
@@ -91,7 +94,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('accept on expired pending offer throws RoleGrantOfferExpiredError', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'grantor_expired_accept');
 		const recipient = await make_account(db, 'recipient_expired_accept');
 
@@ -133,7 +136,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('accept supersedes sibling pending offers and emits audit events', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'sibling_a');
 		const grantor_b = await make_account(db, 'sibling_b');
 		const grantor_c = await make_account(db, 'sibling_c');
@@ -236,7 +239,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('history_for_account returns offers in both directions, newest first, with pagination', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'history_grantor');
 		const recipient = await make_account(db, 'history_recipient');
 		const outsider = await make_account(db, 'history_outsider');
@@ -273,7 +276,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('decline on A does not affect B from a different grantor', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'decline_coexist_a');
 		const grantor_b = await make_account(db, 'decline_coexist_b');
 		const recipient = await make_account(db, 'decline_coexist_recipient');
@@ -307,7 +310,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('retract on A does not affect B from a different grantor', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'retract_coexist_a');
 		const grantor_b = await make_account(db, 'retract_coexist_b');
 		const recipient = await make_account(db, 'retract_coexist_recipient');
@@ -336,7 +339,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('decline and retract on a superseded offer both throw already_terminal', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'superseded_grantor_a');
 		const grantor_b = await make_account(db, 'superseded_grantor_b');
 		const recipient = await make_account(db, 'superseded_recipient');
@@ -376,7 +379,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('sweep_expired does not return expired superseded offers', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor = await make_account(db, 'sweep_superseded_grantor');
 		const recipient = await make_account(db, 'sweep_superseded_recipient');
 
@@ -397,7 +400,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('revoke-bypass regression: accept A → revoke → cannot accept superseded B', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'bypass_grantor_a');
 		const grantor_b = await make_account(db, 'bypass_grantor_b');
 		const recipient = await make_account(db, 'bypass_recipient');
@@ -489,7 +492,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('supersede_incoming ends every pending offer to the account, account- and actor-addressed, and nothing else', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const grantor_a = await make_account(db, 'incoming_a');
 		const grantor_b = await make_account(db, 'incoming_b');
 		const recipient = await make_account(db, 'incoming_recipient');
@@ -539,7 +542,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	// whichever side drives it, also puts the first offer last.
 	test('a cascade returns its offers oldest first, whatever order the rows were last written in', async () => {
 		const db = get_db();
-		const deps = { db };
+		const deps = { db, log };
 		const recipient = await make_account(db, 'order_recipient');
 		const second_grantor = await make_account(db, 'order_second');
 		const first_grantor = await make_account(db, 'order_first');

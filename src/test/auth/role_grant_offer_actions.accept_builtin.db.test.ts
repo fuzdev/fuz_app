@@ -22,6 +22,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
@@ -53,6 +54,8 @@ import {
 	session_cookie_name
 } from './role_grant_offer_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
+
+const log = new Logger('test', { level: 'off' });
 
 type TestAccount = Awaited<ReturnType<TestApp['create_account']>>;
 
@@ -161,7 +164,7 @@ describe_db('role_grant_offer_actions.accept_builtin', (get_db) => {
 		const caught = await assert_rejects(() =>
 			db.transaction((tx) =>
 				query_accept_offer(
-					{ db: tx },
+					{ db: tx, log },
 					{ offer_id, to_account_id: recipient.account.id, actor_id: recipient.actor.id }
 				)
 			)

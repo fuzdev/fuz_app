@@ -47,7 +47,7 @@
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
+import { describe, test, assert, onTestFinished } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { Hono, type Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -1198,6 +1198,9 @@ describe_db('connection_closer wiring', (get_db) => {
 			const closes: Array<ProbedClose> = [];
 			const failing = { emit: false, audit_write: false, close: false };
 			const committed: SiteHarness['committed'] = { read: null };
+			// the app's shutdown is the one legitimate caller of
+			// `close_all_connections`; set ahead of each way the app is closed
+			let shutting_down = false;
 			const probe: ConnectionCloser = {
 				close_connections: (target) => {
 					closes.push({
@@ -1209,7 +1212,8 @@ describe_db('connection_closer wiring', (get_db) => {
 					return 0;
 				},
 				close_all_connections: () => {
-					throw new Error('a revocation never closes every connection');
+					if (!shutting_down) throw new Error('a revocation never closes every connection');
+					return 0;
 				}
 			};
 			const registry = new ConnectionRegistry({ log });
@@ -1266,9 +1270,21 @@ describe_db('connection_closer wiring', (get_db) => {
 						}
 					})
 			});
+			// `create_test_app` closes the app in an `onTestFinished` hook it
+			// registered first, so this one, registered after it, runs ahead of
+			// that close; a test closing it itself goes through `cleanup` below
+			onTestFinished(() => {
+				shutting_down = true;
+			});
 			const sse = require_audit_sse(test_app.server);
 			return {
-				test_app,
+				test_app: {
+					...test_app,
+					cleanup: () => {
+						shutting_down = true;
+						return test_app.cleanup();
+					}
+				},
 				db,
 				gated,
 				closes,
