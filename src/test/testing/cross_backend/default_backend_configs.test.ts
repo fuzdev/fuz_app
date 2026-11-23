@@ -1,12 +1,13 @@
 /**
  * Tests for `default_backend_configs.ts` — the daemon-token directory a
  * binary is pointed at, from the path the harness reads the token from, and
- * the repo-namespaced default tmpdir.
+ * the repo-namespaced default tmpdir, and the log level a TS backend gets.
  *
  * @module
  */
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,7 +16,8 @@ import {
 	make_default_ts_backend_config,
 	rust_default_capabilities,
 	to_daemon_token_dir,
-	ts_default_capabilities
+	ts_default_capabilities,
+	TS_BACKEND_LOG_LEVEL
 } from '#lib/testing/cross_backend/default_backend_configs.ts';
 import {
 	build_test_backend_paths,
@@ -89,6 +91,47 @@ describe('default tmpdir', () => {
 			build_test_backend_paths('fuz_forge_cross_rust').root,
 			join(tmpdir(), 'fuz_forge_cross_rust')
 		);
+	});
+});
+
+describe('TS backend log level', () => {
+	const make_ts = (extra_env?: Record<string, string>) =>
+		make_default_ts_backend_config({
+			name: 'log_level_probe',
+			port: 1,
+			start_command: ['true'],
+			capabilities: { ...in_process_capabilities, ...ts_default_capabilities },
+			...(extra_env === undefined ? {} : { extra_env })
+		});
+
+	/** The default level of a `Logger` built in a child spawned as `spawn_backend` spawns it. */
+	const child_logger_level = (env: Record<string, string>): string => {
+		const result = spawnSync(
+			process.execPath,
+			[
+				'--input-type=module',
+				'-e',
+				"import {Logger} from '@fuzdev/fuz_util/log.js'; process.stdout.write(new Logger('x').level);"
+			],
+			{ env: { ...process.env, VITEST: 'true', ...env }, encoding: 'utf-8' }
+		);
+		assert.strictEqual(result.status, 0, result.stderr);
+		return result.stdout;
+	};
+
+	test('a child inheriting `VITEST` logs nothing without it', () => {
+		const { PUBLIC_LOG_LEVEL: _, ...env } = make_ts().env;
+		assert.strictEqual(child_logger_level({ ...env, PUBLIC_LOG_LEVEL: '' }), 'off');
+	});
+
+	test('the env sets every `Logger` in the spawned binary to the level', () => {
+		const { env } = make_ts();
+		assert.strictEqual(env.PUBLIC_LOG_LEVEL, TS_BACKEND_LOG_LEVEL);
+		assert.strictEqual(child_logger_level(env), TS_BACKEND_LOG_LEVEL);
+	});
+
+	test('extra_env overrides it', () => {
+		assert.strictEqual(make_ts({ PUBLIC_LOG_LEVEL: 'debug' }).env.PUBLIC_LOG_LEVEL, 'debug');
 	});
 });
 

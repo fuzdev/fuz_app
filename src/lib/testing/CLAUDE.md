@@ -1550,7 +1550,9 @@ Conventions that hold across them:
   family builders a consumer config composes: the env baseline (`HOST` bound
   to `DEFAULT_TEST_BACKEND_HOST`, `127.0.0.1`; the port under
   `port_env_var`; cookie keys; allowed origins; the bootstrap token path; the
-  Rust startup self-wipe), the default paths, and the required `capabilities`.
+  TS family's `PUBLIC_LOG_LEVEL`, `TS_BACKEND_LOG_LEVEL` — the spawned binary
+  inherits `VITEST`, which turns every fuz_util `Logger` off; the Rust startup
+  self-wipe), the default paths, and the required `capabilities`.
   `daemon_token_dir_env` names the env var the binary reads its daemon-token
   directory from, set to the `{dir}` whose `{dir}/run/daemon_token` is the
   bootstrap's `daemon_token_path` (`to_daemon_token_dir`, which throws for a

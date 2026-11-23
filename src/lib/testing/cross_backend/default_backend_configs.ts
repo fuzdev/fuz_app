@@ -12,7 +12,9 @@ import '../assert_dev_env.ts';
  *
  * Defaults baked in by family:
  *
- * - **TS** — `'memory://'` (in-memory pglet), 30s startup window.
+ * - **TS** — `'memory://'` (in-memory pglet), 30s startup window, and
+ *   `PUBLIC_LOG_LEVEL` set to `TS_BACKEND_LOG_LEVEL` (the spawned binary
+ *   inherits `VITEST`, which would turn every `Logger` off).
  * - **Rust** — caller-supplied real Postgres URL (an in-process WASM database isn't reachable
  *   from `tokio-postgres`), 120s startup window (cargo first-build cost),
  *   and the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate.
@@ -274,10 +276,19 @@ export interface MakeDefaultTsBackendConfigOptions {
 }
 
 /**
+ * The `PUBLIC_LOG_LEVEL` a TS-family backend gets — `'warn'`, so its errors
+ * and warnings reach its output without a line per request. Set through the
+ * env, not a `Logger` level in `start_testing_server`, because fuz_util reads
+ * it as the default level of every `Logger` the binary builds, the app's own
+ * included. Override it with `extra_env`.
+ */
+export const TS_BACKEND_LOG_LEVEL = 'warn';
+
+/**
  * Shared builder for TS-family backends (Node + Bun). Owns the common
  * env baseline (NODE_ENV, HOST, PORT, in-memory pglet, cookie keys,
- * bootstrap token path) so per-backend factories only declare what
- * genuinely differs.
+ * bootstrap token path, `PUBLIC_LOG_LEVEL`) so per-backend factories only
+ * declare what genuinely differs.
  */
 export const make_default_ts_backend_config = (
 	opts: MakeDefaultTsBackendConfigOptions
@@ -317,6 +328,10 @@ export const make_default_ts_backend_config = (
 			// which boots only with the opt-in
 			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
+			// the spawned binary inherits `VITEST`, under which fuz_util's default
+			// log level is `'off'` — every `Logger` the binary builds would stay
+			// silent, and a backend's error logs would never reach its log file
+			PUBLIC_LOG_LEVEL: TS_BACKEND_LOG_LEVEL,
 			...daemon_token_dir_entry(daemon_token_dir_env, bootstrap),
 			...extra_env
 		},

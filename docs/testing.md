@@ -936,7 +936,9 @@ The backend configs come from `make_default_rust_backend_config` /
 `make_default_ts_backend_config` (`testing/cross_backend/default_backend_configs.ts`),
 which own the env baseline: a loopback IPv4 `HOST`
 (`DEFAULT_TEST_BACKEND_HOST` — `localhost` can resolve to `::1`), the port,
-the cookie keys, the allowed origins, the bootstrap token path, and — given
+the cookie keys, the allowed origins, the bootstrap token path, a TS
+backend's `PUBLIC_LOG_LEVEL` (`'warn'`: it inherits `VITEST`, under which
+every fuz_util `Logger` is off), and — given
 `daemon_token_dir_env`, the env var your binary reads its daemon-token
 directory from — the directory `spawn_backend` reads the token from. With
 `ensure_databases` there is no manual `createdb` step
