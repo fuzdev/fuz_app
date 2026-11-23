@@ -18,6 +18,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { Uuid } from '../../primitive_schemas.ts';
+import type { Db } from '../../db/db.ts';
 
 import type { RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
@@ -111,6 +112,33 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 	 */
 	readonly reject_unknown_audit_metadata_keys?: boolean;
 }
+
+/**
+ * Move every session and API token row of an account back by `ms` — each
+ * timestamp the row carries, so their order holds: what the rows would read
+ * had they been written `ms` earlier. How the in-process `mint_expired_token`
+ * stands in for the cross-process fixture's wait.
+ *
+ * @mutates `auth_session` and `api_token` - the account's rows' timestamps
+ */
+const backdate_account_credentials = async (
+	db: Db,
+	account_id: string,
+	ms: number
+): Promise<void> => {
+	const shift = `($2::int4 * INTERVAL '1 millisecond')`;
+	await db.query(
+		`UPDATE auth_session SET created_at = created_at - ${shift}, expires_at = expires_at - ${shift}
+		 WHERE account_id = $1`,
+		[account_id, ms]
+	);
+	await db.query(
+		`UPDATE api_token SET created_at = created_at - ${shift}, expires_at = expires_at - ${shift},
+		 last_used_at = last_used_at - ${shift}
+		 WHERE account_id = $1`,
+		[account_id, ms]
+	);
+};
 
 /**
  * Build a `SetupTest` that creates a fresh `TestApp` per call via
@@ -293,7 +321,14 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 				if (shortened.api_tokens < 1) {
 					throw new Error('mint_expired_token: the expiry rewrote no token row');
 				}
-				await new Promise((resolve) => setTimeout(resolve, EXPIRED_TOKEN_WAIT_MS));
+				// in place of the cross-process wait: the account's credential rows
+				// moved back by it whole, as if minted, used and shortened that long
+				// ago — so `expires_at` lands past, still after `created_at`
+				await backdate_account_credentials(
+					test_app.backend.deps.db,
+					other.account.id,
+					EXPIRED_TOKEN_WAIT_MS
+				);
 				return other.api_token;
 			}
 		};

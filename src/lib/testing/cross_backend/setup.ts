@@ -266,12 +266,13 @@ export interface TestFixture {
 	 * credentials live on), prove its eternal token authenticates, then pull
 	 * the account's credential expiries in to `EXPIRED_TOKEN_SHORTEN_SECONDS`
 	 * from now with the statement behind `_testing_shorten_credential_expiry`
-	 * (`query_shorten_credential_expiry`), and wait `EXPIRED_TOKEN_WAIT_MS`, so
-	 * the row expires as a real one does: `expires_at` after `created_at`, then
-	 * passed. Cross-process the statement runs through the backdoor, which the
-	 * backend must mount. In-process it runs directly; backdating the expiry
-	 * into the past instead would skip the wait but leave `expires_at` before
-	 * `created_at`, a row no lifetime writes.
+	 * (`query_shorten_credential_expiry`), so the row expires as a real one
+	 * does: `expires_at` after `created_at`, then passed. Cross-process the
+	 * statement runs through the backdoor, which the backend must mount, and
+	 * the fixture waits `EXPIRED_TOKEN_WAIT_MS`. In-process it runs directly
+	 * and, holding the database, moves the account's credential rows back by
+	 * that wait instead — every timestamp of each row, so `expires_at` stays
+	 * after `created_at`, a row a lifetime writes.
 	 */
 	readonly mint_expired_token: () => Promise<string>;
 	/**
@@ -782,11 +783,12 @@ const MintSessionResponseShape = strip_object({ session_cookie: string });
 export const EXPIRED_TOKEN_SHORTEN_SECONDS = 1;
 
 /**
- * How long `mint_expired_token` waits after the shorten answers, on both
- * fixtures: the row's `expires_at` is `EXPIRED_TOKEN_SHORTEN_SECONDS` past the
+ * How long the cross-process `mint_expired_token` waits after the shorten
+ * answers: the row's `expires_at` is `EXPIRED_TOKEN_SHORTEN_SECONDS` past the
  * database's `NOW()` of a statement that ran before the answer, so once this
  * much has passed on the same clock the row is expired when the token is sent.
- * The margin covers the timer firing early by its rounding.
+ * The margin covers the timer firing early by its rounding. The in-process
+ * fixture moves the rows back by it rather than waiting.
  */
 export const EXPIRED_TOKEN_WAIT_MS = EXPIRED_TOKEN_SHORTEN_SECONDS * 1000 + 50;
 
