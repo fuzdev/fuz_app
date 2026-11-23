@@ -12,6 +12,10 @@ import '../assert_dev_env.ts';
  *
  * Defaults baked in by family:
  *
+ * Both also tee the backend's output into `backend.log` under its temp root
+ * and fail teardown on an error line no allowance names
+ * (`DefaultBackendLogOptions`, `backend_log.ts`).
+ *
  * - **TS** — `'memory://'` (in-memory pglet), 30s startup window, and
  *   `PUBLIC_LOG_LEVEL` set to `TS_BACKEND_LOG_LEVEL` (the spawned binary
  *   inherits `VITEST`, which would turn every `Logger` off).
@@ -35,10 +39,15 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
 import type { BackendCapabilities, FamilyDefaultCapabilities } from './capabilities.ts';
+import {
+	SPINE_CROSS_SUITE_BACKEND_ERRORS,
+	type BackendLogAllowance,
+	type BackendLogConfig
+} from './backend_log.ts';
 import { default_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
@@ -228,7 +237,40 @@ const build_default_bootstrap = (
 	...overrides
 });
 
-export interface MakeDefaultTsBackendConfigOptions {
+/** The backend log options both family builders take. */
+export interface DefaultBackendLogOptions {
+	/**
+	 * The file `spawn_backend` tees the backend's output into, checked at
+	 * teardown (`BackendConfig.log`). Defaults to `backend.log` under the
+	 * backend's temp root (`paths.root`); `null` keeps no log and checks
+	 * nothing.
+	 */
+	readonly log_path?: string | null;
+	/**
+	 * Error lines the backend may log beside `SPINE_CROSS_SUITE_BACKEND_ERRORS`
+	 * (what the shipped cross suites provoke on purpose) — what a consumer's
+	 * own suites provoke, each with its reason.
+	 */
+	readonly log_allow_errors?: ReadonlyArray<BackendLogAllowance>;
+}
+
+/** The `BackendConfig.log` a builder sets, or none for `log_path: null`. */
+const to_default_backend_log = (
+	paths: TestBackendPaths,
+	options: DefaultBackendLogOptions
+): { log?: BackendLogConfig } => {
+	const { log_path = join(paths.root, 'backend.log'), log_allow_errors = [] } = options;
+	return log_path === null
+		? {}
+		: {
+				log: {
+					path: log_path,
+					allow_errors: [...SPINE_CROSS_SUITE_BACKEND_ERRORS, ...log_allow_errors]
+				}
+			};
+};
+
+export interface MakeDefaultTsBackendConfigOptions extends DefaultBackendLogOptions {
 	/** Diagnostic label; also names the tmpdir (`default_test_backend_paths`) when `paths` is omitted. */
 	readonly name: string;
 	/** TCP port the binary listens on. */
@@ -336,11 +378,12 @@ export const make_default_ts_backend_config = (
 			...extra_env
 		},
 		bootstrap,
-		capabilities
+		capabilities,
+		...to_default_backend_log(paths, opts)
 	};
 };
 
-export interface MakeDefaultRustBackendConfigOptions {
+export interface MakeDefaultRustBackendConfigOptions extends DefaultBackendLogOptions {
 	/** Diagnostic label; also names the tmpdir (`default_test_backend_paths`) when `paths` is omitted. */
 	readonly name: string;
 	/** TCP port the binary listens on. */
@@ -450,6 +493,7 @@ export const make_default_rust_backend_config = (
 			...extra_env
 		},
 		bootstrap,
-		capabilities
+		capabilities,
+		...to_default_backend_log(paths, opts)
 	};
 };

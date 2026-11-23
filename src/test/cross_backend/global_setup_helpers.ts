@@ -34,7 +34,10 @@ import {
 	RUST_SPINE_STUB_DEFAULT_DATABASE_URL
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
+import { with_backend_log_allowances } from '#lib/testing/cross_backend/backend_log.ts';
+
 import {
+	BOOTSTRAP_TOKEN_PROBE_BACKEND_ERRORS,
 	probe_bootstrap_token_file,
 	token_file_gone,
 	type BootstrapTokenProbe
@@ -224,7 +227,8 @@ export const make_rust_spine_global_setup =
  * backend produced by `config_factory` and provides the serialized handle.
  * In the window before the keeper bootstrap it runs the bootstrap token-file
  * probe (`bootstrap_token_probe.ts`), and after it checks the token file is
- * gone, providing both as `bootstrap_token_probe`.
+ * gone, providing both as `bootstrap_token_probe`; the errors the probe makes
+ * the backend log are allowed in its log (`BOOTSTRAP_TOKEN_PROBE_BACKEND_ERRORS`).
  *
  * `config_factory` is invoked lazily (inside setup) so a config that throws
  * when its prerequisites are missing (e.g. `rust_spine_stub_backend_config`
@@ -239,7 +243,10 @@ const spine_global_setup = async (
 	config_factory: () => BackendConfig,
 	project: TestProject
 ): Promise<() => Promise<void>> => {
-	const config = config_factory();
+	const config = with_backend_log_allowances(
+		config_factory(),
+		BOOTSTRAP_TOKEN_PROBE_BACKEND_ERRORS
+	);
 	const probed: { result?: Awaited<ReturnType<typeof probe_bootstrap_token_file>> } = {};
 	const bootstrapped = await bootstrap_backend(config, {
 		before_bootstrap: async (c) => {

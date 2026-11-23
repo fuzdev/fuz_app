@@ -1,7 +1,8 @@
 /**
  * Tests for `spawn_backend`'s guards — the refusal of a port something already
  * holds, the stale daemon-token delete, the per-request health-probe timeout,
- * the exit reporting, and teardown's hold on a clean exit — driven by tiny `node -e` children standing in for a
+ * the exit reporting, teardown's hold on a clean exit, and the backend log's
+ * tee and error-line check — driven by tiny `node -e` children standing in for a
  * backend, never a real spine binary.
  *
  * @module
@@ -41,7 +42,9 @@ import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities
  *   to `GRANDCHILD_PID_PATH`, and on SIGTERM writes `GRANDCHILD_SIGTERM_PATH` and exits
  *
  * Every listening mode but `ignore_sigterm` and `no_sigterm_handler` exits on SIGTERM with
- * `SIGTERM_EXIT_CODE` (default `0`), writing a stderr marker first.
+ * `SIGTERM_EXIT_CODE` (default `0`), writing a stderr marker first, and `SHUTDOWN_LOG_LINE`
+ * to stdout when set. The `healthy` modes write each `[stream, line]` of `LOG_LINES` (JSON)
+ * before the token.
  */
 
 /**
@@ -93,6 +96,7 @@ if (MODE === 'exit_early') {
 	if (MODE !== 'no_sigterm_handler') process.on('SIGTERM', () => {
 		if (MODE === 'ignore_sigterm') return;
 		process.stderr.write('sigterm-marker');
+		if (process.env.SHUTDOWN_LOG_LINE) fs.writeSync(1, process.env.SHUTDOWN_LOG_LINE + '\\n');
 		process.exit(Number(process.env.SIGTERM_EXIT_CODE ?? 0));
 	});
 	const server = http.createServer((req, res) => res.end('ok'));
@@ -100,6 +104,7 @@ if (MODE === 'exit_early') {
 		if (MODE === 'healthy_late_token') {
 			setTimeout(() => write_token('fresh_token'), 300);
 		} else if (['healthy', 'ignore_sigterm', 'no_sigterm_handler', 'stubborn_grandchild'].includes(MODE)) {
+			for (const [stream, line] of JSON.parse(process.env.LOG_LINES ?? '[]')) process[stream].write(line + '\\n');
 			write_token('fresh_token');
 		} else {
 			write_token('fresh_token');
@@ -398,4 +403,94 @@ describe('spawn_backend', () => {
 			if (pid !== null && pid > 0 && is_process_running(pid)) process.kill(pid, 'SIGKILL');
 		}
 	}, 10_000);
+});
+
+describe('spawn_backend backend log', () => {
+	const RUST_ERROR =
+		'\u001b[2m2026-01-01T00:00:00.000000Z\u001b[0m \u001b[31mERROR\u001b[0m fuz_auth: a rust error';
+	const LOGGER_ERROR = '🞩error🞩 [server] a logger error';
+
+	const make_logged_config = async (
+		log_lines: Array<[string, string]>,
+		allow_errors: Array<{ pattern: string; reason: string }>,
+		shutdown_line?: string
+	): Promise<BackendConfig> => {
+		const base = await make_config(await free_port(), 'healthy');
+		return {
+			...base,
+			env: {
+				...base.env,
+				LOG_LINES: JSON.stringify(log_lines),
+				...(shutdown_line === undefined ? {} : { SHUTDOWN_LOG_LINE: shutdown_line })
+			},
+			log: { path: join(base.bootstrap.daemon_token_path, '..', '..', 'backend.log'), allow_errors }
+		};
+	};
+
+	test('tees stdout and stderr into the file, and resolves when every error line is allowed', async () => {
+		const config = await make_logged_config(
+			[
+				['stdout', RUST_ERROR],
+				['stderr', LOGGER_ERROR],
+				['stdout', 'an info line']
+			],
+			[
+				{ pattern: 'a rust error', reason: 'provoked' },
+				{ pattern: 'a logger error', reason: 'provoked' }
+			]
+		);
+		const handle = await spawn_backend(config);
+		await handle.teardown();
+		const text = await readFile(config.log!.path, 'utf-8');
+		assert.include(text, RUST_ERROR);
+		assert.include(text, LOGGER_ERROR);
+		assert.include(text, 'an info line');
+		assert.include(text, 'sigterm-marker');
+	});
+
+	test('rejects on an error line no allowance names, naming it, after a clean exit', async () => {
+		const config = await make_logged_config(
+			[
+				['stdout', RUST_ERROR],
+				['stderr', LOGGER_ERROR],
+				['stderr', '⚑warn⚑ [server] a warning is not checked']
+			],
+			[{ pattern: 'a logger error', reason: 'provoked' }]
+		);
+		const handle = await spawn_backend(config);
+		const error = await rejection(handle.teardown());
+		assert.strictEqual(handle.child.exitCode, 0);
+		assert.include(error.message, `spawn_backend(${config.name}): the backend logged an error`);
+		assert.include(error.message, 'ERROR fuz_auth: a rust error');
+		assert.notInclude(error.message, 'a logger error');
+		assert.notInclude(error.message, 'a warning');
+		assert.notInclude(error.message, '\u001b[');
+	});
+
+	test('reads what the backend logs during its shutdown', async () => {
+		const config = await make_logged_config([], [], LOGGER_ERROR);
+		const handle = await spawn_backend(config);
+		const error = await rejection(handle.teardown());
+		assert.include(error.message, 'a logger error');
+	});
+
+	test('a log that fails to write fails the teardown, never the process', async () => {
+		const config = await make_logged_config([['stderr', LOGGER_ERROR]], []);
+		// a directory at the path: the stream's open fails
+		await mkdir(config.log!.path, { recursive: true });
+		const handle = await spawn_backend(config);
+		const error = await rejection(handle.teardown());
+		assert.strictEqual(handle.child.exitCode, 0);
+		assert.include(error.message, `its log ${config.log!.path} failed to write`);
+	});
+
+	test('keeps no file and checks nothing without a log config', async () => {
+		const base = await make_config(await free_port(), 'healthy');
+		const config = {
+			...base,
+			env: { ...base.env, LOG_LINES: JSON.stringify([['stderr', LOGGER_ERROR]]) }
+		};
+		const handle = await spawn_backend(config);
+		await handle.teardown();
+	});
 });

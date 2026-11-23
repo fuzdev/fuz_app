@@ -953,6 +953,24 @@ launches the binary, polls `health_path` until ready, and returns a
 `BackendHandle` with the daemon token and a `teardown()`; its TSDoc has the
 port, process-group and signal handling.
 
+A config's `log` (`BackendLogConfig`, `testing/cross_backend/backend_log.ts`)
+has `spawn_backend` tee the child's stdout and stderr into a file, and
+teardown fails the run on each error-level line there — a fuz_util `Logger`
+error, a `tracing` `ERROR` event, or a Rust panic — that no `log.allow_errors`
+entry names, listing the lines. A Rust spine with request tracing logs
+`tower_http::trace::on_failure` at `ERROR` for every 5xx it answers, so a
+suite that provokes a 500 on purpose allows that line narrowed to its route,
+e.g. `uri=/api/my_route version=HTTP/1.1}: tower_http::trace::on_failure`. The
+family builders set it to `backend.log` under the backend's temp root,
+allowing `SPINE_CROSS_SUITE_BACKEND_ERRORS`, the errors the shipped cross
+suites provoke on purpose; add what your own suites provoke with
+`log_allow_errors` (each `{pattern, reason}`, a substring), or pass
+`log_path: null` to keep no log. A setup that provokes errors of its own adds
+them with `with_backend_log_allowances(config, allow)`. A line is not
+attributed to the test that provoked it, so an allowance names the error, not
+the test. The TS builder also sets `PUBLIC_LOG_LEVEL` (`'warn'`), without
+which a TS backend's `Logger`s print nothing in a vitest run.
+
 ### Consumer wire-up recipe
 
 The typical layout: spawn the backend once per project in a vitest

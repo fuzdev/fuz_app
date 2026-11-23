@@ -21,6 +21,7 @@ import '../assert_dev_env.ts';
  */
 
 import type { BackendCapabilities } from './capabilities.ts';
+import type { BackendLogConfig } from './backend_log.ts';
 
 /**
  * Auth-bootstrap configuration for a spawnable test binary. The runner
@@ -114,4 +115,11 @@ export interface BackendConfig {
 	 * existing flags.
 	 */
 	readonly capabilities: BackendCapabilities;
+	/**
+	 * Where `spawn_backend` tees the child's stdout and stderr, and the error
+	 * lines it may log — teardown fails on any other (`backend_log.ts`). The
+	 * family builders set it under the backend's temp root; omitted, the
+	 * output is not kept and nothing is checked.
+	 */
+	readonly log?: BackendLogConfig;
 }

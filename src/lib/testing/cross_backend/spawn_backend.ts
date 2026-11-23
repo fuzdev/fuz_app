@@ -29,7 +29,10 @@ import '../assert_dev_env.ts';
  *
  * The child's stderr is kept as a bounded tail (`STDERR_TAIL_MAX_BYTES`):
  * a startup failure reports it with the exit code or signal, and an exit
- * after startup that teardown didn't cause is logged with it.
+ * after startup that teardown didn't cause is logged with it. With
+ * `config.log`, its stdout and stderr are also teed into `config.log.path`,
+ * and teardown fails on each error-level line there that no
+ * `config.log.allow_errors` entry matches (`backend_log.ts`).
  *
  * Teardown holds the backend to a clean exit: a spine whose graceful
  * shutdown gave up on work still running, or threw, exits `1` (the TS core's
@@ -48,11 +51,17 @@ import '../assert_dev_env.ts';
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createWriteStream, type WriteStream } from 'node:fs';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { dirname } from 'node:path';
 
 import type { BackendConfig } from './backend_config.ts';
+import {
+	create_log_line_splitter,
+	find_unexpected_backend_errors,
+	format_unexpected_backend_errors
+} from './backend_log.ts';
 
 /* eslint-disable @typescript-eslint/no-base-to-string */
 
@@ -80,8 +89,9 @@ export interface BackendHandle {
 	 * than `0` (a shutdown that gave up or failed), an exit by signal (the
 	 * SIGKILL escalation among them), an exit before teardown (already
 	 * logged when it happened), or a group still running when teardown gave
-	 * up. The error names the backend and the exit, with the stderr tail. The
-	 * group is torn down either way.
+	 * up. The error names the backend and the exit, with the stderr tail. With
+	 * `config.log`, it also rejects on the error lines of the log no allowance
+	 * names, listing them. The group is torn down either way.
 	 */
 	readonly teardown: () => Promise<void>;
 }
@@ -115,6 +125,9 @@ export const STDERR_TAIL_MAX_BYTES = 16 * 1024;
  * the await below can't strand the whole run forever.
  */
 const TEARDOWN_SIGKILL_GRACE_MS = 3_000;
+
+/** How long teardown waits for the child's stdio to end before reading its log (ms). */
+const LOG_DRAIN_WAIT_MS = 1_000;
 
 /** How often teardown checks whether the process group has exited (ms). */
 const TEARDOWN_POLL_INTERVAL_MS = 20;
@@ -359,6 +372,50 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 
 	install_process_handlers();
 
+	// the log file, rewritten per spawn, opened before the child so no output is missed
+	let log_stream: WriteStream | null = null;
+	let log_write_error: Error | null = null;
+	if (config.log) {
+		await mkdir(dirname(config.log.path), { recursive: true });
+		log_stream = createWriteStream(config.log.path, { flags: 'w' });
+		// a failed open or write (a full disk) fails teardown, never the process
+		log_stream.on('error', (error) => {
+			log_write_error ??= error;
+		});
+	}
+	// whole lines only, per stream (`create_log_line_splitter`)
+	const log_line_writer = (): { write: (chunk: Buffer) => void; flush: () => void } => {
+		const splitter = create_log_line_splitter();
+		return {
+			write: (chunk) => {
+				if (!log_stream || log_stream.writableEnded || log_write_error) return;
+				const lines = splitter.push(chunk);
+				if (lines !== '') log_stream.write(lines);
+			},
+			flush: () => {
+				const rest = splitter.end();
+				if (log_stream && !log_stream.writableEnded && !log_write_error && rest !== '') {
+					log_stream.write(rest);
+				}
+			}
+		};
+	};
+	const stdout_log = log_line_writer();
+	const stderr_log = log_line_writer();
+	let log_stream_closing: Promise<void> | null = null;
+	const log_stream_closed = (): Promise<void> =>
+		(log_stream_closing ??= new Promise((resolve) => {
+			if (!log_stream || log_stream.closed || log_stream.destroyed) {
+				resolve();
+				return;
+			}
+			stdout_log.flush();
+			stderr_log.flush();
+			// `'close'` follows a failed stream too, which never calls back `end`'s callback
+			log_stream.once('close', () => resolve());
+			log_stream.end();
+		}));
+
 	const [command, ...args] = config.start_command;
 	const spawned_at = performance.now();
 	const child = spawn(command!, args, {
@@ -371,8 +428,12 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 
 	// Keep a bounded stderr tail so a crash surfaces with context.
 	const stderr_tail = create_output_tail(STDERR_TAIL_MAX_BYTES);
+	// `'close'` follows the exit once the child's stdio has ended, so its last
+	// output is in the log file before teardown reads it
+	const child_closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
 	child.stderr?.on('data', (chunk: Buffer) => {
 		stderr_tail.push(chunk);
+		stderr_log.write(chunk);
 	});
 	const format_stderr_tail = (): string => {
 		const text = stderr_tail.text();
@@ -393,8 +454,10 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	// long-lived binary — so it hides in short/isolated runs. We discard
 	// rather than buffer (unlike stderr): stdout carries high-volume
 	// operational logging whose unbounded retention would leak across a
-	// long suite.
-	child.stdout?.on('data', () => {});
+	// long suite. The log file, when configured, is on disk, not in memory.
+	child.stdout?.on('data', (chunk: Buffer) => {
+		stdout_log.write(chunk);
+	});
 
 	// how the child ended: an exit, or a spawn that never produced a process
 	// (a command that doesn't exist emits `'error'` and never `'exit'`)
@@ -517,12 +580,35 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	};
 
 	let teardown_done: Promise<void> | null = null;
+	/** The log's error lines no allowance names, as a failure message, or `null`. */
+	const check_log = async (): Promise<string | null> => {
+		if (!config.log) return null;
+		// bounded: a descendant that left the group can hold the pipe open
+		await Promise.race([child_closed, sleep(LOG_DRAIN_WAIT_MS)]);
+		await log_stream_closed();
+		if (log_write_error) {
+			return `spawn_backend(${config.name}): its log ${config.log.path} failed to write: ${log_write_error.message}`;
+		}
+		const unexpected = find_unexpected_backend_errors(
+			await readFile(config.log.path, 'utf-8'),
+			config.log.allow_errors
+		);
+		return unexpected.length === 0
+			? null
+			: format_unexpected_backend_errors(config.name, config.log.path, unexpected);
+	};
+
 	const teardown = (): Promise<void> =>
-		(teardown_done ??= stop().then((wait) => {
+		(teardown_done ??= stop().then(async (wait) => {
 			const unclean = describe_unclean_exit(wait);
-			if (unclean !== null) {
-				throw new Error(`spawn_backend(${config.name}): ${unclean}${format_stderr_tail()}`);
-			}
+			const log_problem = await check_log();
+			const problems = [
+				...(unclean === null
+					? []
+					: [`spawn_backend(${config.name}): ${unclean}${format_stderr_tail()}`]),
+				...(log_problem === null ? [] : [log_problem])
+			];
+			if (problems.length > 0) throw new Error(problems.join('\n\n'));
 		}));
 
 	// Wait for the child and every process left in its group to exit, so callers
@@ -567,6 +653,7 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	} catch (err) {
 		// the startup failure is the report, whatever the exit
 		await stop();
+		await log_stream_closed();
 		throw new Error(
 			`spawn_backend(${config.name}) failed: ${(err as Error).message}${format_stderr_tail()}`
 		);

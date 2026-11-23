@@ -1583,7 +1583,9 @@ Conventions that hold across them:
   `port_env_var`; cookie keys; allowed origins; the bootstrap token path; the
   TS family's `PUBLIC_LOG_LEVEL`, `TS_BACKEND_LOG_LEVEL` — the spawned binary
   inherits `VITEST`, which turns every fuz_util `Logger` off; the Rust startup
-  self-wipe), the default paths, and the required `capabilities`.
+  self-wipe), the default paths, the `log` (`backend.log` under the temp root,
+  `SPINE_CROSS_SUITE_BACKEND_ERRORS` plus `log_allow_errors` allowed;
+  `log_path: null` for none), and the required `capabilities`.
   `daemon_token_dir_env` names the env var the binary reads its daemon-token
   directory from, set to the `{dir}` whose `{dir}/run/daemon_token` is the
   bootstrap's `daemon_token_path` (`to_daemon_token_dir`, which throws for a
@@ -1649,7 +1651,23 @@ Conventions that hold across them:
   exit during the run, or a group teardown gave up on — naming the backend,
   the exit and the stderr tail, so every global setup that awaits it fails
   the run on an unclean shutdown; the dual-spawn setup tears both down before
-  it throws.
+  it throws. With `config.log` it tees stdout and stderr, whole lines per
+  stream, into `log.path`, and teardown also rejects on each error-level line
+  there no `log.allow_errors` entry names (`backend_log.ts`).
+- `testing/cross_backend/backend_log.ts` — `BackendLogConfig` (`{path,
+  allow_errors}`), `BackendLogAllowance` (`{pattern, reason}`, a substring:
+  configs cross to the workers through `provide`), `is_backend_error_line`
+  (a `Logger` `🞩error🞩` line, a `tracing` `ERROR` event, or a Rust panic's
+  first line, ANSI stripped; a
+  bare `console.error` has no marker and is not seen),
+  `find_unexpected_backend_errors`, `format_unexpected_backend_errors`,
+  `with_backend_log_allowances(config, allow)`, and
+  `SPINE_CROSS_SUITE_BACKEND_ERRORS` — what the shipped suites provoke on
+  purpose (`fact_serving`'s masked 404 on both spines), which both family
+  builders allow. `create_log_line_splitter` is how each stream is written
+  whole lines at a time, decoding across chunks. A failed log write fails
+  teardown. A line is not attributed to its test; a per-test check would need
+  a log backdoor on both spines.
 - `testing/transports/fetch_transport.ts` — cookie-threading HTTP transport
   satisfying `RpcTestTransport`. Carries a name-keyed cookie jar that
   updates on every response's `Set-Cookie` and re-sends on every request;

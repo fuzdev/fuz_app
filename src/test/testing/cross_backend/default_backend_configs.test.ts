@@ -19,6 +19,7 @@ import {
 	ts_default_capabilities,
 	TS_BACKEND_LOG_LEVEL
 } from '#lib/testing/cross_backend/default_backend_configs.ts';
+import { SPINE_CROSS_SUITE_BACKEND_ERRORS } from '#lib/testing/cross_backend/backend_log.ts';
 import {
 	build_test_backend_paths,
 	default_test_backend_paths
@@ -128,6 +129,36 @@ describe('TS backend log level', () => {
 		const { env } = make_ts();
 		assert.strictEqual(env.PUBLIC_LOG_LEVEL, TS_BACKEND_LOG_LEVEL);
 		assert.strictEqual(child_logger_level(env), TS_BACKEND_LOG_LEVEL);
+	});
+
+	test('the backend log defaults under the temp root, with the shipped allowances, and can be turned off', () => {
+		const { log } = make_ts();
+		assert.ok(log);
+		assert.strictEqual(
+			log.path,
+			join(default_test_backend_paths('log_level_probe').root, 'backend.log')
+		);
+		assert.deepStrictEqual(log.allow_errors, SPINE_CROSS_SUITE_BACKEND_ERRORS);
+		const extra = { pattern: 'mine', reason: 'my suite provokes it' };
+		const with_extra = make_default_ts_backend_config({
+			name: 'log_level_probe',
+			port: 1,
+			start_command: ['true'],
+			capabilities: { ...in_process_capabilities, ...ts_default_capabilities },
+			log_allow_errors: [extra]
+		});
+		assert.deepStrictEqual(with_extra.log?.allow_errors, [
+			...SPINE_CROSS_SUITE_BACKEND_ERRORS,
+			extra
+		]);
+		const off = make_default_ts_backend_config({
+			name: 'log_level_probe',
+			port: 1,
+			start_command: ['true'],
+			capabilities: { ...in_process_capabilities, ...ts_default_capabilities },
+			log_path: null
+		});
+		assert.strictEqual(off.log, undefined);
 	});
 
 	test('extra_env overrides it', () => {
