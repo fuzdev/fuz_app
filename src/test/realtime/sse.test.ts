@@ -31,6 +31,7 @@ import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import { OUTBOUND_FRAME_OVERHEAD_BYTES } from '#lib/realtime/outbound_budget.ts';
 
 import { open_sse_response } from './sse_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -249,6 +250,7 @@ describe('create_sse_stream', () => {
 	});
 
 	test('throwing on_close listener does not prevent other listeners', async () => {
+		expect_logged_error('on_close listener threw: Error: boom');
 		const app = new Hono();
 		const calls: Array<string> = [];
 

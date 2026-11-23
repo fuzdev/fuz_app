@@ -25,6 +25,7 @@ import { reset_audit_write_failures } from '#lib/auth/audit_emitter.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
@@ -104,6 +105,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 		);
 
 	test('a login whose commit fails mints no cookie', async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const { gated, test_app } = await setup();
 		try {
 			const res = await with_refused_commit(gated, () => login(test_app));
@@ -115,6 +117,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	});
 
 	test('a login carrying a stale cookie whose commit fails clears it and mints nothing', async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const { gated, test_app } = await setup();
 		try {
 			const res = await with_refused_commit(gated, () => login(test_app, { cookie: STALE }));
@@ -140,6 +143,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	});
 
 	test('a signup whose commit fails mints no cookie', async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const { gated, test_app } = await setup();
 		try {
 			await query_app_settings_update({ db: get_db() }, true, test_app.backend.actor.id);
@@ -157,6 +161,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	});
 
 	test("a success's cookie is not sent when the route transaction's commit fails", async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const { gated, test_app } = await setup();
 		try {
 			// the stale cookie puts the clear on the context's headers, which a
@@ -193,6 +198,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	});
 
 	test('a logout whose commit fails clears no cookie and ends no session', async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const { gated, test_app } = await setup();
 		try {
 			const cookie = `${session_cookie_name}=${test_app.backend.session_cookie}`;
@@ -210,6 +216,7 @@ describe_db('session cookie lines and the commit', (get_db) => {
 	});
 
 	test('a logout whose audit insert fails clears no cookie and ends no session', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		const { gated, test_app } = await setup();
 		try {
 			gated.refuse_in_transaction(is_audit_insert, new Error('audit insert refused'));

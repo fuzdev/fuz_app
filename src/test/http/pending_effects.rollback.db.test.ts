@@ -42,6 +42,7 @@ import { rpc_action } from '#lib/actions/action_types.ts';
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Db } from '#lib/db/db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
@@ -180,6 +181,9 @@ const setup = async (get_db: () => Db) => {
 
 describe_db('post_commit_effects rollback discard (RPC dispatch / perform_action)', (get_db) => {
 	test('rollback discards the deferred effect; the eager effect + nothing else survives', async () => {
+		expect_logged_error(
+			'unhandled action handler error: rollback_probe Error: intentional RPC probe failure (rollback)'
+		);
 		const { test_app, rpc_sinks } = await setup(get_db);
 		const token = next_token();
 
@@ -227,6 +231,7 @@ describe_db('post_commit_effects rollback discard (RPC dispatch / perform_action
 
 describe_db('post_commit_effects rollback discard (REST dispatch / route_spec)', (get_db) => {
 	test('rollback discards the deferred effect; the eager effect survives', async () => {
+		expect_logged_error('Unhandled handler error Error: intentional REST probe failure (rollback)');
 		const { test_app, rest_sinks } = await setup(get_db);
 		const token = next_token();
 
@@ -270,6 +275,7 @@ describe_db('post_commit_effects rollback discard (REST dispatch / route_spec)',
 describe_db('a result that fails to become a response rolls back (REST dispatch)', (get_db) => {
 	for (const mode of ['bare_response', 'malformed', 'unserializable'] as const) {
 		test(`${mode}: 500, the row rolls back, the deferred effect is discarded`, async () => {
+			expect_logged_error('Unhandled handler error');
 			const { test_app, rest_sinks } = await setup(get_db);
 			const token = next_token();
 
@@ -291,6 +297,7 @@ describe_db('a result that fails to become a response rolls back (REST dispatch)
 		});
 
 		test(`${mode} without a transaction: 500, the row stays, the deferred effect is discarded`, async () => {
+			expect_logged_error('Unhandled handler error');
 			const { test_app, rest_sinks } = await setup(get_db);
 			const token = next_token();
 

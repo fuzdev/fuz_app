@@ -22,6 +22,7 @@ import {
 	type ActionEventEnvironment
 } from '#lib/actions/action_event_types.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const ping_spec = {
 	method: 'ping',
@@ -134,6 +135,7 @@ const create_mock_transport = (
 
 describe('ActionDispatcher', () => {
 	test('send returns error when no transport available', async () => {
+		expect_logged_error('[peer] send failed: no transport available');
 		const env = new TestEnvironment([ping_spec]);
 		const peer = new ActionDispatcher({ environment: env });
 
@@ -217,6 +219,7 @@ describe('ActionDispatcher', () => {
 	});
 
 	test('receive refuses non-empty params of a void request', async () => {
+		expect_logged_error('[peer] receive request failed: refresh');
 		const env = new TestEnvironment([void_request_spec]);
 		let handled = false;
 		env.add_handler('refresh', 'receive_request', () => {
@@ -233,6 +236,7 @@ describe('ActionDispatcher', () => {
 	});
 
 	test('receive reads absent and null params of an all-optional input as {}', async () => {
+		expect_logged_error('[peer] receive request failed: things_list');
 		const env = new TestEnvironment([optional_input_spec]);
 		const inputs: Array<unknown> = [];
 		env.add_handler('things_list', 'receive_request', (event) => {

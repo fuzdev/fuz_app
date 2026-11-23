@@ -67,6 +67,7 @@ import {
 	seed_session
 } from './cleanup.sessions.fixtures.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('cleanup-sessions-test', { level: 'off' });
 
@@ -256,6 +257,9 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 	});
 
 	test('a closer that throws for one session still closes the rest', async () => {
+		expect_logged_error(
+			"auth cleanup failed to close an expired session's connections: Error: synthetic close failure"
+		);
 		const db = get_db();
 		const a = await seed_accounts(db);
 		const expired_1 = await seed_session(db, 'sweep-expired-1', a.account_id, true);

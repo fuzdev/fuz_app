@@ -40,6 +40,7 @@ import {
 	create_request_tracker,
 	create_request_tracker_view
 } from '#lib/http/pending_effects.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const create_recording_logger = (): { log: Logger; errors: Array<Array<unknown>> } => {
 	const errors: Array<Array<unknown>> = [];
@@ -56,6 +57,7 @@ const create_recording_logger = (): { log: Logger; errors: Array<Array<unknown>>
 
 describe('flush_post_commit_effects', () => {
 	test('captures a throwing thunk without rejecting the flush promise', async () => {
+		expect_logged_error('post-commit side effect failed: Error: boom');
 		const { log, errors } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const boom = new Error('boom');
@@ -73,6 +75,8 @@ describe('flush_post_commit_effects', () => {
 	});
 
 	test('a failing thunk does not starve later thunks queued in the same tick', async () => {
+		expect_logged_error('post-commit side effect failed: Error: first failed');
+		expect_logged_error('post-commit side effect failed: Error: third failed');
 		const { log } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const seen: Array<string> = [];
@@ -106,6 +110,7 @@ describe('flush_post_commit_effects', () => {
 	});
 
 	test('async thunk rejection is captured and logged', async () => {
+		expect_logged_error('post-commit side effect failed: Error: async boom');
 		const { log, errors } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const boom = new Error('async boom');
@@ -121,6 +126,7 @@ describe('flush_post_commit_effects', () => {
 	});
 
 	test('directly-pushed thunk (not via emit_after_commit) is still wrapped by the flush', async () => {
+		expect_logged_error('post-commit side effect failed: Error: raw push boom');
 		// The flush owns the safety net so any thunk shape that lands on
 		// the queue — including ones tests push by hand — cannot escape.
 		const { log, errors } = create_recording_logger();
@@ -254,6 +260,7 @@ describe('flush_pending_effects', () => {
 	});
 
 	test('one rejection does not starve siblings; rejection is logged', async () => {
+		expect_logged_error('pending effect rejected: Error: boom');
 		const { log, errors } = create_recording_logger();
 		const seen: Array<string> = [];
 		const boom = new Error('boom');
@@ -273,6 +280,7 @@ describe('flush_pending_effects', () => {
 	});
 
 	test('on_rejection callback fans out alongside the helper log', async () => {
+		expect_logged_error('pending effect rejected: Error: callback boom');
 		const { log, errors } = create_recording_logger();
 		const fanout: Array<unknown> = [];
 		const boom = new Error('callback boom');
@@ -284,6 +292,8 @@ describe('flush_pending_effects', () => {
 	});
 
 	test('on_rejection fires once per rejected effect, not once per call', async () => {
+		expect_logged_error('pending effect rejected: Error: first');
+		expect_logged_error('pending effect rejected: Error: second');
 		const { log } = create_recording_logger();
 		const fanout_count: Array<number> = [];
 		const effects: Array<Promise<void>> = [
@@ -298,6 +308,9 @@ describe('flush_pending_effects', () => {
 	});
 
 	test('a throwing on_rejection is logged and the flush still resolves', async () => {
+		expect_logged_error('pending effect rejected: Error: first');
+		expect_logged_error('pending effect rejected: Error: second');
+		expect_logged_error('on_effect_error threw: Error: callback boom');
 		const { log, errors } = create_recording_logger();
 		const callback_error = new Error('callback boom');
 		const calls: Array<unknown> = [];

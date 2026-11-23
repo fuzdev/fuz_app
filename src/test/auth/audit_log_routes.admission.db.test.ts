@@ -52,6 +52,7 @@ import { create_sse_frame_reader } from '#lib/testing/transports/sse_frame_reade
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, is_session_read, type StalledQuery } from '../gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const STREAM_PATH = '/api/admin/audit/stream';
@@ -268,6 +269,7 @@ describe_db('audit log stream admission', (get_db) => {
 	});
 
 	test('a failing re-check opens no stream', async () => {
+		expect_logged_error('Unhandled handler error Error: connection lost');
 		const db = get_db();
 		const h = await create_harness(db);
 

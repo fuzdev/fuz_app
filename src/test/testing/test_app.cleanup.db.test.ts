@@ -20,6 +20,7 @@ import {
 	TEST_SHUTDOWN_DRAIN_TIMEOUT_MS,
 	type TestApp
 } from '#lib/testing/test_app.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 
@@ -30,6 +31,7 @@ const session_cookie_name = 'test_session';
 const CLOSE_SLACK_MS = 1000;
 
 test('cleanup rejects on a give-up, naming the report, within the test drain bound', async () => {
+	expect_logged_error('create_app_server: shutdown gave up after');
 	const test_app = await create_test_app({ session_cookie_name, create_route_specs: () => [] });
 	// a request held and never finished — the work the drain gives up on
 	const leaked = test_app.backend.deps.request_tracker.accept();
@@ -54,6 +56,7 @@ test('cleanup resolves once the close drained everything', async () => {
 });
 
 test('server.close resolves the give-up report, on the bound app_options sets', async () => {
+	expect_logged_error('create_app_server: shutdown gave up after');
 	const shutdown_drain_timeout_ms = 50;
 	const test_app = await create_test_app({
 		session_cookie_name,

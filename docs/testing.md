@@ -308,6 +308,51 @@ the test that built it — share one between tests by building it in
 concurrent test `create_test_app` throws, since vitest can't tell that test's
 finish from a sibling's: a concurrent suite builds its app in `beforeAll`.
 
+### Failing a test on what it logs
+
+A handler error, a dropped audit row or a DEV output mismatch is logged and
+answered, so a test asserting only the answer passes over it. The logged-error
+gate (`testing/logged_errors.ts`) fails a test that logged an error it didn't
+declare: wire it as a `setupFiles` entry of each project, beside the others:
+
+```ts
+// src/test/logged_error_gate.ts
+import { install_logged_error_gate } from '@fuzdev/fuz_app/testing/logged_errors.ts';
+
+install_logged_error_gate();
+```
+
+```ts
+{extends: true, test: {name: 'db', setupFiles: ['./src/test/db_default.ts', './src/test/logged_error_gate.ts'], ...}},
+```
+
+It counts every `Logger.prototype.error` call, whatever the logger's level —
+the silent loggers `create_test_app` and the stubs use included — and every
+`console.error`. A test that provokes an error declares it:
+
+```ts
+test('a refused audit write fails the delete', async () => {
+	expect_logged_error('Unhandled handler error Error: audit insert refused');
+	// ...
+});
+```
+
+`expect_logged_error(pattern)` also fails the test when nothing matching was
+logged, so the error becomes an assertion. `allow_logged_error(pattern,
+reason)` tolerates one without asserting it — in a test for that test, at a
+`describe`'s collection for its tests, at a file's top level for the file —
+for an error that is a side effect of the setup rather than what the test
+checks. A pattern is a substring or a `RegExp`. The test-mode banners
+(`LOGGED_ERROR_BANNERS`: disabled rate limiters, a zero failure-timing floor)
+are allowed everywhere; pass your own designed banners as
+`install_logged_error_gate({allow: [{pattern, reason}]})`. Warnings are not
+gated. An error logged outside any test (a `beforeAll`) or in a concurrent
+test fails the file, unless the file allowed it at collection. No buffer can
+attribute a concurrent test's errors, so `expect_logged_error` and
+`allow_logged_error` both throw in a concurrent test: allow its errors on its
+`describe`, at collection. A test that replaces `console.error` with a spy
+has claimed what the spy swallows.
+
 ## Attack Surface Tests
 
 Create a helper module and a test file:

@@ -96,6 +96,7 @@ import {
 	type GatedDb,
 	type StalledQuery
 } from '../gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -530,6 +531,9 @@ describe_db('register_action_ws admission', (get_db) => {
 		});
 
 		test('a failing re-check closes the socket with 1011 — never admitted unchecked', async () => {
+			expect_logged_error(
+				'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
+			);
 			const db = get_db();
 			const account_id = await create_account(db);
 			const session = await create_session(db, account_id);
@@ -1067,6 +1071,9 @@ describe_db('register_action_ws admission', (get_db) => {
 		});
 
 		test('a failing role re-read refuses with 1011', async () => {
+			expect_logged_error(
+				'ws upgrade admission: credential, actor, or role re-check failed Error: synthetic role read failure'
+			);
 			const db = get_db();
 			const { c } = await create_admin_upgrade(db);
 			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
@@ -1174,6 +1181,7 @@ describe_db('register_action_ws admission', (get_db) => {
 		});
 
 		test('on_socket_open is held too, and a hook that throws releases the hold', async () => {
+			expect_logged_error('on_socket_open failed — closing socket: Error: hook failed');
 			const db = get_db();
 			const account_id = await create_account(db);
 			const session = await create_session(db, account_id);
@@ -1204,6 +1212,9 @@ describe_db('register_action_ws admission', (get_db) => {
 		});
 
 		test('a failed re-read, a refusal, and a close while pending each release the hold', async () => {
+			expect_logged_error(
+				'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
+			);
 			const db = get_db();
 			const account_id = await create_account(db);
 			const tracker = create_request_tracker();

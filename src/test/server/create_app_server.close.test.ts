@@ -52,6 +52,7 @@ import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '#lib/rate_limiter.ts';
 import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -233,6 +234,7 @@ describe('AppServer.close', () => {
 	});
 
 	test('resolves what it gave up on: a handler stalled past the bound is a request', async () => {
+		expect_logged_error('create_app_server: shutdown gave up after');
 		const entered = create_deferred<void>();
 		const release = create_deferred<void>();
 		const harness = create_harness();

@@ -33,6 +33,7 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db } from '../gated_db.ts';
 import { query_role_grant_has_role } from './auth_test_queries.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 const TEST_TOKEN = 'bootstrap_secret_token_abc123_xyz789';
@@ -341,6 +342,7 @@ describe_db('bootstrap_account', (get_db) => {
 	test.each(SHORT_TOKEN_FILES)(
 		'refuses %s as a missing token file',
 		async (_label, content, provided) => {
+			expect_logged_error(/bootstrap token at \/token is \d+ bytes, under the 32-byte minimum/);
 			const db = get_db();
 			const store = create_mock_store(content);
 			const result = await run(create_deps(db, { store }), provided, {

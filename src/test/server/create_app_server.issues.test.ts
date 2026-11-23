@@ -49,6 +49,7 @@ import { route_ok } from '#lib/http/route_result.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { NAME_LENGTH_MAX } from '#lib/auth/name_schema.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -717,6 +718,7 @@ describe('production never maps the issues', () => {
 	});
 
 	test('the mock reaches the mapping under DEV', async () => {
+		expect_logged_error('unhandled error: Error: to_wire_issues ran in production');
 		// the control: the same mock under DEV is called, so the production legs are not vacuous
 		const mapper = mock_throwing_mapper();
 		const res = await post_rest(await create_app(true));
@@ -725,6 +727,7 @@ describe('production never maps the issues', () => {
 	});
 
 	test('the mock reaches the RPC mapping under DEV', async () => {
+		expect_logged_error('Unhandled handler error Error: to_wire_issues ran in production');
 		const mapper = mock_throwing_mapper();
 		const res = await post_rpc(await create_app(true));
 		assert.notStrictEqual(res.status, 400);

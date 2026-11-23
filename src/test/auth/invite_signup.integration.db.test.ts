@@ -41,6 +41,7 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../auth_db_default.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const cookie_name = session_cookie_name;
@@ -1300,6 +1301,7 @@ describe_db('invite + signup integration', (get_db) => {
 		});
 
 		test('a tx rejection emits outcome=failure reason=internal_error before rethrow', async () => {
+			expect_logged_error('Unhandled handler error Error: simulated tx fault');
 			const test_app = await create_test_app({
 				session_cookie_name,
 				create_route_specs,
@@ -1356,6 +1358,7 @@ describe_db('invite + signup integration', (get_db) => {
 		});
 
 		test('an invite claim that misses rolls the signup back as internal_error', async () => {
+			expect_logged_error('was already claimed despite the FOR UPDATE lock');
 			const test_app = await create_test_app({
 				session_cookie_name,
 				create_route_specs,

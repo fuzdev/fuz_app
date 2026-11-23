@@ -56,6 +56,7 @@ import {
 } from './rate_limiter_test_helpers.ts';
 import { create_test_keyring } from './auth/session_test_helpers.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from './gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -690,6 +691,10 @@ describe('the daemon-token keeper', () => {
 	});
 
 	test('a bootstrap whose commit fails leaves the keeper null', async () => {
+		expect_logged_error(
+			'bootstrap rolled back after its token file at /fake/bootstrap_token was deleted (commit refused)'
+		);
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const daemon_token_state = create_keeperless_daemon_token_state();
 		let gated: GatedDb | undefined;
 		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
@@ -709,6 +714,7 @@ describe('the daemon-token keeper', () => {
 	});
 
 	test('a bootstrap rolled back on its burn leaves the keeper null', async () => {
+		expect_logged_error('bootstrap rolled back: could not delete the token file');
 		const daemon_token_state = create_keeperless_daemon_token_state();
 		const { app } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
 			daemon_token_state,
@@ -734,6 +740,7 @@ describe('the daemon-token keeper', () => {
 
 describe('token file burn failure', () => {
 	test('answers 500 token_file_undeletable, rolls back, and leaves the window open', async () => {
+		expect_logged_error('bootstrap rolled back: could not delete the token file');
 		const limiter = create_test_limiter();
 		const { app, db, bootstrap_status, read_audit } = await create_audited_bootstrap_app(
 			limiter,
@@ -773,6 +780,7 @@ describe('token file burn failure', () => {
 
 describe('the bootstrap success row is written in its transaction', () => {
 	test('a refused audit row rolls the bootstrap back: no account, lock unflipped, token unburned', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		let gated: GatedDb | undefined;
 		const burns: Array<string> = [];
 		const { app, db, bootstrap_status } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
@@ -808,6 +816,7 @@ describe('the bootstrap success row is written in its transaction', () => {
 	});
 
 	test('a burn that fails after the success row announces no success row', async () => {
+		expect_logged_error('bootstrap rolled back: could not delete the token file');
 		const heard: Array<string> = [];
 		const { app, db } = await create_bootstrap_app(null, MATCHING_TOKEN(), {
 			create_audit: (audit_db) =>

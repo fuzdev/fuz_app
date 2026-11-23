@@ -11,6 +11,7 @@ import { SseRegistry } from '#lib/realtime/sse_registry.ts';
 import type { SseStream } from '#lib/realtime/sse.ts';
 
 import { create_mock_stream } from './sse_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 describe('SseRegistry', () => {
 	test('starts with zero subscribers', () => {
@@ -424,6 +425,9 @@ describe('SseRegistry max_per_scope', () => {
 	});
 
 	test('an evicted stream whose close throws is still removed, and the admission stands', () => {
+		expect_logged_error(
+			'error closing a stream evicted by the cap: Error: controller already closed'
+		);
 		const log = new Logger('test', { level: 'off' });
 		const log_error = vi.spyOn(log, 'error');
 		const registry: SseRegistry<string> = new SseRegistry({ max_per_scope: 1, log });

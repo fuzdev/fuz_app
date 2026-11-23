@@ -24,6 +24,7 @@ import type { Db } from '#lib/db/db.ts';
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db } from '../gated_db.ts';
 import { route_raw_admitted, route_raw_refusals } from './route_raw_refusals.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const shape = {
 	method: 'POST',
@@ -76,6 +77,7 @@ describe_db('a route result and its transaction', (get_db) => {
 	};
 
 	test('a refused raw answer commits nothing, an admitted one commits', async () => {
+		expect_logged_error('Unhandled handler error TypeError: POST /raw/');
 		const db = get_db();
 		await setup_marker(db);
 		// each request builds its answer fresh: a stream or a buffer is used once
@@ -155,6 +157,7 @@ describe_db('a route result and its transaction', (get_db) => {
 	});
 
 	test('a refused stream body is cancelled', async () => {
+		expect_logged_error('Unhandled handler error TypeError: POST /refused_stream');
 		const db = get_db();
 		await setup_marker(db);
 		const watched = watched_stream();
@@ -172,6 +175,7 @@ describe_db('a route result and its transaction', (get_db) => {
 	});
 
 	test('a stream body whose commit fails is cancelled', async () => {
+		expect_logged_error('Unhandled handler error Error: commit refused');
 		const gated = create_gated_db(get_db());
 		await setup_marker(get_db());
 		const watched = watched_stream();

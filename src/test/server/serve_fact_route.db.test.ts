@@ -63,6 +63,7 @@ import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 import { create_node_runtime } from '#lib/runtime/node.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { describe_db } from '../cell_db_fixture.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const PUBLIC_HEADERS = { host: 'localhost:5173', origin: TEST_ORIGIN };
 
@@ -448,6 +449,7 @@ describe_db('serve_fact_route', (get_db) => {
 	});
 
 	test("a disk fact streams; an external_url naming another fact's file → 404", async () => {
+		expect_logged_error("addresses another fact's file; answering 404");
 		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_'));
 		try {
 			const app = await create_cell_test_app(get_db, { facts_dir });
@@ -518,6 +520,7 @@ describe_db('serve_fact_route', (get_db) => {
 	});
 
 	test('a disk fact whose file is missing → 404; unopenable → 500; HEAD closes the file', async () => {
+		expect_logged_error('failed Error: EACCES: permission denied');
 		const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_serve_fact_disk_missing_'));
 		try {
 			const app = await create_cell_test_app(get_db, { facts_dir });

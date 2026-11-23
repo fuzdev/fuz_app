@@ -21,6 +21,7 @@ import {
 	cancel_action_spec
 } from '#lib/actions/cancel.ts';
 import { create_ws_test_harness } from '#lib/testing/ws_round_trip.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 describe('cancel_action', () => {
 	test('spec has the expected method + shape', () => {
@@ -74,6 +75,7 @@ const wait_for_abort = (signal: AbortSignal): Promise<void> =>
 
 describe('cancel via register_action_ws', () => {
 	test('cancel notification aborts the matching in-flight handler', async () => {
+		expect_logged_error('unhandled action handler error: slow Error: aborted mid-stream');
 		const harness = create_ws_test_harness({
 			actions: [
 				cancel_action,
@@ -154,6 +156,8 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('cancel on one socket does not abort a different socket’s pending request', async () => {
+		expect_logged_error('unhandled action handler error: slow Error: a aborted');
+		expect_logged_error('unhandled action handler error: slow Error: b aborted');
 		const saw_abort: { a: boolean; b: boolean } = { a: false, b: false };
 		const harness = create_ws_test_harness({
 			actions: [
@@ -209,6 +213,7 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('socket close aborts in-flight handler via the socket_abort chain', async () => {
+		expect_logged_error('unhandled action handler error: slow Error: aborted via close');
 		// a holder, so TS doesn't narrow a binding the handler assigns later to `null`
 		const captured: { signal: AbortSignal | null } = { signal: null };
 		const harness = create_ws_test_harness({
@@ -236,6 +241,8 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('per-request signals are isolated — cancel id=1 does not abort id=2', async () => {
+		expect_logged_error('unhandled action handler error: slow Error: id=1 aborted');
+		expect_logged_error('unhandled action handler error: slow Error: id=2 aborted');
 		const signals: Map<number, AbortSignal> = new Map();
 		const harness = create_ws_test_harness({
 			actions: [

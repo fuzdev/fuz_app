@@ -65,6 +65,7 @@ import {
 } from '#lib/http/jsonrpc_errors.ts';
 import { ForeignRpcError, SecondCopyThrownJsonrpcError } from './thrown_jsonrpc_error_helpers.ts';
 import { ActingActor, Uuid } from '#lib/primitive_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -1447,6 +1448,7 @@ describe('events_to_surface', () => {
 
 describe('error catch layer', () => {
 	test('a failed pool checkout answers the flat 503, no message', async () => {
+		expect_logged_error('pool checkout failed: DbCheckoutError');
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			define_route({
@@ -1623,6 +1625,7 @@ describe('error catch layer', () => {
 	});
 
 	test('a foreign error class carrying a JSON-RPC code is an internal error', async () => {
+		expect_logged_error('Unhandled handler error Error: bad');
 		// another library's RPC error (MCP, viem): its code, message, and data
 		// are no part of fuz_app's wire contract
 		const app = new Hono();
@@ -1650,6 +1653,7 @@ describe('error catch layer', () => {
 	});
 
 	test('an Error whose numeric code is not a JSON-RPC one is an internal error', async () => {
+		expect_logged_error('Unhandled handler error');
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			define_route({
@@ -1672,6 +1676,7 @@ describe('error catch layer', () => {
 	});
 
 	test('generic Error maps to internal_error 500 with message in DEV', async () => {
+		expect_logged_error('Unhandled handler error Error: something broke');
 		const app = new Hono();
 		const specs: Array<RouteSpec> = [
 			define_route({

@@ -29,6 +29,7 @@ import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type GatedDb } from '../gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 
@@ -143,6 +144,7 @@ describe_db('REST success audit rows are written in the change transaction', (ge
 	install_audit_drift_guard();
 
 	test('a login whose audit row is refused mints no session', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		const h = await setup(get_db);
 		try {
 			const db = get_db();
@@ -166,6 +168,7 @@ describe_db('REST success audit rows are written in the change transaction', (ge
 	});
 
 	test('a password change whose audit row is refused changes nothing and closes nothing', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		const h = await setup(get_db);
 		try {
 			const db = get_db();
@@ -194,6 +197,7 @@ describe_db('REST success audit rows are written in the change transaction', (ge
 	});
 
 	test('a signup whose audit row is refused creates no account and leaves an internal_error row', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		const h = await setup(get_db);
 		try {
 			const db = get_db();
@@ -221,6 +225,7 @@ describe_db('REST success audit rows are written in the change transaction', (ge
 	});
 
 	test('a signup whose settings load fails leaves the pre-transaction internal_error row', async () => {
+		expect_logged_error('Unhandled handler error Error: settings load failed');
 		const h = await setup(get_db);
 		try {
 			const db = get_db();
@@ -242,6 +247,7 @@ describe_db('REST success audit rows are written in the change transaction', (ge
 	});
 
 	test('a signup whose transaction never begins leaves the pre-transaction internal_error row', async () => {
+		expect_logged_error('Unhandled handler error Error: BEGIN refused');
 		const h = await setup(get_db);
 		try {
 			const db = get_db();

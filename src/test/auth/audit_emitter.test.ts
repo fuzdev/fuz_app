@@ -39,6 +39,7 @@ import {
 } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
 import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'error' });
 const noop = (): void => {};
@@ -102,6 +103,7 @@ const flush_ctx = async (ctx: AuditEmitterContext): Promise<void> => {
 
 describe('create_audit_emitter — emit', () => {
 	test('does not throw when query rejects', async () => {
+		expect_logged_error('audit row dropped: {"event_type":"login"');
 		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('DB connection lost'))));
 		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
@@ -117,6 +119,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('a rejected write is counted, on emit and on emit_pool', async () => {
+		expect_logged_error('audit row dropped: {"event_type":"login"');
 		reset_audit_write_failures();
 		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('DB connection lost'))));
 		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
@@ -162,7 +165,8 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('forwards input to query_audit_log()', async () => {
-		const mock_query = vi.fn(() => Promise.resolve([]));
+		// the INSERT's `RETURNING` row — an empty answer would drop the row
+		const mock_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
 		const db = create_mock_db(mock_query);
 		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
@@ -308,6 +312,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('does not call listener when query rejects', async () => {
+		expect_logged_error('audit row dropped: {"event_type":"login"');
 		const received: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({
 			db: create_mock_db(vi.fn(() => Promise.reject(new Error('DB down')))),
@@ -327,6 +332,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('listener error does not break the promise chain', async () => {
+		expect_logged_error('Audit log listener failed: Error: callback boom');
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
@@ -352,6 +358,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('listener error is distinguished from write error', async () => {
+		expect_logged_error('Audit log listener failed: Error: callback boom');
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
@@ -397,6 +404,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('unknown event_type bumps unknown-event counter when audit_log_config is omitted', async () => {
+		expect_logged_error("[audit_log] unknown event_type 'classroom_create'");
 		reset_audit_unknown_event_type_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -445,6 +453,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('metadata mismatch against a fuz_schema audit_log_config schema bumps the metadata counter', async () => {
+		expect_logged_error("[audit_log] metadata mismatch for 'classroom_create'");
 		reset_audit_metadata_validation_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -482,6 +491,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('metadata mismatch against audit_log_config schema bumps the metadata counter', async () => {
+		expect_logged_error("[audit_log] metadata mismatch for 'classroom_create'");
 		reset_audit_metadata_validation_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -720,6 +730,7 @@ describe('create_audit_emitter — emit_pool', () => {
 	});
 
 	test('resolves without notifying when the write fails', async () => {
+		expect_logged_error('audit row dropped: {"event_type":"login"');
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		const received: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({
@@ -806,6 +817,7 @@ describe('create_audit_emitter — add_listener', () => {
 	});
 
 	test('listener throw in earlier slot does not skip later listeners', async () => {
+		expect_logged_error('Audit log listener failed: Error: first listener boom');
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		const reached: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({

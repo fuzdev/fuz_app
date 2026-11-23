@@ -26,6 +26,7 @@ import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
 import { create_db_routes_test_app, db_routes_keeper_ctx } from './db_routes_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -803,6 +804,7 @@ describe('DELETE audit emission', () => {
 	});
 
 	test('a refused audit write fails the delete and rolls it back', async () => {
+		expect_logged_error('Unhandled handler error Error: audit insert refused');
 		// the row is written in the route's transaction, after the savepoint's
 		// `try`: a refusal is a 500 that deletes nothing, never a row refusal
 		const refusing_deps: DbRouteDeps = {

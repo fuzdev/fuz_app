@@ -20,6 +20,7 @@ import { rest_error } from '#lib/http/error_schemas.ts';
 import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { jsonrpc_errors } from '#lib/http/jsonrpc_errors.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const db = create_stub_db();
 
@@ -80,6 +81,7 @@ describe('DEV output validation', () => {
 	});
 
 	test('a 2xx body off the output schema logs and passes through', async () => {
+		expect_logged_error('Output schema mismatch: GET /v');
 		// off the schema, so the types refuse it as a `route_ok`: answered raw
 		const got = await request(() => json_raw({ ok: 'yes' }, 200));
 		assert.strictEqual(got.status, 200);

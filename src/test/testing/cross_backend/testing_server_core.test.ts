@@ -31,6 +31,7 @@ import {
 } from '#lib/testing/cross_backend/testing_server_core.ts';
 import { create_mock_runtime, MockExitError } from '#lib/runtime/mock.ts';
 import type { ShutdownDrainGivenUp } from '#lib/server/shutdown_drain.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 describe('is_loopback_bind_host', () => {
 	test('accepts loopback hosts', () => {
@@ -146,6 +147,7 @@ describe('start_testing_server shutdown', () => {
 	});
 
 	test('exits 1 when the close threw', async () => {
+		expect_logged_error('shutdown error: Error: close failed');
 		assert.deepStrictEqual(
 			await shut_down_with(async () => {
 				throw new Error('close failed');

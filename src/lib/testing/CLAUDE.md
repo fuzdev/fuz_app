@@ -132,6 +132,37 @@ mismatch.
 - `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
+### `logged_errors.ts` — fail a test on an error it logs
+
+`install_logged_error_gate(options?)` — call at the top level of a vitest
+`setupFiles` module (fuz_app's: `src/test/logged_error_gate.ts`, on the `unit`
+and `db` projects). Wraps `Logger.prototype.error` and `console.error` once per
+process (state on `globalThis`, since an isolated project re-evaluates the
+module per file), buffers what each test logs, and fails the test in its last
+`onTestFinished` hook — after its `afterEach` hooks and a `create_test_app`
+close — on any error not declared; a test that already failed is skipped. A
+call counts whatever the logger's level. Errors logged outside a test fail the
+file in its last `afterAll`. Errors only.
+
+- `expect_logged_error(pattern)` — inside a test: the test must log a match,
+  and every match is allowed. Throws outside a test, in a concurrent test, or
+  without the gate.
+- `allow_logged_error(pattern, reason)` — reason required; in a test for that
+  test, at collection for the enclosing `describe` (the file at top level) and
+  for what the file logs outside its tests or in its concurrent tests; throws
+  in a concurrent test; a no-op without the gate.
+- `LOGGED_ERROR_BANNERS` — the designed test-mode banners
+  (`RATE_LIMITERS_DISABLED_BANNER`, the two fail-floor banners), allowed
+  everywhere; `options.allow` adds a consumer's own.
+- `LoggedErrorPattern` (substring or `RegExp`), `LoggedErrorAllowance`,
+  `InstallLoggedErrorGateOptions`.
+
+Late errors (an effect nothing awaited) land on the next test. A concurrent
+test's errors go to the file's bucket — no buffer can say whose they are — so
+both `expect_logged_error` and `allow_logged_error` throw in one; allow them
+on its `describe`, at collection. The gate's own tests are `test.fails` cases
+(`src/test/testing/logged_errors.test.ts`).
+
 ### `token_scope_fixtures.ts` — scope documents built to a size
 
 `token_scope_methods_at_bytes(bytes, filler)` — method names whose `methods`

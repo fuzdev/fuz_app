@@ -23,6 +23,7 @@ import { create_stub_app_backend, create_stub_app_deps } from '#lib/testing/stub
 import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
 
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 
@@ -82,6 +83,7 @@ const request_with_failing_db = async (
 
 describe('create_app_server — a failed credential read', () => {
 	test('a failed pool checkout answers the flat 503 and ends the walk', async () => {
+		expect_logged_error('pool checkout failed: DbCheckoutError');
 		const reply = await request_with_failing_db(
 			() => new DbCheckoutError({ cause: new Error('timeout exceeded') })
 		);
@@ -93,6 +95,7 @@ describe('create_app_server — a failed credential read', () => {
 	});
 
 	test('a failed query answers Hono default 500 and ends the walk', async () => {
+		expect_logged_error('unhandled error: Error: relation "auth_session" does not exist');
 		const original = console.error;
 		console.error = () => {};
 		try {

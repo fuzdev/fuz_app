@@ -33,6 +33,7 @@ import {
 	TEST_KEY,
 	create_test_keyring
 } from './session_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 /** Create a Hono test app with session middleware and a test handler that echoes the identity. */
 const create_test_app = (keyring: Keyring, cookie_name: string): Hono => {
@@ -259,6 +260,7 @@ describe('create_session_middleware', () => {
 	});
 
 	test('a token the cookie grammar cannot carry is refused at mint, never written', async () => {
+		expect_logged_error('the signed value holds a character outside RFC');
 		const cookie_name = TEST_COOKIE_NAME;
 		const keyring = create_test_keyring();
 		const app = new Hono();
@@ -306,6 +308,8 @@ describe('create_session_middleware', () => {
 });
 
 describe('the clear of an invalid session cookie', () => {
+	/** What Hono's default error handler logs for the `/throw` route. */
+	const THROWN = 'Error: boom';
 	const CLEAR = 'test_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
 	const STALE = { Cookie: 'test_session=stale.invalidsignature' };
 	const cookie_name = TEST_COOKIE_NAME;
@@ -383,6 +387,7 @@ describe('the clear of an invalid session cookie', () => {
 	];
 
 	test('is on every response the context builds, once, ahead of its own Set-Cookie lines', async () => {
+		expect_logged_error(THROWN);
 		const app = create_response_app(create_test_keyring());
 		for (const [path, status, set_cookies] of CONTEXT_BUILT) {
 			const res = await app.request(path, { headers: STALE });
@@ -392,6 +397,7 @@ describe('the clear of an invalid session cookie', () => {
 	});
 
 	test('changes nothing of a response but its Set-Cookie lines', async () => {
+		expect_logged_error(THROWN);
 		const app = create_response_app(create_test_keyring());
 		for (const [path] of [...CONTEXT_BUILT, ...HANDLER_BUILT.map((p) => [p] as const)]) {
 			if (path === '/shared') continue;
@@ -505,6 +511,7 @@ describe('the clear of an invalid session cookie', () => {
 	});
 
 	test('is absent without an invalid cookie', async () => {
+		expect_logged_error(THROWN);
 		const keyring = create_test_keyring();
 		const app = create_response_app(keyring);
 		const valid = await create_session_cookie_value(keyring, 'user-42');

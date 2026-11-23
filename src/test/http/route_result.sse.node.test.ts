@@ -29,6 +29,7 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_sse_stream } from '#lib/realtime/sse.ts';
 import { SSE_CONNECTED_COMMENT } from '#lib/realtime/sse_constants.ts';
 import { REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const shape = {
 	method: 'GET',
@@ -158,6 +159,9 @@ describe('an opened SSE stream over a real Node socket', () => {
 			['/open_then_ok', 200]
 		] as const) {
 			test(`${method} ${path}: no stream header, one framing header, the connection closed`, async () => {
+				if (path === '/open_then_throw') {
+					expect_logged_error('Unhandled handler error Error: after the open');
+				}
 				const res = await send_raw(port, method, path);
 				assert.ok(res.head.startsWith(`HTTP/1.1 ${status} `), res.head);
 				const names = header_names(res.head);

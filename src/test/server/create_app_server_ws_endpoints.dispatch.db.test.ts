@@ -100,6 +100,7 @@ import { create_jsonrpc_notification } from '#lib/http/jsonrpc_helpers.ts';
 import { Uuid as UuidSchema, type Uuid } from '#lib/primitive_schemas.ts';
 import { WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON } from '#lib/actions/transports.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_test_keyring(TEST_KEY);
@@ -647,6 +648,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 	});
 
 	test('a shutdown gives up on an admission re-read at its bound, and the late failure sends nothing', async () => {
+		expect_logged_error('create_app_server: shutdown gave up after');
 		let gated: GatedDb | undefined;
 		const errors: Array<string> = [];
 		const recording_log = new Logger('test', {
@@ -747,6 +749,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 	});
 
 	test('a rejected WS pending effect reaches the server on_effect_error', async () => {
+		expect_logged_error('pending effect rejected: Error: effect failed');
 		const errors: Array<{ error: unknown; context: EffectErrorContext }> = [];
 		const failing_action: RpcAction = {
 			spec: {

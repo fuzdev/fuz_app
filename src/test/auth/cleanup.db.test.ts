@@ -48,6 +48,7 @@ import {
 } from '#lib/testing/connection_closer_helpers.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('cleanup-test', { level: 'off' });
 
@@ -381,6 +382,7 @@ describe_db('auth_cleanup', (get_db) => {
 	});
 
 	test('cleanup_expired_role_grant_offers isolates per-row on_audit_event exceptions', async () => {
+		expect_logged_error('Audit log listener failed: Error: synthetic callback failure');
 		const db = get_db();
 		const accounts = await seed_accounts(db);
 

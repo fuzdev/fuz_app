@@ -62,6 +62,7 @@ import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
@@ -841,6 +842,7 @@ describe('POST dispatcher', () => {
 	});
 
 	test('unhandled error returns 500 with JSON-RPC format', async () => {
+		expect_logged_error('unhandled action handler error: thing_list Error: unexpected kaboom');
 		const app = create_test_app([
 			{
 				spec: create_get_spec(),
@@ -875,6 +877,7 @@ describe('POST dispatcher', () => {
 		]
 	] as const) {
 		test(`${label} is an internal error, not its own code`, async () => {
+			expect_logged_error('unhandled action handler error: thing_list');
 			const app = create_test_app([
 				{
 					spec: create_get_spec(),
@@ -896,6 +899,7 @@ describe('POST dispatcher', () => {
 	}
 
 	test('a foreign error class carrying a JSON-RPC code is an internal error, its data dropped', async () => {
+		expect_logged_error('unhandled action handler error: thing_list Error: bad');
 		const app = create_test_app([
 			{
 				spec: create_get_spec(),
@@ -1194,6 +1198,7 @@ describe('GET dispatcher', () => {
 	});
 
 	test('a GET whose action handler throws answers a 500 carrying no-store', async () => {
+		expect_logged_error('unhandled action handler error: thing_list Error: the handler failed');
 		const app = create_test_app(
 			[
 				{

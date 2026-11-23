@@ -64,6 +64,7 @@ import {
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -378,6 +379,7 @@ describe('create_app_server', () => {
 	});
 
 	test('on_effect_error is called when a pending effect rejects', async () => {
+		expect_logged_error('pending effect rejected: Error: effect failed');
 		const errors: Array<{ error: unknown; transport: string; method: string; path: string }> = [];
 		const result = await create_app_server(
 			await create_config({
@@ -420,6 +422,7 @@ describe('create_app_server', () => {
 	});
 
 	test('on_effect_error is called in await_pending_effects mode too, before the response', async () => {
+		expect_logged_error('pending effect rejected: Error: effect failed');
 		const errors: Array<unknown> = [];
 		const result = await create_app_server(
 			await create_config({

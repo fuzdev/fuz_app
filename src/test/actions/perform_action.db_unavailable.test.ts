@@ -28,6 +28,7 @@ import { create_test_account } from '#lib/testing/entities.ts';
 import { Db } from '#lib/db/db.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { create_uuid } from '#lib/primitive_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -107,6 +108,7 @@ const UNAVAILABLE = {
 
 describe('perform_action — a failed pool checkout', () => {
 	test('in the authorization phase answers the 503 envelope', async () => {
+		expect_logged_error('unhandled action handler error: authed_thing DbCheckoutError');
 		const { status, body } = await call(
 			create_app(create_failing_db(checkout_error)),
 			'authed_thing'
@@ -116,6 +118,7 @@ describe('perform_action — a failed pool checkout', () => {
 	});
 
 	test('in the dispatch answers the 503 envelope', async () => {
+		expect_logged_error('unhandled action handler error: public_thing DbCheckoutError');
 		const { status, body } = await call(
 			create_app(create_failing_db(checkout_error)),
 			'public_thing'
@@ -125,6 +128,9 @@ describe('perform_action — a failed pool checkout', () => {
 	});
 
 	test('any other throw in the authorization phase answers the envelope, not a flat REST body', async () => {
+		expect_logged_error(
+			'unhandled action handler error: authed_thing Error: relation "actor" does not exist'
+		);
 		const { status, body } = await call(
 			create_app(create_failing_db(() => new Error('relation "actor" does not exist'))),
 			'authed_thing'

@@ -55,6 +55,7 @@ import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const keyring = create_test_keyring('test-key-that-is-at-least-32-chars-long!!');
 const log = new Logger('test', { level: 'off' });
@@ -356,6 +357,7 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 	});
 
 	test('a pass stalled past the drain bound is counted as upkeep, and close returns at the bound', async () => {
+		expect_logged_error('create_app_server: shutdown gave up after');
 		const db = get_db();
 		const seeded = await seed_accounts(db);
 		await seed_expired_session(db, 'server-stalled', seeded.account_id);

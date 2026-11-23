@@ -123,6 +123,7 @@ import { create_mock_stream } from '../realtime/sse_test_helpers.ts';
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
 import { create_test_identity } from '../actions/connection_identity_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
@@ -1806,6 +1807,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				});
 
 				test('a handler that throws closes nothing', async () => {
+					expect_logged_error('Error: injected handler failure');
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					h.failing.emit = true;
@@ -1821,6 +1823,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				});
 
 				test('a failed commit closes nothing', async () => {
+					expect_logged_error('Error: injected commit failure');
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					const held = h.gated.hold_commit();
@@ -1838,6 +1841,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				});
 
 				test('a close that throws after the commit still answers and still closes the rest', async () => {
+					expect_logged_error('Error: injected close failure');
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					h.failing.close = true;
@@ -1853,6 +1857,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				});
 
 				test('a failed audit write rolls the revocation back and closes nothing', async () => {
+					expect_logged_error('Error: audit write failed');
 					const { h, arranged, ...connections } = await arrange_site(site, get_db());
 
 					// the success row is written in the request transaction, so its
@@ -2026,6 +2031,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		} satisfies RequestResponseActionSpec;
 
 		test('answers internal_error and still closes', async () => {
+			expect_logged_error('action result is not serializable: revoke_unserializable');
 			const { closer, calls } = create_recording_closer();
 			const db = get_db();
 			const test_app = await create_test_app({

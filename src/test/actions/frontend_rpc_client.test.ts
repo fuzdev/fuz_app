@@ -36,6 +36,7 @@ import type { Transport } from '#lib/actions/transports.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
 import type { JsonrpcErrorObject } from '#lib/http/jsonrpc.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const ping_spec = {
 	method: 'ping',
@@ -476,7 +477,11 @@ describe('create_frontend_rpc_client — ws', () => {
 		}
 	});
 
+	// TODO the mocked 204 is no answer a spine sends: what the RPC endpoint answers a
+	// notification over HTTP, and whether this fallback can ever succeed, is unsettled
 	test('a notification never queues: disconnected, it goes over HTTP', async () => {
+		// the mocked 204 is no JSON-RPC answer, so the HTTP transport logs its send as failed
+		expect_logged_error('thing_note response is not JSON-RPC: HTTP 204 without a content type');
 		const notify_spec = {
 			method: 'thing_note',
 			kind: 'remote_notification',

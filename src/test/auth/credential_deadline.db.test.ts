@@ -37,6 +37,7 @@ import {
 } from '#lib/auth/session_queries.ts';
 import { create_test_session_row } from '#lib/testing/db_entities.ts';
 import { token_scope_full } from '#lib/auth/token_scope.ts';
+import { flush_pending_effects } from '#lib/http/pending_effects.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -85,8 +86,15 @@ const create_deadline_app = (db: Db): Hono => {
 	const log = new Logger('test', { level: 'off' });
 	app.use('*', async (c, next) => {
 		c.set('client_ip', '127.0.0.1');
-		c.set('pending_effects', []);
-		await next();
+		const pending_effects: Array<Promise<void>> = [];
+		c.set('pending_effects', pending_effects);
+		// flushed as the server's pending-effects layer flushes them, so a
+		// bearer's usage update lands within its test, never after the pool closes
+		try {
+			await next();
+		} finally {
+			await flush_pending_effects(pending_effects, log);
+		}
 	});
 	app.use('*', create_session_middleware(keyring, SESSION_COOKIE_NAME));
 	app.use('*', create_request_context_middleware({ db }));

@@ -26,6 +26,7 @@ import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset
 import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 const RPC_PATH = '/api/rpc';
@@ -98,6 +99,7 @@ const create_reset_server = async () => {
 };
 
 test('a reset that rolls back leaves the cached keeper id unchanged', async () => {
+	expect_logged_error('unhandled action handler error: _testing_reset');
 	const { server, backend, daemon_token_state, control, reset } = await create_reset_server();
 	const original_keeper_id = backend.account.id;
 	const assert_original_keeper_kept = async () => {

@@ -21,6 +21,7 @@ import { create_sse_stream } from '#lib/realtime/sse.ts';
 import { generate_app_surface } from '#lib/http/surface.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
 import { REST_RATE_LIMIT_EXCEEDED, REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const DECLARED = { 'Cache-Control': 'no-store', 'X-Route': 'declared' } as const;
 
@@ -135,6 +136,9 @@ describe('RouteSpec.response_headers', () => {
 		['/gated', 401]
 	] as const) {
 		test(`${path}: ${status} carries them`, async () => {
+			if (path === '/throw')
+				expect_logged_error('Unhandled handler error Error: the handler failed');
+			if (path === '/unavailable') expect_logged_error('pool checkout failed: DbCheckoutError');
 			const res = await app.request(path);
 			assert.strictEqual(res.status, status, path);
 			assert_declared(res, path);
@@ -167,6 +171,9 @@ describe('RouteSpec.response_headers', () => {
 
 	for (const path of ['/raw_conflict', '/fail_conflict', '/sse_conflict']) {
 		test(`${path}: a result naming a declared header is refused`, async () => {
+			expect_logged_error(
+				`Unhandled handler error TypeError: GET ${path}: a route handler returned`
+			);
 			const res = await app.request(path);
 			assert.strictEqual(res.status, 500);
 			assert.notStrictEqual(res.headers.get('cache-control'), 'max-age=60');

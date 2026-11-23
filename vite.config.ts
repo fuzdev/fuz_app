@@ -89,7 +89,7 @@ export default defineConfig({
 					exclude: ['src/test/**/*.db.test.ts', 'src/test/**/*.cross.test.ts'],
 					// refuses the default database factory, so a test that opens a
 					// database without the `.db.test.ts` suffix fails loudly
-					setupFiles: ['./src/test/unit_db_guard.ts'],
+					setupFiles: ['./src/test/unit_db_guard.ts', './src/test/logged_error_gate.ts'],
 					maxWorkers: max_threads,
 					sequence: { groupOrder: 1 }
 				}
@@ -101,7 +101,7 @@ export default defineConfig({
 					include: ['src/test/**/*.db.test.ts'],
 					// installs the default driver `FUZ_TEST_DB_DEFAULT` selects (pglet-wasm
 					// when unset); the `unit` project refuses the default factory instead
-					setupFiles: ['./src/test/db_default.ts'],
+					setupFiles: ['./src/test/db_default.ts', './src/test/logged_error_gate.ts'],
 					isolate: false,
 					fileParallelism: false,
 					sequence: { groupOrder: 2 }

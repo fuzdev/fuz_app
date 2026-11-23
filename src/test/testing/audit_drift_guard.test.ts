@@ -38,6 +38,7 @@ import {
 } from '#lib/auth/audit_emitter.ts';
 import type { Db } from '#lib/db/db.ts';
 import { create_test_audit_event } from '#lib/testing/entities.ts';
+import { allow_logged_error, expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const create_ctx = (client_ip = '203.0.113.5'): AuditEmitRoleGrantContext => ({
 	db: { in_transaction: false } as Db,
@@ -169,6 +170,7 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 
 describe('assert_no_audit_drift', () => {
 	test('fails once an emitter loses a write, and passes again after the reset', async () => {
+		expect_logged_error('audit row dropped: {"event_type":"login","outcome":"failure"');
 		reset_audit_write_failures();
 		assert_no_audit_drift();
 		// a `Db` that refuses every statement — no driver involved
@@ -216,6 +218,10 @@ describe('assert_no_audit_drift — a success row outside a transaction', () => 
 });
 
 describe('install_audit_drift_guard', () => {
+	allow_logged_error(
+		'audit row dropped: {"event_type":"login","outcome":"failure"',
+		'the `beforeAll` loses a write on purpose, ahead of the guarded tests'
+	);
 	// a write lost before the guarded block's first test — by an earlier,
 	// unguarded test in the same worker — must not fail the tests it guards
 	beforeAll(async () => {

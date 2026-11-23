@@ -23,6 +23,7 @@ import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { define_route, type RouteSpec, type TypedRouteHandler } from '#lib/http/route_spec.ts';
 import { route_ok } from '#lib/http/route_result.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 
@@ -129,6 +130,7 @@ describe('audit rows and the request transaction', () => {
 	});
 
 	test('a failure row persists despite the transaction rollback', async () => {
+		expect_logged_error('Unhandled handler error Error: deliberate handler crash');
 		const res = await post('/api/failure_then_crash');
 		assert.strictEqual(res.status, 500);
 
@@ -139,6 +141,7 @@ describe('audit rows and the request transaction', () => {
 	});
 
 	test('a success row rolls back with its transaction and is never announced', async () => {
+		expect_logged_error('Unhandled handler error Error: deliberate handler crash');
 		timeline.length = 0;
 		const res = await post('/api/success_then_crash');
 		assert.strictEqual(res.status, 500);
@@ -164,6 +167,7 @@ describe('audit rows and the request transaction', () => {
 	});
 
 	test('a failed in-transaction audit INSERT fails the request and rolls the change back', async () => {
+		expect_logged_error('Unhandled handler error Error: invalid input syntax for type uuid');
 		const res = await post('/api/audit_insert_fails');
 		assert.strictEqual(res.status, 500);
 

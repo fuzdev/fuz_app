@@ -20,6 +20,7 @@ import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_sse_stream, type SseStream } from '#lib/realtime/sse.ts';
 import { SSE_CONNECTED_COMMENT } from '#lib/realtime/sse_constants.ts';
 import { ERROR_INTERNAL_ERROR, REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const shape = {
 	method: 'GET',
@@ -79,6 +80,7 @@ describe('route_sse', () => {
 	});
 
 	test('a stream another request opened is refused', async () => {
+		expect_logged_error('an SSE stream this request did not open');
 		let earlier: SseStream | null = null;
 		const app = create_app([
 			define_route({
@@ -129,6 +131,7 @@ describe('route_sse', () => {
 	// the opener writes nothing on the context, so no answer but the stream's
 	// own carries `Transfer-Encoding`, `Connection`, `Cache-Control`
 	test("leaves none of the opener's headers on the answer", async () => {
+		expect_logged_error('Unhandled handler error Error: after the open');
 		const app = create_app([
 			define_route({
 				...shape,
@@ -180,6 +183,7 @@ describe('route_sse', () => {
 	});
 
 	test('a stream opened by a handler that then throws is closed', async () => {
+		expect_logged_error('Unhandled handler error Error: after the open');
 		let closed = false;
 		const app = create_app([
 			define_route({
@@ -200,6 +204,7 @@ describe('route_sse', () => {
 	});
 
 	test('opening a stream with no `open_sse` given throws', async () => {
+		expect_logged_error('`apply_route_specs` was given no `open_sse`');
 		const app = create_app(
 			[
 				define_route({

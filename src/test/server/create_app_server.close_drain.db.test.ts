@@ -28,6 +28,7 @@ import { create_test_request_headers } from '#lib/testing/test_origin.ts';
 
 import { describe_db } from '../auth_db_default.ts';
 import { create_gated_db, is_audit_insert, type StalledQuery } from '../gated_db.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';
 
@@ -164,6 +165,7 @@ describe('drain_effects_on_shutdown', () => {
 	};
 
 	test('gives up at its bound, logging what it gave up on', async () => {
+		expect_logged_error('create_app_server: shutdown gave up after');
 		const { log, errors } = capture_log();
 		const never = create_deferred<void>();
 		const flushes = create_request_tracker();
@@ -263,6 +265,7 @@ describe('drain_effects_on_shutdown', () => {
 	});
 
 	test('one bound for the upkeep and the drain: a stop still pending is counted', async () => {
+		expect_logged_error('create_app_server: shutdown gave up after');
 		const { log, errors } = capture_log();
 		const never = create_deferred<void>();
 		const flushes = create_request_tracker();

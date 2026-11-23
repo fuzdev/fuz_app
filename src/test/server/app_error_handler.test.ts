@@ -12,6 +12,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_app_error_handler } from '#lib/server/app_error_handler.ts';
 import { DbCheckoutError } from '#lib/db/db_checkout_error.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -39,6 +40,7 @@ const answer = async (
 
 describe('create_app_error_handler', () => {
 	test('a failed pool checkout answers the flat 503', async () => {
+		expect_logged_error('pool checkout failed: DbCheckoutError');
 		const reply = await answer(
 			create_app(new DbCheckoutError({ cause: new Error('timeout exceeded') }), true)
 		);
@@ -50,6 +52,7 @@ describe('create_app_error_handler', () => {
 	});
 
 	test('any other throw answers exactly what Hono default answers', async () => {
+		expect_logged_error('unhandled error: Error:');
 		for (const err of [
 			new Error('relation "auth_session" does not exist'),
 			new HTTPException(418, { message: 'teapot' })

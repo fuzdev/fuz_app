@@ -38,6 +38,7 @@ import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { ERROR_INTERNAL_ERROR, REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
 import { query_first, type QueryPairsRead } from '#lib/http/request_target.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 /** A query key's first value, as a handler reads one off `route.query_pairs`. */
 const query_of = (route: { query_pairs: QueryPairsRead }, name: string): string | undefined =>
@@ -257,6 +258,9 @@ describe('RouteContext.close_connection', () => {
 		['/close/throw', 500]
 	] as const) {
 		test(`${path}: answers ${status} with one \`Connection: close\``, async () => {
+			if (path === '/close/throw') {
+				expect_logged_error('Unhandled handler error Error: after asking to close');
+			}
 			const res = await app.request(path);
 			assert.strictEqual(res.status, status);
 			assert.strictEqual(res.headers.get('connection'), 'close');
@@ -277,6 +281,7 @@ describe('RouteContext.close_connection', () => {
 	});
 
 	test('an SSE answer after asking to close is refused', async () => {
+		expect_logged_error('an SSE stream after asking to close the connection');
 		const res = await app.request('/close/sse');
 		assert.strictEqual(res.status, 500);
 		assert.strictEqual(((await res.json()) as { error: string }).error, ERROR_INTERNAL_ERROR);

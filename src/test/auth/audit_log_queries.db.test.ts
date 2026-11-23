@@ -27,6 +27,7 @@ import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -670,6 +671,9 @@ describe_db('AuditLogQueries', (get_db) => {
 	// --- write failure (fail-open + counter) ----------------------------------
 
 	test('a write the database refuses is counted, announced to no listener, and trips the drift check', async () => {
+		expect_logged_error(
+			'audit row dropped: {"event_type":"login","outcome":"failure","actor_id":"not-a-uuid"'
+		);
 		reset_audit_write_failures();
 		const seen: Array<string> = [];
 		const audit = create_audit_emitter({

@@ -24,6 +24,7 @@ import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { serialize_token_scope, token_scope_full } from '../../lib/auth/token_scope.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -476,6 +477,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 	});
 
 	test('the bearer leg logs a failed usage update and still authenticates', async () => {
+		expect_logged_error('[api_token] Failed to update last_used_at: Error: simulated DB failure');
 		const { account_id } = await create_test_account(get_db(), 'ivan');
 		const db = get_db();
 		const deps = { db };

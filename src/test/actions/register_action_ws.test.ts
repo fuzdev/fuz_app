@@ -104,6 +104,7 @@ import {
 	ForeignRpcError,
 	SecondCopyThrownJsonrpcError
 } from '../http/thrown_jsonrpc_error_helpers.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -423,6 +424,11 @@ describe('register_action_ws', () => {
 	});
 
 	test('a result that cannot be serialized answers internal_error, and the dispatch does not reject', async () => {
+		expect_logged_error(
+			'action result is not serializable: echo TypeError: Do not know how to serialize a BigInt'
+		);
+		// the BigInt fails the DEV output check before it fails serialization
+		expect_logged_error('action output schema mismatch: echo');
 		// the adapter does not await `onMessage`, so a rejection here would be unhandled
 		const h = await build_harness({ handlers: { echo: () => ({ value: 1n }) } });
 		await h.on_open();
@@ -829,6 +835,7 @@ describe('register_action_ws', () => {
 	});
 
 	test('handler throws → JSON-RPC error response with same id', async () => {
+		expect_logged_error('unhandled action handler error: echo Error: boom');
 		const h = await build_harness({
 			handlers: {
 				echo: () => {
@@ -845,6 +852,7 @@ describe('register_action_ws', () => {
 	});
 
 	test('a foreign error class carrying a JSON-RPC code answers internal_error, its data dropped', async () => {
+		expect_logged_error('unhandled action handler error: echo Error: bad');
 		const h = await build_harness({
 			handlers: {
 				echo: () => {
@@ -1008,6 +1016,7 @@ describe('register_action_ws', () => {
 
 describe('register_action_ws effect flush', () => {
 	test('a rejected pending effect reaches on_effect_error after the reply', async () => {
+		expect_logged_error('pending effect rejected: Error: effect failed');
 		const timeline: Array<string> = [];
 		const errors: Array<{ error: unknown; context: EffectErrorContext }> = [];
 		const h = await build_harness({
@@ -1455,6 +1464,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 
 	test('on_socket_open that throws closes the socket with an error frame + code 1011', async () => {
+		expect_logged_error('on_socket_open failed — closing socket: Error: bootstrap boom');
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: () => {
@@ -1553,6 +1563,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 
 	test('on_socket_close error is logged and swallowed (registry still cleans up)', async () => {
+		expect_logged_error('on_socket_close failed: Error: cleanup boom');
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: () => {
@@ -1879,6 +1890,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	});
 
 	test('after a failed on_socket_open', async () => {
+		expect_logged_error('on_socket_open failed — closing socket: Error: bootstrap boom');
 		const { h, runs } = await build_counting_harness({
 			on_socket_open: () => {
 				throw new Error('bootstrap boom');

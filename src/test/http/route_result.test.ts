@@ -39,6 +39,7 @@ import {
 	REST_ROW_NOT_FOUND,
 	REST_TABLE_NOT_FOUND
 } from '#lib/http/error_schemas.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const shape = {
 	method: 'GET',
@@ -324,6 +325,7 @@ describe('route_fail', () => {
 	});
 
 	test('a failure carrying a cookie is refused, and the cookie never sent', async () => {
+		expect_logged_error('GET /cookies/fail: a route handler returned a failure carrying a cookie');
 		const res = await app.request('/cookies/fail');
 		assert.strictEqual(res.status, 500);
 		assert.deepStrictEqual(res.headers.getSetCookie(), []);
@@ -408,6 +410,7 @@ describe('route_raw', () => {
 
 describe('a bare Response', () => {
 	test('answers 500 internal_error', async () => {
+		expect_logged_error('GET /bare_response: a route handler returned a Response');
 		const res = await app.request('/bare_response');
 		assert.strictEqual(res.status, 500);
 		const body = (await res.json()) as { error: string };
@@ -427,6 +430,7 @@ describe('a malformed result', () => {
 		'sse_no_stream'
 	]) {
 		test(`${name} answers 500 internal_error`, async () => {
+			expect_logged_error('Unhandled handler error TypeError: GET /malformed/');
 			const res = await app.request(`/malformed/${name}`);
 			assert.strictEqual(res.status, 500);
 			const body = (await res.json()) as { error: string };

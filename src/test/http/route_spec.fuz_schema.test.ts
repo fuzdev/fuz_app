@@ -39,6 +39,7 @@ import { resolve_app_route_error_maps } from '#lib/http/route_errors.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 import { SERDE_REFUSED_PARAMS_JSON } from '#lib/testing/rpc_envelope_cases.ts';
 import { create_request_tracker } from '#lib/http/pending_effects.ts';
+import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const ThingParams = object({ thing_id: Uuid });
 const ThingQuery = object({ mode: one_of(['a', 'b']) });
@@ -456,6 +457,7 @@ describe('an assembled app with a fuz_schema route', () => {
 	});
 
 	test('the mock reaches the mapping under DEV', async () => {
+		expect_logged_error('unhandled error: Error: to_wire_issues ran in production');
 		// the control: the same mock under DEV is called, so the production leg is not vacuous
 		const mapper = mock_throwing_mapper();
 		const res = await post(await create_app(true), `${THING}?mode=c`, '{"name":"n"}');
