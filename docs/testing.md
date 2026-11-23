@@ -582,7 +582,17 @@ Two groups:
    schema declaration bugs.
 2. **Runtime** (database-backed) — fires real requests and checks response
    bodies against the blocklists. Catches `SELECT *` leaks where handlers
-   return more than the schema declares.
+   return more than the schema declares. Each route goes out as the principal
+   its auth picks, a mutation as the authenticated account on a fresh account
+   of its own (so a logout never leaves later routes on a revoked session),
+   and a public route goes out a second time as an authenticated account,
+   since it may answer one with more (the status route names the account).
+   The sweep fails, rather than skipping the route, when a credential it sent
+   to a route that requires one is refused as unauthenticated (a 401 reading
+   `authentication_required` or naming no reason) — a public route's 401 is
+   its own answer, so the authed pass over public routes doesn't check it —
+   and fails when no 2xx JSON answer carried a key besides
+   `ok` — a sweep that saw nothing to check proves nothing.
 
 The runtime group runs the unauthenticated and cross-privilege (403) checks
 first, then the 2xx checks (which may end sessions through logout and revoke

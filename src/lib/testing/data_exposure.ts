@@ -8,7 +8,9 @@ import './assert_dev_env.ts';
  *   output (both sides of a transform), the params the server pushes over
  *   WebSocket, and every route error schema for sensitive property names,
  *   and non-admin route outputs for admin-only ones
- * - Runtime: fires real requests and checks response bodies against field blocklists
+ * - Runtime: fires real requests and checks response bodies against field
+ *   blocklists — a public route as anonymous and as an authenticated account —
+ *   failing when no 2xx answer carried data to check
  * - Cross-privilege: verifies admin routes return 403 for non-admin users,
  *   and non-admin responses exclude admin-only fields
  *
@@ -46,8 +48,11 @@ import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
+	collect_json_keys_recursive,
+	is_unauthenticated_refusal,
 	pick_auth_headers,
 	pick_auth_principal,
+	round_trip_uses_fresh_account,
 	to_principal_transport
 } from './integration_helpers.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
@@ -125,6 +130,15 @@ const is_elevated_roles = (roles: ReadonlyArray<string> | undefined): boolean =>
 
 const is_elevated_auth = (auth: RouteAuth | null): boolean =>
 	auth !== null && (is_keeper_auth(auth) || is_elevated_roles(auth.roles));
+
+/**
+ * Whether a 2xx JSON body carries data the blocklists can check: a key besides
+ * `ok` at any depth (`collect_json_keys_recursive`, what the blocklists walk).
+ * An `{ok: true}` acknowledgment, a scalar, and an array of scalars or empty
+ * objects carry no field that could leak.
+ */
+const is_data_bearing_body = (body: unknown): boolean =>
+	[...collect_json_keys_recursive(body)].some((key) => key !== 'ok');
 
 // every schema a caller can receive: route outputs, RPC method outputs, and
 // over WS the method outputs plus the params the server pushes — a
@@ -318,7 +332,10 @@ export interface DataExposureTestOptions {
  * 1. Schema-level — walk route, RPC, and WebSocket output schemas (both sides
  *    of a transform), pushed WebSocket params, and route error schemas for
  *    sensitive field names, and non-admin route outputs for admin-only ones
- * 2. Runtime — fire real requests and check response bodies against blocklists
+ * 2. Runtime — fire real requests and check response bodies against blocklists,
+ *    a public route both anonymously and as an authenticated account; fails
+ *    when no 2xx JSON answer carried data, since a sweep that saw none checked
+ *    nothing
  * 3. Cross-privilege — admin routes return 403 for non-admin, error responses
  *    contain no sensitive fields
  */
@@ -467,58 +484,122 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				return 0;
 			});
 
-			for (const spec of sorted_specs) {
-				const route_key = format_route_key(spec);
-				if (skip_set.has(route_key)) continue;
+			// the 2xx answers whose body carried data, which the sweep must see one of
+			let data_bearing_count = 0;
 
-				// keeper auth (daemon token) is strictly more privileged than admin
-				const is_elevated = is_elevated_auth(spec.auth);
-				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
-				const body = generate_valid_body(spec.input);
-				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
-
-				const request_init: RequestInit = {
-					method: spec.method,
-					headers: { ...headers, 'content-type': to_route_content_type(spec) },
-					...(body ? { body: JSON.stringify(body) } : {})
-				};
-
-				const res = await to_principal_transport(pick_auth_principal(spec.auth), fixture)(
-					url,
-					request_init
-				);
-
+			const check_response = async (
+				res: Response,
+				spec: (typeof route_specs)[number],
+				label: string
+			): Promise<void> => {
 				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
 					await res.body?.cancel();
-					continue;
+					return;
 				}
 
-				if (!res.ok) continue;
+				if (!res.ok) return;
 
 				let response_body: unknown;
 				try {
 					response_body = await res.clone().json();
 				} catch {
-					continue;
+					return;
 				}
+				if (is_data_bearing_body(response_body)) data_bearing_count++;
 
-				assert_no_sensitive_fields_in_json(
-					response_body,
-					sensitive_fields,
-					`${route_key} (${res.status})`
-				);
+				assert_no_sensitive_fields_in_json(response_body, sensitive_fields, label);
 
-				// Admin-only field check applies to non-elevated routes with strict
+				// Admin-only field check applies to non-elevated routes (keeper auth,
+				// the daemon token, is strictly more privileged than admin) with strict
 				// output schemas. Loose schemas (e.g. surface route returning JSON
 				// Schema representations) may contain admin field names as metadata.
-				if (!is_elevated && !is_null_schema(spec.output) && is_strict_object_schema(spec.output)) {
+				if (
+					!is_elevated_auth(spec.auth) &&
+					!is_null_schema(spec.output) &&
+					is_strict_object_schema(spec.output)
+				) {
 					assert_no_sensitive_fields_in_json(
 						response_body,
 						admin_only_fields,
-						`non-admin ${route_key} (${res.status})`
+						`non-admin ${label}`
 					);
 				}
+			};
+
+			// a credential the sweep sent to a route that requires one must
+			// authenticate: a request refused as unauthenticated
+			// (`is_unauthenticated_refusal`) checked nothing of the route it was sent to
+			const assert_credential_authenticated = async (
+				res: Response,
+				label: string
+			): Promise<void> => {
+				if (res.status !== 401) return;
+				const refusal = (await res
+					.clone()
+					.json()
+					.catch(() => undefined)) as { error?: unknown } | undefined;
+				assert.ok(
+					!is_unauthenticated_refusal(res.status, refusal?.error),
+					`${label}: the credential did not authenticate, so the route went unchecked ` +
+						`(${JSON.stringify(refusal)})`
+				);
+			};
+
+			for (const spec of sorted_specs) {
+				const route_key = format_route_key(spec);
+				if (skip_set.has(route_key)) continue;
+
+				const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
+				const body = generate_valid_body(spec.input);
+				const content_type = to_route_content_type(spec);
+				const body_init = body ? { body: JSON.stringify(body) } : {};
+				const principal = pick_auth_principal(spec.auth);
+				// a mutation as the authed principal runs on a fresh account, so one
+				// that ends its session (logout) leaves the shared account's alone —
+				// the round trip's rule
+				const account = round_trip_uses_fresh_account(principal, spec.method !== 'GET')
+					? await fixture.create_account({ roles: [] })
+					: authed_account;
+				const headers = pick_auth_headers(spec, fixture, account, admin_account);
+
+				const res = await to_principal_transport(principal, fixture)(url, {
+					method: spec.method,
+					headers: { ...headers, 'content-type': content_type },
+					...body_init
+				});
+				// only a route that requires a credential: a public one may answer a
+				// 401 of its own, which reads like an unauthenticated refusal
+				if (principal !== 'public') {
+					await assert_credential_authenticated(res, `${route_key} as ${principal}`);
+				}
+				await check_response(res, spec, `${route_key} (${res.status})`);
+
+				// a public route answers an authenticated caller too, often with more
+				// (the status route names the account), so it is swept as the authed
+				// account as well — on a fresh transport, so a cookie it clears leaves
+				// the fixture's jar alone, and for a mutation on a fresh account, so
+				// one that ends its session leaves the shared account's alone
+				if (!is_public_auth(spec.auth)) continue;
+				const caller = round_trip_uses_fresh_account('authed', spec.method !== 'GET')
+					? await fixture.create_account({ roles: [] })
+					: authed_account;
+				const authed_res = await fixture.fresh_transport()(url, {
+					method: spec.method,
+					headers: { ...caller.create_session_headers(), 'content-type': content_type },
+					...body_init
+				});
+				// no liveness check on this pass: a public route reads no credential
+				// of the spine's, so a 401 is its own answer (a git route asking for
+				// HTTP Basic, say), not a dead session
+				await check_response(authed_res, spec, `authed ${route_key} (${authed_res.status})`);
 			}
+
+			assert.ok(
+				data_bearing_count > 0,
+				'the 2xx sweep saw no 2xx JSON response carrying data, so it checked nothing — ' +
+					'every route refused, answered no JSON, or answered `{ok}` alone ' +
+					'(check the credentials and `param_values`, or `skip_routes`)'
+			);
 		});
 	});
 };

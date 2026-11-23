@@ -761,7 +761,7 @@ The groups:
 2. **runtime** (DB-backed via `create_test_app`):
    - `unauthenticated error responses contain no sensitive fields`
    - `admin routes return 403 for non-admin user` — cross-privilege check
-   - `all 2xx responses pass field blocklists` — GETs sorted before POSTs so data-returning routes fire before destructive ones (logout, revoke-all) invalidate sessions
+   - `all 2xx responses pass field blocklists` — GETs sorted before POSTs so data-returning routes fire before destructive ones (logout, revoke-all) invalidate sessions; a mutation sent as the authed account runs on a fresh one (`round_trip_uses_fresh_account`); a public route is sent anonymously and again as an authenticated account (a fresh one for a mutation), since it may answer a caller with more; fails when a route that requires a credential refuses the one sent as unauthenticated (`is_unauthenticated_refusal`), naming the route — a public route's 401 is its own answer — and when no 2xx JSON response carried a key besides `ok` at any depth, so a sweep that checked nothing never passes
 
 Support functions: `collect_json_schema_property_names(schema)` (walks
 `properties`/`patternProperties`/`additionalProperties`/`items`/`prefixItems`/`contains`,
