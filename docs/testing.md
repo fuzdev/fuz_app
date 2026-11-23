@@ -1442,6 +1442,36 @@ on the database. The declined offer is of `declined_role` (default
 `participant`, the reference spines' grantable app role; never `admin`, the
 accepted offer's); a backend registering no such role passes one it does.
 
+#### Both spines live
+
+The swap runs the two backends one at a time; `describe_backend_both_live_tests`
+(`testing/cross_backend/backend_both_live.ts`) runs them at once over one
+database, with the same `orders`, `database_url` and `empty_database` options
+and the same config checks. Per order the first bootstraps and the second
+boots after it — a daemon token resolves its keeper once, at boot, so the
+other order would leave the second's backdoors keeperless. Then each
+credential is minted on the first, proven on both, revoked on the second and
+refused on the first at once: a session logged out and one revoked by id, an
+API token, a password change, an account delete, and an offer the second
+accepts conferring on the first. Each revoke's changed tables are compared by
+content digest after both backends drain.
+
+What each process keeps to itself is pinned as a declared limit, by test
+name (./security.md §Single-Process Architecture): a socket on the first
+outlives the second's password change, logout, token revoke and role revoke,
+an offer made on either notifies no socket on the other, and a second
+backend booted before the first's bootstrap keeps advertising bootstrap until
+it restarts or a valid bootstrap attempt on it is refused by the database's
+lock (which closes its window), and resolves no keeper for its daemon token
+until it restarts. Each assertion holds
+today's behavior, so a cross-process close or notification that lands within
+the watch window fails it. The socket
+cases need `ws` and `ws_account_actions` on the first backend (the gated case
+`ws_role_gated`, and `ws` and `ws_account_actions` on both for the
+notification); `offer_role` (default `participant`, never `admin`) is the role
+the notification case offers on the first; its reverse direction offers
+`admin` on the second, so the two offers never collide.
+
 ### Malformed envelopes and invalid params
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,

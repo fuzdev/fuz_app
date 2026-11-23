@@ -2362,9 +2362,21 @@ state are designed for **single-process deployments**:
   the row already gone.
 - Daemon token rotation is file-based. Multiple processes sharing the file may
   read stale state between token write and fsync.
+- A notification (an offer received, a grant revoked) reaches only the
+  sockets of the process that sent it.
+- Bootstrap availability and the daemon token's keeper are read at boot: a
+  process started before another's bootstrap keeps advertising bootstrap on
+  `/status` until it restarts or a bootstrap attempt on it with a valid token
+  is refused by the database's lock (which closes its window), and resolves
+  no keeper for its daemon token until it restarts.
 
 A TS spine and a Rust spine serving one database are two processes: each
 limitation above applies between them as between any two instances.
+`describe_backend_both_live_tests` pins, by test name, that a socket outlives
+the other spine's password change, logout, token revoke and role revoke, that
+an offer-received notification stays in its process, and the boot-time state,
+so a cross-process channel that lifts one within `STAYS_OPEN_MS` fails its
+test.
 
 For multi-process deployments, rate limiters would need Redis or a shared DB table
 (or, for IP-keyed limits, nginx `limit_req`, which every backend instance

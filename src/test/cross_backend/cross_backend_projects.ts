@@ -89,6 +89,19 @@ export const CROSS_PROJECT_RESOURCES = {
 	cross_backend_swap: {
 		ts: { name: 'ts_spine_node_swap', port: 1191, database: 'fuz_app_test_backend_swap' },
 		stub: { name: 'spine_stub_swap', port: 1192, database: 'fuz_app_test_backend_swap' }
+	},
+	// both on one database at once (`SHARED_DATABASE_PROJECTS`)
+	cross_backend_both_live: {
+		ts: {
+			name: 'ts_spine_node_both_live',
+			port: 1193,
+			database: 'fuz_app_test_backend_both_live'
+		},
+		stub: {
+			name: 'spine_stub_both_live',
+			port: 1194,
+			database: 'fuz_app_test_backend_both_live'
+		}
 	}
 } as const satisfies Record<string, Record<string, CrossBackendResources>>;
 
@@ -105,13 +118,14 @@ export const CROSS_DB_POSTGRES_DATABASE = 'fuz_app_test_cross_db_postgres';
 export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
 
 /**
- * The projects whose backends share one Postgres database, each running only
- * while the others are stopped — the backend swap, which boots each spine over
- * what the other left. Every other database is claimed once, and none is
+ * The projects whose backends share one Postgres database — the backend swap,
+ * which boots each spine over what the other left, and both spines live, which
+ * runs them over it at once. Every other database is claimed once, and none is
  * shared across projects (`cross_backend_projects.test.ts`).
  */
 export const SHARED_DATABASE_PROJECTS: ReadonlySet<CrossProjectName> = new Set([
-	'cross_backend_swap'
+	'cross_backend_swap',
+	'cross_backend_both_live'
 ]);
 
 /**
@@ -187,6 +201,14 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 		name: 'cross_backend_swap',
 		global_setup: './src/test/cross_backend/global_setup_swap.ts',
 		include: ['src/test/cross_backend/backend_swap.cross.test.ts']
+	},
+	// Both spines live: the TS spine and the stub over one database at once,
+	// each honoring the other's credential revocations live, with the
+	// per-process limits pinned. Its tests spawn both backends themselves.
+	{
+		name: 'cross_backend_both_live',
+		global_setup: './src/test/cross_backend/global_setup_both_live.ts',
+		include: ['src/test/cross_backend/backend_both_live.cross.test.ts']
 	},
 	// The differential and the transcript differential again, between two JS
 	// runtimes: the TS spine on Node and on Bun, both on `memory://` — no Rust,

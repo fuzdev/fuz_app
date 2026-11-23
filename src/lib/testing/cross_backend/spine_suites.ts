@@ -368,6 +368,7 @@ export type SuiteName = (typeof SUITE_NAMES)[number];
 
 /** A shipped suite module `describe_spine_cross_suites` leaves out. */
 export type StandaloneSuiteName =
+	| 'backend_both_live'
 	| 'backend_swap'
 	| 'conformance_table'
 	| 'differential'
@@ -388,6 +389,8 @@ export const STANDALONE_CROSS_SUITES: Readonly<Record<StandaloneSuiteName, strin
 	ws_action_rate_limit:
 		'needs a backend spawned with the action limiters enabled, which the standard suites would exhaust',
 	conformance_table: "a runner over the consumer's own cases, not a suite",
+	backend_both_live:
+		'spawns two backends of its own over one database and runs them at once, rather than running against one',
 	backend_swap:
 		'spawns and stops two backends of its own, one at a time over one database, rather than running against one',
 	standard_bundle:

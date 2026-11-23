@@ -22,6 +22,7 @@
     "test:cross:timing": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_timing",
     "test:cross:ts-differential": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_differential",
     "test:cross:swap": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_swap",
+    "test:cross:both-live": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_both_live",
     "benchmark:cross-impl": "gro run src/benchmarks/cross_impl.bench.ts",
     "preview": "vite preview",
     "deploy": "gro deploy"

@@ -324,6 +324,7 @@ projects (`DUAL_SPAWN_TESTS` in `cross_backend_projects.ts`;
 | `cross_backend_security` (`test:cross:security`) | TS spine + stub, login and action limiters on, loopback proxy trusted | `login_security`, `ws_action_rate_limit`, `bootstrap_rate_limit` |
 | `cross_backend_timing` (`test:cross:timing`) | TS spine + stub, SSE keep-alive, WS receive timeout and pool checkout bounds shortened | `sse_keep_alive`, `ws_receive_timeout`, `db_checkout_timeout` |
 | `cross_backend_swap` (`test:cross:swap`) | TS spine + stub over **one** Postgres database, spawned one at a time by the tests (the setup only prepares them; the stub's startup reset off) | `backend_swap` (`describe_backend_swap_tests` both ways: each spine boots over the other's database with no migration and no row written or rewritten, honors the sessions, tokens, password hashes and offers the other minted, and honors the other's writes — a keeper session logged out and a keeper token revoked, an offer accepted and one declined, a password change) |
+| `cross_backend_both_live` (`test:cross:both-live`) | TS spine + stub over **one** Postgres database **at once**, spawned by the tests, the first bootstrapped before the second boots (the setup only prepares them; the stub's startup reset off) | `backend_both_live` (`describe_backend_both_live_tests` both ways: a session, token, password change and account delete revoked on one spine refused on the other at once, an offer accepted across, each revoke's changed tables by digest; the per-process limits pinned by name — sockets outliving the other spine's revocations, notifications not crossing, boot-time bootstrap state) |
 
 Parity runs on real Postgres because pglet's `indexdef` leaves out index
 modifiers, so a pglet leg would report every such index as drift; the setup
@@ -426,6 +427,8 @@ npm run test:cross:timing
 npm run test:cross:ts-differential
 # the one-database swap between the TS spine and the stub, both ways:
 npm run test:cross:swap
+# both spines live over one database at once, both ways:
+npm run test:cross:both-live
 ```
 
 **CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
@@ -436,7 +439,7 @@ there is a deliberate re-measure. `.github/workflows/cross-canary.yml` runs the
 Bun leg and the Node-vs-Bun differential weekly (and by hand) on the latest Bun
 release and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
 `cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`,
-`cross_backend_swap`) run locally only.
+`cross_backend_swap`, `cross_backend_both_live`) run locally only.
 
 The TS binary + the reusable test-server core/adapters it's built on live in
 `src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`

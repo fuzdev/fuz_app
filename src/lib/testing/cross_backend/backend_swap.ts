@@ -58,12 +58,9 @@ import '../assert_dev_env.ts';
  */
 
 import { afterAll, afterEach, assert, beforeAll, describe, test } from 'vitest';
-import { parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { TokenCreateOutput, TokenRevokeOutput } from '../../auth/account_action_specs.ts';
-import { SessionAccountJson } from '../../auth/account_schema.ts';
-import { InviteCreateOutput, InviteListOutput } from '../../auth/admin_action_specs.ts';
-import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
+import { InviteCreateOutput } from '../../auth/admin_action_specs.ts';
 import {
 	RoleGrantOfferAcceptOutput,
 	RoleGrantOfferCreateOutput,
@@ -74,20 +71,27 @@ import {
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import { create_db } from '../../db/create_db.ts';
 import type { Db } from '../../db/db.ts';
-import { EnvStringbool } from '../../env/env_schemas.ts';
-import {
-	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_INVALID_CREDENTIALS
-} from '../../http/error_schemas.ts';
-import { DbInvariantRows } from '../db_invariant_queries.ts';
-import { assert_db_invariant_rows } from '../db_invariants.ts';
+import { ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_CREDENTIALS } from '../../http/error_schemas.ts';
 import { bootstrap } from '../transports/bootstrap.ts';
-import { create_fetch_transport, type FetchTransport } from '../transports/fetch_transport.ts';
 import type { BackendConfig } from './backend_config.ts';
-import { cross_rpc_call, error_reason, expect_output, type RpcResult } from './cross_rpc.ts';
-import { spawn_backend, type BackendHandle } from './spawn_backend.ts';
+import { expect_output } from './cross_rpc.ts';
+import type { BackendHandle } from './spawn_backend.ts';
+import {
+	assert_backend_invariants,
+	backend_post_json,
+	backend_rpc,
+	backend_rpc_as,
+	backend_transport,
+	drain_backend_effects,
+	passes_admin_gate,
+	read_shared_database_snapshot,
+	teardown_live_backend,
+	to_shared_database_problems,
+	verified_account_id,
+	with_live_backend,
+	type LiveBackend,
+	type SharedDatabaseSnapshot
+} from './shared_database_backends.ts';
 import {
 	SPINE_ACCOUNT_LOGIN_PATH,
 	SPINE_ACCOUNT_LOGOUT_PATH,
@@ -129,18 +133,6 @@ export interface BackendSwapTestOptions {
 	readonly empty_database: () => Promise<void>;
 }
 
-/** The env var a backend's database URL rides in on both spine families. */
-const DATABASE_URL_ENV = 'DATABASE_URL';
-
-/** The cookie-signing keys env var both spine families read. */
-const COOKIE_KEYS_ENV = 'SECRET_FUZ_COOKIE_KEYS';
-
-/** The Rust family's startup-reset gate (`make_default_rust_backend_config`). */
-const RESET_DB_ON_STARTUP_ENV = 'FUZ_TESTING_RESET_DB_ON_STARTUP';
-
-/** The backdoors the suite drives. */
-const SWAP_BACKDOORS = ['_testing_drain_effects', '_testing_db_invariants'] as const;
-
 /** The member account the first backend signs up. */
 const SWAP_MEMBER_USERNAME = 'swap_member';
 const SWAP_PASSWORD = 'swap-password-before';
@@ -149,21 +141,6 @@ const SWAP_PASSWORD_WRONG = 'swap-password-wrong';
 
 /** What a phase may take past its backend's startup window (ms). */
 const SWAP_PHASE_WORK_MS = 30_000;
-
-/** One table's content: its row count and a digest of its rows as text, in order. */
-interface SwapTableContent {
-	readonly rows: number;
-	readonly digest: string;
-}
-
-/**
- * The migrations a database holds (with when each was applied) and every
- * table's content — a row a boot rewrote in place changes its table's digest.
- */
-interface SwapDbSnapshot {
-	readonly schema_version: ReadonlyArray<Record<string, unknown>>;
-	readonly tables: Readonly<Record<string, SwapTableContent>>;
-}
 
 /** What the first backend minted, carried to the second. */
 interface SwapCredentials {
@@ -183,7 +160,7 @@ interface SwapCredentials {
 	readonly offer_accepted_id: string;
 	/** The offer the second backend declines. */
 	readonly offer_declined_id: string;
-	readonly snapshot: SwapDbSnapshot;
+	readonly snapshot: SharedDatabaseSnapshot;
 }
 
 /** What the second backend wrote, checked on the first again. */
@@ -193,174 +170,11 @@ interface SwapWrites {
 	readonly role_grant_id: string;
 }
 
-const read_snapshot = async (db: Db): Promise<SwapDbSnapshot> => {
-	const schema_version = await db.query<Record<string, unknown>>(
-		'SELECT namespace, name, sequence, applied_at::text AS applied_at FROM schema_version ' +
-			'ORDER BY namespace, sequence'
-	);
-	const tables = await db.query<{ schemaname: string; tablename: string }>(
-		'SELECT schemaname, tablename FROM pg_tables ' +
-			"WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY schemaname, tablename"
-	);
-	const content: Record<string, SwapTableContent> = {};
-	for (const { schemaname, tablename } of tables) {
-		const [row] = await db.query<SwapTableContent>(
-			'SELECT count(*)::int AS rows, ' +
-				"md5(coalesce(string_agg(t::text, E'\\n' ORDER BY t::text), '')) AS digest " +
-				`FROM "${schemaname}"."${tablename}" t`
-		);
-		content[`${schemaname}.${tablename}`] = row!;
-	}
-	return { schema_version, tables: content };
-};
-
-/**
- * The backend a phase has running, held where an `afterEach` can reach it: a
- * phase that times out abandons its body, which never tears down, and the
- * next phase would find the port taken.
- */
-interface LiveBackend {
-	handle: BackendHandle | null;
-}
-
-/**
- * Spawn `config`, run `body`, then tear down — a teardown failure (an exit
- * other than `0`, an unexpected error in the log) fails the phase. A failed
- * body's teardown is logged beside the body's error rather than replacing it.
- * The handle sits in `live` while the backend runs.
- */
-const with_backend = async <T>(
-	config: BackendConfig,
-	live: LiveBackend,
-	body: (handle: BackendHandle) => Promise<T>
-): Promise<T> => {
-	const handle = await spawn_backend(config);
-	live.handle = handle;
-	let result: T;
-	try {
-		result = await body(handle);
-	} catch (err) {
-		live.handle = null;
-		await handle.teardown().catch((teardown_error: unknown) => console.error(teardown_error));
-		throw err;
-	}
-	live.handle = null;
-	await handle.teardown();
-	return result;
-};
-
-/** Tear down a backend a phase left running — one that timed out — logging a failed teardown. */
-const teardown_left_running = async (live: LiveBackend): Promise<void> => {
-	const { handle } = live;
-	if (!handle) return;
-	live.handle = null;
-	await handle.teardown().catch((err: unknown) => console.error(err));
-};
-
-/** A transport on `config`'s backend, holding `cookies` when given. */
-const transport_for = (
-	config: BackendConfig,
-	cookies?: ReadonlyArray<string>,
-	origin?: null
-): FetchTransport =>
-	create_fetch_transport({
-		base_url: config.base_url,
-		...(cookies && { initial_cookies: cookies }),
-		...(origin === null && { origin: null })
-	});
-
-const rpc = (
-	config: BackendConfig,
-	transport: FetchTransport,
-	method: string,
-	params: unknown,
-	headers: Record<string, string> = {}
-): Promise<RpcResult> => cross_rpc_call(transport, config.rpc_path, method, params, headers);
-
-/** `method` on a fresh transport holding `cookies`, its output parsed. */
-const rpc_as = async <T>(
-	config: BackendConfig,
-	cookies: ReadonlyArray<string>,
-	method: string,
-	params: unknown,
-	output: Schema<T, any>
-): Promise<T> =>
-	expect_output(await rpc(config, transport_for(config, cookies), method, params), output);
-
-/** A daemon-token backdoor call: Origin-free and cookie-free, as the daemon token requires. */
-const backdoor = (handle: BackendHandle, method: string): Promise<RpcResult> =>
-	rpc(handle.config, transport_for(handle.config, undefined, null), method, undefined, {
-		[DAEMON_TOKEN_HEADER]: handle.daemon_token
-	});
-
-/** Await the backend's detached writes, so what the phase did is all on disk before teardown. */
-const drain = async (handle: BackendHandle): Promise<void> => {
-	const drained = await backdoor(handle, '_testing_drain_effects');
-	assert.deepStrictEqual(drained.result, { ok: true }, `${handle.config.name}: the drain answers`);
-};
-
-const assert_invariants = async (handle: BackendHandle): Promise<void> => {
-	const answer = expect_output(await backdoor(handle, '_testing_db_invariants'), DbInvariantRows);
-	assert_db_invariant_rows(answer.rows, handle.config.name);
-};
-
-/** A JSON `POST` to a REST route: its status, body and `Set-Cookie` lines. */
-const post_json = async (
-	transport: FetchTransport,
-	path: string,
-	body: unknown
-): Promise<{ status: number; body: unknown; set_cookies: Array<string> }> => {
-	const res = await transport(path, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	const text = await res.text();
-	return {
-		status: res.status,
-		body: text ? JSON.parse(text) : null,
-		set_cookies: res.headers.getSetCookie()
-	};
-};
-
 const login = (config: BackendConfig, password: string) =>
-	post_json(transport_for(config), SPINE_ACCOUNT_LOGIN_PATH, {
+	backend_post_json(backend_transport(config), SPINE_ACCOUNT_LOGIN_PATH, {
 		username: SWAP_MEMBER_USERNAME,
 		password
 	});
-
-/** Who a credential authenticates as on `config`'s backend: an account id, or `null` on a 401. */
-const verified_account_id = async (
-	config: BackendConfig,
-	credential: { cookies: ReadonlyArray<string> } | { bearer: string }
-): Promise<string | null> => {
-	const res =
-		'cookies' in credential
-			? await rpc(config, transport_for(config, credential.cookies), 'account_verify', undefined)
-			: // Origin-free: a bearer beside an `Origin` is discarded as browser context
-				await rpc(config, transport_for(config, undefined, null), 'account_verify', undefined, {
-					authorization: `Bearer ${credential.bearer}`
-				});
-	if (res.status === 401) {
-		assert.strictEqual(error_reason(res), ERROR_AUTHENTICATION_REQUIRED);
-		return null;
-	}
-	return expect_output(res, SessionAccountJson).id;
-};
-
-/** The member's admin gate: `invite_list` answered (`true`) or refused 403 (`false`). */
-const passes_admin_gate = async (
-	config: BackendConfig,
-	cookies: ReadonlyArray<string>
-): Promise<boolean> => {
-	const res = await rpc(config, transport_for(config, cookies), 'invite_list', undefined);
-	if (res.status === 403) {
-		assert.strictEqual(error_reason(res), ERROR_INSUFFICIENT_PERMISSIONS);
-		return false;
-	}
-	expect_output(res, InviteListOutput);
-	return true;
-};
 
 /** The first backend: bootstrap, then everything the second must honor. */
 const mint_swap_credentials = async (
@@ -369,14 +183,18 @@ const mint_swap_credentials = async (
 	declined_role: string
 ): Promise<SwapCredentials> => {
 	const { config } = handle;
-	const keeper = await bootstrap({ transport: transport_for(config), config });
-	const keeper_spare = await post_json(transport_for(config), SPINE_ACCOUNT_LOGIN_PATH, {
-		username: config.bootstrap.username,
-		password: config.bootstrap.password
-	});
+	const keeper = await bootstrap({ transport: backend_transport(config), config });
+	const keeper_spare = await backend_post_json(
+		backend_transport(config),
+		SPINE_ACCOUNT_LOGIN_PATH,
+		{
+			username: config.bootstrap.username,
+			password: config.bootstrap.password
+		}
+	);
 	assert.strictEqual(keeper_spare.status, 200, 'the keeper logs in again');
 	assert.strictEqual(keeper_spare.set_cookies.length, 1, 'a login sets exactly the session cookie');
-	const keeper_token = await rpc_as(
+	const keeper_token = await backend_rpc_as(
 		config,
 		keeper.cookies,
 		'account_token_create',
@@ -385,12 +203,12 @@ const mint_swap_credentials = async (
 	);
 
 	expect_output(
-		await rpc(config, transport_for(config, keeper.cookies), 'invite_create', {
+		await backend_rpc(config, backend_transport(config, keeper.cookies), 'invite_create', {
 			username: SWAP_MEMBER_USERNAME
 		}),
 		InviteCreateOutput
 	);
-	const signup = await post_json(transport_for(config), SPINE_ACCOUNT_SIGNUP_PATH, {
+	const signup = await backend_post_json(backend_transport(config), SPINE_ACCOUNT_SIGNUP_PATH, {
 		username: SWAP_MEMBER_USERNAME,
 		password: SWAP_PASSWORD
 	});
@@ -402,7 +220,7 @@ const mint_swap_credentials = async (
 	assert.strictEqual(logged_in.set_cookies.length, 1, 'a login sets exactly the session cookie');
 	const member_cookies = logged_in.set_cookies;
 
-	const token = await rpc_as(
+	const token = await backend_rpc_as(
 		config,
 		member_cookies,
 		'account_token_create',
@@ -412,7 +230,7 @@ const mint_swap_credentials = async (
 
 	const offer = async (params: object): Promise<string> =>
 		(
-			await rpc_as(
+			await backend_rpc_as(
 				config,
 				keeper.cookies,
 				'role_grant_offer_create',
@@ -423,7 +241,7 @@ const mint_swap_credentials = async (
 	const offer_accepted_id = await offer({ role: ROLE_ADMIN });
 	const offer_declined_id = await offer({ role: declined_role, to_actor_id: member.actor.id });
 
-	const { offers } = await rpc_as(
+	const { offers } = await backend_rpc_as(
 		config,
 		member_cookies,
 		'role_grant_offer_list',
@@ -435,7 +253,7 @@ const mint_swap_credentials = async (
 		[offer_accepted_id, offer_declined_id]
 	);
 
-	await drain(handle);
+	await drain_backend_effects(handle);
 	return {
 		keeper_id: keeper.account.id,
 		keeper_cookies: keeper.cookies,
@@ -448,7 +266,7 @@ const mint_swap_credentials = async (
 		token_id: token.id,
 		offer_accepted_id,
 		offer_declined_id,
-		snapshot: await read_snapshot(db)
+		snapshot: await read_shared_database_snapshot(db)
 	};
 };
 
@@ -462,16 +280,16 @@ const use_swap_credentials = async (
 
 	// before any request but the health probe: nothing migrated, nothing written
 	assert.deepStrictEqual(
-		await read_snapshot(db),
+		await read_shared_database_snapshot(db),
 		minted.snapshot,
 		'the boot applied no migration and wrote or rewrote no row'
 	);
 
-	const status = await transport_for(config)(SPINE_ACCOUNT_STATUS_PATH, { method: 'GET' });
+	const status = await backend_transport(config)(SPINE_ACCOUNT_STATUS_PATH, { method: 'GET' });
 	const status_body = (await status.json()) as { bootstrap_available?: unknown };
 	assert.strictEqual(status.status, 401, 'an anonymous status is refused');
 	assert.notStrictEqual(status_body.bootstrap_available, true, 'bootstrap is closed');
-	const rebootstrap = await post_json(transport_for(config), config.bootstrap_path, {
+	const rebootstrap = await backend_post_json(backend_transport(config), config.bootstrap_path, {
 		token: config.bootstrap.token,
 		username: config.bootstrap.username,
 		password: config.bootstrap.password
@@ -512,7 +330,7 @@ const use_swap_credentials = async (
 	assert.strictEqual(wrong.status, 401, 'a wrong password is refused');
 	assert.strictEqual((wrong.body as { error?: unknown }).error, ERROR_INVALID_CREDENTIALS);
 
-	const { offers } = await rpc_as(
+	const { offers } = await backend_rpc_as(
 		config,
 		member_cookies,
 		'role_grant_offer_list',
@@ -525,7 +343,7 @@ const use_swap_credentials = async (
 		'both offers are pending'
 	);
 	assert.isFalse(await passes_admin_gate(config, member_cookies), 'no admin before the accept');
-	const declined = await rpc_as(
+	const declined = await backend_rpc_as(
 		config,
 		member_cookies,
 		'role_grant_offer_decline',
@@ -533,7 +351,7 @@ const use_swap_credentials = async (
 		RoleGrantOfferDeclineOutput
 	);
 	assert.isNotNull(declined.offer.declined_at);
-	const accepted = await rpc_as(
+	const accepted = await backend_rpc_as(
 		config,
 		member_cookies,
 		'role_grant_offer_accept',
@@ -542,18 +360,18 @@ const use_swap_credentials = async (
 	);
 	assert.isTrue(await passes_admin_gate(config, member_cookies), 'the accepted grant confers');
 
-	await assert_invariants(handle);
+	await assert_backend_invariants(handle);
 
 	// the revocations of what the first spine minted: the keeper's, which
 	// nothing else ends, and the member's password change, which ends every
 	// session and token of the member's
-	const logout = await post_json(
-		transport_for(config, minted.keeper_spare_cookies),
+	const logout = await backend_post_json(
+		backend_transport(config, minted.keeper_spare_cookies),
 		SPINE_ACCOUNT_LOGOUT_PATH,
 		{}
 	);
 	assert.strictEqual(logout.status, 200, "the first spine's keeper session logs out");
-	const revoked = await rpc_as(
+	const revoked = await backend_rpc_as(
 		config,
 		minted.keeper_cookies,
 		'account_token_revoke',
@@ -569,14 +387,14 @@ const use_swap_credentials = async (
 		await verified_account_id(config, { bearer: minted.keeper_token }),
 		'the revoked keeper token is refused'
 	);
-	const changed = await post_json(
-		transport_for(config, member_cookies),
+	const changed = await backend_post_json(
+		backend_transport(config, member_cookies),
 		SPINE_ACCOUNT_PASSWORD_PATH,
 		{ current_password: SWAP_PASSWORD, new_password: SWAP_PASSWORD_CHANGED }
 	);
 	assert.strictEqual(changed.status, 200, `password change: ${JSON.stringify(changed.body)}`);
 
-	await drain(handle);
+	await drain_backend_effects(handle);
 	return { member_cookies, role_grant_id: accepted.role_grant_id };
 };
 
@@ -589,7 +407,7 @@ const check_swap_writes = async (
 ): Promise<void> => {
 	const { config } = handle;
 	assert.deepStrictEqual(
-		(await read_snapshot(db)).schema_version,
+		(await read_shared_database_snapshot(db)).schema_version,
 		minted.snapshot.schema_version,
 		'the migrations are as the first boot left them'
 	);
@@ -631,7 +449,7 @@ const check_swap_writes = async (
 		'the grant the other spine made confers'
 	);
 
-	const { offers } = await rpc_as(
+	const { offers } = await backend_rpc_as(
 		config,
 		minted.keeper_cookies,
 		'role_grant_offer_history',
@@ -646,39 +464,19 @@ const check_swap_writes = async (
 	assert.isNotNull(declined.declined_at, 'the declined offer is declined');
 	assert.isNull(declined.accepted_at);
 
-	await assert_invariants(handle);
-	await drain(handle);
+	await assert_backend_invariants(handle);
+	await drain_backend_effects(handle);
 };
 
 /**
- * Why a config's startup-reset env doesn't leave the reset off, or `null` when
- * it does — read as the Rust spine reads it: unset or a false stringbool is
- * off, a true one resets, and any other value fails its boot. A config that
- * leaves it out reads the harness process's own, which `spawn_backend` passes
- * to the child.
- */
-const to_reset_problem = (config: BackendConfig): string | null => {
-	const value = config.env[RESET_DB_ON_STARTUP_ENV] ?? process.env[RESET_DB_ON_STARTUP_ENV];
-	if (value === undefined) return null;
-	const parsed = parse(EnvStringbool, value);
-	if (!parsed.ok) {
-		return `${config.name}'s ${RESET_DB_ON_STARTUP_ENV} is no stringbool (${JSON.stringify(value)})`;
-	}
-	return parsed.value
-		? `${config.name} resets its database at startup (${RESET_DB_ON_STARTUP_ENV})`
-		: null;
-};
-
-/**
- * Throw naming each way `order`'s configs can't swap over `database_url`.
- * Database URLs compare as exact strings.
+ * Throw naming each way `order`'s configs can't swap over `database_url`
+ * (`to_shared_database_problems`, and `declined_role` not `admin`).
  */
 const assert_swappable = (
 	order: BackendSwapOrder,
 	database_url: string,
 	declined_role: string
 ): void => {
-	const { first, second } = order;
 	const problems: Array<string> = [];
 	if (declined_role === ROLE_ADMIN) {
 		problems.push(
@@ -686,29 +484,7 @@ const assert_swappable = (
 				'role still pending answers the first, so the two offers would be one'
 		);
 	}
-	if (first.cookie_name !== second.cookie_name) {
-		problems.push(`cookie names differ (${first.cookie_name}, ${second.cookie_name})`);
-	}
-	if (first.env[COOKIE_KEYS_ENV] === undefined && second.env[COOKIE_KEYS_ENV] === undefined) {
-		problems.push(`neither config sets ${COOKIE_KEYS_ENV}`);
-	} else if (first.env[COOKIE_KEYS_ENV] !== second.env[COOKIE_KEYS_ENV]) {
-		problems.push(`${COOKIE_KEYS_ENV} differs`);
-	}
-	for (const config of [first, second]) {
-		const url = config.env[DATABASE_URL_ENV];
-		if (url === undefined) {
-			problems.push(`${config.name} sets no ${DATABASE_URL_ENV}`);
-		} else if (url !== database_url) {
-			problems.push(`${config.name}'s ${DATABASE_URL_ENV} is not the swap's database`);
-		}
-		const reset_problem = to_reset_problem(config);
-		if (reset_problem !== null) problems.push(reset_problem);
-		for (const method of SWAP_BACKDOORS) {
-			if (!config.capabilities.testing_backdoors.includes(method)) {
-				problems.push(`${config.name} doesn't declare ${method}`);
-			}
-		}
-	}
+	problems.push(...to_shared_database_problems([order.first, order.second], database_url));
 	if (problems.length > 0) {
 		throw new Error(`backend swap '${order.label}': ${problems.join('; ')}`);
 	}
@@ -748,14 +524,14 @@ export const describe_backend_swap_tests = (options: BackendSwapTestOptions): vo
 			const live: LiveBackend = { handle: null };
 
 			describe(label, () => {
-				afterEach(() => teardown_left_running(live));
+				afterEach(() => teardown_live_backend(live));
 
 				test(
 					`${first.name} mints credentials over an empty database`,
 					async () => {
 						assert_swappable(order, database_url, declined_role);
 						await empty_database();
-						state.minted = await with_backend(first, live, (handle) =>
+						state.minted = await with_live_backend(first, live, (handle) =>
 							mint_swap_credentials(handle, get_db(), declined_role)
 						);
 					},
@@ -767,7 +543,7 @@ export const describe_backend_swap_tests = (options: BackendSwapTestOptions): vo
 					async () => {
 						const { minted } = state;
 						assert.ok(minted, `${first.name}'s mint phase did not complete`);
-						state.written = await with_backend(second, live, (handle) =>
+						state.written = await with_live_backend(second, live, (handle) =>
 							use_swap_credentials(handle, get_db(), minted)
 						);
 					},
@@ -779,7 +555,7 @@ export const describe_backend_swap_tests = (options: BackendSwapTestOptions): vo
 					async () => {
 						const { minted, written } = state;
 						assert.ok(minted && written, `${second.name}'s phase did not complete`);
-						await with_backend(first, live, (handle) =>
+						await with_live_backend(first, live, (handle) =>
 							check_swap_writes(handle, get_db(), minted, written)
 						);
 					},

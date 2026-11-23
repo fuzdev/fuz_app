@@ -61,5 +61,11 @@ declare module 'vitest' {
 		// spawn one at a time — `ts` = TS spine (node), `stub` = Rust
 		// `testing_spine_stub` with its startup reset off.
 		swap_backend_configs: { ts: BackendConfig; stub: BackendConfig };
+		// The both-live project (`global_setup_both_live.ts`) provides its two
+		// backends' configs, over one database, for
+		// `backend_both_live.cross.test.ts` to spawn and run at once — `ts` =
+		// TS spine (node), `stub` = Rust `testing_spine_stub` with its startup
+		// reset off.
+		both_live_backend_configs: { ts: BackendConfig; stub: BackendConfig };
 	}
 }
