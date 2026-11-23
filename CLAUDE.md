@@ -249,7 +249,7 @@ over real HTTP: its TS spine binary on Node and Bun
 (`testing/cross_backend/testing_server_core.ts` + adapters) and the Rust
 `testing_spine_stub`, in the opt-in `cross_backend_*` vitest projects
 (`FUZ_TEST_CROSS_BACKEND=1`, never a bare `gro test`; `npm run test:cross`
-runs them all), and in the `npm run benchmark:cross-impl` run. Map:
+runs them all, and the `db` project on Postgres beside them), and in the `npm run benchmark:cross-impl` run. Map:
 ./src/test/CLAUDE.md §Cross-backend self-tests; building a binary:
 `src/lib/testing/CLAUDE.md` §"Building a TS test-server binary".
 

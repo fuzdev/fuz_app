@@ -1,7 +1,8 @@
 /**
  * Tests for `cross_backend_projects.ts` — the cross projects run at once, so
  * every port, Postgres database and temp directory `CROSS_PROJECT_RESOURCES`
- * claims must be claimed once, and the table must cover exactly the projects
+ * claims must be claimed once (and the `db_postgres` step's database by
+ * none), and the table must cover exactly the projects
  * `CROSS_BACKEND_PROJECTS` defines.
  *
  * @module
@@ -18,6 +19,7 @@ import {
 
 import {
 	CROSS_BACKEND_PROJECTS,
+	CROSS_DB_POSTGRES_DATABASE,
 	CROSS_PROJECT_RESOURCES,
 	type CrossBackendResources
 } from './cross_backend_projects.ts';
@@ -66,6 +68,13 @@ describe('CROSS_PROJECT_RESOURCES', () => {
 	test('every Postgres database is claimed once', () => {
 		assert.deepEqual(
 			find_duplicates((r) => r.database),
+			[]
+		);
+	});
+
+	test("no backend claims the db_postgres step's database", () => {
+		assert.deepEqual(
+			backends.filter(([, r]) => r.database === CROSS_DB_POSTGRES_DATABASE).map(([l]) => l),
 			[]
 		);
 	});

@@ -1,6 +1,6 @@
 /**
- * `npm run test:cross` — every `cross_backend_*` project at once, behind one
- * summary.
+ * `npm run test:cross` — every `cross_backend_*` project at once, and the
+ * `db` project on Postgres, behind one summary.
  *
  * vitest runs the projects of one invocation one after another (see the
  * comment in `vite.config.ts`), so this runs each project in a `vitest`
@@ -10,6 +10,20 @@
  * `FUZ_TESTING_NO_REBUILD=1` as usual), and every invocation is handed
  * `FUZ_TESTING_NO_REBUILD=1` and the binary path, so no two builds race on
  * Cargo's lock.
+ *
+ * Beside them runs the `db` project with `TEST_DATABASE_URL` set (the
+ * `db_postgres` step), so the real-Postgres halves a plain `gro test` skips — the race,
+ * lock-order and row-order files on `pg_factory`, the `TEST_DATABASE_URL`
+ * suites, and every four-driver suite's `pg` leg — run with the matrix. Its
+ * database is `CROSS_DB_POSTGRES_DATABASE`, created when missing on the
+ * server `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names (the stub's
+ * server), whatever `TEST_DATABASE_URL` the caller has set. The whole project
+ * rather than a list of files: a Postgres-only file added later runs here
+ * with no list to keep. The Rust spine's `#[ignore]` Postgres suites are the
+ * fuz workspace's own gate (`cargo test -- --include-ignored`), not run here:
+ * they build every test target of the spine crates in another profile than
+ * the stub's, and the parity project's lock pins already hold both spines'
+ * locks over the wire.
  *
  * Each invocation's output is held and printed whole when it finishes, with
  * one line naming the projects still running; an invocation still running
@@ -46,14 +60,29 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 
 import { NO_REBUILD_ENV } from '#lib/testing/cross_backend/cargo_binary.ts';
+import {
+	ensure_database_for_url,
+	with_database_name
+} from '#lib/testing/cross_backend/postgres_database.ts';
 
-import { CROSS_BACKEND_ENV, CROSS_BACKEND_PROJECTS } from './cross_backend_projects.ts';
-import { rebuild_rust_spine_stub, RUST_SPINE_STUB_CRATE } from './global_setup_helpers.ts';
+import {
+	CROSS_BACKEND_ENV,
+	CROSS_BACKEND_PROJECTS,
+	CROSS_DB_POSTGRES_DATABASE
+} from './cross_backend_projects.ts';
+import {
+	rebuild_rust_spine_stub,
+	resolve_rust_spine_stub_database_url,
+	RUST_SPINE_STUB_CRATE
+} from './global_setup_helpers.ts';
+
+/** The summary's name for the `db` project run with `TEST_DATABASE_URL`. */
+const DB_POSTGRES_STEP = 'db_postgres';
 
 /**
- * How long one project's invocation may run (ms) before it is stopped and
- * reported as timed out — well past the slowest project's half minute, so
- * only a hang reaches it.
+ * How long one step's invocation may run (ms) before it is stopped and
+ * reported as timed out — well past the slowest step's run, so only a hang
+ * reaches it.
  */
 const CHILD_TIMEOUT_MS = 10 * 60_000;
 
@@ -107,6 +136,7 @@ const format_seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
 
 const run_project = (
 	name: string,
+	project: string,
 	report_path: string,
 	env: NodeJS.ProcessEnv
 ): Promise<ProjectRun> =>
@@ -118,7 +148,7 @@ const run_project = (
 				vitest_bin,
 				'run',
 				'--project',
-				name,
+				project,
 				'--reporter=default',
 				'--reporter=json',
 				`--outputFile.json=${report_path}`
@@ -176,6 +206,13 @@ const run_project = (
 		);
 	});
 
+/**
+ * A step's counts as its JSON report gives them. vitest's `numPassedTests`
+ * counts a `test.fails` case that failed as expected as passed, and the
+ * report carries no field that tells one apart (an assertion result has no
+ * `fails` flag), so the passed count here includes the expected fails the
+ * step's own summary line lists separately.
+ */
 const format_counts = (report: VitestJsonReport | null): string => {
 	if (!report) return 'no report';
 	const skipped = report.numPendingTests + report.numTodoTests;
@@ -233,14 +270,31 @@ const env: NodeJS.ProcessEnv = {
 	[NO_REBUILD_ENV]: '1'
 };
 
-const names = CROSS_BACKEND_PROJECTS.map((project) => project.name);
-console.log(`running ${names.length} cross projects concurrently: ${names.join(', ')}`);
+// the `db` step: the caller's env without the cross switch, its Postgres
+// database the step's own
+const db_postgres_url = with_database_name(
+	resolve_rust_spine_stub_database_url(),
+	CROSS_DB_POSTGRES_DATABASE
+);
+ensure_database_for_url(db_postgres_url);
+const db_postgres_env: NodeJS.ProcessEnv = { ...process.env, TEST_DATABASE_URL: db_postgres_url };
+delete db_postgres_env[CROSS_BACKEND_ENV];
+
+/** Each step: its summary name, the vitest project it runs, and its env. */
+const steps: ReadonlyArray<{ name: string; project: string; env: NodeJS.ProcessEnv }> = [
+	...CROSS_BACKEND_PROJECTS.map((project) => ({ name: project.name, project: project.name, env })),
+	{ name: DB_POSTGRES_STEP, project: 'db', env: db_postgres_env }
+];
+const names = steps.map((step) => step.name);
+console.log(`running ${names.length} steps concurrently: ${names.join(', ')}`);
 
 const report_dir = await mkdtemp(join(tmpdir(), 'fuz_app_cross_'));
 let runs: Array<ProjectRun>;
 try {
 	runs = await Promise.all(
-		names.map((name) => run_project(name, join(report_dir, `${name}.json`), env))
+		steps.map((step) =>
+			run_project(step.name, step.project, join(report_dir, `${step.name}.json`), step.env)
+		)
 	);
 } finally {
 	await rm(report_dir, { recursive: true, force: true });

@@ -49,7 +49,8 @@ on a fixture's `pg_factory` (`create_db_fixture.ts`) and run only with
 each module doc names its Postgres-only half. A change to a row lock, a
 locking read or a `RETURNING` order runs them locally first, and
 `npm run test:cross:parity`, whose `lock_pins.cross.test.ts` holds the same
-locks on both spines (below).
+locks on both spines (below); `npm run test:cross` runs both (its
+`db_postgres` step).
 
 **Choosing drivers.** These env vars are read once per run — the first picks the
 default factory's driver, the other two add legs to the four-driver set:
@@ -382,7 +383,10 @@ global setup reads its backends from it, and
 temp directory unique, so any set of them can run at once. `npm run test:cross` does
 that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
 project in its own `vitest` invocation concurrently (with
-`FUZ_TESTING_NO_REBUILD=1`), prints each invocation's output as it finishes,
+`FUZ_TESTING_NO_REBUILD=1`), beside them the `db` project with
+`TEST_DATABASE_URL` on a database of its own (`CROSS_DB_POSTGRES_DATABASE`,
+the `db_postgres` step, so the Postgres-only tests of §Database Tests run
+with the matrix), prints each invocation's output as it finishes,
 then one summary of counts and failed tests. One `vitest` invocation over
 several projects also works, but runs them one after another: vitest gives a
 project with `fileParallelism` off one worker, a `groupOrder` group runs on

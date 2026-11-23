@@ -85,6 +85,15 @@ export const CROSS_PROJECT_RESOURCES = {
 	}
 } as const satisfies Record<string, Record<string, CrossBackendResources>>;
 
+/**
+ * The Postgres database `npm run test:cross` hands its `db` step as
+ * `TEST_DATABASE_URL` (`run_cross.ts`), on the server
+ * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names: a database of its own,
+ * since the step's factories reset its `public` schema, so it runs beside the
+ * cross projects and beside a `db` run on another database.
+ */
+export const CROSS_DB_POSTGRES_DATABASE = 'fuz_app_test_cross_db_postgres';
+
 /** A cross project's name — a key of `CROSS_PROJECT_RESOURCES`. */
 export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
 
