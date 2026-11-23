@@ -150,6 +150,35 @@ describe_db('account queries', (get_db) => {
 			);
 		});
 
+		test('update_password refuses a tombstoned account, its hash unchanged', async () => {
+			const db = get_db();
+			const deps = { db };
+			const { account, actor } = await query_create_account_with_actor(deps, {
+				username: 'eve_deleted',
+				password_hash: 'current_hash'
+			});
+			assert.ok(await query_account_soft_delete(deps, account.id, actor.id));
+			// the hash the authorization verified still matches; only the tombstone refuses
+			const updated = await query_update_account_password(
+				deps,
+				account.id,
+				'new_hash',
+				null,
+				'current_hash'
+			);
+			assert.strictEqual(updated, false, 'a deleted account must not update');
+			// read past the live-account lookups, which skip a tombstone
+			const rows = await db.query<{ password_hash: string }>(
+				'SELECT password_hash FROM account WHERE id = $1',
+				[account.id]
+			);
+			assert.deepStrictEqual(
+				rows.map((row) => row.password_hash),
+				['current_hash'],
+				'password_hash must remain unchanged'
+			);
+		});
+
 		test('soft-delete tombstones the account; auth lookup excludes it, purge removes it', async () => {
 			const db = get_db();
 			const deps = { db };

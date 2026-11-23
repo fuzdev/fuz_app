@@ -6,7 +6,9 @@
  * The race is made exact, not hammered. A login is held inside its password
  * verify (a latched `PasswordHashDeps`) while the change or the delete runs to
  * completion, then released: it must be refused exactly as a wrong password
- * is, with no session row and no cookie. A token create is held before its
+ * is, with no session row and no cookie. A password change held there across
+ * a delete changes nothing: its write is refused on the tombstone, and the
+ * old password holds after the undelete. A token create is held before its
  * transaction begins (`hold_begin`) while a delete commits. The mirror order —
  * the mint commits first — ends with the credential revoked. Those run on
  * every driver: nothing is held inside a transaction.
@@ -275,6 +277,41 @@ describe_db('credential mint race', (get_db) => {
 			await admin_action(s, 'account_undelete');
 			assert.strictEqual(await count_rows(s, 'auth_session'), 0, 'the undelete restores none');
 			assert.strictEqual((await login(s.test_app, OLD_PASSWORD)).status, 200);
+		} finally {
+			await s.test_app.cleanup();
+		}
+	});
+
+	test('a password change held across a delete changes nothing', async () => {
+		const s = await setup(get_db());
+		try {
+			const first = await login(s.test_app, OLD_PASSWORD);
+			assert.strictEqual(first.status, 200);
+			// the session and the account are read, the current password verified
+			const held = s.hold();
+			const raced = change_password(s.test_app, cookie_of(first));
+			await held.reached;
+			await admin_action(s, 'account_delete');
+			held.release();
+
+			const answer = await raced;
+			assert.strictEqual(answer.status, 401, 'the change after the delete');
+			assert.deepStrictEqual(await answer.json(), { error: ERROR_INVALID_CREDENTIALS });
+			const changes = await query_audit_log_list(
+				{ db: s.test_app.backend.deps.db },
+				{ event_type: 'password_change', account_id: s.victim_id }
+			);
+			assert.deepStrictEqual(
+				changes.map((row) => [row.outcome, row.metadata?.reason]),
+				[['failure', 'concurrent_change']],
+				'audited as a lost race, never as a change'
+			);
+			await admin_action(s, 'account_undelete');
+			assert.strictEqual(
+				(await login(s.test_app, OLD_PASSWORD)).status,
+				200,
+				'the old password still holds after the undelete'
+			);
 		} finally {
 			await s.test_app.cleanup();
 		}

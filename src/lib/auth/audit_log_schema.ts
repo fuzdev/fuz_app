@@ -298,7 +298,7 @@ export const audit_metadata_schemas = Object.freeze({
 			}),
 			reason: meta(optional(literal('concurrent_change')), {
 				description:
-					'Failure category. `concurrent_change` indicates another password change committed first against the same starting hash (verify-write race loser). Absent for typed-wrong-password failures.'
+					'Failure category. `concurrent_change` indicates the conditional write matched nothing: another password change committed first against the same starting hash, or a delete tombstoned the account (verify-write race loser). Absent for typed-wrong-password failures.'
 			}),
 			credential_type: credential_type_meta
 		})

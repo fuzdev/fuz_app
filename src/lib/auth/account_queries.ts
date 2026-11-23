@@ -198,11 +198,17 @@ export const query_account_by_username_or_email = async (
  * Pass the same hash the verify ran against — typically
  * `ctx.account.password_hash` from the request context.
  *
+ * A tombstoned account matches nothing either: a delete can commit between
+ * the authorization and the UPDATE, and a waiting UPDATE rereads the row the
+ * delete committed, so the change never lands on a deleted account. Twin of
+ * the Rust `query_update_account_password`.
+ *
  * @returns `true` if the row was updated, `false` if `expected_hash` no
  *   longer matched (concurrent change won — caller should treat as a
- *   stale-credential failure).
+ *   stale-credential failure) or the account is deleted.
  * @mutates `account` row - updates `password_hash`, `updated_at`, and
- *   `updated_by` only when the stored hash equals `expected_hash`
+ *   `updated_by` only when the account is live and its stored hash equals
+ *   `expected_hash`
  */
 export const query_update_account_password = async (
 	deps: QueryDeps,
@@ -213,7 +219,7 @@ export const query_update_account_password = async (
 ): Promise<boolean> => {
 	const rows = await deps.db.query<{ id: string }>(
 		`UPDATE account SET password_hash = $1, updated_at = NOW(), updated_by = $2
-		 WHERE id = $3 AND password_hash = $4
+		 WHERE id = $3 AND password_hash = $4 AND deleted_at IS NULL
 		 RETURNING id`,
 		[password_hash, updated_by ?? null, id, expected_hash]
 	);

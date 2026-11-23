@@ -568,7 +568,8 @@ export const create_account_route_specs = (
 				// Argon2 verify and hash held no connection). Twin of the Rust
 				// spine's `change_password`. The audit row is written last, so a
 				// refused row changes no password and revokes nothing. `null` when
-				// the UPDATE matched nothing — a concurrent change committed first.
+				// the UPDATE matched nothing — a concurrent change or a delete
+				// committed first.
 				const change = await transaction_with_post_commit_rollback(route, async (tx_ctx) => {
 					const updated = await query_update_account_password(
 						tx_ctx,
@@ -617,7 +618,8 @@ export const create_account_route_specs = (
 				if (!change) {
 					// A concurrent password change committed first — our
 					// `current_password` was correct at read-time but the row's
-					// `password_hash` no longer matches. Mirrors the wrong-password
+					// `password_hash` no longer matches — or a delete did, and the
+					// row is a tombstone. Mirrors the wrong-password
 					// 401 shape; tag the failure metadata so admins reading the
 					// audit log can distinguish "user typoed" from "two clients
 					// raced." Sessions/tokens were already revoked by the winner;
