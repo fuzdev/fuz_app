@@ -311,10 +311,11 @@ session-cookie axis — a row that doesn't say otherwise mints and clears
 nothing — with a floor behind it: no response outside 2xx mints a session
 cookie, and a row expecting one is refused when the table is described.
 
-**Dual-spawn projects.** Each brings up two backends in one global setup and
-is excluded from the single-backend projects (`DUAL_SPAWN_TESTS` in
-`cross_backend_projects.ts`; `CROSS_PROJECT_RESOURCES` there gives each its
-ports and databases). Each `<file>.cross.test.ts` module doc says what it pins.
+**Dual-spawn projects.** Each brings up two backends in one global setup (the
+swap in its tests, one at a time) and is excluded from the single-backend
+projects (`DUAL_SPAWN_TESTS` in `cross_backend_projects.ts`;
+`CROSS_PROJECT_RESOURCES` there gives each its ports and databases). Each
+`<file>.cross.test.ts` module doc says what it pins.
 
 | project (`npm run …`) | backends | files |
 | --- | --- | --- |
@@ -322,6 +323,7 @@ ports and databases). Each `<file>.cross.test.ts` module doc says what it pins.
 | `cross_backend_ts_differential` (`test:cross:ts-differential`) | the TS spine on Node and on Bun, `memory://` | `differential_ts`, `transcript_differential_ts` (empty ledgers, no database comparison) |
 | `cross_backend_security` (`test:cross:security`) | TS spine + stub, login and action limiters on, loopback proxy trusted | `login_security`, `ws_action_rate_limit`, `bootstrap_rate_limit` |
 | `cross_backend_timing` (`test:cross:timing`) | TS spine + stub, SSE keep-alive, WS receive timeout and pool checkout bounds shortened | `sse_keep_alive`, `ws_receive_timeout`, `db_checkout_timeout` |
+| `cross_backend_swap` (`test:cross:swap`) | TS spine + stub over **one** Postgres database, spawned one at a time by the tests (the setup only prepares them; the stub's startup reset off) | `backend_swap` (`describe_backend_swap_tests` both ways: each spine boots over the other's database with no migration and no row written or rewritten, honors the sessions, tokens, password hashes and offers the other minted, and honors the other's writes — a keeper session logged out and a keeper token revoked, an offer accepted and one declined, a password change) |
 
 Parity runs on real Postgres because pglet's `indexdef` leaves out index
 modifiers, so a pglet leg would report every such index as drift; the setup
@@ -381,8 +383,10 @@ spawn external backends). They are listed in
 table holds each one's ports, Postgres databases and backend names — every
 global setup reads its backends from it, and
 `cross_backend/cross_backend_projects.test.ts` holds each port, database and
-temp directory unique, so any set of them can run at once. `npm run test:cross` does
-that — `cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
+temp directory unique — but the database the backends of a project in
+`SHARED_DATABASE_PROJECTS` share, never across projects — so any set of them
+can run at once. `npm run test:cross` does that —
+`cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
 project in its own `vitest` invocation concurrently (with
 `FUZ_TESTING_NO_REBUILD=1`), beside them the `db` project with
 `TEST_DATABASE_URL` on a database of its own (`CROSS_DB_POSTGRES_DATABASE`,
@@ -420,6 +424,8 @@ npm run test:cross:security
 npm run test:cross:timing
 # the dual-spawn differential between the TS spine on Node and on Bun:
 npm run test:cross:ts-differential
+# the one-database swap between the TS spine and the stub, both ways:
+npm run test:cross:swap
 ```
 
 **CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
@@ -429,8 +435,8 @@ Bun pinned in the job's `env` to the version the suites are green on; a bump
 there is a deliberate re-measure. `.github/workflows/cross-canary.yml` runs the
 Bun leg and the Node-vs-Bun differential weekly (and by hand) on the latest Bun
 release and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
-`cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`) run
-locally only.
+`cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`,
+`cross_backend_swap`) run locally only.
 
 The TS binary + the reusable test-server core/adapters it's built on live in
 `src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`

@@ -80,8 +80,9 @@ import '../assert_dev_env.ts';
  * **Not in the one call** (`STANDALONE_CROSS_SUITES`, with the reasons): the
  * suites that need two handles (the differential), a backend spawned with live
  * limiters (`login_security`, `ws_action_rate_limit` — the standard suites would
- * exhaust them), and the conformance runner, which runs the consumer's own
- * cases. Each keeps its own entry point.
+ * exhaust them), the backend swap, which spawns and stops its own backends, and
+ * the conformance runner, which runs the consumer's own cases. Each keeps its
+ * own entry point.
  *
  * Suites are registered without a wrapping `describe`, so their test names are
  * the same as when each is called on its own — and an `exclude_cases` path is
@@ -367,6 +368,7 @@ export type SuiteName = (typeof SUITE_NAMES)[number];
 
 /** A shipped suite module `describe_spine_cross_suites` leaves out. */
 export type StandaloneSuiteName =
+	| 'backend_swap'
 	| 'conformance_table'
 	| 'differential'
 	| 'login_security'
@@ -386,6 +388,8 @@ export const STANDALONE_CROSS_SUITES: Readonly<Record<StandaloneSuiteName, strin
 	ws_action_rate_limit:
 		'needs a backend spawned with the action limiters enabled, which the standard suites would exhaust',
 	conformance_table: "a runner over the consumer's own cases, not a suite",
+	backend_swap:
+		'spawns and stops two backends of its own, one at a time over one database, rather than running against one',
 	standard_bundle:
 		'runs `standard_auth` and `standard` in one call, which the registry runs as two suites'
 };

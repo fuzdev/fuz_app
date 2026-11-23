@@ -31,7 +31,8 @@ import '../assert_dev_env.ts';
  * (`FUZ_TESTING_RESET_DB_ON_STARTUP=true`, set by the Rust-family builder),
  * so no manual `DROP TABLE` between sessions is needed; per-test reset is
  * the orthogonal `_testing_reset` RPC action `default_cross_process_setup`
- * fires.
+ * fires. `reset_db_on_startup: false` boots it over the database as it finds
+ * it, for the backend swap (`backend_swap.ts`).
  *
  * @module
  */
@@ -195,6 +196,13 @@ export interface SpineStubBackendConfigOptions {
 	 * `TsSpineBackendConfigOptions.db_audit_checkout_timeout_ms`.
 	 */
 	readonly db_audit_checkout_timeout_ms?: number;
+	/**
+	 * Whether the stub drops the database's `public` schema before its
+	 * migrations on boot. Default `true`. `false` keeps what another backend
+	 * left there — the backend swap (`backend_swap.ts`). Passed to
+	 * `make_default_rust_backend_config`.
+	 */
+	readonly reset_db_on_startup?: boolean;
 }
 
 /**
@@ -218,7 +226,8 @@ export const rust_spine_stub_backend_config = (
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
 		trusted_proxies,
-		name = RUST_SPINE_STUB_DEFAULT_NAME
+		name = RUST_SPINE_STUB_DEFAULT_NAME,
+		reset_db_on_startup
 	} = options;
 	if (!binary_path) {
 		throw new Error(
@@ -247,6 +256,7 @@ export const rust_spine_stub_backend_config = (
 		// dir to `paths.root`, which makes that `paths.daemon_token_path`, the
 		// file `spawn_backend` reads after the health probe.
 		daemon_token_dir_env: 'FUZ_RUST_SPINE_STUB_DIR',
+		reset_db_on_startup,
 		extra_env: {
 			// Absolute path to the committed spine `expected_schema.json` — the
 			// stub's `/ready` gate introspects the live DB against it. The SAME

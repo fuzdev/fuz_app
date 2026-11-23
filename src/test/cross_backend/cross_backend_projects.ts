@@ -8,8 +8,10 @@
  * claims live in one table, `CROSS_PROJECT_RESOURCES`: each project's global
  * setup reads its backends' names, ports and databases from it, and
  * `cross_backend_projects.test.ts` holds every port, database and temp
- * directory unique across the table. A backend's name (prefixed with the repo
- * directory) is also its directory under `os.tmpdir()`.
+ * directory unique across the table — a database shared by the backends of
+ * one project only where `SHARED_DATABASE_PROJECTS` names it. A backend's
+ * name (prefixed with the repo directory) is also its directory under
+ * `os.tmpdir()`.
  *
  * The single-backend Rust stub's database is the one
  * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names when it is set. The other
@@ -82,6 +84,11 @@ export const CROSS_PROJECT_RESOURCES = {
 			port: 1188,
 			database: 'fuz_app_test_rust_spine_stub_timing'
 		}
+	},
+	// both on one database, never at once (`SHARED_DATABASE_PROJECTS`)
+	cross_backend_swap: {
+		ts: { name: 'ts_spine_node_swap', port: 1191, database: 'fuz_app_test_backend_swap' },
+		stub: { name: 'spine_stub_swap', port: 1192, database: 'fuz_app_test_backend_swap' }
 	}
 } as const satisfies Record<string, Record<string, CrossBackendResources>>;
 
@@ -98,6 +105,16 @@ export const CROSS_DB_POSTGRES_DATABASE = 'fuz_app_test_cross_db_postgres';
 export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
 
 /**
+ * The projects whose backends share one Postgres database, each running only
+ * while the others are stopped — the backend swap, which boots each spine over
+ * what the other left. Every other database is claimed once, and none is
+ * shared across projects (`cross_backend_projects.test.ts`).
+ */
+export const SHARED_DATABASE_PROJECTS: ReadonlySet<CrossProjectName> = new Set([
+	'cross_backend_swap'
+]);
+
+/**
  * The env var that turns the cross projects on: `vite.config.ts` defines them
  * only when it is `1`, and `run_cross.ts` sets it for each invocation.
  */
@@ -111,9 +128,9 @@ type DualSpawnProject = CrossBackendProjectOptions & { name: CrossProjectName };
 
 /**
  * The dual-spawn projects — each spawns BOTH backends in its own `globalSetup`
- * and provides two handles instead of `backend_handle`, so its files are
- * excluded from the single-backend projects (`DUAL_SPAWN_TESTS`, derived
- * here).
+ * and provides two handles instead of `backend_handle` (the swap provides two
+ * configs, its tests spawning each in turn), so its files are excluded from
+ * the single-backend projects (`DUAL_SPAWN_TESTS`, derived here).
  */
 const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// One dual-spawn serves the parity gates: schema parity (live DDL),
@@ -162,6 +179,14 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 			'src/test/cross_backend/ws_receive_timeout.cross.test.ts',
 			'src/test/cross_backend/db_checkout_timeout.cross.test.ts'
 		]
+	},
+	// The backend swap: the TS spine and the stub, one at a time over one
+	// database, each honoring what the other wrote. Its tests spawn both
+	// backends themselves, so its global setup only prepares them.
+	{
+		name: 'cross_backend_swap',
+		global_setup: './src/test/cross_backend/global_setup_swap.ts',
+		include: ['src/test/cross_backend/backend_swap.cross.test.ts']
 	},
 	// The differential and the transcript differential again, between two JS
 	// runtimes: the TS spine on Node and on Bun, both on `memory://` — no Rust,

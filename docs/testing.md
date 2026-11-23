@@ -1401,6 +1401,48 @@ as body differences; run it in a dual-spawn project. The two sides need not
 be two implementations: the same TS binary on Node and on Bun is a
 differential of the runtime, and its ledger is normally empty.
 
+#### Backend swap
+
+The differential holds two backends to the same answers; the swap holds them
+to one database. `describe_backend_swap_tests`
+(`testing/cross_backend/backend_swap.ts`) runs each order — first, second,
+first again — over one Postgres database, one backend at a time: the first
+bootstraps and, through its real routes, mints keeper and member sessions
+and API tokens, the member's password and two pending offers; the second
+boots over that database — nothing migrated, no row written or rewritten
+(each table's content compared by digest) — honors every credential and
+offer, then logs a keeper session out, revokes a keeper token, accepts one
+offer, declines the other and changes the member's password; the first boots
+again and honors each of those writes. The keeper revocations are the ones
+the swap proves crossed: the password change alone ends every member
+credential. It is what lets a consumer swap a TS server for its Rust twin
+without re-bootstrapping.
+
+```ts
+describe_backend_swap_tests({
+  orders: [
+    {label: 'TS → Rust', first: ts_config, second: rust_config},
+    {label: 'Rust → TS', first: rust_config, second: ts_config},
+  ],
+  database_url,
+  empty_database: () =>
+    empty_owned_database(database_url, {
+      owned_name: 'my_app_test_swap',
+      label: 'swap',
+    }),
+});
+```
+
+Both configs name that database in `DATABASE_URL` (the same string), the
+same session cookie name and the same `SECRET_FUZ_COOKIE_KEYS` — a cookie one
+signs, the other must verify — and a Rust-family config turns its startup
+wipe off (`reset_db_on_startup: false`), or its boot drops what the other
+wrote. The suite checks these first, then spawns and stops each backend
+itself, so its project's global setup only prepares them and must run alone
+on the database. The declined offer is of `declined_role` (default
+`participant`, the reference spines' grantable app role; never `admin`, the
+accepted offer's); a backend registering no such role passes one it does.
+
 ### Malformed envelopes and invalid params
 
 `describe_rpc_adversarial_cross_tests({setup_test, surface_source, rpc_path?,

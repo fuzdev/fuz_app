@@ -10,6 +10,7 @@
  * @module
  */
 
+import type { BackendConfig } from '#lib/testing/cross_backend/backend_config.ts';
 import type { DbState } from '#lib/testing/cross_backend/db_state_diff.ts';
 import type { SerializableBootstrappedBackendHandle } from '#lib/testing/cross_backend/setup.ts';
 
@@ -55,5 +56,10 @@ declare module 'vitest' {
 		timing_handle_b: SerializableBootstrappedBackendHandle;
 		timing_audit_sse_keep_alive_ms: number;
 		timing_ws_receive_timeout_ms: number;
+		// The swap project (`global_setup_swap.ts`) provides its two backends'
+		// configs, both over one database, for `backend_swap.cross.test.ts` to
+		// spawn one at a time — `ts` = TS spine (node), `stub` = Rust
+		// `testing_spine_stub` with its startup reset off.
+		swap_backend_configs: { ts: BackendConfig; stub: BackendConfig };
 	}
 }

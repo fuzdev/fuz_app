@@ -3,7 +3,9 @@
  * every port, Postgres database and temp directory `CROSS_PROJECT_RESOURCES`
  * claims must be claimed once (and the `db_postgres` step's database by
  * none), and the table must cover exactly the projects
- * `CROSS_BACKEND_PROJECTS` defines.
+ * `CROSS_BACKEND_PROJECTS` defines. The one exception: the backends of a
+ * project `SHARED_DATABASE_PROJECTS` names may share a database among
+ * themselves, never with another project.
  *
  * @module
  */
@@ -21,33 +23,49 @@ import {
 	CROSS_BACKEND_PROJECTS,
 	CROSS_DB_POSTGRES_DATABASE,
 	CROSS_PROJECT_RESOURCES,
-	type CrossBackendResources
+	SHARED_DATABASE_PROJECTS,
+	type CrossBackendResources,
+	type CrossProjectName
 } from './cross_backend_projects.ts';
 
-/** Every backend in the table, labelled `project.role`. */
-const backends: ReadonlyArray<[string, CrossBackendResources]> = Object.entries(
+/** Every backend in the table, labelled `project.role`, with its project. */
+const backends: ReadonlyArray<[string, CrossBackendResources, CrossProjectName]> = Object.entries(
 	CROSS_PROJECT_RESOURCES
 ).flatMap(([project, roles]) =>
 	Object.entries(roles as Record<string, CrossBackendResources>).map(
-		([role, resources]): [string, CrossBackendResources] => [`${project}.${role}`, resources]
+		([role, resources]): [string, CrossBackendResources, CrossProjectName] => [
+			`${project}.${role}`,
+			resources,
+			project as CrossProjectName
+		]
 	)
 );
 
-/** The labels claiming each value more than once. */
+/**
+ * The labels claiming each value more than once. With `shared_within`, a
+ * value claimed only by the backends of one project the set names counts
+ * once.
+ */
 const find_duplicates = (
-	claim: (resources: CrossBackendResources) => string | number | null
+	claim: (resources: CrossBackendResources) => string | number | null,
+	shared_within?: ReadonlySet<CrossProjectName>
 ): Array<string> => {
-	const claimed: Map<string | number, Array<string>> = new Map();
-	for (const [label, resources] of backends) {
+	const claimed: Map<string | number, Array<[string, CrossProjectName]>> = new Map();
+	for (const [label, resources, project] of backends) {
 		const value = claim(resources);
 		if (value === null) continue;
-		const labels = claimed.get(value) ?? [];
-		labels.push(label);
-		claimed.set(value, labels);
+		const claims = claimed.get(value) ?? [];
+		claims.push([label, project]);
+		claimed.set(value, claims);
 	}
+	const is_shared_within_one = (claims: Array<[string, CrossProjectName]>): boolean => {
+		const projects = new Set(claims.map(([, project]) => project));
+		const [project] = projects;
+		return projects.size === 1 && project !== undefined && !!shared_within?.has(project);
+	};
 	return [...claimed]
-		.filter(([, labels]) => labels.length > 1)
-		.map(([value, labels]) => `${value}: ${labels.join(', ')}`);
+		.filter(([, claims]) => claims.length > 1 && !is_shared_within_one(claims))
+		.map(([value, claims]) => `${value}: ${claims.map(([label]) => label).join(', ')}`);
 };
 
 describe('CROSS_PROJECT_RESOURCES', () => {
@@ -65,11 +83,29 @@ describe('CROSS_PROJECT_RESOURCES', () => {
 		);
 	});
 
-	test('every Postgres database is claimed once', () => {
+	test('every Postgres database is claimed once, but within a sharing project', () => {
 		assert.deepEqual(
-			find_duplicates((r) => r.database),
+			find_duplicates((r) => r.database, SHARED_DATABASE_PROJECTS),
 			[]
 		);
+	});
+
+	test('a sharing project runs over one database, which no other project claims', () => {
+		for (const project of SHARED_DATABASE_PROJECTS) {
+			const databases = new Set(
+				Object.values(
+					CROSS_PROJECT_RESOURCES[project] as Record<string, CrossBackendResources>
+				).map((r) => r.database)
+			);
+			assert.strictEqual(databases.size, 1, `${project} runs over one database`);
+			assert.deepEqual(
+				backends
+					.filter(([, r, p]) => p !== project && databases.has(r.database))
+					.map(([label]) => label),
+				[],
+				`no other project claims ${project}'s database`
+			);
+		}
 	});
 
 	test("no backend claims the db_postgres step's database", () => {

@@ -21,7 +21,8 @@ import '../assert_dev_env.ts';
  *   inherits `VITEST`, which would turn every `Logger` off).
  * - **Rust** — caller-supplied real Postgres URL (an in-process WASM database isn't reachable
  *   from `tokio-postgres`), 120s startup window (cargo first-build cost),
- *   and the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate.
+ *   and the `FUZ_TESTING_RESET_DB_ON_STARTUP` self-wipe gate, on unless
+ *   `reset_db_on_startup: false`.
  *
  * Both builders default `port_env_var` to `'PORT'`. Consumers whose
  * binary reads a different name (e.g. zzz's `ZZZ_PORT`) override. Both bind
@@ -399,6 +400,14 @@ export interface MakeDefaultRustBackendConfigOptions extends DefaultBackendLogOp
 	/** Merged on top of the generic env baseline; later keys win. */
 	readonly extra_env?: Readonly<Record<string, string>>;
 	/**
+	 * Whether the binary drops the database's `public` schema before its
+	 * migrations on every boot (`FUZ_TESTING_RESET_DB_ON_STARTUP`, written
+	 * `'true'` or `'false'`). Default `true`, so a run starts on an empty
+	 * database. `false` for a binary booted over a database another backend
+	 * left — the backend swap (`backend_swap.ts`).
+	 */
+	readonly reset_db_on_startup?: boolean;
+	/**
 	 * Every capability, stated: spread `rust_default_capabilities` and add each
 	 * `MountFlag` and the `testing_backdoors` list. Required, so a mount flag or
 	 * the backdoor list left out is a type error rather than a suite that
@@ -440,7 +449,7 @@ export interface MakeDefaultRustBackendConfigOptions extends DefaultBackendLogOp
 /**
  * Shared builder for Rust-family backends. Owns the common env baseline
  * (RUST_LOG, HOST, port, real Postgres, cookie keys, bootstrap token
- * path, the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate) plus
+ * path, the `FUZ_TESTING_RESET_DB_ON_STARTUP` self-wipe gate) plus
  * the 120s startup window for cargo's first-run build cost.
  */
 export const make_default_rust_backend_config = (
@@ -458,7 +467,8 @@ export const make_default_rust_backend_config = (
 		port_env_var = 'PORT',
 		rust_log = 'info',
 		cookie_name = 'fuz_session',
-		daemon_token_dir_env
+		daemon_token_dir_env,
+		reset_db_on_startup = true
 	} = opts;
 	const bootstrap = build_default_bootstrap(paths, bootstrap_overrides);
 	return {
@@ -483,12 +493,13 @@ export const make_default_rust_backend_config = (
 			FUZ_ALLOW_ORIGIN_WILDCARDS: 'true',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
 			// Self-wipe the auth-namespace schema before migrations on every
-			// boot. Read by the hook `fuz_testing::startup_reset_hook` builds,
-			// which the consumer's test binary passes as its
-			// `pre_migration_hook`, run between pool creation and
-			// `fuz_db::run_migrations`. The `_testing_reset` RPC action
-			// (per-test reset) is orthogonal.
-			FUZ_TESTING_RESET_DB_ON_STARTUP: 'true',
+			// boot, unless the caller turns it off. Read by the hook
+			// `fuz_testing::startup_reset_hook` builds, which the consumer's test
+			// binary passes as its `pre_migration_hook`, run between pool
+			// creation and `fuz_db::run_migrations`; `'false'` is a no-op there.
+			// Always written, so an inherited value never decides. The
+			// `_testing_reset` RPC action (per-test reset) is orthogonal.
+			FUZ_TESTING_RESET_DB_ON_STARTUP: reset_db_on_startup ? 'true' : 'false',
 			...daemon_token_dir_entry(daemon_token_dir_env, bootstrap),
 			...extra_env
 		},

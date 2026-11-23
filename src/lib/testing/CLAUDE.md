@@ -441,6 +441,31 @@ fuz_app's wiring (TS vs Rust under `cross_backend_parity`, Node vs Bun under
 `describe_spine_differential_suites`): ../../test/CLAUDE.md §Cross-backend
 self-tests.
 
+## Backend swap
+
+`cross_backend/backend_swap.ts` — `describe_backend_swap_tests({orders,
+database_url, empty_database, declined_role?})`: two backends over one
+Postgres database, one at a time. Per order the first mints through its real
+routes (bootstrap, a second keeper session and a keeper API token, invite,
+signup, login, a member API token, two pending offers); the second boots over
+that database — its migrations and every table's content digest unchanged —
+honors each credential, the password hash and the offers, accepting one and
+declining the other, logs the second keeper session out, revokes the keeper
+token and changes the member's password; and the first boots again and
+honors what it wrote: the keeper session and token refused (nothing else
+ended them) beside the keeper's first cookie, the member's sessions and token
+ended by the password change. Each phase spawns, drains and tears down its
+own backend, and an `afterEach` tears down one a timed-out phase left
+running. The configs must share the database (`DATABASE_URL`, compared as
+exact strings), the cookie name and a set `SECRET_FUZ_COOKIE_KEYS`, keep a
+startup reset off (`FUZ_TESTING_RESET_DB_ON_STARTUP` unset or a false
+stringbool, as the Rust spine parses it; `reset_db_on_startup: false` on the
+Rust family builder) and declare `_testing_drain_effects` and
+`_testing_db_invariants`, and `declined_role` must not be `admin` — all
+checked before the first spawn. A standalone suite
+(`STANDALONE_CROSS_SUITES`). fuz_app's wiring is the `cross_backend_swap`
+project (../../test/CLAUDE.md §Cross-backend self-tests).
+
 ## Assertions, coverage, helpers
 
 ### `assertions.ts` — surface + error-schema assertions
@@ -1583,7 +1608,8 @@ Conventions that hold across them:
   `port_env_var`; cookie keys; allowed origins; the bootstrap token path; the
   TS family's `PUBLIC_LOG_LEVEL`, `TS_BACKEND_LOG_LEVEL` — the spawned binary
   inherits `VITEST`, which turns every fuz_util `Logger` off; the Rust startup
-  self-wipe), the default paths, the `log` (`backend.log` under the temp root,
+  self-wipe, off with `reset_db_on_startup: false`), the default paths, the
+  `log` (`backend.log` under the temp root,
   `SPINE_CROSS_SUITE_BACKEND_ERRORS` plus `log_allow_errors` allowed;
   `log_path: null` for none), and the required `capabilities`.
   `daemon_token_dir_env` names the env var the binary reads its daemon-token
