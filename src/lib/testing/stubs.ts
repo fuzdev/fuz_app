@@ -104,7 +104,7 @@ export const create_throwing_stub = <T = any>(label: string): T =>
  * this auto-updates when interfaces change.
  *
  * @param label - descriptive name for debug purposes
- * @param overrides - explicit properties to set (e.g. `{db: stub_db}`)
+ * @param overrides - explicit properties to set (e.g. `{sign: ...}` on a keyring)
  */
 export const create_noop_stub = <T = any>(_label: string, overrides?: Record<string, unknown>): T =>
 	new Proxy({ ...(overrides ?? {}) } as any, {
@@ -164,8 +164,6 @@ export const stub_route_spec = (shape: RouteShape): RouteSpec =>
 /** Stub middleware that passes through. */
 export const stub_mw = async (_c: any, next: any): Promise<void> => next();
 
-const stub_db = create_noop_stub('stub_db');
-
 /**
  * Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.
  *
@@ -218,6 +216,10 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 
 /**
  * Create no-op `AppDeps` for auth surface testing.
+ *
+ * The `db` is a fresh `create_stub_db()`: a transaction runs its callback,
+ * and the pool-level `Db` reads as outside one, so a handler on stub deps
+ * runs the path it runs in production.
  */
 export const create_stub_app_deps = (): AppDeps => ({
 	// `sign` answers a string, as a keyring does, so a route that signs a
@@ -226,7 +228,7 @@ export const create_stub_app_deps = (): AppDeps => ({
 		sign: async (value: string): Promise<string> => `${value}.stub_signature`
 	}),
 	password: create_noop_stub('password'),
-	db: stub_db,
+	db: create_stub_db(),
 	log: new Logger('test', { level: 'off' }),
 	audit: create_test_audit_emitter(),
 	connection_closer: create_realtime_closer(),
