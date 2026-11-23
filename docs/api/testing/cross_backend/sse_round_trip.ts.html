@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -99,7 +99,7 @@ suite opens a <!--]--><!--[4--><strong><!--[--><!--[2-->real<!--]--><!--]--><!--
 audit-log SSE endpoint via <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/sse_transport.ts#create_sse_transport"><!--[0--><!--[-1-->create_sse_transport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, threading the
 fresh-per-test keeper's session cookie. It is the only coverage of the
 spawned binary's live SSE path — the standard cross-process bundle
-(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/standard.ts#describe_standard_cross_process_tests"><!--[0--><!--[-1-->describe_standard_cross_process_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) omits SSE by design, so consumers
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/standard_bundle.ts#describe_standard_cross_process_tests"><!--[0--><!--[-1-->describe_standard_cross_process_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) omits SSE by design, so consumers
 call this alongside it (paralleling <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/ws_round_trip.ts#describe_cross_process_ws_tests"><!--[0--><!--[-1-->describe_cross_process_ws_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Its cases follow the in-process SSE self-test against fuz_app's
 standard audit-log stream:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[0--><ol><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->connects<!--]--><!--]--><!----></strong><!--]--><!--[2--> — the stream opens and emits the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->: connected<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> comment.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->data frame<!--]--><!--]--><!----></strong><!--]--><!--[2--> (gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rpc_path<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) — a minted secondary's sessions are
 revoked over the keeper's admin channel (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->admin_session_revoke_all<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->),
@@ -174,16 +174,16 @@ per-session cap.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div>
 			
 			<script>
 				{
-					__sveltekit_1wqcbuw = {
+					__sveltekit_4jp86s = {
 						base: "",
-						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
+						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1wqcbuw);
-						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
+						kit.init(__sveltekit_4jp86s);
+						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

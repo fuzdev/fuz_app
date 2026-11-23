@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -796,9 +796,20 @@ so a refusal can only be a close frame.<!--]--><!--]--><!----></p><!--]--><!--[8
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_all_connections<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) a refusal is <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_GOING_AWAY"><!--[0--><!--[-1-->WS_CLOSE_GOING_AWAY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> instead, so the
 client reconnects rather than treating its credential as revoked: an upgrade
 pending at the close-all is closed by it — and its abort makes the refusal
-that follows the re-read send nothing more, even when the database closed
-under that re-read — and one that registers after it is born closed and
-skips the re-read (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_registry.ts#ConnectionRegistry"><!--[0--><!--[-1-->ConnectionRegistry<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> module doc, "Shutdown").<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Frames that arrive before admission are queued, not dispatched: nothing runs
+that follows the re-read send nothing more — and one that registers after
+it is born closed and skips the re-read (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_registry.ts#ConnectionRegistry"><!--[0--><!--[-1-->ConnectionRegistry<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> module doc,
+"Shutdown").<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The open — admission with its re-read, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->on_socket_open<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the start of
+the queued frames' dispatch — is held on the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->request_tracker<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> from before
+the pending registration until each queued frame has taken its own hold,
+on every path out (a refusal, a failed re-read, a hook that throws). So
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> waits for a re-read the shutdown lands in, and the
+database closes after it, not under it — as the Rust spine's upgrade hold
+does, though that one lasts through the socket's close write
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->http/CLAUDE.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §Pending Effects). An <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->on_socket_open<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> that never returns holds
+the shutdown to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->shutdown_drain_timeout_ms<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; past that bound a re-read the
+closing database fails is still refused with nothing more sent. A tracker
+already closed holds nothing: under <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the registry closed
+first, so such an upgrade is born closed.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Frames that arrive before admission are queued, not dispatched: nothing runs
 on a credential that has not been re-read. They dispatch in arrival order
 once the socket is admitted and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->on_socket_open<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> has completed, and are
 dropped unread on a refusal. The queue holds at most
@@ -826,16 +837,16 @@ everything and answers nothing.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]-
 			
 			<script>
 				{
-					__sveltekit_1wqcbuw = {
+					__sveltekit_4jp86s = {
 						base: "",
-						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
+						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1wqcbuw);
-						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
+						kit.init(__sveltekit_4jp86s);
+						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

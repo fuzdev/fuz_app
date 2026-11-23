@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.BrvHNB22.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.COiAjZQf.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/C5kExGG-.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BqW4FBbP.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -701,7 +701,11 @@ a reason to differ), until its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code
 database out of reach — is logged and retried on the next interval.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Start it once migrations have run (the startup pass reads the auth tables),
 with the app's bound <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/audit_emitter.ts#AuditEmitter"><!--[0--><!--[-1-->AuditEmitter<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> so the expiry audits reach its listeners
 and the closer its revocation handlers close through. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/deps.ts#AppDeps"><!--[0--><!--[-1-->AppDeps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is all of
-that, so the standard assembly is one option:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> server <span class="token_operator">=</span> <span class="token_special_keyword">await</span> <span class="token_function">create_app_server</span><span class="token_punctuation">({</span>backend<span class="token_punctuation">,</span> auth_cleanup<span class="token_operator">:</span> <span class="token_boolean">true</span><span class="token_punctuation">,</span> <span class="token_operator">...</span><span class="token_punctuation">});</span>
+that, so the standard assembly is one option:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> server <span class="token_operator">=</span> <span class="token_special_keyword">await</span> <span class="token_function">create_app_server</span><span class="token_punctuation">({</span>
+  backend<span class="token_punctuation">,</span>
+  auth_cleanup<span class="token_operator">:</span> <span class="token_punctuation">{</span>every_ms<span class="token_operator">:</span> <span class="token_constant">DEFAULT_AUTH_CLEANUP_INTERVAL_MS</span><span class="token_punctuation">},</span>
+  <span class="token_operator">...</span>
+<span class="token_punctuation">});</span>
 <span class="token_comment">// on shutdown: stops the schedule, then closes the database</span>
 <span class="token_special_keyword">await</span> server<span class="token_punctuation">.</span><span class="token_function">close</span><span class="token_punctuation">();</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->and a hand-assembled server calls it directly:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> auth_cleanup <span class="token_operator">=</span> <span class="token_function">start_auth_cleanup</span><span class="token_punctuation">(</span>backend<span class="token_punctuation">.</span>deps<span class="token_punctuation">);</span>
 <span class="token_comment">// on shutdown, before the database closes</span>
@@ -712,7 +716,10 @@ It differs on shutdown. The Rust loop drops a pass in progress when its
 token is cancelled; a promise cannot be dropped, so <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->stop<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> ends the schedule
 at once and its promise resolves when the pass in progress — if there is
 one — has finished. Awaiting it before closing the database lets that pass
-end on a live pool rather than fail on a closed one.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/credential_deadline.ts"><!--[-1-->auth/credential_deadline.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The credential deadline — the moment a resolved credential stops
+end on a live pool rather than fail on a closed one. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+waits for it within its drain bound, as the Rust shutdown joins its upkeep,
+and counts a pass still running at the bound as given up on
+(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ShutdownDrainGivenUp.upkeep<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/credential_deadline.ts"><!--[-1-->auth/credential_deadline.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The credential deadline — the moment a resolved credential stops
 authenticating, which a long-lived connection opened on it must not outlive.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A WebSocket or an SSE stream is authorized once, at open, and closed on
 revocation by identity. Expiry has no revocation event: nothing is written
 when a session or token passes its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->expires_at<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. So the auth middleware
@@ -1086,16 +1093,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_1wqcbuw = {
+					__sveltekit_4jp86s = {
 						base: "",
-						version: "22fbb8ff18991da830b351fd2602cf2b7d052995"
+						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1wqcbuw);
-						const app = await import("/_app/immutable/entry/app.BrvHNB22.js");
+						kit.init(__sveltekit_4jp86s);
+						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
