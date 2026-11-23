@@ -204,10 +204,11 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	// on the success path. Cleanup errors are logged and swallowed so the
 	// caller sees the original failure, not a teardown-shaped one.
 	try {
-		const migration_results = await run_migrations(db, [
-			AUTH_MIGRATION_NS,
-			...(options.migration_namespaces ?? [])
-		]);
+		const migration_results = await run_migrations(
+			db,
+			[AUTH_MIGRATION_NS, ...(options.migration_namespaces ?? [])],
+			{ log }
+		);
 		const audit = audit_factory({
 			db: db.with_checkout_timeout(
 				options.db_audit_checkout_timeout_ms ?? DEFAULT_DB_AUDIT_CHECKOUT_TIMEOUT_MS

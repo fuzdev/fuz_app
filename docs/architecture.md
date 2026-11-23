@@ -156,20 +156,27 @@ with a `(namespace, name)` PK and a `(namespace, sequence)` unique
 constraint. `Migration` is `{name, up}`; the name appears in error
 messages and is the unit of identity in the tracker.
 
-**Boot algorithm** (per namespace, advisory-locked): read applied rows
-ordered by `sequence`; if `applied.length > code.length` throw
-`binary-older-than-db` listing the unknown names; otherwise verify
+**Boot algorithm** (per namespace, in one chain transaction that opens
+with `pg_advisory_xact_lock` on the namespace's key, the key the Rust
+runner's session lock takes, so concurrent boots of either spine take
+turns): read applied rows ordered by `sequence`; if
+`applied.length > code.length` throw `binary-older-than-db` listing the
+unknown names; otherwise verify
 `applied[i].name === code[i].name` for `i < applied.length`; run the
-pending tail in a single chain transaction (each `INSERT` uses
-`max(sequence) + 1`). Length check fires before name verify so a
+pending tail in the same transaction (each `INSERT` uses
+`max(sequence) + 1`). The `schema_version` DDL runs first, outside any
+lock, and tolerates a concurrent boot creating the table (`23505`,
+`42P07`, `42710`). Length check fires before name verify so a
 binary-older case with a rename in the overlap doesn't surface as a
 phantom `name-divergence-at-N`. Up-to-date namespaces are omitted from
 the result array.
 
-**`MigrationError`** is the only error class thrown from
-`run_migrations` and `baseline`. Branch on `.kind`, never on message
-text. Kinds: `namespace-reserved` (a consumer namespace under a reserved
-spine name, refused before touching the database), `binary-older-than-db`,
+**`MigrationError`** is the only error class `run_migrations` and
+`baseline` raise themselves; a driver failure outside a migration body
+(the DDL, the lock, a checkout) propagates as the driver's error. Branch
+on `.kind`, never on message text. Kinds: `namespace-reserved` (a
+consumer namespace under a reserved spine name, refused before touching
+the database), `binary-older-than-db`,
 `name-divergence-at-N`, `migration-failed`, `baseline-name-not-in-code`,
 `baseline-name-out-of-order`, `baseline-namespace-already-populated`.
 Structured context fields (`namespace`, `at_index`, `unknown_names`)

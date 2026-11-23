@@ -42,22 +42,30 @@
  *
  * **Forward-only**: No down-migrations. Schema changes are additive.
  *
- * **Advisory locking**: Per-namespace `pg_advisory_lock` reduces contention
- * in multi-instance deployments — best-effort, not load-bearing. The locks
- * are session-scoped, but `Db.query` runs against a pool that may check out
- * a different backend per call, so two concurrent boots can both "hold"
- * the lock on different sessions. The real serialization comes from chain-
- * tx atomicity + the `(namespace, name)` PK on `schema_version`: the
- * loser's INSERT hits a PK violation, the chain-tx rolls back, and the
- * next boot reads the committed state and proceeds cleanly. Environments
- * without `pg_advisory_lock` (pglet) silently fall through.
+ * **Advisory locking**: each namespace's chain transaction opens with
+ * `pg_advisory_xact_lock` on the namespace's key, so concurrent boots over
+ * one database take turns: the second waits for the first's commit, then
+ * reads its migrations applied. The lock is transaction-scoped because a
+ * pool hands each `Db.query` whichever client is free — a session lock and
+ * its unlock could land on different clients, leaving the lock held on an
+ * idle one. Inside the transaction there is nothing to unlock and so nothing
+ * to leak: the commit or rollback releases it. The Rust spine takes a
+ * session `pg_advisory_lock` on the same `bigint` key, and the two forms
+ * conflict, so a TS and a Rust boot take turns too. Without the lock the
+ * `(namespace, name)` PK keeps a migration from recording twice, but two
+ * chains running at once collide on their own DDL and the loser's boot
+ * fails. The read after the lock sees the winner's commit only at READ
+ * COMMITTED, the default: under REPEATABLE READ the transaction's snapshot
+ * predates the lock's wait. pglet and PGlite take the lock as Postgres does.
  *
  * @module
  */
 
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { Db } from './db.ts';
+import { pg_error_code } from './pg_error.ts';
 
 /**
  * A single migration: a name + an `up` function applied inside a transaction.
@@ -216,53 +224,70 @@ CREATE TABLE IF NOT EXISTS schema_version (
 )`;
 
 /**
- * Compute a stable int32 advisory lock key from a namespace string.
- *
- * Uses djb2 hash, masked to int32 range for `pg_advisory_lock`.
+ * The `schema_version` DDL's outcomes when a concurrent boot created the table
+ * first: `CREATE TABLE IF NOT EXISTS` checks for the table before taking any
+ * lock, so two boots can both pass the check, and the loser then trips the
+ * catalog's unique index (`23505`) or finds the relation (`42P07`) or a
+ * constraint (`42710`) already there. The Rust runner tolerates the same
+ * three.
  */
-const namespace_lock_key = (namespace: string): number => {
+const SCHEMA_VERSION_DDL_RACE_CODES: ReadonlyArray<string> = ['23505', '42P07', '42710'];
+
+/**
+ * Apply the `schema_version` DDL, tolerating the race with a concurrent boot
+ * that created the table first (`SCHEMA_VERSION_DDL_RACE_CODES`). It runs
+ * before any namespace's lock, so concurrent boots run it at once.
+ */
+const ensure_schema_version_table = async (db: Db, log: Logger | undefined): Promise<void> => {
+	try {
+		await db.query(SCHEMA_VERSION_DDL);
+	} catch (err) {
+		const code = pg_error_code(err);
+		if (code === null || !SCHEMA_VERSION_DDL_RACE_CODES.includes(code)) throw err;
+		log?.debug(`schema_version DDL raced (${code}); another boot won`);
+	}
+};
+
+/**
+ * Compute a stable advisory lock key from a namespace string — djb2 over the
+ * name's UTF-8 bytes, in int32 arithmetic.
+ *
+ * The Rust twin hashes the same bytes and widens the int32 to the `bigint`
+ * `pg_advisory_lock(bigint)` takes; this number reaches Postgres as that same
+ * `bigint`, so one namespace locks one key on both spines.
+ *
+ * @param namespace - the migration namespace's name
+ * @returns the int32 key
+ */
+export const namespace_lock_key = (namespace: string): number => {
 	let hash = 5381;
-	for (let i = 0; i < namespace.length; i++) {
-		hash = ((hash << 5) + hash + namespace.charCodeAt(i)) | 0;
+	for (const byte of new TextEncoder().encode(namespace)) {
+		hash = ((hash << 5) + hash + byte) | 0;
 	}
 	return hash;
 };
 
 /**
- * Run `fn` with the namespace's advisory lock held.
- *
- * Acquire / release are best-effort and silently fall through in
- * environments without `pg_advisory_lock` (pglet). The
- * `finally` ensures release on any throw from `fn`.
+ * Take the namespace's advisory lock in the open transaction `tx` — held
+ * until it commits or rolls back (module doc, "Advisory locking").
  */
-const with_namespace_lock = async <T>(
-	db: Db,
-	namespace: string,
-	fn: () => Promise<T>
-): Promise<T> => {
-	const lock_key = namespace_lock_key(namespace);
-	try {
-		await db.query('SELECT pg_advisory_lock($1)', [lock_key]);
-	} catch {
-		// Advisory lock not supported — proceed without serialization
-	}
-	try {
-		return await fn();
-	} finally {
-		try {
-			await db.query('SELECT pg_advisory_unlock($1)', [lock_key]);
-		} catch {
-			// Advisory lock not supported — nothing to release
-		}
-	}
+const lock_namespace = async (tx: Db, namespace: string): Promise<void> => {
+	await tx.query('SELECT pg_advisory_xact_lock($1)', [namespace_lock_key(namespace)]);
 };
+
+/** Options for `run_migrations`. */
+export interface RunMigrationsOptions {
+	/** Receives the debug line for a tolerated `schema_version` DDL race. */
+	log?: Logger;
+}
 
 /**
  * Run pending migrations for each namespace.
  *
- * For each namespace: acquires an advisory lock, reads applied rows ordered
- * by `sequence`, length-checks (binary-older-than-db short-circuits), name-
- * prefix-verifies, then runs the pending tail in a single chain transaction.
+ * For each namespace, in one chain transaction: takes the namespace's
+ * advisory lock, reads applied rows ordered by `sequence`, length-checks
+ * (binary-older-than-db short-circuits), name-prefix-verifies, then runs the
+ * pending tail.
  * Each migration's row is INSERTed with `sequence = max(sequence) + 1` for
  * the namespace.
  *
@@ -275,15 +300,14 @@ const with_namespace_lock = async <T>(
  * invocation. Namespaces are independent: a later namespace's failure does
  * not roll back an earlier namespace that already committed.
  *
- * **Concurrency**: per-namespace advisory locks reduce contention in
- * multi-instance deployments but are best-effort on pool drivers (see
- * the module docstring's "Advisory locking" notes). Correctness on concurrent boots
- * falls out of chain-tx atomicity + the `(namespace, name)` PK — the
- * loser's INSERT triggers PK violation and rollback; subsequent boots
- * see the committed state.
+ * **Concurrency**: the per-namespace advisory lock serializes concurrent
+ * boots, TS or Rust, over one database (module doc, "Advisory locking").
+ * The `schema_version` DDL runs before it, and its race with another boot
+ * is tolerated.
  *
  * @param db - the database instance
  * @param namespaces - migration namespaces, processed in the order passed
+ * @param options - `log` for the tolerated DDL race
  * @returns one result per namespace where work happened (already-up-to-date
  *   namespaces are omitted)
  * @mutates schema_version - inserts one row per applied migration
@@ -293,16 +317,18 @@ const with_namespace_lock = async <T>(
  */
 export const run_migrations = async (
 	db: Db,
-	namespaces: Array<MigrationNamespace>
+	namespaces: Array<MigrationNamespace>,
+	options?: RunMigrationsOptions
 ): Promise<Array<MigrationResult>> => {
 	assert_migration_namespaces(namespaces);
-	await db.query(SCHEMA_VERSION_DDL);
+	await ensure_schema_version_table(db, options?.log);
 
 	const results: Array<MigrationResult> = [];
 
 	for (const { namespace, migrations } of namespaces) {
-		await with_namespace_lock(db, namespace, async () => {
-			const applied = await db.query<{ name: string; sequence: number }>(
+		const applied_names = await db.transaction(async (tx) => {
+			await lock_namespace(tx, namespace);
+			const applied = await tx.query<{ name: string; sequence: number }>(
 				`SELECT name, sequence FROM schema_version
 				 WHERE namespace = $1
 				 ORDER BY sequence ASC`,
@@ -342,39 +368,36 @@ export const run_migrations = async (
 			}
 
 			// up-to-date case
-			if (applied.length === migrations.length) return;
+			if (applied.length === migrations.length) return null;
 
-			// Step 5: run pending tail in a single chain-tx
+			// Step 5: run the pending tail in this chain-tx
 			let next_sequence = applied.length > 0 ? applied[applied.length - 1]!.sequence + 1 : 0;
-			const applied_names: Array<string> = [];
-
-			await db.transaction(async (tx) => {
-				for (let i = applied.length; i < migrations.length; i++) {
-					const m = migrations[i]!;
-					try {
-						await m.up(tx);
-						await tx.query(
-							`INSERT INTO schema_version (namespace, name, sequence)
-							 VALUES ($1, $2, $3)`,
-							[namespace, m.name, next_sequence]
-						);
-						applied_names.push(m.name);
-						next_sequence++;
-					} catch (err) {
-						if (err instanceof MigrationError) throw err;
-						throw new MigrationError(
-							'migration-failed',
-							`Migration ${namespace}["${m.name}"] failed: ` +
-								`${to_error_message(err)}. ` +
-								`Hint: fix the migration body and retry; the chain is left at the prior committed version.`,
-							{ namespace, at_index: i, cause: err }
-						);
-					}
+			const names: Array<string> = [];
+			for (let i = applied.length; i < migrations.length; i++) {
+				const m = migrations[i]!;
+				try {
+					await m.up(tx);
+					await tx.query(
+						`INSERT INTO schema_version (namespace, name, sequence)
+						 VALUES ($1, $2, $3)`,
+						[namespace, m.name, next_sequence]
+					);
+					names.push(m.name);
+					next_sequence++;
+				} catch (err) {
+					if (err instanceof MigrationError) throw err;
+					throw new MigrationError(
+						'migration-failed',
+						`Migration ${namespace}["${m.name}"] failed: ` +
+							`${to_error_message(err)}. ` +
+							`Hint: fix the migration body and retry; the chain is left at the prior committed version.`,
+						{ namespace, at_index: i, cause: err }
+					);
 				}
-			});
-
-			results.push({ namespace, applied_names });
+			}
+			return names;
 		});
+		if (applied_names !== null) results.push({ namespace, applied_names });
 	}
 
 	return results;
@@ -393,15 +416,15 @@ export const run_migrations = async (
  * Contract:
  * - Creates the `schema_version` table if missing — a promotion script can
  *   call `baseline()` against a fresh tracker with no separate DDL step.
- * - Acquires the same per-namespace advisory lock as `run_migrations` (with
- *   the same try/catch fallback for environments lacking `pg_advisory_lock`).
+ * - Takes the same per-namespace advisory lock as `run_migrations`, in the
+ *   transaction that writes the rows.
  * - Refuses if any tracker rows already exist *for this namespace* — lets
  *   multi-call baseline scripts resume after partial failure (completed
  *   namespaces guard themselves while remaining ones still run).
  * - Verifies the supplied names are a strict prefix of the namespace's
  *   current migrations array — a name not in the array, or out of order,
  *   errors before any INSERT.
- * - Writes sequences `0..N-1` in one transaction.
+ * - Writes sequences `0..N-1` in that transaction.
  *
  * @param db - the database instance
  * @param ns - the namespace whose migrations are being baselined
@@ -418,7 +441,7 @@ export const baseline = async (
 	names: ReadonlyArray<string>
 ): Promise<void> => {
 	assert_migration_namespaces([ns]);
-	await db.query(SCHEMA_VERSION_DDL);
+	await ensure_schema_version_table(db, undefined);
 
 	const code_names = ns.migrations.map((m) => m.name);
 
@@ -450,8 +473,9 @@ export const baseline = async (
 		}
 	}
 
-	await with_namespace_lock(db, ns.namespace, async () => {
-		const existing = await db.query<{ name: string }>(
+	await db.transaction(async (tx) => {
+		await lock_namespace(tx, ns.namespace);
+		const existing = await tx.query<{ name: string }>(
 			'SELECT name FROM schema_version WHERE namespace = $1 LIMIT 1',
 			[ns.namespace]
 		);
@@ -466,14 +490,12 @@ export const baseline = async (
 			);
 		}
 
-		await db.transaction(async (tx) => {
-			for (let i = 0; i < names.length; i++) {
-				await tx.query(
-					`INSERT INTO schema_version (namespace, name, sequence)
-					 VALUES ($1, $2, $3)`,
-					[ns.namespace, names[i], i]
-				);
-			}
-		});
+		for (let i = 0; i < names.length; i++) {
+			await tx.query(
+				`INSERT INTO schema_version (namespace, name, sequence)
+				 VALUES ($1, $2, $3)`,
+				[ns.namespace, names[i], i]
+			);
+		}
 	});
 };

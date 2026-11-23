@@ -367,7 +367,7 @@ describe('run_migrations', () => {
 		assert.strictEqual(results.length, 0);
 	});
 
-	test('concurrent run_migrations on same namespace both complete without errors', async () => {
+	test('concurrent run_migrations on same namespace both succeed', async () => {
 		const migrations: Array<Migration> = [
 			named('conc_0', async (d) => {
 				await d.query('CREATE TABLE IF NOT EXISTS concurrent_test (id INT)');
@@ -375,16 +375,14 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = { namespace: 'concurrent_ns', migrations };
 
-		// With advisory locks held on separate sessions (Postgres), one waits and
-		// finds the version applied. On PGlite both runs share one session, where
-		// the lock is re-entrant, and pglet has no advisory locks: there the
-		// (namespace, name) PK is what prevents duplicates.
+		// The namespace's advisory lock serializes the two chain transactions:
+		// on Postgres the second session waits for the first's commit; the
+		// single-connection drivers run one transaction at a time. Either way
+		// the second finds the migration applied.
 		const settled = await Promise.allSettled([run_migrations(db, [ns]), run_migrations(db, [ns])]);
-
-		// At least one must succeed; the other either succeeds or fails on the
-		// (namespace, name) PK race — both are acceptable in the no-lock fallback.
-		const any_success = settled.some((r) => r.status === 'fulfilled');
-		assert.ok(any_success, 'at least one concurrent run must succeed');
+		for (const r of settled) {
+			assert.strictEqual(r.status, 'fulfilled', String(r.status === 'rejected' && r.reason));
+		}
 
 		const rows = await db.query<{ name: string }>(
 			'SELECT name FROM schema_version WHERE namespace = $1',
@@ -397,19 +395,6 @@ describe('run_migrations', () => {
 			"SELECT tablename FROM pg_tables WHERE tablename = 'concurrent_test'"
 		);
 		assert.strictEqual(tables.length, 1);
-	});
-
-	test('advisory-lock-unsupported path (pglet) — runner proceeds without serialization', async () => {
-		// pglet, the default test database, has no pg_advisory_lock. The
-		// runner's try/catch around the lock acquire/release calls swallows the
-		// error and proceeds. This test asserts the no-regression contract: a
-		// vanilla run_migrations completes without throwing — on pglet through
-		// that fallback, on a driver with advisory locks through the lock.
-		const migrations: Array<Migration> = [named('lk_0'), named('lk_1')];
-		const ns: MigrationNamespace = { namespace: 'lock_unsupported_ns', migrations };
-
-		const results = await run_migrations(db, [ns]);
-		assert.deepStrictEqual(results[0]!.applied_names, ['lk_0', 'lk_1']);
 	});
 
 	describe('repair scenarios', () => {
@@ -659,23 +644,6 @@ describe('baseline', () => {
 		]);
 		assert.strictEqual(rows_a.length, 1);
 		assert.strictEqual(rows_b.length, 1);
-	});
-
-	test('advisory-lock-unsupported path (pglet) — baseline proceeds without serialization', async () => {
-		const ns: MigrationNamespace = {
-			namespace: 'baseline_lock_unsupported_ns',
-			migrations: [named('a'), named('b')]
-		};
-		await baseline(db, ns, ['a', 'b']);
-
-		const rows = await db.query<{ name: string }>(
-			'SELECT name FROM schema_version WHERE namespace = $1 ORDER BY sequence',
-			['baseline_lock_unsupported_ns']
-		);
-		assert.deepStrictEqual(
-			rows.map((r) => r.name),
-			['a', 'b']
-		);
 	});
 });
 

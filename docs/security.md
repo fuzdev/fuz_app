@@ -2363,6 +2363,9 @@ state are designed for **single-process deployments**:
 - Daemon token rotation is file-based. Multiple processes sharing the file may
   read stale state between token write and fsync.
 
+A TS spine and a Rust spine serving one database are two processes: each
+limitation above applies between them as between any two instances.
+
 For multi-process deployments, rate limiters would need Redis or a shared DB table
 (or, for IP-keyed limits, nginx `limit_req`, which every backend instance
 shares; tightening each instance's windows limits the multiplier meanwhile);
