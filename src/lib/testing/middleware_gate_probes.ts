@@ -33,7 +33,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { assert, describe, test } from 'vitest';
+import { assert, beforeAll, describe, test } from 'vitest';
 
 import type { RouteMethod, RouteSpec } from '../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
@@ -56,7 +56,8 @@ import {
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import type { SetupTest } from './cross_backend/setup.ts';
+import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
+import { check_db_invariants_after_all } from './db_invariants.ts';
 import { to_route_content_type } from './schema_generators.ts';
 import { raw_http_send_head } from './transports/raw_http.ts';
 import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from './cross_backend/spine_surface_constants.ts';
@@ -368,17 +369,22 @@ export const describe_middleware_gate_tests = (options: MiddlewareGateTestOption
 	}
 	describe('middleware gates', () => {
 		const collector = new ErrorCoverageCollector(options.surface_source.route_error_maps);
-		// in-process the probes share one fixture's transport, made by the first
-		// to run; over a socket they need none, as they read and write no state
-		let in_process_transport: Promise<MiddlewareGateProbeTransport> | null = null;
-		const get_transport = (): Promise<MiddlewareGateProbeTransport> =>
-			(in_process_transport ??= options
-				.setup_test()
-				.then((fixture) => fixture.fresh_transport({ origin: null })));
+		// in-process the probes share one fixture, built ahead of them so it
+		// outlives each test (an app built in a test is closed when it
+		// finishes) and checked once they are done; over a socket they need
+		// none, as they read and write no state
+		let fixture: TestFixture | null = null;
+		let in_process_transport: MiddlewareGateProbeTransport | null = null;
+		if (options.base_url === null) {
+			beforeAll(async () => {
+				fixture = await options.setup_test();
+				in_process_transport = fixture.fresh_transport({ origin: null });
+			});
+			check_db_invariants_after_all(() => fixture);
+		}
 		for (const probe of probes) {
 			test(format_middleware_gate_probe(probe), async () => {
-				const transport = options.base_url === null ? await get_transport() : null;
-				const res = await send_middleware_gate_probe(probe, options.base_url, transport);
+				const res = await send_middleware_gate_probe(probe, options.base_url, in_process_transport);
 				await assert_middleware_gate_refusal(probe, res, collector, route_specs);
 			});
 		}

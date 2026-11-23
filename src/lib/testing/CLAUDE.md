@@ -197,11 +197,12 @@ which the Rust `fuz_testing` embeds byte for byte
 rows a backend answered), `register_db_invariants_check`,
 `check_db_invariants_after_all`, `check_db_invariants_after_suite`.
 
-`create_test_app` registers its `assert_db_invariants` to run when the test
-that built it finishes (`register_db_invariants_check` — only inside a running
-test; skipped when the test already failed), so a direct caller is checked
-too; `default_in_process_setup` uses the test app's check, and the
-cross-process setup registers its fixture's. In-process it queries the app's
+`create_test_app` runs its `assert_db_invariants` when the test that built it
+finishes (only inside a running test — its body or a `beforeEach`; skipped
+when the test already failed), so a direct caller is checked too, and then
+closes the app (§`app_server.ts` and `test_app.ts`);
+`default_in_process_setup` uses the test app's check, and the cross-process
+setup registers its fixture's. In-process it queries the app's
 own database;
 cross-process it calls the backend's `_testing_db_invariants` on the keeper's
 daemon-token channel (unrecorded by a transcript), so `memory://` spawns are
@@ -275,6 +276,18 @@ members it added — and resolves `void`, throwing with the
 `ShutdownDrainGivenUp` report when the drain gave up on work still in flight.
 A test that gives up on purpose calls `server.close()`, which resolves the
 report.
+
+An app built inside a test (its body or a `beforeEach`) is closed when the
+test finishes, after its invariant check, in one `onTestFinished` hook. That
+close fails the test on a give-up, unless the test failed or closed the app
+itself (`cleanup` or `server.close()`; `TestApp.server` is the assembled
+server with its `close` marking that). An app built in `beforeAll` registers
+nothing and is its suite's to close, so a fixture shared across tests is
+built there — `describe_middleware_gate_tests`' in-process fixture is built
+in `beforeAll` and checked once after its probes (a `TestFixture` has no
+close). Inside a concurrent test `create_test_app` throws: vitest names
+whichever concurrent test started last as current, so the close would land
+on a sibling's app — build the app in `beforeAll` and close it in `afterAll`.
 
 `auth_cleanup` is `'off'` here: a background pass would delete rows and
 write audit rows mid-test. A suite that opts in through `app_options` has the
@@ -875,8 +888,9 @@ in-process only, an unreadable `Content-Length` → 400 `invalid_content_length`
 (over a socket Node's parser and hyper answer that one themselves with a
 bodiless 400, and `fetch` can't send it). Each probe is a request head with no
 body and no credential, refused before auth, rate limiting and body parsing;
-in-process the probes share one fixture. A route whose path has a param or
-wildcard segment throws rather than be probed at its literal template.
+in-process the probes share one fixture, built in `beforeAll` and checked
+against the database invariants once they are done. A route whose path has a
+param or wildcard segment throws rather than be probed at its literal template.
 `send_middleware_gate_probe(probe, base_url, transport)` writes it to the socket
 with `raw_http_send_head` (`fetch` replaces a caller's `Host` and
 `Content-Length`), or in-process through the transport, whose `Request` keeps

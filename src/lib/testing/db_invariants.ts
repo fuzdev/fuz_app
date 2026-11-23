@@ -86,11 +86,11 @@ export const assert_db_invariants = async (
 };
 
 /**
- * Run `check` when the current test finishes — the per-test hook
- * `create_test_app` registers when it builds an app (in-process, and so every
- * `default_in_process_setup` fixture) and the cross-process setup registers
- * from `setup_test()`, with `check` the app's or fixture's
- * `assert_db_invariants`.
+ * Run `check` when the current test finishes — the per-test hook the
+ * cross-process setup registers from `setup_test()`, with `check` the
+ * fixture's `assert_db_invariants`. `create_test_app` runs the same check in a
+ * hook of its own, which closes the app after it (and so every
+ * `default_in_process_setup` fixture).
  *
  * Runs after the test body and its `afterEach` hooks, before the next test's
  * setup resets the database. A test that already failed is left as it

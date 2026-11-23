@@ -293,6 +293,21 @@ check exists to catch. A test that needs a keeper without admin passes
 marker tracks breaks what its gap breaks; exclude that on the setup the
 marked test uses, naming the marker's tracking id.
 
+### Test apps close when their test finishes
+
+A `create_test_app` app built in a test — its body or a `beforeEach`, and so
+every in-process fixture `setup_test()` builds there — is closed when that
+test finishes, after the invariant check. The close fails the test when it
+gave up on work still in flight (a request, WS message or audit write the
+test left running), within `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS`; a test that
+already failed is left as it failed. An app the test closed itself is left
+to it: `cleanup` throws on a give-up, and `server.close()` resolves the
+report for a test that gives up on purpose. So an app lives only as long as
+the test that built it — share one between tests by building it in
+`beforeAll`, which registers nothing, and closing it in `afterAll`. Inside a
+concurrent test `create_test_app` throws, since vitest can't tell that test's
+finish from a sibling's: a concurrent suite builds its app in `beforeAll`.
+
 ## Attack Surface Tests
 
 Create a helper module and a test file:

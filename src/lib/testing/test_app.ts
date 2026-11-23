@@ -6,13 +6,15 @@ import './assert_dev_env.ts';
  * `create_test_app` combines `create_test_app_server` (`testing/app_server.ts`,
  * the vitest-free backend primitives) with `create_app_server`, and hands back
  * the app, the backend, the surface, and request header builders. Built inside
- * a test, the app's database is held to the auth-schema invariants when the
- * test finishes (`register_db_invariants_check`).
+ * a test (its body or a `beforeEach`), the app's database is held to the
+ * auth-schema invariants when the test finishes, and the app is closed then,
+ * failing the test on a close that gave up on work still in flight.
  *
  * @module
  */
 
 import type { Hono } from 'hono';
+import { onTestFinished, TestRunner } from 'vitest';
 import type { Uuid } from '../primitive_schemas.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import {
@@ -21,7 +23,7 @@ import {
 	type AppServerOptions,
 	type BootstrapServerOptions
 } from '../server/app_server.ts';
-import { shutdown_gave_up } from '../server/shutdown_drain.ts';
+import { shutdown_gave_up, type ShutdownDrainGivenUp } from '../server/shutdown_drain.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -40,11 +42,7 @@ import {
 	type TestAppServer,
 	type TestAppServerOptions
 } from './app_server.ts';
-import {
-	announce_db_invariant_exclusions,
-	assert_db_invariants,
-	register_db_invariants_check
-} from './db_invariants.ts';
+import { announce_db_invariant_exclusions, assert_db_invariants } from './db_invariants.ts';
 import type { DbInvariantExclusions } from './db_invariant_queries.ts';
 
 /**
@@ -137,7 +135,9 @@ export interface CreateTestAppAccountArgs {
 }
 
 /**
- * A fully assembled test app — Hono app + backend + helpers.
+ * A fully assembled test app — Hono app + backend + helpers. Never built inside
+ * a concurrent test (`create_test_app` throws): build a concurrent suite's app
+ * in `beforeAll` and close it in `afterAll`.
  */
 export interface TestApp {
 	app: Hono;
@@ -146,7 +146,10 @@ export interface TestApp {
 	 * The assembled `AppServer` — reach for what `create_app_server` built
 	 * beyond the fields lifted onto `TestApp`: `audit_sse` (with
 	 * `audit_log_sse` in `app_options`), the `ws_endpoints` transports,
-	 * `bootstrap_status`, `migration_results`.
+	 * `bootstrap_status`, `migration_results`. Its `close` resolves the
+	 * `ShutdownDrainGivenUp` report, for a test that gives up on purpose, and
+	 * marks the app closed by the test, so the close when the test finishes
+	 * leaves the outcome to it.
 	 */
 	server: AppServer;
 	surface_spec: AppSurfaceSpec;
@@ -218,6 +221,11 @@ const test_app_options = (): Pick<
 	shutdown_drain_timeout_ms: TEST_SHUTDOWN_DRAIN_TIMEOUT_MS
 });
 
+/** The error a test app's close that gave up throws, naming the report. */
+const format_close_given_up = (closer: string, given_up: ShutdownDrainGivenUp): string =>
+	`create_test_app: ${closer} gave up on work still in flight ${JSON.stringify(given_up)} — ` +
+	'a request, WS message or audit write the test left running';
+
 /** Build request headers carrying `session_cookie` in the `cookie_name` cookie. */
 const create_session_headers_builder =
 	(cookie_name: string, session_cookie: string) =>
@@ -245,19 +253,33 @@ const create_bearer_headers_builder =
  * server's deps (db, keyring), so reuse across servers is unsafe.
  * The expensive resource (the WASM database) is cached separately in `testing/db.ts`.
  *
- * Built inside a running test, it registers the database invariant check
- * (`register_db_invariants_check`) to run when the test finishes; built in
- * `beforeAll`, nothing is registered, and the suite calls
- * `check_db_invariants_after_all(() => test_app)`, or, when the describe
+ * Built inside a running test (its body or a `beforeEach`), it registers one
+ * hook for when the test finishes: the database invariant check (skipped when
+ * the test already failed, as `register_db_invariants_check` does), then the
+ * close. The close throws when it gave up on work still in flight, unless the
+ * test failed or closed the app itself (`cleanup`, or `server.close()`, whose
+ * outcome is the test's). So an app built in a test lives only for that test.
+ * Built in `beforeAll`, nothing is registered: the suite closes the app, and
+ * calls `check_db_invariants_after_all(() => test_app)`, or, when the describe
  * closes the app in its own `afterAll`, `check_db_invariants_after_suite(suite,
  * test_app)` inside that hook ahead of the close.
  *
  * @param options - test app configuration
  * @returns a `TestApp` ready for HTTP testing
+ * @throws Error when called inside a concurrent test, whose finish vitest
+ *   can't tell from a sibling's — build the app in `beforeAll` instead
  * @throws Error on an `exclude_db_invariants` entry naming no invariant or
  *   carrying no reason
  */
 export const create_test_app = async (options: CreateTestAppOptions): Promise<TestApp> => {
+	const current_test = TestRunner.getCurrentTest();
+	// vitest names whichever concurrent test started last current, so the
+	// close at a concurrent test's finish would land on a sibling's app
+	if (current_test?.concurrent) {
+		throw new Error(
+			'create_test_app: built in a concurrent test, whose finish would close the app under a sibling — build it in `beforeAll` and close it in `afterAll`'
+		);
+	}
 	const { exclude_db_invariants } = options;
 	announce_db_invariant_exclusions(exclude_db_invariants, 'create_test_app');
 	const test_server = await create_test_app_server(options);
@@ -327,12 +349,39 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 
 	const check_db_invariants = (): Promise<void> =>
 		assert_db_invariants({ db: test_server.deps.db }, 'in-process', exclude_db_invariants);
-	register_db_invariants_check(check_db_invariants);
+
+	// a test that closes the app itself owns the outcome
+	let closed_by_test = false;
+	const close = (): Promise<ShutdownDrainGivenUp> => {
+		closed_by_test = true;
+		return result.close();
+	};
+	// one hook, so the check runs ahead of the close
+	if (current_test) {
+		onTestFinished(async ({ task }) => {
+			const failed = task.result?.state === 'fail';
+			// the close runs whatever the check found; a violation is the report
+			let violation: { error: unknown } | null = null;
+			if (!failed) {
+				try {
+					await check_db_invariants();
+				} catch (error) {
+					violation = { error };
+				}
+			}
+			const owned_by_test = closed_by_test;
+			const given_up = await result.close();
+			if (violation) throw violation.error;
+			if (!failed && !owned_by_test && shutdown_gave_up(given_up)) {
+				throw new Error(format_close_given_up('the close when the test finished', given_up));
+			}
+		});
+	}
 
 	return {
 		app,
 		backend: test_server,
-		server: result,
+		server: { ...result, close },
 		surface_spec,
 		surface: surface_spec.surface,
 		route_specs: surface_spec.route_specs,
@@ -344,13 +393,8 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		// the server's `close`, not the backend's: it also stops an auth cleanup
 		// schedule a suite opted into
 		cleanup: async () => {
-			const given_up = await result.close();
-			if (shutdown_gave_up(given_up)) {
-				throw new Error(
-					`create_test_app: cleanup gave up on work still in flight ${JSON.stringify(given_up)} — ` +
-						'a request, WS message or audit write the test left running'
-				);
-			}
+			const given_up = await close();
+			if (shutdown_gave_up(given_up)) throw new Error(format_close_given_up('cleanup', given_up));
 		}
 	};
 };
