@@ -3,7 +3,8 @@
  * read them, and in the Rust spine's crates, which embed their copy with
  * `include_str!` for their own unit tests. This holds each pair
  * byte-identical, so a row added on one side fails here until it reaches the
- * other. The database invariant statement rides along: `db_invariants.sql` is
+ * other. The X-Accel validator corpus is held the same way. The database
+ * invariant statement rides along: `db_invariants.sql` is
  * generated here (`db_invariants.gen.sql.ts`) and embedded by the Rust
  * spine's `_testing_db_invariants`, so an invariant added here fails until
  * the regenerated file is copied over. So do the SQL statements the two
@@ -51,6 +52,11 @@ const TWIN_TABLES: ReadonlyArray<TwinTable> = [
 		name: 'request_target_conformance.json',
 		ts_url: REQUEST_TARGET_CONFORMANCE_URL,
 		rust_path: 'crates/fuz_http/src/request_target_conformance.json'
+	},
+	{
+		name: 'x_accel_corpus.json',
+		ts_url: new URL('../server/x_accel_corpus.json', import.meta.url),
+		rust_path: 'crates/fuz_fact_serving/tests/fixtures/x_accel_corpus.json'
 	},
 	{
 		name: 'db_invariants.sql',

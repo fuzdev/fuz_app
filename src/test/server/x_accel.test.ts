@@ -5,7 +5,9 @@
  * The TS twin of the Rust `fuz_fact_serving` `nginx.rs` unit tests, with
  * mirrored names. Most cases live in `x_accel_corpus.json`, a byte-identical
  * copy of the Rust crate's `tests/fixtures/x_accel_corpus.json`, so the same
- * configs get the same verdicts from both validators.
+ * configs get the same verdicts from both validators; the parity project's
+ * `cross_backend/conformance_table_copies.cross.test.ts` holds the two copies
+ * byte-equal.
  *
  * @module
  */
