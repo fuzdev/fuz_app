@@ -57,7 +57,8 @@ import '../assert_dev_env.ts';
  * a socket on the account's other token open; `admin_token_revoke_all`,
  * `POST /password`, and `account_purge` (also gated on
  * `capabilities.account_lifecycle`) close the account's bearer and session
- * sockets, and `POST /logout` closes only the socket of the session it ends,
+ * sockets, and `POST /logout` and `account_session_revoke` of the caller's own
+ * session close only the socket of the session they end,
  * the account's bearer socket and a second session's socket each answering a
  * request after it — the rows `create_account_revocations` shares with the SSE
  * suite;
@@ -576,8 +577,8 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 
 		// The revocations of `revocation_drivers.ts`, shared with the SSE suite.
 		// An account-wide one closes the account's connections — its bearer
-		// socket, and its session socket too. A session-scoped one (logout)
-		// closes the socket of the session it was sent on, and leaves the
+		// socket, and its session socket too. A session-scoped one (logout, a
+		// revoke of the current session) closes the socket of the session it was sent on, and leaves the
 		// account's bearer socket and another session's socket open, each proven
 		// by a reply after the close.
 		// Without `rpc_path` the rows still register, as skipped cases, and never

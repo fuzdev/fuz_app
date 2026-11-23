@@ -48,7 +48,8 @@ import '../assert_dev_env.ts';
  * 7. **close on the shared revocations** (gated on `rpc_path`; purge also
  *    on `capabilities.account_lifecycle`) — `admin_token_revoke_all`,
  *    `POST /password`, and `account_purge` of a second admin each close its
- *    stream, and its `POST /logout` closes the stream of the session it ends
+ *    stream, and its `POST /logout` and `account_session_revoke` of its own
+ *    session each close the stream of the session they end
  *    while a second session's stream stays open and still receives a
  *    broadcast — the rows `create_account_revocations` shares with the WS
  *    suite.
@@ -648,7 +649,8 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 
 		// The revocations of `revocation_drivers.ts`, shared with the WS suite,
 		// each close the target admin's stream on the session they were sent on.
-		// A session-scoped one (logout) leaves a second session's stream open and
+		// A session-scoped one (logout, a revoke of the current session) leaves a
+		// second session's stream open and
 		// receiving, so a backend closing the whole account on it fails. Without
 		// `rpc_path` the rows still register, as skipped cases, and never run —
 		// so the empty path is never sent.

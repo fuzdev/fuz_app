@@ -1440,7 +1440,8 @@ What the suites share:
   → `AccountRevocation` rows, the account-wide revocations the WS and SSE
   suites each close a live connection on, so a row added there is covered on
   both. The drivers stand alone too (`cross_post_as`,
-  `cross_admin_token_revoke_all`, `cross_account_purge`).
+  `cross_admin_token_revoke_all`, `cross_account_purge`,
+  `cross_session_revoke_current`).
 - **`cross_backend/ws_endpoint.ts`** — `WsEndpointTarget` and
   `open_session_ws` (see §Cross-process plumbing), and
   `assert_ws_upgrade_refused(open, status)`, which holds a refused upgrade to

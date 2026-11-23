@@ -9,12 +9,13 @@ import '../assert_dev_env.ts';
  * it succeeded; the suite opens the target's connections first and asserts
  * their close after. Each row says what it closes (`AccountRevocation.closes`):
  * the whole account, or only the session the revocation was sent on
- * (`POST /logout`), which leaves the account's other credentials' connections
- * open. `describe_cross_process_ws_tests` and
- * `describe_cross_process_sse_tests` iterate `create_account_revocations`. The
- * revocations that name a credential in their input (one session, one token),
- * a cap eviction, and those a suite drives differently (session revoke-all,
- * account delete) stay in their suites.
+ * (`POST /logout`, `account_session_revoke` of the current session), which
+ * leaves the account's other credentials' connections open.
+ * `describe_cross_process_ws_tests` and `describe_cross_process_sse_tests`
+ * iterate `create_account_revocations`. The revocations that name another
+ * credential in their input (a sibling session, one token), a cap eviction,
+ * and those a suite drives differently (session revoke-all, account delete)
+ * stay in their suites.
  *
  * The drivers are exported on their own for a consumer suite that closes a
  * transport of its own on the same revocations.
@@ -25,12 +26,18 @@ import '../assert_dev_env.ts';
 import { assert } from 'vitest';
 
 import {
+	account_session_list_action_spec,
+	account_session_revoke_action_spec,
+	SessionListOutput,
+	SessionRevokeOutput
+} from '../../auth/account_action_specs.ts';
+import {
 	account_purge_action_spec,
 	admin_token_revoke_all_action_spec
 } from '../../auth/admin_action_specs.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { BackendCapabilities } from './capabilities.ts';
-import { cross_rpc_call } from './cross_rpc.ts';
+import { cross_rpc_call, expect_output } from './cross_rpc.ts';
 import type { TestAccount } from '../test_app.ts';
 import type { TestFixture } from './setup.ts';
 
@@ -54,6 +61,47 @@ export const cross_post_as = async (
 		body: JSON.stringify(body)
 	});
 	assert.strictEqual(res.status, 200, `POST ${path}: ${await res.text()}`);
+};
+
+/**
+ * Revoke the session `account`'s requests are sent on (`account_session_revoke`
+ * on that session), asserting it was revoked: the session list, read on the
+ * same session, names it as the current one, so the id revoked is the one the
+ * caller holds rather than a sibling's.
+ *
+ * @param fixture - the per-test fixture whose fresh transport carries the requests
+ * @param rpc_path - the RPC endpoint path
+ * @param account - the account whose session cookie authenticates both calls
+ */
+export const cross_session_revoke_current = async (
+	fixture: TestFixture,
+	rpc_path: string,
+	account: TestAccount
+): Promise<void> => {
+	const headers = account.create_session_headers();
+	const { sessions } = expect_output(
+		await cross_rpc_call(
+			fixture.fresh_transport(),
+			rpc_path,
+			account_session_list_action_spec.method,
+			undefined,
+			headers
+		),
+		SessionListOutput
+	);
+	const current = sessions.filter((session) => session.is_current);
+	assert.strictEqual(current.length, 1, `exactly one current session: ${JSON.stringify(sessions)}`);
+	const output = expect_output(
+		await cross_rpc_call(
+			fixture.fresh_transport(),
+			rpc_path,
+			account_session_revoke_action_spec.method,
+			{ session_id: current[0]!.id },
+			headers
+		),
+		SessionRevokeOutput
+	);
+	assert.strictEqual(output.revoked, true, 'account_session_revoke revoked the current session');
 };
 
 /**
@@ -109,7 +157,7 @@ export const cross_account_purge = async (
  * - `account` — every connection of the target account, whatever credential
  *   opened it
  * - `session` — only the connections of the session the revocation was sent on
- *   (`TestAccount.create_session_headers`'s); the account's other sessions, its
+ *   or names (`TestAccount.create_session_headers`'s); the account's other sessions, its
  *   API tokens, and the daemon token stay valid, and their connections open
  */
 export type AccountRevocationCloses = 'account' | 'session';
@@ -151,7 +199,8 @@ export interface AccountRevocationsOptions {
  * The revocations of a target account's credentials both transport suites
  * drive: `admin_token_revoke_all`, `POST /password`, and `account_purge`
  * (gated on `capabilities.account_lifecycle`) close every connection of the
- * account; `POST /logout` closes only the connections of the session it ends.
+ * account; `POST /logout` and `account_session_revoke` of the caller's own
+ * session close only the connections of the session they end.
  *
  * @param options - the backend's capabilities and route paths
  * @returns the revocation rows, in a stable order
@@ -175,6 +224,13 @@ export const create_account_revocations = (
 			gate: true,
 			closes: 'session',
 			revoke: (fixture, target) => cross_post_as(fixture, target, logout_path, {})
+		},
+		{
+			label: 'account_session_revoke',
+			slug: 'session_revoke',
+			gate: true,
+			closes: 'session',
+			revoke: (fixture, target) => cross_session_revoke_current(fixture, rpc_path, target)
 		},
 		{
 			label: 'POST /password',
