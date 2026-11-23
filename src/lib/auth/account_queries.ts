@@ -250,8 +250,8 @@ export const query_update_account_password = async (
  * account does not conflict with it, so no write that merely references the
  * account waits on a login. Besides the writers it orders against, it
  * conflicts with `query_account_lock_live` (the token mint, the same
- * strength), the `FOR SHARE` of `query_account_lock_live_many` (an offer or
- * invite create), an offer accept's locks (`query_account_lock_for_offer_accept`,
+ * strength), the `FOR SHARE` of `query_account_lock_live_many` (an offer,
+ * invite or assign create), an offer accept's locks (`query_account_lock_for_offer_accept`,
  * the recipient's at this strength, a grantor's shared), and the last-admin
  * guard's `FOR NO KEY UPDATE`. None of
  * those waits on an account row while holding a session row, and once a mint
@@ -422,7 +422,8 @@ export const query_account_lock_for_purge = async (
  * be ordered against a delete of any of them.
  *
  * An offer locks its two parties (`query_role_grant_offer_create`), an invite
- * its issuer (`query_create_invite`, one id).
+ * its issuer (`query_create_invite`, one id), a `role_grant_assign` its
+ * recipient and its caller (`create_role_grant_offer_actions`).
  *
  * `FOR SHARE`: the weakest lock that conflicts with a delete's `UPDATE` of the
  * row, so these writes don't wait on one another. It also waits on a

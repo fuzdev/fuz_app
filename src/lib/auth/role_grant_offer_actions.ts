@@ -107,8 +107,7 @@ import {
 	query_create_role_grant,
 	query_role_grant_find_active_role_for_actor
 } from './role_grant_queries.ts';
-import { query_active_actors_by_account } from './account_queries.ts';
-import type { Actor } from './account_schema.ts';
+import { query_account_lock_live_many, query_active_actors_by_account } from './account_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
 import {
 	has_scoped_role,
@@ -412,22 +411,6 @@ export const create_role_grant_offer_actions = (
 					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 				})
 			: jsonrpc_errors.not_found('account');
-
-	// The recipient's active actors, refusing a recipient that can't receive a
-	// role: a missing or soft-deleted account (no active actor), or a named
-	// actor that is not one of them. Runs after every authority gate, so a
-	// caller refused the conferral learns nothing of the recipient.
-	const require_active_recipient = async (
-		ctx: ActionActorContext,
-		to_account_id: Uuid,
-		to_actor_id: Uuid | null | undefined
-	): Promise<Array<Actor>> => {
-		const actors = await query_active_actors_by_account(ctx, to_account_id);
-		if (to_actor_id != null ? !actors.some((a) => a.id === to_actor_id) : actors.length === 0) {
-			throw recipient_not_found_error(to_actor_id);
-		}
-		return actors;
-	};
 
 	// Returns {offer} only — no auto-accept. Recipient must call
 	// role_grant_offer_accept; admin tests drive the full consent flow over
@@ -909,7 +892,8 @@ export const create_role_grant_offer_actions = (
 	// `role_grant_offer_create`. Gated at the dispatcher on a **global** admin
 	// (`roles: ['admin']`) and re-checked here, it re-checks admin-grantability
 	// (so keeper / CLI-only roles can't be web-assigned), refuses a scoped
-	// builtin role, runs the consumer's `authorize` callback, resolves the
+	// builtin role, runs the consumer's `authorize` callback, locks both
+	// parties' account rows and refuses either one removed, resolves the
 	// target actor, writes the idempotent grant with
 	// the input's `(scope_kind, scope_id)` pair, and emits a `role_grant_create`
 	// audit row — the same event the offer-accept and self-service paths emit.
@@ -978,11 +962,45 @@ export const create_role_grant_offer_actions = (
 			});
 		}
 
-		// Resolve the grant's target actor. A supplied `to_actor_id` must be an
-		// active actor of `to_account_id`; otherwise the account's sole active
-		// actor is used (a multi-actor account must name one). A missing /
-		// actorless account 404-masks.
-		const actors = await require_active_recipient(ctx, input.to_account_id, input.to_actor_id);
+		// Both parties' account rows, locked in one statement in id order — the
+		// lock offer-create takes (`query_role_grant_offer_create`), at its
+		// position after every authority gate, so a caller refused the conferral
+		// learns nothing of the recipient. The credential was read before this
+		// transaction and nothing held the recipient: a delete or a purge of
+		// either, committed since, is waited for and seen, and one still to come
+		// waits for the grant to commit — so no grant lands on a tombstone (an undelete would bring
+		// it back) or meets a purged actor's foreign key. Judged recipient first,
+		// then the caller, as offer-create judges them.
+		const live = await query_account_lock_live_many(ctx, [input.to_account_id, auth.account.id]);
+		// The recipient: a live account with an active actor (the named one, when
+		// an actor is named). A missing or removed recipient 404-masks.
+		const actors = live.has(input.to_account_id)
+			? await query_active_actors_by_account(ctx, input.to_account_id)
+			: [];
+		if (
+			input.to_actor_id != null
+				? !actors.some((a) => a.id === input.to_actor_id)
+				: actors.length === 0
+		) {
+			throw recipient_not_found_error(input.to_actor_id);
+		}
+		// The caller: a live actor of a live account. One removed since its
+		// credential was read is refused as the dead credential it now is, as
+		// offer-create refuses its grantor, with no audit row from an account
+		// that is gone.
+		if (
+			!live.has(auth.account.id) ||
+			!(await query_active_actors_by_account(ctx, auth.account.id)).some(
+				(a) => a.id === auth.actor.id
+			)
+		) {
+			throw jsonrpc_errors.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED
+			});
+		}
+
+		// The grant's target actor: the named one, else the account's sole active
+		// actor (a multi-actor account must name one).
 		let target_actor_id: Uuid;
 		if (input.to_actor_id != null) {
 			target_actor_id = input.to_actor_id;

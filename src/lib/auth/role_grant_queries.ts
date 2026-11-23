@@ -382,7 +382,7 @@ export const query_actor_has_active_global_role = async (
  * sort returns them: each account's row, its actors' and its grants' before
  * the next account's. `query_account_lock_live_many` and
  * `query_account_lock_for_offer_accept` take account rows in the same order,
- * so an offer or an accept between two admins and an admin's removal never
+ * so an offer, an assign or an accept between two admins and an admin's removal never
  * wait on each other's rows in opposite orders. Ids never change, so no
  * concurrent update can move a row the sort has placed.
  *

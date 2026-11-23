@@ -95,8 +95,7 @@ const get_helper_body = (start: number): string => {
 };
 
 // Module-local `const` helpers, keyed by name — every one, so a helper that
-// throws only through another helper (`require_active_recipient` through
-// `recipient_not_found_error`) is followed too.
+// throws only through another helper is followed too.
 const helper_bodies: Map<string, string> = new Map();
 for (const m of handler_source.matchAll(/^[ \t]*const (\w+) = /gm)) {
 	const name = m[1]!;

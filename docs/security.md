@@ -1386,7 +1386,9 @@ count toward the last-admin guard). What doesn't come back: the pending
 offers to and from it, which the delete superseded, and the unclaimed invites
 it issued, which the delete removed. A login, token, offer or invite created
 in flight across the delete is ordered against it by the account-row lock:
-refused, or committed first and ended by the delete.
+refused, or committed first and ended by the delete. So is a
+`role_grant_assign` to the account: refused, or committed first and kept
+with the account's other grants.
 
 **Admin-grant guards on revoke**: `role_grant_revoke` guards a global `admin`
 grant the way removal guards its account. `ERROR_CANNOT_REVOKE_KEEPER_ADMIN`
@@ -2246,10 +2248,12 @@ transactions meet the same rows in opposite orders.
   delete takes — then the guards again (§Last-admin guard), a
   `self_service_role_set` through `query_account_lock_live` too (refused on a
   removed account as the dead credential), a revoke through its revokee's row (`query_account_lock_for_revoke`),
-  an offer or invite create through `query_account_lock_live_many`
-  (`FOR SHARE`), which `query_role_grant_offer_create` and
-  `query_create_invite` take themselves (a caller that locks an actor or
-  grant row first takes the account row before it), an accept through both parties' rows, lower id first
+  an offer, invite or assign create through `query_account_lock_live_many`
+  (`FOR SHARE`) — `query_role_grant_offer_create` and `query_create_invite`
+  take it themselves (a caller that locks an actor or grant row first takes
+  the account row before it), and `role_grant_assign` takes it on its
+  recipient and its caller, refusing either one removed — and an accept
+  through both parties' rows, lower id first
   (`query_account_lock_for_offer_accept`). A purge first takes the advisory
   lock only purges take (`query_account_purge_advisory_lock`, holding no
   row): two purges' cascades cross at offers and invites between their
