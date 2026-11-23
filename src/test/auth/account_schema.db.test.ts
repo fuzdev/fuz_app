@@ -277,7 +277,9 @@ describe_db('auth schema', (get_db) => {
 	// `audit_log`'s four identity columns deliberately carry NO FK (plain
 	// UUID) — an append-only log isn't a live relational entity, and a hard
 	// purge must leave the raw id intact rather than nulling the attribution
-	// (delete = soft, purge = hard).
+	// (delete = soft, purge = hard). The provenance stamps carry none for the
+	// same reason (`drop_provenance_stamp_foreign_keys`): `actor.updated_by` /
+	// `deleted_by`, `role_grant.granted_by` / `revoked_by` / `source_offer_id`.
 	// Drift here is a forensic-trail regression.
 	test('foreign keys have expected delete rules', async () => {
 		const db = get_db();
@@ -319,8 +321,6 @@ describe_db('auth schema', (get_db) => {
 		}));
 		assert.deepStrictEqual(fks, [
 			{ table: 'actor', column: 'account_id', references: 'account.id', on_delete: 'CASCADE' },
-			{ table: 'actor', column: 'deleted_by', references: 'actor.id', on_delete: 'SET NULL' },
-			{ table: 'actor', column: 'updated_by', references: 'actor.id', on_delete: 'SET NULL' },
 			{ table: 'api_token', column: 'account_id', references: 'account.id', on_delete: 'CASCADE' },
 			// audit_log identity columns (account_id / actor_id / target_*) carry
 			// NO FK by design — see the comment above this test.
@@ -333,14 +333,6 @@ describe_db('auth schema', (get_db) => {
 			{ table: 'invite', column: 'claimed_by', references: 'account.id', on_delete: 'SET NULL' },
 			{ table: 'invite', column: 'created_by', references: 'actor.id', on_delete: 'SET NULL' },
 			{ table: 'role_grant', column: 'actor_id', references: 'actor.id', on_delete: 'CASCADE' },
-			{ table: 'role_grant', column: 'granted_by', references: 'actor.id', on_delete: 'SET NULL' },
-			{ table: 'role_grant', column: 'revoked_by', references: 'actor.id', on_delete: 'SET NULL' },
-			{
-				table: 'role_grant',
-				column: 'source_offer_id',
-				references: 'role_grant_offer.id',
-				on_delete: 'SET NULL'
-			},
 			{
 				table: 'role_grant_offer',
 				column: 'from_actor_id',

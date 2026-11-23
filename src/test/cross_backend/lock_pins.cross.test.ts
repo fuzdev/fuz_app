@@ -26,9 +26,9 @@
  *   of the account (one holding even a share lock on the account row) and
  *   evict counting its row, so the account ends at the cap.
  * - **A key-share writer against the guard** — a share lock on an admin's
- *   grant, then a key share on its actor (a row inserted naming it), played
- *   around a removal of that admin whose guard locks the actor then the grant:
- *   both commit.
+ *   grant, then a key share on its actor (a grant inserted to it — `actor_id`
+ *   keeps its foreign key), played around a removal of that admin whose guard
+ *   locks the actor then the grant: both commit.
  * - **A purge against the account's writers** — a purge of an account at its
  *   session or token cap across a login or token create, and across a
  *   password change: the purge takes the account row first, so both commit;
@@ -50,15 +50,18 @@
  *   the dead credential; an accept by an admin recipient whose account sorts
  *   below its grantor's waits on a guard holding the recipient's row without
  *   holding the grantor's; an accept whose grantor's grant names the
- *   recipient's actor (`granted_by`) holds the grantor's account, not that
- *   grant, so the purge's cascade setting it null never waits on the accept.
+ *   recipient's actor (`granted_by`), across a purge of the recipient, answers
+ *   the dead credential, and the cascade never writes that grant — the stamp
+ *   carries no foreign key.
  * - **A revoke and a purge against what they reach** — a revoke across a
  *   re-offer to its revokee takes the revokee's row first, waits, and
- *   supersedes the refreshed offer; a purge takes every admin's row and its
- *   own in one id-ordered statement, so it waits on another removal's guard
- *   over the admins its account granted, on an offer create holding its own
- *   row, and on another purge, rather than meeting them in its cascade. A
- *   scope teardown has no wire route; its pin is in-process.
+ *   supersedes the refreshed offer; a purge's cascade never writes the grants
+ *   its account granted, so it and another removal's guard over those admins
+ *   both commit; a purge waits at its own row on an offer create holding it,
+ *   holding no other account's; and two purges whose accounts' offers
+ *   (accepted or declined) or invites cross take turns at the advisory lock
+ *   every purge takes first, rather than meeting in their cascades. A scope
+ *   teardown has no wire route; its pin is in-process.
  * - **Multi-row offer writes in id order** — a purge's and a delete's two
  *   supersedes, a revoke's, and an accept's claim of its offer and siblings,
  *   against a transaction holding the lowest of their rows and then taking
@@ -89,6 +92,7 @@ import { cross_rpc_call, type RpcResult } from '#lib/testing/cross_backend/cross
 import { SPINE_ACCOUNT_LOGIN_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import { DEFAULT_MAX_SESSIONS, DEFAULT_MAX_TOKENS } from '#lib/auth/account_route_schema.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { ACCOUNT_PURGE_ADVISORY_LOCK_KEY } from '#lib/auth/account_queries.ts';
 import { ERROR_CANNOT_DELETE_LAST_ADMIN } from '#lib/auth/admin_action_specs.ts';
 import {
 	ERROR_CANNOT_REVOKE_LAST_ADMIN,
@@ -505,7 +509,8 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			const grant = await admin_grant_of(grantor.actor.id);
 			// a writer's two locks: the admin's grant shared before the removal is
 			// sent, then — once the removal's guard waits on that grant, holding the
-			// admin's actor — a grant naming the admin, a key share on it
+			// admin's actor — a grant to the admin's actor, a key share on it
+			// (`actor_id` keeps its foreign key; a `granted_by` stamp has none)
 			const answer = await against_held(
 				async (tx) => {
 					await tx.query(`SELECT id FROM role_grant WHERE id = $1 FOR SHARE`, [grant]);
@@ -515,18 +520,18 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 				async (tx) => {
 					await tx.query(
 						`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, 'lock_pin', $2)`,
-						[recipient.actor.id, grantor.actor.id]
+						[grantor.actor.id, recipient.actor.id]
 					);
 				}
 			);
 			assert.ok(answer.ok, `the removal: ${JSON.stringify(answer)}`);
 			assert.strictEqual(
 				await count(
-					`SELECT COUNT(*) AS n FROM role_grant WHERE actor_id = $1 AND granted_by = $2`,
-					[recipient.actor.id, grantor.actor.id]
+					`SELECT COUNT(*) AS n FROM role_grant WHERE actor_id = $1 AND role = 'lock_pin'`,
+					[grantor.actor.id]
 				),
 				1,
-				'the accept side committed'
+				'the writer committed'
 			);
 			assert.strictEqual(
 				await count(`SELECT COUNT(*) AS n FROM account WHERE id = $1 AND deleted_at IS NOT NULL`, [
@@ -999,10 +1004,10 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 		// (`granted_by`), and the grantor's account sorts below the recipient's.
 		// A purge of the recipient played (its account row first, its offers
 		// superseded); the accept is sent, takes the grantor's row and waits at
-		// the recipient's; then the purge's delete, whose cascade sets that
-		// `granted_by` null. An accept holding the grantor's account waits it out
-		// and answers the dead credential; one holding the grantor's grant meets
-		// the cascade, and the two deadlock.
+		// the recipient's; then the purge's delete. The accept waits it out and
+		// answers the dead credential, and the cascade never writes the
+		// grantor's grant: `granted_by` is a provenance stamp, with no foreign
+		// key, so it keeps the purged actor's id.
 		test("an accept across a purge of its recipient whose actor granted the grantor's admin", async () => {
 			const f = await setup_test();
 			const a = await f.create_account({ username: 'pin_gb_a' });
@@ -1036,8 +1041,8 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 					`SELECT granted_by, revoked_at IS NOT NULL AS revoked FROM role_grant WHERE id = $1`,
 					[grant]
 				),
-				{ granted_by: null, revoked: false },
-				"the purge's cascade set the grant's granted_by null"
+				{ granted_by: r.actor.id, revoked: false },
+				"the purge's cascade never writes the grantor's grant"
 			);
 		});
 
@@ -1266,57 +1271,83 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			);
 		});
 
-		// Two admins whose grants the purged account's actor granted, the higher
-		// stored first so a cascade walking the heap reaches it first. A guard of a
-		// third admin's delete played: its rows up to the lower admin's; once the
-		// purge waits, the rest of it and the delete. A purge that takes every
-		// admin's account first waits at the guard's first row; one that reaches
-		// the grants only in its cascade sets the higher one null and then waits
-		// on the lower one the guard holds, while the guard reaches for the higher.
-		test("a purge across another removal's guard over the admins its account granted: both commit", async () => {
-			const f = await setup_test();
-			const x = await f.create_account({ username: 'pin_pg_x' });
-			const p = await f.create_account({ username: 'pin_pg_p' });
-			const q = await f.create_account({ username: 'pin_pg_q' });
-			const third = await f.create_account({ username: 'pin_pg_t', roles: [ROLE_ADMIN] });
-			const [lo, hi] = p.account.id < q.account.id ? [p, q] : [q, p];
-			for (const admin of [hi, lo]) {
-				await write(`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, $2, $3)`, [
-					admin.actor.id,
-					ROLE_ADMIN,
-					x.actor.id
-				]);
-			}
-			const answer = await against_held(
-				async (tx) => {
-					await tx.query(GUARD_SQL.replace('ORDER BY', 'AND a.id <= $2 ORDER BY'), [
-						ROLE_ADMIN,
-						lo.account.id
-					]);
-				},
-				() => daemon_rpc(f, 'account_purge', { account_id: x.account.id, confirm: true }),
-				async (tx) => {
-					await tx.query(GUARD_SQL, [ROLE_ADMIN]);
-					await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [third.account.id]);
+		// Two admins whose grants the purged account's actor granted — directly,
+		// or by offers it made that they accepted — the higher stored first so a
+		// cascade walking the heap reaches it first. A guard of a third admin's
+		// delete played: its rows up to the lower admin's; once the purge waits or
+		// has answered, the rest of it and the delete. The purge's cascade never
+		// writes the admins' grants — neither `granted_by` nor `source_offer_id`
+		// (the accepted offers the cascade deletes) carries a foreign key — so it
+		// meets the guard nowhere and both commit, the grants keeping the purged
+		// ids. A cascade that set them null reached the higher one, then waited
+		// on the lower one the guard holds, while the guard reached for the
+		// higher.
+		for (const shape of ['direct', 'accepted'] as const) {
+			test(`a purge across another removal's guard over the admins its account granted (${shape}): both commit`, async () => {
+				const f = await setup_test();
+				const x = await f.create_account({ username: `pin_pg_x_${shape}` });
+				const p = await f.create_account({ username: `pin_pg_p_${shape}` });
+				const q = await f.create_account({ username: `pin_pg_q_${shape}` });
+				const third = await f.create_account({
+					username: `pin_pg_t_${shape}`,
+					roles: [ROLE_ADMIN]
+				});
+				const [lo, hi] = p.account.id < q.account.id ? [p, q] : [q, p];
+				const offers: Array<string | null> = [];
+				for (const admin of [hi, lo]) {
+					const offer = shape === 'accepted' ? crypto.randomUUID() : null;
+					if (offer) await insert_offer(offer, x.actor.id, admin.account.id, ROLE_ADMIN);
+					const grant = crypto.randomUUID();
+					await write(
+						`INSERT INTO role_grant (id, actor_id, role, granted_by, source_offer_id)
+						 VALUES ($1, $2, $3, $4, $5)`,
+						[grant, admin.actor.id, ROLE_ADMIN, x.actor.id, offer]
+					);
+					if (offer) {
+						await write(
+							`UPDATE role_grant_offer SET accepted_at = NOW(), resulting_role_grant_id = $1
+							 WHERE id = $2`,
+							[grant, offer]
+						);
+					}
+					offers.push(offer);
 				}
-			);
-			assert.ok(answer.ok, `the purge: ${JSON.stringify(answer)}`);
-			assert.strictEqual(
-				await count(
-					`SELECT COUNT(*) AS n FROM role_grant WHERE actor_id = ANY($1::uuid[]) AND granted_by IS NULL`,
-					[[lo.actor.id, hi.actor.id]]
-				),
-				2,
-				"the purge's cascade set both grants' granted_by null"
-			);
-		});
+				const answer = await against_held(
+					async (tx) => {
+						await tx.query(GUARD_SQL.replace('ORDER BY', 'AND a.id <= $2 ORDER BY'), [
+							ROLE_ADMIN,
+							lo.account.id
+						]);
+					},
+					() => daemon_rpc(f, 'account_purge', { account_id: x.account.id, confirm: true }),
+					async (tx) => {
+						await tx.query(GUARD_SQL, [ROLE_ADMIN]);
+						await tx.query(`UPDATE account SET deleted_at = NOW() WHERE id = $1`, [
+							third.account.id
+						]);
+					}
+				);
+				assert.ok(answer.ok, `the purge (${shape}): ${JSON.stringify(answer)}`);
+				assert.strictEqual(
+					await count(
+						`SELECT COUNT(*) AS n FROM role_grant
+						 WHERE actor_id = ANY($1::uuid[]) AND granted_by = $2
+						   AND source_offer_id IS NOT DISTINCT FROM (
+						     CASE WHEN actor_id = $3 THEN $4::uuid ELSE $5::uuid END)`,
+						[[lo.actor.id, hi.actor.id], x.actor.id, hi.actor.id, offers[0], offers[1]]
+					),
+					2,
+					`the purge's cascade never writes the admins' grants (${shape})`
+				);
+			});
+		}
 
 		// The purged account sorting below an admin, and an offer create between
 		// the two played: the purged account's row shared, then — once the purge
-		// waits — the admin's. A purge taking the admins' rows and its own in one
-		// id-ordered statement waits at its own holding nothing above it; one
-		// taking the admins' first (a guard ahead of its own row) holds the
-		// admin's the create reaches for while waiting on its own row.
+		// waits — the admin's. A purge of a non-admin takes no admin's row: it
+		// waits at its own holding only the purge lock, which no create takes;
+		// one taking the admins' rows ahead of its own would hold the admin's the
+		// create reaches for while waiting on its own row.
 		test('a purge across an offer create holding its account, then an admin: both commit', async () => {
 			const f = await setup_test();
 			const a = await f.create_account({ username: 'pin_po_a' });
@@ -1342,53 +1373,82 @@ const describe_lock_pins = (side: string, handle: ReconstructedBootstrappedBacke
 			);
 		});
 
-		// Two accounts each holding a grant the other's actor granted. A purge of
-		// one played: every admin's row and its own, then its cascade's first
-		// write, the delete of its own grant; once the other purge waits, its
-		// account's delete, whose cascade sets the other's grant's granted_by
-		// null. A purge that takes the admins' rows first waits on the played one
-		// there; one that reaches the grants only in its cascade deletes its own
-		// grant and waits on the played one's, which then waits on it.
-		test('two purges of accounts that granted each other: both commit', async () => {
-			const f = await setup_test();
-			const x = await f.create_account({ username: 'pin_pp_x' });
-			const y = await f.create_account({ username: 'pin_pp_y' });
-			const gx = (
-				await read<{ id: string }>(
-					`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, 'participant', $2) RETURNING id`,
-					[x.actor.id, y.actor.id]
-				)
-			).id;
-			await write(
-				`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, 'participant', $2)`,
-				[y.actor.id, x.actor.id]
-			);
-			const answer = await against_held(
-				async (tx) => {
-					await tx.query(
-						`SELECT a.id FROM account a
-						 WHERE a.id = $1 OR a.id IN (
-						   SELECT act.account_id FROM actor act JOIN role_grant rg ON rg.actor_id = act.id
-						   WHERE rg.role = $2 AND rg.scope_id IS NULL AND rg.revoked_at IS NULL)
-						 ORDER BY a.id FOR NO KEY UPDATE`,
-						[x.account.id, ROLE_ADMIN]
-					);
-					await tx.query(`DELETE FROM role_grant WHERE id = $1`, [gx]);
-				},
-				() => daemon_rpc(f, 'account_purge', { account_id: y.account.id, confirm: true }),
-				async (tx) => {
-					await tx.query(`DELETE FROM account WHERE id = $1`, [x.account.id]);
+		// Two accounts whose rows cross: offers each made the other, accepted or
+		// declined, or invites each issued and the other claimed. A purge of x
+		// played: the advisory lock every purge takes first, its account row, and
+		// a delete of `from_y` (y's offer to x, or y's invite x claimed); once the
+		// other purge waits or has answered, x's account delete, whose cascade
+		// reaches `from_x`. The row played is the one a lockless purge of y
+		// reaches second, by its cascade's order, not by id: the account's own
+		// references first — `from_x` through `to_account_id` (or the invite's
+		// `claimed_by`) — then its actor's, `from_y` through `from_actor_id` (or
+		// `created_by`). A purge of y taking the lock first waits there holding
+		// nothing; one that went to its cascade deletes `from_x`, then waits on
+		// `from_y`, held by the played one, which then waits on `from_x`: a
+		// deadlock.
+		for (const shape of ['accepted', 'declined', 'invites'] as const) {
+			test(`two purges whose accounts' rows cross (${shape}): both commit`, async () => {
+				const f = await setup_test();
+				const x = await f.create_account({ username: `pin_pp_x_${shape}` });
+				const y = await f.create_account({ username: `pin_pp_y_${shape}` });
+				const [from_x, from_y] = ascending_ids(2) as [string, string];
+				if (shape === 'invites') {
+					for (const [id, issuer, claimer, name] of [
+						[from_x, x.actor.id, y.account.id, `pin_pp_iy_${shape}`],
+						[from_y, y.actor.id, x.account.id, `pin_pp_ix_${shape}`]
+					] as const) {
+						await write(
+							`INSERT INTO invite (id, username, created_by, claimed_by, claimed_at)
+							 VALUES ($1, $2, $3, $4, NOW())`,
+							[id, name, issuer, claimer]
+						);
+					}
+				} else {
+					for (const [id, from, to] of [
+						[from_x, x, y],
+						[from_y, y, x]
+					] as const) {
+						await insert_offer(id, from.actor.id, to.account.id, 'participant');
+						if (shape === 'accepted') {
+							await write(
+								`INSERT INTO role_grant (id, actor_id, role, granted_by, source_offer_id)
+								 VALUES ($1, $2, 'participant', $3, $1)`,
+								[id, to.actor.id, from.actor.id]
+							);
+							await write(
+								`UPDATE role_grant_offer SET accepted_at = NOW(), resulting_role_grant_id = $1
+								 WHERE id = $1`,
+								[id]
+							);
+						} else {
+							await write(`UPDATE role_grant_offer SET declined_at = NOW() WHERE id = $1`, [id]);
+						}
+					}
 				}
-			);
-			assert.ok(answer.ok, `the purge: ${JSON.stringify(answer)}`);
-			assert.strictEqual(
-				await count(`SELECT COUNT(*) AS n FROM account WHERE id = ANY($1::uuid[])`, [
-					[x.account.id, y.account.id]
-				]),
-				0,
-				'both purged'
-			);
-		});
+				const table = shape === 'invites' ? 'invite' : 'role_grant_offer';
+				const answer = await against_held(
+					async (tx) => {
+						await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [
+							...ACCOUNT_PURGE_ADVISORY_LOCK_KEY
+						]);
+						await tx.query(`SELECT id FROM account WHERE id = $1 FOR UPDATE`, [x.account.id]);
+						await tx.query(`DELETE FROM ${table} WHERE id = $1`, [from_y]);
+					},
+					() => daemon_rpc(f, 'account_purge', { account_id: y.account.id, confirm: true }),
+					async (tx) => {
+						await tx.query(`DELETE FROM account WHERE id = $1`, [x.account.id]);
+					}
+				);
+				assert.ok(answer.ok, `the purge (${shape}): ${JSON.stringify(answer)}`);
+				assert.strictEqual(
+					await count(`SELECT COUNT(*) AS n FROM account WHERE id = ANY($1::uuid[])`, [
+						[x.account.id, y.account.id]
+					]),
+					0,
+					`both purged (${shape})`
+				);
+			});
+		}
 	});
 };
 

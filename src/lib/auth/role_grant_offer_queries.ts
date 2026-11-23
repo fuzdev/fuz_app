@@ -517,7 +517,7 @@ export const query_role_grant_offer_sweep_expired = async (
  * the grantor's account row `FOR SHARE` in the accept's transaction: every
  * write that ends a grantor's global `admin` takes that row first — a revoke of
  * the grant through `query_account_lock_for_revoke`, a delete through its write
- * of the row, a purge through `query_account_lock_admins_for_purge` and
+ * of the row, a purge through its last-admin guard and
  * `query_account_lock_for_purge` — so one that committed first is
  * seen here (each statement reads afresh), and one that came later waits for
  * the accept to commit. Twin of the Rust `grantor_holds_global_admin`.
@@ -604,18 +604,17 @@ export interface AcceptOfferResult {
  * (`query_account_lock_for_offer_accept`), then the offer and the pending
  * siblings it supersedes in one id-ordered claim, then the grant insert. The
  * accounts first, as every removal of either account takes them first, so a
- * removal and an accept never meet at the offers, the actor, or a grant a
- * purge's cascade reaches; two accepts by one recipient take turns. The
- * offers in id order, as every transaction that writes several offer rows
- * locks them all first in one id-ordered statement (a delete, a purge, a
- * revoke, the expiry sweep). The grantor's authority is read unlocked after
- * the grantor's account lock — the invariant it rests on: every write that
- * ends a grantor's global `admin` takes the grantor's account row first (a
- * revoke of the grant through `query_account_lock_for_revoke`, whether or not
- * its last-admin guard ran; a delete through its write of the row; a purge
- * through `query_account_lock_admins_for_purge` and
- * `query_account_lock_for_purge`; the DB browser's delete, which takes none of
- * them, excepted).
+ * removal and an accept never meet at the offers or the actor; two accepts
+ * by one recipient take turns. The offers in id order, as every transaction
+ * that writes several offer rows locks them all first in one id-ordered
+ * statement (a delete, a purge, a revoke, the expiry sweep). The grantor's
+ * authority is read unlocked after the grantor's account lock — the invariant
+ * it rests on: every write that ends a grantor's global `admin` takes the
+ * grantor's account row first (a revoke of the grant through
+ * `query_account_lock_for_revoke`, whether or not its last-admin guard ran; a
+ * delete through its write of the row; a purge through its last-admin guard
+ * and `query_account_lock_for_purge`; the DB browser's delete, which takes
+ * none of them, excepted).
  *
  * Error map:
  * - `RoleGrantOfferNotFoundError` — offer does not exist, or belongs to a

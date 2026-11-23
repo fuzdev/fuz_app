@@ -120,9 +120,9 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   authorizer's verdict + the `cell_moderate` verb, never in `data`.
   `cell.policy jsonb` (nullable) is a root's contribution policy, opaque to the
   spine — a table CHECK holds it to roots and to JSON objects (`policy @> '{}'`,
-  the object test pglet runs too). Nullable
-  `created_by` / `updated_by` FKs to `actor` (NULL = system origin). GIN on `data`
-  / `refs`; global partial-unique on `path`.
+  the object test pglet runs too). Nullable `created_by` FK to `actor` (NULL =
+  system origin); `updated_by` and `cell_grant.granted_by` are provenance stamps
+  with no FK. GIN on `data` / `refs`; global partial-unique on `path`.
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
 delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring

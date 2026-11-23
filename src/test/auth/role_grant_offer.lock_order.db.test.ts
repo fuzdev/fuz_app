@@ -13,9 +13,9 @@
  * - **The accept's account locks** — two sibling accepts take turns at the
  *   recipient's row; an admin recipient sorting below its grantor waits at its
  *   own row on a last-admin guard that holds it, holding neither; an accept
- *   whose grantor's grant names the recipient's actor holds the grantor's
- *   account, so a purge's cascade setting that `granted_by` null never waits
- *   on it.
+ *   whose grantor's grant names the recipient's actor (`granted_by`), across a
+ *   purge of the recipient, is refused, and the cascade never writes that
+ *   grant — the stamp carries no foreign key.
  * - **Multi-row offer writes in id order** — the expiry sweep (no spine serves
  *   it over the wire) against a holder of the lowest of its rows.
  * - **Offers before grants** — `query_revoke_role_grant` (every revoke: the
@@ -247,8 +247,9 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 
 	// The grantor's account sorts below the recipient's, and the grantor's admin
 	// grant names the recipient's actor. A purge of the recipient played: its
-	// account row, its offers superseded; once the accept waits, its delete,
-	// whose cascade sets that `granted_by` null.
+	// account row, its offers superseded; once the accept waits, its delete.
+	// The cascade never writes the grantor's grant: `granted_by` is a
+	// provenance stamp, with no foreign key, so it keeps the purged actor's id.
 	test("an accept across a purge of its recipient whose actor granted the grantor's admin", async () => {
 		const db = get_db();
 		const a = await account(db, 'lo_gb_a');
@@ -287,8 +288,8 @@ describe_pg('offer accepts and multi-row offer writes, against a held transactio
 		);
 		assert.deepStrictEqual(
 			rows,
-			[{ granted_by: null }],
-			"the cascade set the grant's granted_by null"
+			[{ granted_by: r.actor_id }],
+			"the cascade never writes the grantor's grant"
 		);
 	});
 

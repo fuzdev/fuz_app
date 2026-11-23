@@ -64,8 +64,9 @@ import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
-	query_account_lock_admins_for_purge,
+	query_account_purge_advisory_lock,
 	query_account_lock_for_purge,
+	query_account_lock_live,
 	query_account_soft_delete,
 	query_account_undelete,
 	query_actor_soft_delete,
@@ -587,6 +588,14 @@ export const create_admin_actions = (
 		}
 		// Keeper + last-admin guards (fail-loud, before the tombstone).
 		await assert_account_removable(ctx, target_account_id, 'account_delete');
+		// The target's row, then the guards again under it — as a purge does
+		// (`account_purge_handler` has why): the guard's read of whether the
+		// target is an admin took no lock, and an accept making it one can commit
+		// before the tombstone takes the row. A row already gone or tombstoned
+		// skips the second pass; the tombstone then finds nothing.
+		if (await query_account_lock_live(ctx, target_account_id)) {
+			await assert_account_removable(ctx, target_account_id, 'account_delete');
+		}
 		// Snapshot actor names before the tombstone.
 		const actors = await query_actors_by_account(ctx, target_account_id);
 		const snapshot = await query_account_soft_delete(ctx, target_account_id, auth.actor.id);
@@ -660,14 +669,11 @@ export const create_admin_actions = (
 				reason: ERROR_PURGE_NOT_CONFIRMED
 			});
 		}
-		// Every admin's account row and the target's, in one id-ordered statement:
-		// the cascade writes admin rows (the grants the target's actors granted).
-		// Every other removal's guard and every other purge take those accounts
-		// first, and no other writer of an admin's grant waits on an account row
-		// while holding one, so holding the accounts orders the purge before any of
-		// them (`query_account_lock_admins_for_purge` has why). The last-admin guard
-		// then runs only for an admin target, in `assert_account_removable`.
-		await query_account_lock_admins_for_purge(ctx, input.account_id);
+		// The purge lock first, holding nothing: two purges' cascades cross at
+		// rows no row lock ahead of them covers, so purges take turns
+		// (`query_account_purge_advisory_lock` has why). The last-admin guard then
+		// runs only for an admin target, in `assert_account_removable`.
+		await query_account_purge_advisory_lock(ctx);
 		// Keeper + last-admin guards (fail-loud, before the cascade).
 		await assert_account_removable(ctx, input.account_id, 'account_purge');
 		const refuse_not_found = async (): Promise<never> => {
@@ -684,6 +690,18 @@ export const create_admin_actions = (
 		// The account row before any write, as every writer of the account takes
 		// it — `query_account_lock_for_purge` has why.
 		if (!(await query_account_lock_for_purge(ctx, input.account_id))) await refuse_not_found();
+		// The guards again, under the row lock. The first read of whether the
+		// target is an admin took no lock, and a purge holds no row of a
+		// non-admin target before its own: an accept making it an admin, in
+		// flight then, has committed by now (it holds the row this lock waited
+		// on), and a revoke the accept's grant let pass may have ended every
+		// other admin. For a target that was an admin, this count re-locks the
+		// rows the first one holds; it reaches past them only for an admin made
+		// in the window, the target or another — out of the guards' id order. A
+		// deadlock error then rolls one of the two transactions back whole,
+		// removing nothing: this purge, or the other, which may be a removal
+		// that would have committed (it answers 500).
+		await assert_account_removable(ctx, input.account_id, 'account_purge');
 		// Snapshot actors before the cascade removes them.
 		const actors = await query_actors_by_account(ctx, input.account_id);
 		// Before the cascade, whose `ON DELETE CASCADE` would take the offers

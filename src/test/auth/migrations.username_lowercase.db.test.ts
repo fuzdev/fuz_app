@@ -40,6 +40,12 @@ const prefix_namespace = () => {
 	);
 };
 
+/** The chain's names from the migration under test on — what a run over the prefix applies. */
+const tail_names = (): Array<string> => {
+	const index = AUTH_MIGRATION_NS.migrations.findIndex((m) => m.name === MIGRATION_NAME);
+	return AUTH_MIGRATION_NS.migrations.slice(index).map((m) => m.name);
+};
+
 const applied = async (): Promise<number> => {
 	const rows = await db.query<{ count: number | string }>(
 		`SELECT count(*) AS count FROM schema_version WHERE namespace = 'fuz_auth' AND name = $1`,
@@ -61,7 +67,7 @@ describe('account_username_lowercase', () => {
 
 		await db.query('UPDATE account SET username = lower(username)');
 		const results = await run_migrations(db, [AUTH_MIGRATION_NS]);
-		assert.deepStrictEqual(results[0]!.applied_names, [MIGRATION_NAME]);
+		assert.deepStrictEqual(results[0]!.applied_names, tail_names());
 		assert.strictEqual(await applied(), 1);
 
 		const insert = await assert_rejects(() =>
@@ -74,6 +80,6 @@ describe('account_username_lowercase', () => {
 		await run_migrations(db, [prefix_namespace()]);
 		await db.query(`INSERT INTO account (username, password_hash) VALUES ('lower_holder', 'x')`);
 		const results = await run_migrations(db, [AUTH_MIGRATION_NS]);
-		assert.deepStrictEqual(results[0]!.applied_names, [MIGRATION_NAME]);
+		assert.deepStrictEqual(results[0]!.applied_names, tail_names());
 	});
 });

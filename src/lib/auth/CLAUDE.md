@@ -252,8 +252,10 @@ cannot disagree.
 
 One class order in every transaction — accounts, then offers, then grants and
 actors — and id order within a class. Every writer of an account takes its row
-first (two mints of one account take turns there, so the caps hold); a
-multi-row write locks its rows in one id-ordered statement before writing.
+first (two mints of one account take turns there, so the caps hold) — a
+delete and a purge after their last-admin guard, which an admin target's row
+is locked within, then the guards again; a multi-row write locks its rows in
+one id-ordered statement before writing.
 Each lock's strength and reason is on its query's TSDoc; the rule set:
 ../../../docs/security.md §Row Locks. `lock_pins.cross.test.ts` pins them on
 both spines (../../test/CLAUDE.md).
@@ -409,9 +411,13 @@ a mounting surface; protocol specs excluded.
   notified), deletes the unclaimed invites it issued, revokes its sessions and
   tokens, and writes the account row plus one per actor. Delete keeps the role
   grants, inert; purge is the keeper-only cascading delete with
-  `confirm: true`. The target guards (never a keeper account, never the last
-  active admin) and what an undelete restores are ../../../docs/security.md
-  §Authorization.
+  `confirm: true`, taking the purge advisory lock first
+  (`query_account_purge_advisory_lock`) and running its guards again under
+  its row lock (`query_account_lock_for_purge`), and its cascade leaves the
+  provenance stamps (`granted_by`, `revoked_by`, `source_offer_id`, the
+  actor's) naming the purged ids. The target guards (never a keeper account,
+  never the last active admin) and what an undelete restores are
+  ../../../docs/security.md §Authorization.
 - **Failure rows on a miss.** `admin_session_revoke_all`,
   `admin_token_revoke_all`, account delete / purge and `invite_delete` write
   a failure row on a missing target, the probed id in metadata

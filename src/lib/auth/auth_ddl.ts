@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS account (
   deleted_by UUID
 )`;
 
+// The `updated_by` / `deleted_by` foreign keys stay in this frozen v0 body —
+// the appended `drop_provenance_stamp_foreign_keys` migration drops them, as
+// it drops `role_grant`'s `granted_by` / `revoked_by` / `source_offer_id`
+// (`auth/migrations.ts` has why).
 export const ACTOR_SCHEMA = `
 CREATE TABLE IF NOT EXISTS actor (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

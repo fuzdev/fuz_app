@@ -86,6 +86,20 @@ import {
 const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
 
 /**
+ * The statements of the `drop_provenance_stamp_foreign_keys` migration: the
+ * foreign keys of the provenance stamps, by their default names
+ * (`<table>_<column>_fkey`, the same on both spines). Statement for statement
+ * the Rust spine's `drop_provenance_stamp_foreign_keys.sql`.
+ */
+const DROP_PROVENANCE_STAMP_FOREIGN_KEYS: ReadonlyArray<string> = [
+	'ALTER TABLE actor DROP CONSTRAINT IF EXISTS actor_updated_by_fkey',
+	'ALTER TABLE actor DROP CONSTRAINT IF EXISTS actor_deleted_by_fkey',
+	'ALTER TABLE role_grant DROP CONSTRAINT IF EXISTS role_grant_granted_by_fkey',
+	'ALTER TABLE role_grant DROP CONSTRAINT IF EXISTS role_grant_revoked_by_fkey',
+	'ALTER TABLE role_grant DROP CONSTRAINT IF EXISTS role_grant_source_offer_id_fkey'
+];
+
+/**
  * Auth schema migrations in order.
  *
  * - v0: Full auth schema — account (with email_verified), actor, role_grant,
@@ -333,6 +347,28 @@ const AUTH_MIGRATIONS: Array<Migration> = [
 				await db.query(`ALTER TABLE account
 					ADD CONSTRAINT account_username_lowercase
 					CHECK (username = lower(username))`);
+			}
+		}
+	},
+	// The provenance stamps carry no foreign key: `actor.updated_by` /
+	// `deleted_by`, `role_grant.granted_by` / `revoked_by` and
+	// `role_grant.source_offer_id`.
+	//
+	// A stamp records who did a thing; nothing authorizes on it, so it keeps the
+	// id it was written with after its actor (or offer) is purged, as
+	// `audit_log`'s identity columns and `account`'s stamps do. With the foreign
+	// key, a purge's cascade wrote other accounts' rows (`ON DELETE SET NULL`)
+	// in whatever order its plan walked them, and a write stamping an actor
+	// being purged waited on that actor's row while holding the row the cascade
+	// needed next: a deadlock. Without it, the cascade never writes a stamp and
+	// a stamp write takes no lock on its actor. The references that carry
+	// meaning keep theirs: every `actor_id` and `account_id`, an offer's
+	// parties, an invite's issuer. `IF EXISTS`, so a re-run is a no-op.
+	{
+		name: 'drop_provenance_stamp_foreign_keys',
+		up: async (db: Db): Promise<void> => {
+			for (const sql of DROP_PROVENANCE_STAMP_FOREIGN_KEYS) {
+				await db.query(sql);
 			}
 		}
 	}

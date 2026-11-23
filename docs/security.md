@@ -2223,16 +2223,35 @@ transactions meet the same rows in opposite orders.
 - **Accounts first.** Every writer of an account takes its row before the
   rows that hang off it: a login and a token creation through their
   re-check (`FOR NO KEY UPDATE`, so two mints of one account take turns and
-  a cap never counts stale), a password change and a delete through their
-  write, a revoke through its revokee's row (`query_account_lock_for_revoke`),
+  a cap never counts stale), a password change through its write, a delete
+  through `query_account_lock_live` (`FOR NO KEY UPDATE`, its tombstone's
+  strength) after its last-admin guard — an admin target's row is then
+  already held among every admin's, a non-admin's is the first row the
+  delete takes — then the guards again (§Last-admin guard), a revoke through its revokee's row (`query_account_lock_for_revoke`),
   an offer or invite create through `query_account_lock_live_many`
   (`FOR SHARE`), which `query_role_grant_offer_create` and
   `query_create_invite` take themselves (a caller that locks an actor or
   grant row first takes the account row before it), an accept through both parties' rows, lower id first
-  (`query_account_lock_for_offer_accept`). A purge takes every admin's
-  account and its own in one id-ordered statement
-  (`query_account_lock_admins_for_purge` — its cascade writes other admins'
-  grant rows), then its own `FOR UPDATE` (`query_account_lock_for_purge`).
+  (`query_account_lock_for_offer_accept`). A purge first takes the advisory
+  lock only purges take (`query_account_purge_advisory_lock`, holding no
+  row): two purges' cascades cross at offers and invites between their
+  accounts that no row lock ahead of them covers, so purges take turns. Then
+  an admin target's last-admin guard, then its own row `FOR UPDATE`
+  (`query_account_lock_for_purge`), then the guards again (§Last-admin
+  guard).
+- **Provenance stamps carry no foreign key.** `role_grant.granted_by`,
+  `revoked_by` and `source_offer_id`, `actor.updated_by` and `deleted_by`,
+  `cell.updated_by` and `cell_grant.granted_by` record who did a thing and
+  authorize nothing, so they keep a purged actor's (or offer's) id, as
+  `audit_log`'s identity columns do. A purge's cascade therefore writes no
+  other account's row through a stamp, and a write stamping an actor being
+  purged takes no lock on that actor: neither waits on the other. With
+  `ON DELETE SET NULL` on these columns, a write that stamped a purged actor
+  — an admin revoking a grant they granted, an owner's first edit of their
+  own cell — deadlocked with the purge, and a cell grant by a purged granter
+  failed. The references that carry meaning keep theirs: every `actor_id`
+  and `account_id`, an offer's parties, an invite's issuer, a cell's
+  `created_by`.
 - **Multi-row writes lock first, in id order.** Every multi-row delete of
   `auth_session` or `api_token` rows (the revoke-alls, the cap evictions,
   the expiry sweep) and every transaction writing more than one offer row
@@ -2259,6 +2278,21 @@ with every write that can lower the count (a revoke's or a soft delete's
 insert naming a counted row, which can only add an admin — the count fails
 closed. No web path grants admin back once the last active admin is gone, so
 the guard holds as an invariant rather than a recoverable foot-gun stop.
+
+Whether the target is an admin — what decides that the count runs — is read
+unlocked. A removal holds no row of a non-admin target before its own, so an
+accept making the target an admin can commit while the removal waits at that
+row, and a revoke the new admin let pass can end every other admin. So a
+removal runs the guards again once it holds the target's row — a purge's
+`query_account_lock_for_purge`, a delete's `query_account_lock_live`, both
+taken after the first guard, never before it: taken first, an admin target's
+row would sit ahead of the lower admins' rows the guard then locks, and two
+deletes of two admins would deadlock. For a target that was an admin, the
+second count re-locks only rows the first holds, unless an admin was made in
+between — the target or another — whose rows it then takes out of id order.
+A deadlock error then rolls one of the two transactions back whole, removing
+nothing: the removal, or the other transaction — which may be a removal that
+would have committed, and answers 500.
 
 ## Investigated and Ruled Out
 

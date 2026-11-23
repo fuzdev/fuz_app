@@ -236,9 +236,11 @@ features) start on the offer flow from day one.
 
 `role_grant.source_offer_id` preserves provenance: direct-grant rows have
 `source_offer_id IS NULL`, offer-accepted rows point back at the offer
-that produced them. Authorization reads (the in-memory `has_*` helpers
-on `RequestContext`, and the SQL `query_role_grant_find_active_for_actor`
-for arbitrary-actor checks) do not
+that produced them. It is a provenance stamp, like `granted_by` and
+`revoked_by`, with no foreign key: a purge that deletes the offer, or the
+actor a stamp names, leaves the id as written. Authorization reads (the
+in-memory `has_*` helpers on `RequestContext`, and the SQL
+`query_role_grant_find_active_for_actor` for arbitrary-actor checks) do not
 discriminate between the two paths — a role_grant is a role_grant. The offer
 table stores the "how we got here" story; the role_grant table stores the
 live capability.

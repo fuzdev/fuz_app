@@ -23,13 +23,20 @@
  * queue behind the held one whatever it locks.
  *
  * And the last-admin guard against an admin-offer accept: the accept holds
- * its grantor's account row shared and key-shares the grantor's actor, the
- * guard takes the grantor's account first, and neither may deadlock the other
- * — real `pg` only, its two stalls set by a holder of the recipient's actor.
+ * its grantor's account row shared, the guard takes the grantor's account
+ * first, and neither may deadlock the other — real `pg` only, its two stalls
+ * set by a holder of the recipient's actor.
  * The other interleaving, the removal ahead of the accept, takes the
  * grantor's account before the offer row on both sides, so the accept waits
  * holding nothing the removal needs and is refused. The accept's own locks
  * are pinned in `role_grant_offer.lock_order.db.test.ts`.
+ *
+ * And a purge against the rows its cascade reaches, each pinned mid-cascade by
+ * a third transaction holding one row of it (real `pg` only): an admin's
+ * revoke of a grant they granted, across their purge, stamps `revoked_by`
+ * without waiting on the purged actor — the provenance stamps carry no foreign
+ * key; two purges whose accounts' offers and invites cross take turns at the
+ * purge lock.
  *
  * Twin of the Rust `fuz_auth` `tests/account_delete_races.rs`.
  *
@@ -51,8 +58,13 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { query_count_active_accounts_with_global_role_locked } from '#lib/auth/role_grant_queries.ts';
-import { query_role_grant_offer_supersede_outgoing } from '#lib/auth/role_grant_offer_queries.ts';
+import {
+	query_revoke_role_grant,
+	query_role_grant_offer_supersede_outgoing
+} from '#lib/auth/role_grant_offer_queries.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { InviteIssuerNotActiveError, query_create_invite } from '#lib/auth/invite_queries.ts';
+import { ERROR_CANNOT_DELETE_LAST_ADMIN } from '#lib/auth/admin_action_specs.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
@@ -158,6 +170,17 @@ const setup = async (gated: GatedDb) => {
 };
 
 type Answer = Awaited<ReturnType<typeof rpc_call>>;
+
+/** The keeper's purge of `account_id`, over the daemon token a purge needs. */
+const purge = (s: Awaited<ReturnType<typeof setup>>, account_id: string) =>
+	rpc_call({
+		app: s.test_app.app,
+		path: RPC_PATH,
+		method: 'account_purge',
+		params: { account_id, confirm: true },
+		headers: s.test_app.create_daemon_token_headers(),
+		suppress_default_origin: true
+	});
 
 /** A direct query call's outcome, settled so a race can hold it. */
 type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
@@ -498,12 +521,13 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 		// two holds past `deadlock_timeout` alone take three seconds
 	}, 30_000);
 
-	// The accept share-locks its grantor's account row, then inserts a grant
-	// naming the grantor's actor — a foreign-key key share on it. A holder of
-	// the recipient's actor stalls the accept's insert after its locks, and the
-	// removal's last-admin guard then stalls at the grantor's account; released,
-	// the accept commits and the removal goes on. One delete, one revoke of the
-	// grantor's grant, one purge.
+	// The accept share-locks its grantor's account row, then inserts the grant
+	// to the recipient's actor — a foreign-key key share on that actor
+	// (`actor_id` keeps its foreign key; the grant's `granted_by` stamp has
+	// none). A holder of the recipient's actor stalls the accept's insert after
+	// its locks, and the removal's last-admin guard then stalls at the grantor's
+	// account; released, the accept commits and the removal goes on. One delete,
+	// one revoke of the grantor's grant, one purge.
 	for (const removal of ['delete', 'revoke', 'purge'] as const) {
 		test(`an admin-offer accept and a removal (${removal}) of its grantor never deadlock`, async () => {
 			const gated = create_gated_db(get_db());
@@ -698,6 +722,248 @@ describe_pg('a create in flight across a delete: the locks serialize', (get_db) 
 				assert.strictEqual(conferred.length, 0, 'no admin grant conferred');
 			} finally {
 				release.resolve();
+				await s.test_app.cleanup();
+			}
+		}, 30_000);
+	}
+});
+
+describe_pg('a purge against the rows its cascade reaches', (get_db) => {
+	install_audit_drift_guard();
+
+	/**
+	 * Hold `pin` (one row the cascade reaches) in a transaction of its own, start
+	 * `first`, and once it waits on the pin, `second`; once `second` waits too or
+	 * has settled, commit the pin. Returns both results.
+	 */
+	const pinned = async <A, B>(
+		db: GatedDb['db'],
+		pin: { sql: string; params: Array<unknown> },
+		first: () => Promise<A>,
+		second: () => Promise<B>
+	): Promise<[A, B]> => {
+		const locked = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		const holder = db.transaction(async (tx) => {
+			await tx.query(pin.sql, pin.params);
+			locked.resolve();
+			await release.promise;
+		});
+		await locked.promise;
+		try {
+			const a = first();
+			await until_lock_waiters(db, 1, 'the first waits on the pinned row');
+			const state = { settled: false };
+			const b = second().finally(() => {
+				state.settled = true;
+			});
+			const deadline = Date.now() + LOCK_WAIT_DEADLINE_MS;
+			while (!state.settled && (await lock_waiters(db)) < 2) {
+				assert.ok(Date.now() < deadline, 'the second neither waits nor finishes');
+				await wait(5);
+			}
+			release.resolve();
+			await holder;
+			return [await a, await b];
+		} finally {
+			// released on a failure too, so no later test waits on its row lock
+			release.resolve();
+		}
+	};
+
+	// The admin's own grant pinned, so the purge waits in its cascade, past its
+	// delete of the admin's actor; the revoke, authorized before the purge, then
+	// writes the grant it revokes and stamps `revoked_by` with the admin's actor.
+	// With a foreign key on the stamp, the write waited on the deleted actor
+	// while holding the grant, whose `granted_by` the cascade then set null: a
+	// deadlock. The stamp has none, so the revoke commits, the purge's cascade
+	// never writes the grant, and the stamps keep the purged actor's id.
+	test("an admin's revoke of a grant they granted, across their purge: both commit", async () => {
+		const s = await setup(create_gated_db(get_db()));
+		try {
+			const db = s.test_app.backend.deps.db;
+			const admin = await s.test_app.create_account({
+				username: 'purged_admin',
+				roles: [ROLE_ADMIN]
+			});
+			const grantee = await s.test_app.create_account({ username: 'purged_admins_grantee' });
+			const insert_grant = async (actor_id: string, granted_by: string | null) =>
+				(
+					await db.query<{ id: Uuid }>(
+						`INSERT INTO role_grant (actor_id, role, granted_by) VALUES ($1, $2, $3) RETURNING id`,
+						[actor_id, OFFERED_ROLE, granted_by]
+					)
+				)[0]!.id;
+			const own = await insert_grant(admin.actor.id, null);
+			const granted = await insert_grant(grantee.actor.id, admin.actor.id);
+
+			const [purged, revoked] = await pinned(
+				db,
+				{ sql: `SELECT id FROM role_grant WHERE id = $1 FOR UPDATE`, params: [own] },
+				() => purge(s, admin.account.id),
+				() =>
+					db
+						.transaction((tx) =>
+							query_revoke_role_grant({ db: tx }, granted, grantee.actor.id, admin.actor.id)
+						)
+						.then(
+							(value) => ({ ok: true as const, value }),
+							(error: unknown) => ({ ok: false as const, error })
+						)
+			);
+			assert_ok(purged, 'the purge');
+			assert.ok(revoked.ok, `the revoke: ${String(revoked.ok || revoked.error)}`);
+			assert.ok(revoked.value, 'the revoke found the grant');
+			const rows = await db.query<{ granted_by: string; revoked_by: string; revoked: boolean }>(
+				`SELECT granted_by, revoked_by, revoked_at IS NOT NULL AS revoked
+				 FROM role_grant WHERE id = $1`,
+				[granted]
+			);
+			assert.deepStrictEqual(rows, [
+				{ granted_by: admin.actor.id, revoked_by: admin.actor.id, revoked: true }
+			]);
+			const left = await db.query(`SELECT id FROM account WHERE id = $1`, [admin.account.id]);
+			assert.strictEqual(left.length, 0, 'the admin is purged');
+		} finally {
+			await s.test_app.cleanup();
+		}
+	}, 30_000);
+
+	// A third transaction pins the offer or invite of the account purged second,
+	// so the first purge waits in its cascade; the second is sent. Each cascade
+	// deletes its own account's offers and invites and its counterpart's, in its
+	// plan's order, and with no lock ahead of them the two met in opposite
+	// orders and deadlocked. Every purge first takes the advisory lock only
+	// purges take, so the second waits there holding nothing.
+	for (const shape of ['accepted', 'declined', 'invites'] as const) {
+		test(`two purges whose accounts' rows cross (${shape}): both commit`, async () => {
+			const s = await setup(create_gated_db(get_db()));
+			try {
+				const db = s.test_app.backend.deps.db;
+				const x = await s.test_app.create_account({ username: `crossed_x_${shape}` });
+				const z = await s.test_app.create_account({ username: `crossed_z_${shape}` });
+				const [from_x, from_z] = Array.from({ length: 2 }, () => crypto.randomUUID()).sort() as [
+					string,
+					string
+				];
+				if (shape === 'invites') {
+					for (const [id, issuer, claimer, name] of [
+						[from_x, x.actor.id, z.account.id, `crossed_iz_${shape}`],
+						[from_z, z.actor.id, x.account.id, `crossed_ix_${shape}`]
+					] as const) {
+						await db.query(
+							`INSERT INTO invite (id, username, created_by, claimed_by, claimed_at)
+							 VALUES ($1, $2, $3, $4, NOW())`,
+							[id, name, issuer, claimer]
+						);
+					}
+				} else {
+					for (const [id, from, to] of [
+						[from_x, x, z],
+						[from_z, z, x]
+					] as const) {
+						await db.query(
+							`INSERT INTO role_grant_offer (id, from_actor_id, to_account_id, role, expires_at)
+							 VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 day')`,
+							[id, from.actor.id, to.account.id, OFFERED_ROLE]
+						);
+						if (shape === 'accepted') {
+							await db.query(
+								`INSERT INTO role_grant (id, actor_id, role, granted_by, source_offer_id)
+								 VALUES ($1, $2, $3, $4, $1)`,
+								[id, to.actor.id, OFFERED_ROLE, from.actor.id]
+							);
+							await db.query(
+								`UPDATE role_grant_offer SET accepted_at = NOW(), resulting_role_grant_id = $1
+								 WHERE id = $1`,
+								[id]
+							);
+						} else {
+							await db.query(`UPDATE role_grant_offer SET declined_at = NOW() WHERE id = $1`, [id]);
+						}
+					}
+				}
+				const table = shape === 'invites' ? 'invite' : 'role_grant_offer';
+				const [first, second] = await pinned(
+					db,
+					{ sql: `SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, params: [from_x] },
+					() => purge(s, z.account.id),
+					() => purge(s, x.account.id)
+				);
+				assert_ok(first, `the first purge (${shape})`);
+				assert_ok(second, `the second purge (${shape})`);
+				const left = await db.query(`SELECT id FROM account WHERE id = ANY($1::uuid[])`, [
+					[x.account.id, z.account.id]
+				]);
+				assert.strictEqual(left.length, 0, `both purged (${shape})`);
+			} finally {
+				await s.test_app.cleanup();
+			}
+		}, 30_000);
+	}
+});
+
+// A removal's guard reads whether its target is an admin unlocked, and holds no
+// row of a non-admin target until its own: the purge's
+// `query_account_lock_for_purge`, the delete's `query_account_lock_live`.
+// Played across that window, in one held transaction: an accept making the
+// target an admin (its account row held, as an accept holds its recipient's)
+// and the revoke of every other admin that the guard of the revoke allowed,
+// counting the target. The removal reads a non-admin, waits at the target's
+// row, and resumes on the commit with the target the last admin: its guard
+// runs again under the row lock and refuses (real `pg` only — the played
+// transaction holds the row the removal waits on).
+describe_pg('a removal whose target turns the last admin while it waits at its row', (get_db) => {
+	install_audit_drift_guard();
+
+	for (const removal of ['purge', 'delete'] as const) {
+		test(`a ${removal} whose target turns the last admin while it waits at its row is refused`, async () => {
+			const s = await setup(create_gated_db(get_db()));
+			try {
+				const db = s.test_app.backend.deps.db;
+				const target = await s.test_app.create_account({ username: `turned_admin_${removal}` });
+				const locked = Promise.withResolvers<void>();
+				const release = Promise.withResolvers<void>();
+				const held = db.transaction(async (tx) => {
+					await tx.query(`SELECT id FROM account WHERE id = $1 FOR NO KEY UPDATE`, [
+						target.account.id
+					]);
+					await tx.query(`INSERT INTO role_grant (actor_id, role) VALUES ($1, $2)`, [
+						target.actor.id,
+						ROLE_ADMIN
+					]);
+					await tx.query(
+						`UPDATE role_grant SET revoked_at = NOW()
+						 WHERE role = $1 AND scope_id IS NULL AND revoked_at IS NULL AND actor_id <> $2`,
+						[ROLE_ADMIN, target.actor.id]
+					);
+					locked.resolve();
+					await release.promise;
+				});
+				await locked.promise;
+				let removed: Answer;
+				try {
+					const answer =
+						removal === 'purge' ? purge(s, target.account.id) : s.del(target.account.id);
+					await until_lock_waiters(db, 1, `the ${removal} waits at its target's row`);
+					release.resolve();
+					await held;
+					removed = await answer;
+				} finally {
+					release.resolve();
+				}
+				assert.ok(!removed.ok, `the ${removal} is refused: ${JSON.stringify(removed)}`);
+				assert.strictEqual(removed.status, 403);
+				assert.deepStrictEqual(removed.error.data, { reason: ERROR_CANNOT_DELETE_LAST_ADMIN });
+				const admins = await db.query<{ n: string }>(
+					`SELECT COUNT(*) AS n FROM role_grant rg JOIN actor act ON act.id = rg.actor_id
+					 JOIN account a ON a.id = act.account_id
+					 WHERE rg.role = $1 AND rg.scope_id IS NULL AND rg.revoked_at IS NULL
+					   AND a.deleted_at IS NULL`,
+					[ROLE_ADMIN]
+				);
+				assert.strictEqual(Number(admins[0]!.n), 1, 'the last admin stands');
+			} finally {
 				await s.test_app.cleanup();
 			}
 		}, 30_000);

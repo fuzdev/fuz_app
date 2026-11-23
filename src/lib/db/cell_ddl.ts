@@ -19,10 +19,15 @@
  * doesn't block reuse of its path. Path writes are admin-only at the
  * action layer; user-namespaced paths are a future extension.
  *
- * **Ownership columns** (`created_by`, `updated_by`) are nullable FKs to
- * `actor`: NULL = system origin (well-known cells, daemon/agent cells).
+ * **Ownership columns**: `created_by` is a nullable FK to `actor`
+ * (`ON DELETE SET NULL`): NULL = system origin (well-known cells,
+ * daemon/agent cells), and the owner the edit and manage predicates read.
  * The non-admin authz path treats NULL `created_by` as admin-only via an
- * explicit equality check (`auth/cell_authorize.ts`).
+ * explicit equality check (`auth/cell_authorize.ts`). `updated_by` and
+ * `cell_grant.granted_by` are provenance stamps with no FK, as `fuz_auth`'s
+ * are (`drop_provenance_stamp_foreign_keys`): nothing authorizes on them, so
+ * they keep the id they were written with after a purge, and neither a
+ * purge's cascade nor a stamp write waits on the other.
  *
  * **Timestamp naming** (`created_at`, `updated_at`) aligns with fuz_app's
  * `_at`-everywhere convention used by `account`, `actor`, `audit_log`,
@@ -115,7 +120,7 @@ CREATE TABLE IF NOT EXISTS cell (
 	updated_at TIMESTAMPTZ,
 	deleted_at TIMESTAMPTZ,
 	created_by UUID REFERENCES actor(id) ON DELETE SET NULL,
-	updated_by UUID REFERENCES actor(id) ON DELETE SET NULL,
+	updated_by UUID,
 	CHECK (policy IS NULL OR (parent_id IS NULL AND policy @> '{}'::jsonb))
 )`;
 
@@ -176,7 +181,7 @@ CREATE TABLE IF NOT EXISTS cell_grant (
 	actor_id UUID REFERENCES actor(id) ON DELETE CASCADE,
 	role TEXT,
 	scope_id UUID,
-	granted_by UUID REFERENCES actor(id) ON DELETE SET NULL,
+	granted_by UUID,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	CHECK (
 		(actor_id IS NOT NULL AND role IS NULL AND scope_id IS NULL) OR

@@ -27,7 +27,6 @@ import {
 import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
 import { ROLE_GRANT_COLUMNS } from './role_grant_queries.ts';
 import { offer_pending_predicate, role_grant_active_sql } from './role_grant_sql.ts';
-import { ROLE_ADMIN } from './role_schema.ts';
 
 /**
  * The full `account` column set, named explicitly so a row read fails loud
@@ -293,11 +292,13 @@ export const query_account_lock_verified = async (
  * cap — `query_account_lock_verified` has why, and what it conflicts with; a
  * token mint and a login of one account take turns too. A write that only
  * needs ordering against a delete takes `query_account_lock_live_many`, which
- * lets such writes run together. Twin of the Rust
- * `fuz_auth::query_account_lock_live`.
+ * lets such writes run together. A delete takes it too, after its last-admin
+ * guard and before the guards' second pass (`account_delete` in
+ * `admin_actions.ts`): the guard reads whether the target is an admin
+ * unlocked. Twin of the Rust `fuz_auth::query_account_lock_live`.
  *
- * @param deps - query dependencies (must be the mint's transaction)
- * @param id - the account the credential is for
+ * @param deps - query dependencies (must be the mint's or the delete's transaction)
+ * @param id - the account the credential is for, or the account the delete removes
  * @returns `true` when the row is locked and not tombstoned, `false` when it was deleted or tombstoned
  */
 export const query_account_lock_live = async (deps: QueryDeps, id: string): Promise<boolean> => {
@@ -309,48 +310,39 @@ export const query_account_lock_live = async (deps: QueryDeps, id: string): Prom
 };
 
 /**
- * Lock, for a purge, the account rows of every holder of an unrevoked global
- * `admin` grant and the purged account's own, in one statement, in id order,
- * `FOR NO KEY UPDATE`.
+ * The key of the advisory lock every purge takes
+ * (`query_account_purge_advisory_lock`): the ASCII of `fuz_` and `purg`.
  *
- * A purge's cascade writes rows of other accounts: it sets null the
- * `granted_by` and `revoked_by` of every grant the purged account's actors
- * named, admins' grants among them, in whatever order the plan walks them. A
- * last-admin guard of another removal takes admin accounts, actors and grants
- * in account-id order. A purge reaching an admin's grant before the guard does
- * and waiting on one the guard took could hold a row the guard waits on.
- * Holding every admin's account first, in the order the guard and
- * `query_account_lock_live_many` take account rows, another guard waits at its
- * first account holding nothing, and two purges take turns. The purged
- * account's row is taken in the same statement, so an offer create holding one
- * of these rows `FOR SHARE` and waiting on another meets them in the same order.
- * No `deleted_at` filter on either: a tombstoned admin's grant is written by
- * the cascade as well, and a purge removes a tombstoned account. The admins
- * are those the statement's snapshot sees; one made by a transaction that
- * commits after it starts is not among them. Cost: a purge waits behind
- * admins' logins, token creates and offers. Run first in the purge's
- * transaction, before the last-admin guard (an admin target's only) and
- * `query_account_lock_for_purge`.
- * Twin of the Rust `fuz_auth::account_queries::query_account_lock_admins_for_purge`.
+ * The two-`int4` form, `pg_advisory_xact_lock(int4, int4)`, a key space apart
+ * from the single-key form the migration runner's per-namespace
+ * `pg_advisory_lock(int4)` takes, so no namespace's hash can collide with it.
+ * Twin of the Rust `fuz_auth::account_queries::ACCOUNT_PURGE_ADVISORY_LOCK_KEY`.
+ */
+export const ACCOUNT_PURGE_ADVISORY_LOCK_KEY: readonly [number, number] = [
+	0x6675_7a5f, 0x7075_7267
+];
+
+/**
+ * Take, for a purge, the transaction-scoped advisory lock every purge takes,
+ * so two purges take turns.
+ *
+ * Two purges' cascades write rows both reach — the offers each account made to
+ * the other, accepted and declined as well as pending, and the invites each
+ * issued and the other claimed — in whatever order their plans walk them, and
+ * no row lock a purge takes ahead of its cascade covers every such row. Held
+ * from the purge's first statement, the lock makes a second purge wait before
+ * it holds any row. Only purges take it, and a purge takes it holding nothing,
+ * so it orders purges against each other and nothing else: every other writer
+ * meets a purge at the rows it locks after this — the last-admin guard's (an
+ * admin target's only), its account row (`query_account_lock_for_purge`), its
+ * offers. Released when the transaction ends. Run first in the purge's
+ * transaction. Twin of the Rust
+ * `fuz_auth::account_queries::query_account_purge_advisory_lock`.
  *
  * @param deps - query dependencies (must be the purge's transaction)
- * @param id - the account to purge
  */
-export const query_account_lock_admins_for_purge = async (
-	deps: QueryDeps,
-	id: string
-): Promise<void> => {
-	await deps.db.query(
-		`SELECT a.id FROM account a
-		 WHERE a.id = $1
-		    OR a.id IN (
-		      SELECT act.account_id FROM actor act
-		      JOIN role_grant rg ON rg.actor_id = act.id
-		      WHERE rg.role = $2 AND rg.scope_id IS NULL AND rg.revoked_at IS NULL)
-		 ORDER BY a.id
-		 FOR NO KEY UPDATE`,
-		[id, ROLE_ADMIN]
-	);
+export const query_account_purge_advisory_lock = async (deps: QueryDeps): Promise<void> => {
+	await deps.db.query('SELECT pg_advisory_xact_lock($1, $2)', [...ACCOUNT_PURGE_ADVISORY_LOCK_KEY]);
 };
 
 /**
@@ -399,10 +391,13 @@ export const query_account_lock_for_revoke = async (
  * takes anyway: it conflicts with every other lock on the row, so a writer
  * holding one is waited out, and a writer arriving later waits for the purge
  * and then finds no row. No `deleted_at` filter — a purge removes a tombstoned
- * account too. Run after `query_account_lock_admins_for_purge`, which takes the
- * row `FOR NO KEY UPDATE` among every admin's in id order, and, for an admin
- * target, the last-admin guard, so this only strengthens a lock the purge
- * already holds. Twin of the Rust
+ * account too. Run after `query_account_purge_advisory_lock` and, for an admin
+ * target, the last-admin guard, which takes the row `FOR NO KEY UPDATE` among
+ * every admin's in id order, so for an admin this only strengthens a lock the
+ * purge already holds. The guards run again after it: they read whether the
+ * target is an admin unlocked, and a non-admin target's row is the first the
+ * purge holds of it, so an accept making it an admin commits before this lock
+ * is granted. Twin of the Rust
  * `fuz_auth::account_queries::query_account_lock_for_purge`.
  *
  * @param deps - query dependencies (must be the purge's transaction)
@@ -471,7 +466,7 @@ export const query_account_lock_live_many = async (
  * by one recipient take turns, and the second claims after the first has
  * superseded its siblings. It conflicts with a delete's or a purge's first
  * write of the account (the soft-delete `UPDATE`,
- * `query_account_lock_admins_for_purge`, the last-admin guard), so a removal of
+ * `query_account_lock_for_purge`, the last-admin guard), so a removal of
  * the recipient waits here or is waited for whole, and never meets the accept
  * at its offers or its actor; with a revoke's `query_account_lock_for_revoke`,
  * so a revoke of the recipient's grant and the accept take turns; and with
@@ -483,12 +478,11 @@ export const query_account_lock_live_many = async (
  * unlocked read after this one): every write that ends a grantor's global
  * `admin` takes the grantor's account row first — a revoke of the grant through
  * `query_account_lock_for_revoke` (whether or not its last-admin guard ran), a
- * delete through its write of the row, a purge through
- * `query_account_lock_admins_for_purge` and `query_account_lock_for_purge` — so
- * it either commits before the read, which sees it, or waits for the accept to
- * commit. A share lock on the account,
- * not on the grant, so a purge's cascade reaching the grant (its `granted_by`
- * naming an actor of the purged account) never waits on the accept.
+ * delete through its write of the row, a purge through the last-admin guard
+ * and `query_account_lock_for_purge` — so it either commits before the read,
+ * which sees it, or waits for the accept to commit. A share lock on the
+ * account, not on the grant: every removal takes the account first, so it
+ * waits there holding nothing the accept needs.
  *
  * Two statements, as the two strengths can't share one locking clause, the
  * lower id first — the order the last-admin guard
