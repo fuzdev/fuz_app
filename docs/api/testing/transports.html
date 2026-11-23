@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.3xt-w2jR.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DlTgtarC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DwWwIlUN.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D7i9s_Ca.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -118,7 +118,12 @@ always hit a single host:port, so name-keyed last-write-wins matches
 the behaviour real browsers exhibit against the same surface. It does
 honour a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Max-Age<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> of zero or less, dropping the cookie as a browser does:
 a cleared session cookie kept as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->name=<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would be re-sent as an invalid
-cookie, which both spines answer by clearing it again.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/transports/raw_http.ts"><!--[-1-->testing/transports/raw_http.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw-socket HTTP/1.1 exchanges, for tests that need to control exactly which
+cookie, which both spines answer by clearing it again.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A request naming a credential of its own (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Authorization<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Daemon-Token<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->)
+while the jar holds a cookie throws unless it names its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> too: the
+jar would ride along, so a dead token beside it would authenticate as the
+jar's principal and a refusal the test expects would never be reached. A
+test sends such a request over a cookie-free transport, or both credentials
+on purpose by passing <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Cookie<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> itself.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/transports/raw_http.ts"><!--[-1-->testing/transports/raw_http.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Raw-socket HTTP/1.1 exchanges, for tests that need to control exactly which
 bytes reach the server.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fetch<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> frames a request itself and sends all of it, so some server
 behaviors can't be reached through it: what a server does with two requests
 in one write, with duplicate or malformed headers, with a request head whose
@@ -165,16 +170,16 @@ themselves (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->npm inst
 			
 			<script>
 				{
-					__sveltekit_4jp86s = {
+					__sveltekit_1fh0saz = {
 						base: "",
-						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
+						version: "1254a43428da513f68176d5f8311eda4fa05891d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_4jp86s);
-						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
+						kit.init(__sveltekit_1fh0saz);
+						const app = await import("/_app/immutable/entry/app.3xt-w2jR.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

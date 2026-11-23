@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.3xt-w2jR.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DlTgtarC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DwWwIlUN.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D7i9s_Ca.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -151,10 +151,10 @@ body, as the runtime's HTTP parser enforces.<!--]--><!--]--><!----></li><!--]-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header is what does it: without one the adapter
 holds the connection for a drain window and then closes or, the body
 untouched and arriving within the window, reads it off and serves the
-next request.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once, the body unread, honouring the header. Bun 1.4.3
-is the tested floor: an older Bun kept the connection after the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
-served the next request (correctly framed), so run Bun at the floor or
-later.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/client_ip.ts"><!--[-1-->http/client_ip.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Read the resolved client IP off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/utils/ipaddr<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for trusted-proxy
+next request.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once, the body unread, honouring the header. Bun 1.4.4
+is the tested floor (CI's pin); the close needs 1.4.3 — an older Bun kept
+the connection after the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and served the next request (correctly
+framed) — so run Bun at the floor or later.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/client_ip.ts"><!--[-1-->http/client_ip.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Read the resolved client IP off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/utils/ipaddr<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for trusted-proxy
 CIDR matching) so dispatch + route modules that only need to *read* the IP
 stay free of that value import — and the cross-process test surface that
 imports them stays free of the optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> peer. The IP itself is set on
@@ -453,16 +453,16 @@ error map (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declara
 			
 			<script>
 				{
-					__sveltekit_4jp86s = {
+					__sveltekit_1fh0saz = {
 						base: "",
-						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
+						version: "1254a43428da513f68176d5f8311eda4fa05891d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_4jp86s);
-						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
+						kit.init(__sveltekit_1fh0saz);
+						const app = await import("/_app/immutable/entry/app.3xt-w2jR.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

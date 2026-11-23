@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CBqOg04Y.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BdbQjoDx.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.3xt-w2jR.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.DlTgtarC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BCey2FK6.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BGz0BIjZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DwWwIlUN.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.D7i9s_Ca.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -108,9 +108,9 @@ differently at the TCP level (a graceful close delivers the 413 first;
 hyper's RST can drop the in-flight 413 before the client reads it), so
 demanding a cleanly-read 413 would be flaky.<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Node<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once with the body unread — <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s body
 limit (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/body_limit.ts"><!--[0--><!--[-1-->http/body_limit.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) refuses on the header and answers
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which is what makes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> close.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once too, honouring that header. Bun 1.4.3 is the tested
-floor: an older Bun kept the connection after the 413 and served the next
-request (correctly framed), which fails this suite.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->hyper<!--]--><!--]--><!----></strong><!--]--><!--[2--> (the Rust spine) closes at once.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The oversized body is rejected *with* a 413 on every backend — pinned
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which is what makes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> close.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once too, honouring that header. Bun 1.4.4 is the tested
+floor: a Bun older than 1.4.3 kept the connection after the 413 and served
+the next request (correctly framed), which fails this suite.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->hyper<!--]--><!--]--><!----></strong><!--]--><!--[2--> (the Rust spine) closes at once.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The oversized body is rejected *with* a 413 on every backend — pinned
 reliably by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/body_size.ts#describe_body_size_cross_tests"><!--[0--><!--[-1-->describe_body_size_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, which sends the over-cap
 request's head and no body, so no upload races the close; this test owns
 only the connection-handling half. A <!--]--><!--[4--><strong><!--[--><!--[2-->positive control<!--]--><!--]--><!----></strong><!--]--><!--[2--> (two pipelined
@@ -135,16 +135,16 @@ on oversized reject).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----><
 			
 			<script>
 				{
-					__sveltekit_4jp86s = {
+					__sveltekit_1fh0saz = {
 						base: "",
-						version: "130350c3a2cfb14f32c44ec270cc3e3d057400ae"
+						version: "1254a43428da513f68176d5f8311eda4fa05891d"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_4jp86s);
-						const app = await import("/_app/immutable/entry/app.CBqOg04Y.js");
+						kit.init(__sveltekit_1fh0saz);
+						const app = await import("/_app/immutable/entry/app.3xt-w2jR.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
