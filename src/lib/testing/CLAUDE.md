@@ -265,16 +265,20 @@ rate limiter `null` — a limiter passed through `app_options` wins over the
 mode, so a rate-limit test enables just the one it pins; the mode's stderr
 banner prints once per module instance — once per test file in an isolated
 vitest project, once per run under `isolate: false`, ../../../docs/usage.md §Rate limiters), static daemon token state (no rotation, keeper already set),
-`await_pending_effects: true` (§Cross-cutting conventions), and a silent
-logger. Override via `app_options`. `cleanup()` is the assembled server's idempotent
-`close` — it also closes the server's live connections, disposes the
-limiters it built, and removes the audit listeners and closer members it
-added.
+`await_pending_effects: true` (§Cross-cutting conventions), the shutdown
+drain bound `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS` (under vitest's
+per-test timeout, so a give-up fails as one rather than as a timeout), and a
+silent logger. Override via `app_options`. `cleanup()` runs the assembled
+server's idempotent `close` — it also closes the server's live connections,
+disposes the limiters it built, and removes the audit listeners and closer
+members it added — and resolves `void`, throwing with the
+`ShutdownDrainGivenUp` report when the drain gave up on work still in flight.
+A test that gives up on purpose calls `server.close()`, which resolves the
+report.
 
 `auth_cleanup` is `'off'` here: a background pass would delete rows and
 write audit rows mid-test. A suite that opts in through `app_options` has the
-schedule stopped by `cleanup()`, which is the assembled server's `close` and
-resolves its `ShutdownDrainGivenUp` report.
+schedule stopped by `cleanup()`.
 
 A fresh Hono app is created on every call because middleware closures bind
 to the server's deps (db, keyring). Hono assembly is cheap;

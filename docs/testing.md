@@ -505,8 +505,12 @@ describe('app-specific integration', () => {
 `TestApp` (`testing/test_app.ts`) carries the app, the assembled server and
 surface, header builders for the bootstrapped session, bearer token and
 daemon token, `create_account`, `assert_db_invariants`, and `cleanup` (the
-server's idempotent `close`). `create_account` returns a `TestAccount` with
-its own header builders, so multi-account tests need no cookie assembly:
+server's idempotent `close`, throwing when its drain gave up on work the test
+left in flight — bounded by `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS` unless
+`app_options` sets `shutdown_drain_timeout_ms`; a test that gives up on
+purpose reads the report from `server.close()`). `create_account` returns a
+`TestAccount` with its own header builders, so multi-account tests need no
+cookie assembly:
 
 ```typescript
 const user_b = await test_app.create_account({ username: 'user_b', roles: ['teacher'] });

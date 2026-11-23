@@ -21,7 +21,7 @@ import {
 	type AppServerOptions,
 	type BootstrapServerOptions
 } from '../server/app_server.ts';
-import type { ShutdownDrainGivenUp } from '../server/shutdown_drain.ts';
+import { shutdown_gave_up } from '../server/shutdown_drain.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -169,9 +169,28 @@ export interface TestApp {
 	 * @throws Error listing every broken invariant and its rows
 	 */
 	assert_db_invariants: () => Promise<void>;
-	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, drains the work in flight within its bound, disposes the limiters the server built and removes the audit listeners and closer members it added, then the backend's `close`; resolves what the drain gave up on. Idempotent. */
-	cleanup: () => Promise<ShutdownDrainGivenUp>;
+	/**
+	 * Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup
+	 * schedule, closes live connections, drains the work in flight within its
+	 * bound (`TEST_SHUTDOWN_DRAIN_TIMEOUT_MS` unless `app_options` sets one),
+	 * disposes the limiters the server built and removes the audit listeners
+	 * and closer members it added, then the backend's `close`. Idempotent. A
+	 * test that gives up on purpose calls `server.close()`, which resolves the
+	 * report instead.
+	 *
+	 * @throws Error naming the `ShutdownDrainGivenUp` report when the drain
+	 *   gave up on work still in flight
+	 */
+	cleanup: () => Promise<void>;
 }
+
+/**
+ * The bound on a test app's shutdown drain (`shutdown_drain_timeout_ms`), in
+ * ms: under vitest's per-test timeout, so a test whose app gives up fails on
+ * the give-up rather than timing out, and short, since a test's work in
+ * flight is milliseconds. Override through `app_options`.
+ */
+export const TEST_SHUTDOWN_DRAIN_TIMEOUT_MS = 1000;
 
 /**
  * The `create_app_server` options both test-app builders share — a fresh
@@ -185,6 +204,7 @@ const test_app_options = (): Pick<
 	| 'rate_limiters'
 	| 'await_pending_effects'
 	| 'auth_cleanup'
+	| 'shutdown_drain_timeout_ms'
 > => ({
 	...create_loopback_app_server_options(),
 	// every limiter off unless `app_options` passes one — a rate-limit test
@@ -194,7 +214,8 @@ const test_app_options = (): Pick<
 	// off: a background pass would delete rows and write audit rows mid-test.
 	// A suite that opts in through `app_options` has the schedule stopped by
 	// `cleanup`.
-	auth_cleanup: 'off'
+	auth_cleanup: 'off',
+	shutdown_drain_timeout_ms: TEST_SHUTDOWN_DRAIN_TIMEOUT_MS
 });
 
 /** Build request headers carrying `session_cookie` in the `cookie_name` cookie. */
@@ -322,6 +343,14 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		assert_db_invariants: check_db_invariants,
 		// the server's `close`, not the backend's: it also stops an auth cleanup
 		// schedule a suite opted into
-		cleanup: () => result.close()
+		cleanup: async () => {
+			const given_up = await result.close();
+			if (shutdown_gave_up(given_up)) {
+				throw new Error(
+					`create_test_app: cleanup gave up on work still in flight ${JSON.stringify(given_up)} — ` +
+						'a request, WS message or audit write the test left running'
+				);
+			}
+		}
 	};
 };

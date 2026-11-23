@@ -417,13 +417,14 @@ database. It resolves what it gave up on, a `ShutdownDrainGivenUp`
 (`requests`, `audit_writes`, `upkeep`), every count `0` when it drained
 everything; report a give-up as a failed exit, as the Rust spine does
 (`StartupError::ShutdownGivenUp` exits `1`). `shutdown_gave_up(report)` reads
-it. From the drain on, an arriving HTTP request is refused with 503
-`{"error": "service_unavailable"}`. The release leaves the backend's emitter,
-closer and sender as they were before assembly, so a backend whose `close`
-you own (a test harness) can host another server; a closed connection
-registry hosts nothing more. `close` is idempotent — a second call resolves
-the same report. Each step is in the `AppServer.close` TSDoc
-(`server/app_server.ts`).
+it. A test app's `cleanup` (`testing/test_app.ts`) throws on a give-up
+instead, bounded by `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS`. From the drain on, an
+arriving HTTP request is refused with 503 `{"error": "service_unavailable"}`.
+The release leaves the backend's emitter, closer and sender as they were
+before assembly, so a backend whose `close` you own (a test harness) can
+host another server; a closed connection registry hosts nothing more. `close`
+is idempotent — a second call resolves the same report. Each step is in the
+`AppServer.close` TSDoc (`server/app_server.ts`).
 
 ### Auth cleanup
 
