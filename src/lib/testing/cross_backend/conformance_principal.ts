@@ -18,7 +18,7 @@ import { account_token_create_action_spec } from '../../auth/account_action_spec
 import { find_rpc_action, type resolve_rpc_endpoints_for_setup } from '../rpc_helpers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { SCOPED_TOKEN_ADMITTED_METHOD, type ConformancePrincipal } from './conformance_case.ts';
-import type { TestFixture } from './setup.ts';
+import { assert_credential_authenticates, type TestFixture } from './setup.ts';
 import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 
 /**
@@ -115,6 +115,12 @@ const as_lone_bearer = (fixture: TestFixture, token: string): ResolvedConformanc
  * `account_token_create` is session-only, so this runs over the keeper's
  * session — which also makes the mint itself a live assertion that a narrowed
  * scope is *accepted* at the mint boundary, not merely stored.
+ *
+ * The token is then proven to authenticate as the keeper, alone, on the method
+ * it admits (`assert_credential_authenticates`), so every case sent as the
+ * principal rests on a working credential of the expected account: a refusal
+ * can only be its scope or its channel, never a token that authenticates as
+ * no one or as another account.
  */
 const mint_scoped_token = async (
 	fixture: TestFixture,
@@ -128,13 +134,29 @@ const mint_scoped_token = async (
 				`rpc_endpoints.`
 		);
 	}
-	return mint_narrowed_api_token({
+	const admitted = find_rpc_action(resolved_rpc_endpoints, SCOPED_TOKEN_ADMITTED_METHOD);
+	if (!admitted) {
+		throw new Error(
+			`conformance: principal 'scoped_token' needs '${SCOPED_TOKEN_ADMITTED_METHOD}' on the ` +
+				`surface to prove its narrowed token live, but the method is not registered on ` +
+				`rpc_endpoints.`
+		);
+	}
+	const token = await mint_narrowed_api_token({
 		app: fixture.transport,
 		rpc_path: found.path,
 		session_headers: fixture.create_session_headers(),
 		methods: [SCOPED_TOKEN_ADMITTED_METHOD],
 		name: 'conformance scoped token'
 	});
+	await assert_credential_authenticates({
+		transport: fixture.fresh_transport({ origin: null }),
+		rpc_path: admitted.path,
+		headers: { authorization: `Bearer ${token}` },
+		account_id: fixture.account.id,
+		accessor: 'scoped_token'
+	});
+	return token;
 };
 
 /**

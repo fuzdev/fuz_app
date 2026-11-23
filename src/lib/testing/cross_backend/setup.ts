@@ -38,6 +38,7 @@ import {
 import { USERNAME_LENGTH_MAX, Uuid } from '../../primitive_schemas.ts';
 import { format_issues } from '../../schema_issues.ts';
 
+import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { TestAccount } from '../test_app.ts';
@@ -799,7 +800,7 @@ export interface AssertCredentialAuthenticatesOptions {
 	 * otherwise, since a cookie it carried would answer for the credential.
 	 */
 	readonly transport: FetchTransport;
-	/** The RPC endpoint `account_verify` is mounted on. */
+	/** The RPC endpoint `account_verify` (`account_verify_action_spec`) is mounted on. */
 	readonly rpc_path: string;
 	/** The credential, alone: a `cookie`, an `authorization`, or a daemon token. */
 	readonly headers: Readonly<Record<string, string>>;
@@ -810,12 +811,14 @@ export interface AssertCredentialAuthenticatesOptions {
 }
 
 /**
- * Prove a credential authenticates — `account_verify` answers 200 as the
- * expected account — before a fixture accessor kills it. A revoked or expired
- * credential reaches the same lookup a never-issued one does, so without this
- * a `mint_revoked_*` that minted nothing (or a token that never worked) would
- * pass every row its principal backs; with it, the principal's refusal can
- * only come from the revocation or the expiry.
+ * Prove a credential authenticates — `account_verify` answers 200 naming the
+ * expected account — before a fixture relies on it. A refusal reaches the same
+ * answer whether the credential was killed, never worked, or belongs to
+ * another account, so without this a `mint_revoked_*` that minted nothing, an
+ * expiry over a token that never worked, or a `scoped_token` minted on the
+ * wrong account would pass every row its principal backs; with it, the
+ * principal's refusal can only come from the state the fixture put it in (the
+ * revocation, the expiry, the scope).
  *
  * @param options - the transport, endpoint, credential and expected account
  * @throws Error naming the accessor when the credential does not answer as the account
@@ -833,14 +836,18 @@ export const assert_credential_authenticates = async (
 	const response = await transport(rpc_path, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...headers },
-		body: JSON.stringify({ jsonrpc: '2.0', method: 'account_verify', id: 'account_verify' })
+		body: JSON.stringify({
+			jsonrpc: '2.0',
+			method: account_verify_action_spec.method,
+			id: account_verify_action_spec.method
+		})
 	});
 	const body = (await response.json().catch(() => undefined)) as { result?: unknown } | undefined;
 	const parsed = parse(VerifyResponseShape, body?.result);
 	if (response.status !== 200 || !parsed.ok || parsed.value.id !== account_id) {
 		throw new Error(
-			`${accessor}: the credential did not authenticate as account ${account_id} before it was ` +
-				`killed — account_verify answered ${response.status} ${JSON.stringify(body)}`
+			`${accessor}: the credential did not authenticate as account ${account_id} — ` +
+				`${account_verify_action_spec.method} answered ${response.status} ${JSON.stringify(body)}`
 		);
 	}
 };

@@ -81,8 +81,9 @@ import type { SessionCookieEffect } from './session_cookie_effect.ts';
  *   [SCOPED_TOKEN_ADMITTED_METHOD]}`), non-browser context. Minted through the
  *   production `account_token_create` path over the keeper's session, not
  *   seeded — `_testing_reset` deliberately seeds a `full` token, and a harness
- *   that narrowed the seed would silently re-scope every other bearer case.
- *   The scope gate sits between the credential gate and the role gate, so this
+ *   that narrowed the seed would silently re-scope every other bearer case —
+ *   and proven to authenticate as the keeper on `SCOPED_TOKEN_ADMITTED_METHOD`
+ *   before any case is sent as it. The scope gate sits between the credential gate and the role gate, so this
  *   principal is what distinguishes `token_scope_required` from the
  *   credential-type and role denials on either side of it.
  * - `anonymous` — no credential, fresh cookie jar.
@@ -150,6 +151,10 @@ export type ConformancePrincipal =
  * credential gate a bearer must pass first, and holds no role gate that could
  * shadow the scope denial — so a case naming any *other* method isolates the
  * scope gate and nothing else.
+ *
+ * It is also the method the principal's liveness proof sends
+ * (`assert_credential_authenticates` calls `account_verify_action_spec`), so
+ * the narrowed token can be proven live only while the two are one method.
  */
 export const SCOPED_TOKEN_ADMITTED_METHOD = 'account_verify';
 
