@@ -21,9 +21,9 @@ import '../assert_dev_env.ts';
  * - **Node** closes at once with the body unread — `create_app_server`'s body
  *   limit (`http/body_limit.ts`) refuses on the header and answers
  *   `Connection: close`, which is what makes `@hono/node-server` close.
- * - **Bun** closes at once too, honouring that header. Bun 1.4.3 is the tested
- *   floor: an older Bun kept the connection after the 413 and served the next
- *   request (correctly framed), which fails this suite.
+ * - **Bun** closes at once too, honouring that header. Bun 1.4.4 is the tested
+ *   floor: a Bun older than 1.4.3 kept the connection after the 413 and served
+ *   the next request (correctly framed), which fails this suite.
  * - **hyper** (the Rust spine) closes at once.
  *
  * The oversized body is rejected *with* a 413 on every backend — pinned

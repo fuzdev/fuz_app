@@ -80,37 +80,13 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 				}
 			});
 			const handle: ServeHandle = {
-				// Bun bug (1.3.14): after a *server-initiated* WebSocket close
-				// (`ServerWebSocket.close()` / `@hono/bun`'s `WSContext.close()`),
-				// `server.stop()` never resolves — Bun doesn't decrement its
-				// active-connection count for a server-closed socket, so the stop
-				// waits forever for a connection it already closed. The trigger is
-				// orthogonal to HTTP load, hono-vs-raw `Bun.serve`, in-vs-cross
-				// process, the force flag (`stop()`/`stop(false)`/`stop(true)` all
-				// hang), and the client runtime — a single server-closed WS is
-				// necessary and sufficient. Client-initiated close or leaving the
-				// socket open both stop cleanly in ~0ms. In this suite the trigger is
-				// any server-initiated WS close — a revocation's (the WS round-trip suite's
-				// close-on-revoke cases), a cap eviction's, an oversized message's —
-				// which is why teardown hangs after those and not under HTTP-only or
-				// client-closed WS traffic.
-				//
-				// So initiate a force-close (`true` drops active connections, no
-				// drain) but DON'T await it: awaiting hangs `start_testing_server`'s
-				// shutdown forever — the core's exit never runs, and the spawning
-				// harness blocks on a child that never exits (observed as a
-				// multi-minute hang needing SIGKILL). The force-close still tears the
-				// live sockets down; the exit the core fires once `built.close()`
-				// returns (`0`, or `1` when it gave up) does the real teardown. Node
-				// doesn't need this — its
-				// `close()` resolves normally. The `.catch` guards a
-				// future Bun that rejects rather than hangs; if a future Bun resolves
-				// the promise after a server-initiated close, revert to
-				// `await server.stop(true)` to mirror the Node adapter.
-				shutdown: () => {
-					void Promise.resolve(server.stop(true)).catch(() => {});
-					return Promise.resolve();
-				}
+				// `false` stops accepting and lets the requests in flight finish, as
+				// Node's `server.close()` does; `true` would reset them, losing a
+				// response the shutdown drain is waiting to send. It settles once
+				// every connection is gone: the core's `built.close()` ends the live
+				// WebSockets, and a shutdown that gave up skips the wait. Verified on
+				// Bun 1.4.4, the tested floor.
+				shutdown: () => Promise.resolve(server.stop(false))
 			};
 			return handle;
 		},

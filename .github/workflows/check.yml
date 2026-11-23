@@ -80,12 +80,12 @@ jobs:
     timeout-minutes: 15
 
     # The version the suites are green on. It pins runtime behavior the
-    # suites assert and the docs state (Bun 1.4.3 is the tested floor —
+    # suites assert and the docs state (Bun 1.4.4 is the tested floor —
     # docs/security.md §Body Size Limiting), so a bump is deliberate: change
     # the version, re-run, re-read what the docs say was observed. The
     # `cross-canary` workflow runs the same legs on the latest release.
     env:
-      CROSS_BUN_VERSION: 1.4.3
+      CROSS_BUN_VERSION: 1.4.4
 
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

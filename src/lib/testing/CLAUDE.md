@@ -1079,7 +1079,7 @@ have files of their own.
   host gate off, `host_gate: false`.
 
   No flag covers the body-size smuggling probe (`body_size_smuggling.ts`): every
-  backend closes the connection after an oversized-body 413. Bun 1.4.3 is the
+  backend closes the connection after an oversized-body 413. Bun 1.4.4 is the
   tested floor.
 
 ### `cross_backend/standard_bundle.ts` — `describe_standard_cross_process_tests`
@@ -1365,7 +1365,7 @@ without.
 | `actor_lookup` | the keeper resolves its own actor in the leak-safe wire shape (the refusals are table rows) | — |
 | `app_settings` | an anonymous signup reads `open_signup` fresh after `app_settings_update` | — |
 | `body_size` | the 1 MiB body cap: cap+1 → 413 `payload_too_large`, exactly the cap not size-rejected, an over-cap chunked body → 413, no upload racing the close | — |
-| `body_size_smuggling` | raw socket: an oversized `POST` + a pipelined `GET` → at most one response; `Content-Length` beside `Transfer-Encoding` → close (Bun 1.4.3 is the tested floor) | — |
+| `body_size_smuggling` | raw socket: an oversized `POST` + a pipelined `GET` → at most one response; `Content-Length` beside `Transfer-Encoding` → close (Bun 1.4.4 is the tested floor) | — |
 | `capability_mounts` | each mount flag a request observes (`ws`, `sse`, `cell_crud`, `cell_relations`, `fact_serving`, `fact_serving_admin_hash`, `ready`, `account_status`, `ws_account_actions`, `ws_role_gated`) probed once and held to its declaration both ways — `true` answers as mounted, `false` as unmounted; each flag's probe again as an unmounted control (its surface moved under `CAPABILITY_MOUNTS_ABSENT`) read as unmounted on every backend; every other flag a skipped test naming why (`UNPROBED_CAPABILITIES`); can't be excluded or overridden; probes the paths the gated suites send to; cross-process only | every probed flag (the declaration) |
 | `cell_crud` | the CRUD lifecycle + authz matrix, each response parsed against its output schema, `cell_list` paging past hidden rows, mistyped `data` | `cell_crud` (clone cases also `cell_relations`) |
 | `cell_gated_create` | the parent-aware `CellCreateAuthorize`: admin-only `space` root, contributions gated by the root's `policy[kind]`, 404 on a hidden parent vs 403 on a visible one, `cell_policy_set` | `cell_gated_create` |

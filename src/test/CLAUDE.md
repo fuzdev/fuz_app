@@ -284,6 +284,7 @@ probe that ran before bootstrap:
 | `reset_isolation.cross.test.ts` | `_testing_reset` empties the cell and fact tables between two tests |
 | `bootstrap_token.cross.test.ts` | the result of `bootstrap_token_probe.ts`, which a global setup runs before bootstrap: every refused spelling of the token file, each with its whole body and the file left byte-identical; the burn — with the token's directory unwritable the right token answers 500 `token_file_undeletable`, the file intact and `/status` still open, then the keeper bootstrap succeeds and the file is gone. The probe throws when run as root, which would delete the file anyway |
 | `builtin_roles.cross.test.ts` | Node only, as above |
+| `shutdown_in_flight.cross.test.ts` | the TS spine projects only (`TS_ONLY_CROSS_TESTS` in `cross_backend_projects.ts`): a spine of its own on the project's runtime (its `shutdown` row in `CROSS_PROJECT_RESOURCES`), SIGTERMed while a request's body is half sent — the request is answered once the rest lands, and the spine exits `0` |
 
 The conformance case files, each a `ConformanceCase` array:
 

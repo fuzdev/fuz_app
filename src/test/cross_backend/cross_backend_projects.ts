@@ -46,8 +46,15 @@ export const CROSS_PROJECT_RESOURCES = {
 	cross_backend_rust_spine_stub: {
 		stub: { name: 'spine_stub', port: 1177, database: 'fuz_app_test_rust_spine_stub' }
 	},
-	cross_backend_ts_node: { node: { name: 'ts_spine_node', port: 1178, database: null } },
-	cross_backend_ts_bun: { bun: { name: 'ts_spine_bun', port: 1180, database: null } },
+	cross_backend_ts_node: {
+		node: { name: 'ts_spine_node', port: 1178, database: null },
+		// the short-lived spine `shutdown_in_flight.cross.test.ts` spawns and stops
+		shutdown: { name: 'ts_spine_node_shutdown', port: 1189, database: null }
+	},
+	cross_backend_ts_bun: {
+		bun: { name: 'ts_spine_bun', port: 1180, database: null },
+		shutdown: { name: 'ts_spine_bun_shutdown', port: 1190, database: null }
+	},
 	cross_backend_parity: {
 		ts: { name: 'ts_spine_node_parity', port: 1181, database: 'fuz_app_test_ts_spine_parity' },
 		stub: {
@@ -169,15 +176,28 @@ const DUAL_SPAWN_TESTS = DUAL_SPAWN_PROJECTS.flatMap((project) => project.includ
  */
 const NODE_ONLY_CROSS_TESTS = ['src/test/cross_backend/builtin_roles.cross.test.ts'];
 
+/**
+ * Single-backend files that run under the TS spine projects alone: they spawn
+ * a TS spine binary of their own, on the project's runtime.
+ */
+const TS_ONLY_CROSS_TESTS = ['src/test/cross_backend/shutdown_in_flight.cross.test.ts'];
+
 const single_backend_project = (
 	name: CrossProjectName,
 	global_setup: string,
-	{ with_node_only = false }: { with_node_only?: boolean } = {}
+	{
+		with_node_only = false,
+		with_ts_only = false
+	}: { with_node_only?: boolean; with_ts_only?: boolean } = {}
 ): CrossBackendProjectOptions => ({
 	name,
 	global_setup,
 	include: CROSS_BACKEND_TESTS,
-	exclude: [...DUAL_SPAWN_TESTS, ...(with_node_only ? [] : NODE_ONLY_CROSS_TESTS)]
+	exclude: [
+		...DUAL_SPAWN_TESTS,
+		...(with_node_only ? [] : NODE_ONLY_CROSS_TESTS),
+		...(with_ts_only ? [] : TS_ONLY_CROSS_TESTS)
+	]
 });
 
 /** Every cross project, in the order `run_cross.ts` reports them. */
@@ -189,8 +209,12 @@ export const CROSS_BACKEND_PROJECTS: ReadonlyArray<CrossBackendProjectOptions> =
 	single_backend_project(
 		'cross_backend_ts_node',
 		'./src/test/cross_backend/global_setup_ts_node.ts',
-		{ with_node_only: true }
+		{ with_node_only: true, with_ts_only: true }
 	),
-	single_backend_project('cross_backend_ts_bun', './src/test/cross_backend/global_setup_ts_bun.ts'),
+	single_backend_project(
+		'cross_backend_ts_bun',
+		'./src/test/cross_backend/global_setup_ts_bun.ts',
+		{ with_ts_only: true }
+	),
 	...DUAL_SPAWN_PROJECTS
 ];
