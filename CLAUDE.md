@@ -122,7 +122,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `@fuzdev/fuz_schema` (>=0.5.7) — every schema fuz_app declares and reads, and `to_json_schema` (`@fuzdev/fuz_schema/json_schema.ts`) for the surface and the testing generators; one deduped copy, since `Branded` (behind fuz_util's `FactHash` and `Uuid`) keys on a unique symbol
 - `@node-rs/argon2` (>=2) — optional, for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.2.0) — imported directly by `db/fact_disk_storage` (the streaming hasher); `auth/session_queries` and `auth/api_token` (session and API token hashes) reach it through `@fuzdev/fuz_util/hash_blake3.ts`
-- `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.2.0) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
+- `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.2.1) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
 - `@hono/node-server` (>=2), `ws` (>=8) — optional, for the Node server adapter + WebSocket transport
 - `@hono/bun` (>=1) — optional, for the Bun cross-backend testing server adapter (`testing/cross_backend/testing_server_bun.ts`)
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
