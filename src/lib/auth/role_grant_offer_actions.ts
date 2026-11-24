@@ -235,11 +235,10 @@ export const emit_supersede_audits = async (
  *
  * **Runs under the scope lock** when the input is scoped: both verbs take
  * `scope_id`'s lock shared (`query_scope_lock_shared`) before calling it, so
- * a scope-existence read sees every teardown that committed first — under READ
- * COMMITTED, where each statement takes a fresh snapshot; under REPEATABLE
- * READ the snapshot predates the lock's wait and the read would miss it — and
- * a teardown still to come waits for the request to commit. That holds only
- * for a consumer teardown that goes through
+ * a scope-existence read sees every teardown that committed first (READ
+ * COMMITTED's per-statement snapshot, which `ensure_read_committed` holds the
+ * database to) and a teardown still to come waits for the request to commit.
+ * That holds only for a consumer teardown that goes through
  * `query_role_grant_revoke_for_scope` before it removes the scope row, or
  * takes `query_scope_lock_exclusive` first; one that removes the row first
  * leaves the window open, and one that locks the row first deadlocks with a
@@ -990,9 +989,9 @@ export const create_role_grant_offer_actions = (
 		// learns nothing of the recipient. The credential was read before this
 		// transaction and nothing held the recipient: a delete or a purge of
 		// either, committed since, is waited for and seen, and one still to come
-		// waits for the grant to commit — so no grant lands on a tombstone (an undelete would bring
-		// it back) or meets a purged actor's foreign key. Judged recipient first,
-		// then the caller, as offer-create judges them.
+		// waits for the grant to commit — so no grant lands on a tombstone (an
+		// undelete would bring it back) or meets a purged actor's foreign key.
+		// Judged recipient first, then the caller, as offer-create judges them.
 		const live = await query_account_lock_live_many(ctx, [input.to_account_id, auth.account.id]);
 		// The recipient: a live account with an active actor (the named one, when
 		// an actor is named). A missing or removed recipient 404-masks.

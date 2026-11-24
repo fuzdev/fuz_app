@@ -1434,13 +1434,15 @@ describe_backend_swap_tests({
 
 Both configs name that database in `DATABASE_URL` (the same string), the
 same session cookie name and the same `SECRET_FUZ_COOKIE_KEYS` — a cookie one
-signs, the other must verify — and a Rust-family config turns its startup
-wipe off (`reset_db_on_startup: false`), or its boot drops what the other
-wrote. The suite checks these first, then spawns and stops each backend
-itself, so its project's global setup only prepares them and must run alone
-on the database. The declined offer is of `declined_role` (default
-`participant`, the reference spines' grantable app role; never `admin`, the
-accepted offer's); a backend registering no such role passes one it does.
+signs, the other must verify — a Rust-family config turns its startup wipe
+off (`reset_db_on_startup: false`), or its boot drops what the other wrote,
+and both declare the drain and invariant backdoors
+(`SHARED_DATABASE_BACKDOORS`). The suite checks these first, then spawns and
+stops each backend itself, so its project's global setup only prepares them
+and must run alone on the database. The declined offer is of
+`declined_role` (default `participant`, the reference spines' grantable app
+role; never `admin`, the accepted offer's); a backend registering no such
+role passes one it does.
 
 #### Both spines live
 

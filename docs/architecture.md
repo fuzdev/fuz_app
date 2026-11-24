@@ -130,25 +130,6 @@ adapters directly instead of duplicating transaction wiring.
 **The policy is per namespace** — see ./migrations.md §Schema
 stability for the full statement.
 
-`fuz_auth` is **frozen and append-only**: consumers hold long-lived
-databases that recorded the released entries as applied, so editing one is a
-silent no-op there — the DDL never re-runs, the runner sees nothing new, and
-the shape the code expects never lands. Every auth schema change ships as a
-new appended entry with idempotent DDL, so a fresh bootstrap and an old
-deployed DB converge. The module doc of
-`auth/migrations.ts` carries the incident that set the rule;
-`db/schema_ready.ts` is the runtime net when discipline lapses.
-
-`fuz_facts` is frozen and append-only the same way, and runs after
-`fuz_auth` (`fact_holder` references `actor`). `fuz_cell` is still
-pre-stable, a single `full_cell_schema` entry rewritten in place; consumers
-drop and re-bootstrap across a change.
-
-Either way the entry is twinned: the Rust spine ships an identically named
-migration, and the `_testing_migration_tracker` parity gate asserts both
-spines record the same `(namespace, name, sequence)` rows so a consumer can
-swap implementations over one database.
-
 `run_migrations(db, namespaces)` (from `db/migrate.ts`) applies pending
 migrations per namespace. The shared `schema_version` table records one
 row per applied migration: `(namespace, name, sequence, applied_at)`,
@@ -191,11 +172,11 @@ accompany each kind.
 `ns.migrations` _without executing them_ — the only sanctioned
 non-execution path. Used to promote an existing schema (e.g. one produced
 by an out-of-band bootstrap or a hand-applied DDL set) into the tracker.
-Creates the `schema_version` table if absent, acquires
-the same advisory lock as `run_migrations`, refuses if the namespace
-already has tracker rows (per-namespace partial-failure-resume guard),
-prefix-validates against `ns.migrations`, then writes sequences `0..N-1`
-in one transaction. `baseline()` does not verify the schema actually
+Creates the `schema_version` table if absent, acquires the same advisory
+lock as `run_migrations`, refuses if the namespace already has tracker
+rows (per-namespace partial-failure-resume guard), prefix-validates
+against `ns.migrations`, then writes sequences `0..N-1` in one
+transaction. `baseline()` does not verify the schema actually
 matches what the named migrations would have produced — pair with a
 schema-assertion script post-baseline.
 

@@ -18,7 +18,8 @@ never re-runs, the runner sees nothing new, and the shape the code expects
 never lands. Every change ships as a new appended entry with idempotent DDL
 (`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`), so a fresh
 bootstrap and an old deployed DB converge. `auth/migrations.ts`'s module doc
-carries the incident that set the rule.
+carries the incident that set the rule. `db/schema_ready.ts` is the runtime
+net when that discipline lapses.
 
 **`fuz_facts` is frozen too**: `full_fact_schema`, then `fact_holder`, each
 appended the same way. `fact_holder.actor_id` references `fuz_auth`'s `actor`
@@ -38,42 +39,9 @@ over one database.
 
 ## Runner contract
 
-`schema_version` stores one row per applied migration, keyed by
-`(namespace, name)` with a monotonically-increasing per-namespace `sequence`
-and `applied_at`. `run_migrations` reads applied rows ordered by `sequence`,
-then enforces:
-
-1. **Length check first.** If `applied.length > code.length`, throw
-   `binary-older-than-db` listing the unknown names. Short-circuits before
-   name verify so a binary-older case with a rename in the overlap doesn't
-   fire `name-divergence-at-N` and send the operator chasing a phantom
-   source revert.
-2. **Name-prefix verify.** For each `i < applied.length`, assert
-   `applied[i].name === code[i].name`; mismatch throws `name-divergence-at-N`
-   with `at_index`.
-3. **Run the pending tail** (`code[applied.length..]`) inside a single chain
-   transaction; each `INSERT` uses `sequence = max(sequence) + 1`.
-
-`MigrationError` is the only error class thrown from `run_migrations` and
-`baseline`; branch on `.kind` (never on message text). Kinds:
-`namespace-reserved` (a consumer namespace under a reserved spine name,
-refused before touching the database), `binary-older-than-db`,
-`name-divergence-at-N`, `migration-failed`, `baseline-name-not-in-code`,
-`baseline-name-out-of-order`, `baseline-namespace-already-populated`.
-
-`baseline(db, ns, names)` is the only sanctioned non-execution path — INSERTs
-tracker rows for a name-prefix of `ns.migrations` without running their `up`
-functions. Used to promote an existing schema (e.g. one produced by an
-out-of-band bootstrap or a hand-applied DDL set) into the tracker.
-Per-namespace populated guard lets multi-call cutover scripts resume after
-partial failure. `baseline()` does **not**
-verify the schema actually matches what the named migrations would have
-produced — pair with a schema-assertion script post-baseline.
-
-There is **no programmatic bypass on the main `run_migrations` path** — no
-`--force`, no `skip_verification`. If you need to deviate, reach for
-`baseline()` (named, narrow) or direct SQL on the tracker (operator
-explicitly states intent).
+The boot algorithm, the per-namespace advisory lock, `baseline()`, and the
+`MigrationError` kinds are in ./architecture.md §Migrations — there is no
+programmatic bypass of `run_migrations`.
 
 ## Operator recipes
 

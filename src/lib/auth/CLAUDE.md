@@ -254,11 +254,11 @@ One class order in every transaction — accounts, then offers, then grants and
 actors — and id order within a class, behind a scope's advisory lock where one
 is taken (`query_scope_lock_exclusive` for a teardown,
 `query_scope_lock_shared` for the scoped writes, before any row, unless the
-transaction created the scope itself). Every writer
-of an account takes its row first (two mints of one account take turns there,
-so the caps hold) — a delete and a purge after their last-admin guard, which
-an admin target's row is locked within, then the guards again; a multi-row
-write locks its rows in one id-ordered statement before writing.
+transaction created the scope itself). Every writer of an account takes its
+row first (two mints of one account take turns there, so the caps hold) — a
+delete and a purge after their last-admin guard, which an admin target's row
+is locked within, then the guards again; a multi-row write locks its rows in
+one id-ordered statement before writing.
 Each lock's strength and reason is on its query's TSDoc; the rule set:
 ../../../docs/security.md §Row Locks. `lock_pins.cross.test.ts` pins them on
 both spines (../../test/CLAUDE.md).

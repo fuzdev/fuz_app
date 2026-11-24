@@ -150,9 +150,10 @@ export interface CreateAppBackendOptions {
 	/**
 	 * Bound on the pool checkouts a request makes, in ms — the server env's
 	 * `FUZ_DB_CHECKOUT_TIMEOUT_MS`. Default `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`
-	 * (5 s). A failed checkout answers 503 on every surface. Audit pool writes (failure
-	 * rows) use `db_audit_checkout_timeout_ms` instead. A checkout that waits and then connects can take about
-	 * twice the bound (`db/db_pg.ts`, "Checkout timeout"). Postgres only:
+	 * (5 s). A failed checkout answers 503 on every surface. Audit pool writes
+	 * (failure rows) use `db_audit_checkout_timeout_ms` instead. A checkout that
+	 * waits and then connects can take about twice the bound (`db/db_pg.ts`,
+	 * "Checkout timeout"). Postgres only:
 	 * PGlite and pglet have no pool, and a value passed with one is warned of
 	 * at boot. Twin of the Rust `BaseServerEnv::db_checkout_timeout`.
 	 */
@@ -223,8 +224,9 @@ export const check_transaction_isolation = (value: string): void => {
  *
  * One connection answers for all: every connection the pool opens has the
  * same server, database, role and startup options (a URL's `options`,
- * `PGOPTIONS`), and `create_db` adds no per-connection setting. It is read once, at boot; a setting changed while
- * the server runs reaches new connections unchecked until the next restart.
+ * `PGOPTIONS`), and `create_db` adds no per-connection setting. It is read
+ * once, at boot; a setting changed while the server runs reaches new
+ * connections unchecked until the next restart.
  *
  * @param db - the backend's pool-level `Db`
  * @throws TransactionIsolationError for any other setting

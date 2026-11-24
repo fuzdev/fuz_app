@@ -104,11 +104,11 @@ export const scope_advisory_lock_key = (scope_id: Uuid): [number, number] => {
  * `query_create_role_grant` and `query_role_grant_offer_create` first thing,
  * `query_accept_offer` after its unlocked head read, before any row, and the
  * `role_grant_offer_create` and `role_grant_assign` handlers before the
- * consumer's authorizer runs. A write
- * that reads its scope after the lock sees a teardown that committed first,
- * and one holding the lock makes a teardown wait and then end what it wrote.
- * Writers take turns with a teardown only, not with each other. Re-entrant:
- * a second take in one transaction is free.
+ * consumer's authorizer runs. A write that reads its scope after the lock
+ * sees a teardown that committed first, and one holding the lock makes a
+ * teardown wait and then end what it wrote. Writers take turns with a
+ * teardown only, not with each other. Re-entrant: a second take in one
+ * transaction is free.
  *
  * Take it first, holding no row: the teardown holds it while it waits on offer
  * and grant rows and on whatever its consumer's scope delete cascades into (an
@@ -121,9 +121,8 @@ export const scope_advisory_lock_key = (scope_id: Uuid): [number, number] => {
  * from an unlocked read of a column that never changes, as the accept's head
  * read does. Use it on a consumer path that reads its own scope row and then
  * brings something into the scope (an invite accept, a join decision): the
- * lock, then the read. A
- * transaction never takes two scope locks here; one that must should take them
- * in key order. Twin of the Rust
+ * lock, then the read. A transaction never takes two scope locks here; one
+ * that must should take them in key order. Twin of the Rust
  * `fuz_auth::role_grant_offer_queries::query_scope_lock_shared`.
  *
  * @param deps - query dependencies (must be the writing transaction)
@@ -184,9 +183,9 @@ export const query_scope_lock_exclusive = async (
  * so a teardown of the scope (`query_role_grant_revoke_for_scope`) in flight
  * is waited for, and one that starts after it waits for this transaction and
  * then revokes the grant. Run it inside the caller's transaction, holding no
- * row (a scope it created itself and has not committed aside) unless the transaction
- * already holds this scope's lock (the lock's rule; a re-take is free); a
- * caller that judged the scope live takes the lock before that read.
+ * row (a scope it created itself and has not committed aside) unless the
+ * transaction already holds this scope's lock (the lock's rule; a re-take is
+ * free); a caller that judged the scope live takes the lock before that read.
  *
  * @param deps - query dependencies
  * @param input - the role_grant fields
@@ -493,9 +492,9 @@ export const query_actor_has_active_global_role = async (
  * sort returns them: each account's row, its actors' and its grants' before
  * the next account's. `query_account_lock_live_many` and
  * `query_account_lock_for_offer_accept` take account rows in the same order,
- * so an offer, an assign or an accept between two admins and an admin's removal never
- * wait on each other's rows in opposite orders. Ids never change, so no
- * concurrent update can move a row the sort has placed.
+ * so an offer, an assign or an accept between two admins and an admin's
+ * removal never wait on each other's rows in opposite orders. Ids never
+ * change, so no concurrent update can move a row the sort has placed.
  *
  * `exclude_role_grant_id` leaves one grant out of the count, so a revoke asks
  * whether any active admin account would remain without that grant — an

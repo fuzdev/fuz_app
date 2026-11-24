@@ -230,8 +230,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
  * first: `CREATE TABLE IF NOT EXISTS` checks for the table before taking any
  * lock, so two boots can both pass the check, and the loser then trips the
  * catalog's unique index (`23505`) or finds the relation (`42P07`) or a
- * constraint (`42710`) already there. The Rust runner tolerates the same
- * three.
+ * constraint (`42710`) already there. The Rust runner tolerates the same codes.
  */
 const SCHEMA_VERSION_DDL_RACE_CODES: ReadonlyArray<string> = ['23505', '42P07', '42710'];
 
@@ -289,9 +288,8 @@ export interface RunMigrationsOptions {
  * For each namespace, in one chain transaction: takes the namespace's
  * advisory lock, reads applied rows ordered by `sequence`, length-checks
  * (binary-older-than-db short-circuits), name-prefix-verifies, then runs the
- * pending tail.
- * Each migration's row is INSERTed with `sequence = max(sequence) + 1` for
- * the namespace.
+ * pending tail. Each migration's row is INSERTed with
+ * `sequence = max(sequence) + 1` for the namespace.
  *
  * **Length check before name verify** is load-bearing: a binary-older case
  * with a rename in the overlap would otherwise fire `name-divergence-at-N`

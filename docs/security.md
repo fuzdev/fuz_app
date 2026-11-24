@@ -2263,14 +2263,15 @@ guard).
   insert at an existing scope is not: its foreign key holds the scope row a
   teardown deletes. A write whose callback reads the scope after a teardown
   committed is refused (403 `role_grant_offer_not_authorized`); a teardown
-  after a write waits for it and then ends what it wrote. The teardown takes no row a writer holds
-  while waiting on it, so the lock adds no cycle; the accept takes it before
-  its claim, since a teardown holding it waits on the claimed offer. A
-  consumer's own path that reads its scope row and then brings something
-  into the scope takes `query_scope_lock_shared` before the read, and a
-  consumer teardown calls the cascade before it touches its scope row (or
-  takes `query_scope_lock_exclusive` first). No path here takes two scope
-  locks.
+  after a write waits for it and then ends what it wrote. The teardown takes
+  no row a writer holds while waiting on it, so the lock adds no cycle; the
+  accept takes it before its claim, since a teardown holding it waits on the
+  claimed offer. A consumer's own path takes `query_scope_lock_shared`
+  before it reads its scope row and then brings something into the scope,
+  and before it writes a row its scope delete cascades into on the way to a
+  scoped grant or offer write; a consumer teardown calls the cascade before
+  it touches its scope row (or takes `query_scope_lock_exclusive` first). No
+  path here takes two scope locks.
 - **Accounts first.** Every writer of an account takes its row before the
   rows that hang off it: a login and a token creation through their
   re-check (`FOR NO KEY UPDATE`, so two mints of one account take turns and
@@ -2280,8 +2281,9 @@ guard).
   already held among every admin's, a non-admin's is the first row the
   delete takes — then the guards again (§Last-admin guard), a
   `self_service_role_set` through `query_account_lock_live` too (refused on a
-  removed account as the dead credential), a revoke through its revokee's row (`query_account_lock_for_revoke`),
-  an offer, invite or assign create through `query_account_lock_live_many`
+  removed account as the dead credential), a revoke through its revokee's
+  row (`query_account_lock_for_revoke`), an offer, invite or assign create
+  through `query_account_lock_live_many`
   (`FOR SHARE`) — `query_role_grant_offer_create` and `query_create_invite`
   take it themselves (a caller that locks an actor or grant row first takes
   the account row before it), and `role_grant_assign` takes it on its

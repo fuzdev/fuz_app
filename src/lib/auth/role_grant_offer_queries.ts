@@ -232,17 +232,17 @@ export class RoleGrantOfferGrantorNotActiveError extends Error {
  * writes its tombstone first, so a delete committed before the read is waited
  * for and seen (the offer is refused), and one after it waits for this
  * transaction to commit and then supersedes the offer with the party's
- * others. Run it inside the caller's transaction, which the lock
- * spans. The self-target check comes first, so an offer to one's own account
- * is refused as that whatever else it names.
+ * others. Run it inside the caller's transaction, which the lock spans. The
+ * self-target check comes first, so an offer to one's own account is refused
+ * as that whatever else it names.
  *
  * A scoped offer takes the scope lock shared before anything else
  * (`query_scope_lock_shared`), so a teardown of the scope
  * (`query_role_grant_revoke_for_scope`) in flight is waited for, and one that
  * starts after it waits for this transaction and then supersedes the offer. A
  * caller that judged the scope live takes the lock before that read, holding
- * no row (a scope it created itself and has not committed aside); the spine's handler
- * does.
+ * no row (a scope it created itself and has not committed aside); the
+ * spine's handler does.
  *
  * @mutates `role_grant_offer` table - inserts a new offer or upserts the matching pending row
  * @throws RoleGrantOfferSelfTargetError if the offering actor belongs to `to_account_id`

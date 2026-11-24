@@ -72,17 +72,12 @@ import '../assert_dev_env.ts';
  * `_testing_room_evict` when it declares `rooms`; the call throws otherwise. A
  * suite every case of which drives another backdoor (`credential_conformance`,
  * `credential_deadline`, `origin_conformance`, `ws_outbound_overflow`) skips
- * itself on a backend not
- * declaring it, shown like an exclude with a reason
+ * itself on a backend not declaring it, shown like an exclude with a reason
  * naming the backdoor — so an exclude, override or `exclude_cases` entry for
  * it is refused as dead.
  *
- * **Not in the one call** (`STANDALONE_CROSS_SUITES`, with the reasons): the
- * suites that need two handles (the differential), a backend spawned with live
- * limiters (`login_security`, `ws_action_rate_limit` — the standard suites would
- * exhaust them), the backend swap, which spawns and stops its own backends, and
- * the conformance runner, which runs the consumer's own cases. Each keeps its
- * own entry point.
+ * **Not in the one call**: the suites `STANDALONE_CROSS_SUITES` names, each
+ * with its reason. Each keeps its own entry point.
  *
  * Suites are registered without a wrapping `describe`, so their test names are
  * the same as when each is called on its own — and an `exclude_cases` path is

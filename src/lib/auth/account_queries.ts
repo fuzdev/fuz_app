@@ -251,9 +251,9 @@ export const query_update_account_password = async (
  * account waits on a login. Besides the writers it orders against, it
  * conflicts with `query_account_lock_live` (the token mint, the same
  * strength), the `FOR SHARE` of `query_account_lock_live_many` (an offer,
- * invite or assign create), an offer accept's locks (`query_account_lock_for_offer_accept`,
- * the recipient's at this strength, a grantor's shared), and the last-admin
- * guard's `FOR NO KEY UPDATE`. None of
+ * invite or assign create), an offer accept's locks
+ * (`query_account_lock_for_offer_accept`, the recipient's at this strength, a
+ * grantor's shared), and the last-admin guard's `FOR NO KEY UPDATE`. None of
  * those waits on an account row while holding a session row, and once a mint
  * holds the lock it waits on nothing but the session rows its eviction
  * deletes, so no cycle runs through it. Twin of the Rust
