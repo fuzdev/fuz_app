@@ -14,6 +14,8 @@
  * @module
  */
 
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+
 import type { Db, DbType } from './db.ts';
 import {
 	create_pg_db,
@@ -32,6 +34,12 @@ export interface CreateDbOptions {
 	 * have no pool, so it has no effect there.
 	 */
 	checkout_timeout_ms?: number;
+	/**
+	 * Where the pool reports a lost connection, an idle client's or a
+	 * transaction's, and a failed `ROLLBACK`, at `warn` (`create_pg_pool`).
+	 * Postgres only.
+	 */
+	log?: Pick<Logger, 'warn'>;
 }
 
 /** Result of database initialization. */
@@ -69,7 +77,8 @@ export const create_db = async (
 		await register_pg_type_parsers();
 		const pool = create_pg_pool(pg, {
 			connection_string: database_url,
-			checkout_timeout_ms: options?.checkout_timeout_ms ?? DEFAULT_DB_CHECKOUT_TIMEOUT_MS
+			checkout_timeout_ms: options?.checkout_timeout_ms ?? DEFAULT_DB_CHECKOUT_TIMEOUT_MS,
+			log: options?.log
 		});
 		const { db, close } = create_pg_db(pool);
 		return {

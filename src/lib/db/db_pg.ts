@@ -32,6 +32,8 @@
  */
 
 import type { Pool, PoolClient, PoolConfig } from 'pg';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
 import { DbCheckoutError } from './db_checkout_error.ts';
@@ -62,6 +64,12 @@ export interface DbCheckoutPool extends Pool {
 		text: string,
 		values?: Array<unknown>
 	) => Promise<{ rows: Array<T> }>;
+	/**
+	 * `CreatePgPoolOptions.log`, where the pool and its transactions report a
+	 * lost connection and a failed `ROLLBACK`. Not `log`: pg-pool's own debug
+	 * hook has that name.
+	 */
+	readonly connection_log?: Pick<Logger, 'warn'>;
 }
 
 /** Options for `create_pg_pool`. */
@@ -70,6 +78,11 @@ export interface CreatePgPoolOptions {
 	connection_string: string;
 	/** Bound on every checkout, in ms — `DEFAULT_DB_CHECKOUT_TIMEOUT_MS` in production. */
 	checkout_timeout_ms: number;
+	/**
+	 * Where a lost connection — an idle client's, or a transaction's client's —
+	 * and a failed `ROLLBACK` are reported, at `warn`; unreported when omitted.
+	 */
+	log?: Pick<Logger, 'warn'>;
 }
 
 /**
@@ -91,8 +104,14 @@ export interface CreatePgPoolOptions {
  * pool's own bound. Pinned against the installed pg-pool by
  * `src/test/db/db_pg.db.test.ts`.
  *
+ * The pool listens for `error`, which pg-pool emits when an idle client loses
+ * its connection (Postgres restarted, the backend terminated): unheard, Node
+ * would throw it and end the process. pg-pool has already dropped the client,
+ * so the next checkout connects a fresh one — and fails on its own if Postgres
+ * is still down. The error goes to `options.log` at `warn`.
+ *
  * @param pg - the `pg` module (dynamically imported by the caller)
- * @param options - the URL and the checkout bound
+ * @param options - the URL, the checkout bound, and where connection loss is reported
  * @returns the pool
  */
 export const create_pg_pool = (
@@ -132,6 +151,8 @@ export const create_pg_pool = (
 			});
 		}
 
+		readonly connection_log = options.log;
+
 		query_with_checkout_timeout = <T>(
 			timeout_ms: number,
 			text: string,
@@ -147,7 +168,11 @@ export const create_pg_pool = (
 			}
 		};
 	}
-	return new CheckoutPool(config);
+	const pool = new CheckoutPool(config);
+	pool.on('error', (err) => {
+		options.log?.warn('database client lost its connection while idle:', to_error_message(err));
+	});
+	return pool;
 };
 
 /**
@@ -187,6 +212,16 @@ export const register_pg_type_parsers = async (): Promise<void> => {
  * ensuring `BEGIN` / `COMMIT` / `ROLLBACK` all hit the same connection.
  * Releases the client in `finally` regardless of outcome.
  *
+ * A failed `ROLLBACK` never replaces the error that caused it: when the
+ * connection dies mid-transaction the `ROLLBACK` rejects too, and the caller
+ * still gets the original error (a `MigrationError`, a route's own). The
+ * client goes back released as broken, so the pool destroys it rather than
+ * reuse it; the server discards a transaction whose connection closed. The
+ * client is listened to for `error` while the transaction holds it, so a lost
+ * connection fails the transaction rather than the process. Both the failed
+ * `ROLLBACK` and the heard `error` go to the pool's `connection_log` at `warn`
+ * (the Rust spine warns on both).
+ *
  * Throws when PostgreSQL answers the `COMMIT` with `ROLLBACK` — a statement in
  * the transaction failed and its error was swallowed (an un-awaited promise, a
  * `catch` that never rethrew), so nothing committed. Without the check the
@@ -195,9 +230,18 @@ export const register_pg_type_parsers = async (): Promise<void> => {
  * back to it (`http/db_routes.ts`'s row delete does).
  */
 const create_pg_transaction =
-	(pool: Pool) =>
+	(pool: DbCheckoutPool) =>
 	async <T>(fn: (tx_db: Db) => Promise<T>): Promise<T> => {
 		const client = await pool.connect();
+		let broken = false;
+		// pg emits a lost connection's `error` on the client, and pg-pool stops
+		// listening while it is checked out: unheard, Node throws it. The
+		// statement in flight rejects on its own; this marks the client.
+		const on_client_error = (err: Error): void => {
+			broken = true;
+			pool.connection_log?.warn('database connection error:', to_error_message(err));
+		};
+		client.on('error', on_client_error);
 		try {
 			await client.query('BEGIN');
 			const tx_db = new Db({ client, transaction: no_nested_transaction });
@@ -208,10 +252,22 @@ const create_pg_transaction =
 			}
 			return result;
 		} catch (err) {
-			await client.query('ROLLBACK');
+			try {
+				await client.query('ROLLBACK');
+			} catch (rollback_err) {
+				// the connection is gone: the server already discarded the
+				// transaction, and `err` is what the caller needs
+				broken = true;
+				pool.connection_log?.warn(
+					'database transaction rollback failed:',
+					to_error_message(rollback_err)
+				);
+			}
 			throw err;
 		} finally {
-			client.release();
+			// no await between the two: `release` puts pg-pool's own listener back
+			client.removeListener('error', on_client_error);
+			client.release(broken);
 		}
 	};
 

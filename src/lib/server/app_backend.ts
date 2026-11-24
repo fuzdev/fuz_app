@@ -257,7 +257,8 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 	const { database_url, keyring, password, audit_factory } = options;
 	const log = options.log ?? new Logger('server');
 	const { db, close, db_type, db_name } = await create_db(database_url, {
-		checkout_timeout_ms: options.db_checkout_timeout_ms
+		checkout_timeout_ms: options.db_checkout_timeout_ms,
+		log
 	});
 	// set but inert: fail loud rather than let an operator believe it applies
 	if (

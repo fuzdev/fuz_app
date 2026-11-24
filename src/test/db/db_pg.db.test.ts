@@ -11,13 +11,16 @@
  *
  * A transaction whose statement failed with the error swallowed has nothing to
  * commit: Postgres answers its `COMMIT` with `ROLLBACK`, and the transaction
- * must throw rather than report success.
+ * must throw rather than report success. A transaction whose connection dies
+ * mid-statement throws that statement's error, not the failed `ROLLBACK`'s,
+ * and a connection lost there or while idle in the pool ends no process.
  *
  * @module
  */
 
 import { describe, assert, test, afterEach } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_pg_db,
@@ -26,14 +29,18 @@ import {
 	type DbCheckoutPool
 } from '#lib/db/db_pg.ts';
 import { is_db_checkout_error } from '#lib/db/db_checkout_error.ts';
+import { pg_error_code } from '#lib/db/pg_error.ts';
 
 const url = process.env.TEST_DATABASE_URL;
 
 /** A pool of one client whose checkouts give up after `checkout_timeout_ms`. */
-const create_one_client_pool = async (checkout_timeout_ms: number): Promise<DbCheckoutPool> => {
+const create_one_client_pool = async (
+	checkout_timeout_ms: number,
+	log?: Pick<Logger, 'warn'>
+): Promise<DbCheckoutPool> => {
 	const { default: pg } = await import('pg');
 	await register_pg_type_parsers();
-	const pool = create_pg_pool(pg, { connection_string: url!, checkout_timeout_ms });
+	const pool = create_pg_pool(pg, { connection_string: url!, checkout_timeout_ms, log });
 	// one client, so a held checkout leaves the next one waiting (test-only:
 	// production keeps pg-pool's default size)
 	pool.options.max = 1;
@@ -109,5 +116,60 @@ describe.skipIf(!url)('create_pg_db — transactions', () => {
 		assert.include(err.message, 'transaction aborted before COMMIT');
 		// the client went back to the pool clean
 		assert.deepStrictEqual(await db.query<{ n: number }>('SELECT 1 AS n'), [{ n: 1 }]);
+	});
+
+	test('a connection killed mid-transaction surfaces its own error, not the failed ROLLBACK', async () => {
+		const pool = await create_one_client_pool(5_000);
+		pools.push(pool);
+		// no listener of the test's own: an unheard `error` would fail the run
+		const removed = new Promise((resolve) => pool.once('remove', resolve));
+		const { db } = create_pg_db(pool);
+		const { default: pg } = await import('pg');
+		const killer = new pg.Client({ connectionString: url });
+		await killer.connect();
+		try {
+			const err = await assert_rejects(() =>
+				db.transaction(async (tx_db) => {
+					const [row] = await tx_db.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+					const sleeping = tx_db.query('SELECT pg_sleep(30)');
+					// handled now: the kill may reject it before the killer's own answer arrives
+					sleeping.catch(() => {});
+					await killer.query('SELECT pg_terminate_backend($1)', [row!.pid]);
+					await sleeping;
+				})
+			);
+			// 57P01 admin_shutdown — the statement's own error, not pg's "not queryable"
+			assert.strictEqual(pg_error_code(err), '57P01', String(err));
+			await removed;
+		} finally {
+			await killer.end();
+		}
+		// the dead client was discarded: the pool's next checkout is a live one
+		assert.deepStrictEqual(await db.query<{ n: number }>('SELECT 1 AS n'), [{ n: 1 }]);
+	});
+
+	test('an idle client losing its connection is reported, and the next query connects afresh', async () => {
+		const warnings: Array<string> = [];
+		const pool = await create_one_client_pool(5_000, {
+			warn: (...args: Array<unknown>) => warnings.push(args.join(' '))
+		});
+		pools.push(pool);
+		const { db } = create_pg_db(pool);
+		const [row] = await db.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+		const removed = new Promise((resolve) => pool.once('remove', resolve));
+		const { default: pg } = await import('pg');
+		const killer = new pg.Client({ connectionString: url });
+		await killer.connect();
+		try {
+			// the client sits idle in the pool; no listener of the test's own
+			await killer.query('SELECT pg_terminate_backend($1)', [row!.pid]);
+			await removed;
+		} finally {
+			await killer.end();
+		}
+		assert.strictEqual(warnings.length, 1, 'the lost connection was reported once');
+		assert.include(warnings[0], 'lost its connection while idle');
+		const [next] = await db.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+		assert.notStrictEqual(next!.pid, row!.pid, 'a fresh connection');
 	});
 });
