@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.-T-cqIZI.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DNbr2YDK.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CRXetCk-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.AfCA46RM.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bb8Rpmqb.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C1Fb9P30.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/D72rVJso.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CltqCWw8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -129,7 +129,7 @@ WS round-trip suite, the per-account connection-cap suite
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/ws_connection_cap.ts#describe_ws_connection_cap_cross_tests"><!--[0--><!--[-1-->describe_ws_connection_cap_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the front door's
 WS-path cases (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/transport_composition.ts#describe_transport_composition_cross_tests"><!--[0--><!--[-1-->describe_transport_composition_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — the
 upgrade rows, and the rows that ask for no upgrade, which run in-process
-too; the in-process <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->describe_ws_round_trip_tests<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> runs against
+too; the in-process WS harness (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/ws_round_trip.ts#create_ws_test_harness"><!--[0--><!--[-1-->create_ws_test_harness<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) runs against
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#register_action_ws"><!--[0--><!--[-1-->register_action_ws<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> directly and ignores this flag.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[-1--><code data-lang="ts" class="svelte-jqsy8a inline"><!--[-1--><!----><span class="token_builtin">boolean</span><!----><!--]--></code><!--]--><!----></p><!--]--> <!--[0--><div class="row_wrap gap_md"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>sse<!--[-1--><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->SSE transport is reachable end-to-end. Gates the cross-process SSE
 suite (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/sse_round_trip.ts#describe_cross_process_sse_tests"><!--[0--><!--[-1-->describe_cross_process_sse_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — connect, audit data frame,
 close-on-revoke, the per-session stream cap); in-process SSE uses the
@@ -406,16 +406,16 @@ upgrade whose first <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->
 			
 			<script>
 				{
-					__sveltekit_1kl7x82 = {
+					__sveltekit_16bsxyd = {
 						base: "",
-						version: "83b38464a0ba250b3ef6539bd6f00f2f6438134f"
+						version: "7e230c4d9a51d5ddd78c5c3196611578a3126baf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1kl7x82);
-						const app = await import("/_app/immutable/entry/app.-T-cqIZI.js");
+						kit.init(__sveltekit_16bsxyd);
+						const app = await import("/_app/immutable/entry/app.CRXetCk-.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

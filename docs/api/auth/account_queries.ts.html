@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.-T-cqIZI.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DNbr2YDK.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CRXetCk-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.AfCA46RM.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bb8Rpmqb.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C1Fb9P30.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/D72rVJso.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CltqCWw8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -242,9 +242,9 @@ account does not conflict with it, so no write that merely references the
 account waits on a login. Besides the writers it orders against, it
 conflicts with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/account_queries.ts#query_account_lock_live"><!--[0--><!--[-1-->query_account_lock_live<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (the token mint, the same
 strength), the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->FOR SHARE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> of <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/account_queries.ts#query_account_lock_live_many"><!--[0--><!--[-1-->query_account_lock_live_many<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (an offer,
-invite or assign create), an offer accept's locks (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/account_queries.ts#query_account_lock_for_offer_accept"><!--[0--><!--[-1-->query_account_lock_for_offer_accept<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
-the recipient's at this strength, a grantor's shared), and the last-admin
-guard's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->FOR NO KEY UPDATE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. None of
+invite or assign create), an offer accept's locks
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/account_queries.ts#query_account_lock_for_offer_accept"><!--[0--><!--[-1-->query_account_lock_for_offer_accept<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, the recipient's at this strength, a
+grantor's shared), and the last-admin guard's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->FOR NO KEY UPDATE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. None of
 those waits on an account row while holding a session row, and once a mint
 holds the lock it waits on nothing but the session rows its eviction
 deletes, so no cycle runs through it. Twin of the Rust
@@ -330,16 +330,16 @@ stale-credential failure) or the account is deleted.<!--]--><!--]--><!----></p><
 			
 			<script>
 				{
-					__sveltekit_1kl7x82 = {
+					__sveltekit_16bsxyd = {
 						base: "",
-						version: "83b38464a0ba250b3ef6539bd6f00f2f6438134f"
+						version: "7e230c4d9a51d5ddd78c5c3196611578a3126baf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1kl7x82);
-						const app = await import("/_app/immutable/entry/app.-T-cqIZI.js");
+						kit.init(__sveltekit_16bsxyd);
+						const app = await import("/_app/immutable/entry/app.CRXetCk-.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

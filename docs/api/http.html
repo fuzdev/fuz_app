@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.-T-cqIZI.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DNbr2YDK.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.CRXetCk-.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.AfCA46RM.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Bb8Rpmqb.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C1Fb9P30.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/D72rVJso.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CltqCWw8.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -383,13 +383,14 @@ against it. Three exemptions: a 500 <!--]--><!--[3--><!--[0--><!--[--><!--[-1-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->service_unavailable<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#ALWAYS_ACCEPTED_ERRORS"><!--[0--><!--[-1-->ALWAYS_ACCEPTED_ERRORS<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), which the catch layers
 answer on any route and no route declares, and, on a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->jsonrpc<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> route, a
 JSON-RPC error envelope, which no REST error definition describes. A
-non-JSON response, by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#is_json_response"><!--[0--><!--[-1-->is_json_response<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, is not checked at all.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Also the hono-free route lookup the test helpers run (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/integration_helpers.ts#find_route_spec"><!--[0--><!--[-1-->find_route_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->):
-a route's Hono path template read segment by segment (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#split_route_template"><!--[0--><!--[-1-->split_route_template<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#parse_route_param"><!--[0--><!--[-1-->parse_route_param<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and compiled to a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RegExp<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#compile_route_path"><!--[0--><!--[-1-->compile_route_path<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->),
-and the first route in mount order matching a request, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->HEAD<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> read as
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#find_mounted_route"><!--[0--><!--[-1-->find_mounted_route<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). The DEV check, on the Hono side, looks routes
-up with Hono's own router (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/dev_route_error_check.ts#create_route_lookup"><!--[0--><!--[-1-->create_route_lookup<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->); the two are pinned
-against Hono and each other by the route-lookup tests.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Hono-free and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->esm-env<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->-free.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/route_errors.ts"><!--[-1-->http/route_errors.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->A route's error map: every error definition it can answer with — derived
+non-JSON response, by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#is_json_response"><!--[0--><!--[-1-->is_json_response<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, is not checked at all.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Also the hono-free route lookup the test helpers run (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/integration_helpers.ts#find_route_spec"><!--[0--><!--[-1-->find_route_spec<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/integration_helpers.ts"><!--[0--><!--[-1-->testing/integration_helpers.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->): a route's Hono path template read
+segment by segment (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#split_route_template"><!--[0--><!--[-1-->split_route_template<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#parse_route_param"><!--[0--><!--[-1-->parse_route_param<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and
+compiled to a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RegExp<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#compile_route_path"><!--[0--><!--[-1-->compile_route_path<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the first route in mount
+order matching a request, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->HEAD<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> read as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_error_check.ts#find_mounted_route"><!--[0--><!--[-1-->find_mounted_route<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->). The
+DEV check, on the Hono side, looks routes up with Hono's own router
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/dev_route_error_check.ts#create_route_lookup"><!--[0--><!--[-1-->create_route_lookup<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->); the two are pinned against Hono and each other by
+the route-lookup tests.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Hono-free and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->esm-env<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->-free.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/route_errors.ts"><!--[-1-->http/route_errors.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->A route's error map: every error definition it can answer with — derived
 from its slots (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/error_schemas.ts#derive_route_errors"><!--[0--><!--[-1-->derive_route_errors<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), declared by each middleware layer
 that runs on it, and its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->errors<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — and the status map they group into.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Built once per app (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/http/route_errors.ts#resolve_app_route_error_maps"><!--[0--><!--[-1-->resolve_app_route_error_maps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, carried as
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppSurfaceSpec.route_error_maps<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and read by every reader of a route's
@@ -453,16 +454,16 @@ error map (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declara
 			
 			<script>
 				{
-					__sveltekit_1kl7x82 = {
+					__sveltekit_16bsxyd = {
 						base: "",
-						version: "83b38464a0ba250b3ef6539bd6f00f2f6438134f"
+						version: "7e230c4d9a51d5ddd78c5c3196611578a3126baf"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_1kl7x82);
-						const app = await import("/_app/immutable/entry/app.-T-cqIZI.js");
+						kit.init(__sveltekit_16bsxyd);
+						const app = await import("/_app/immutable/entry/app.CRXetCk-.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
