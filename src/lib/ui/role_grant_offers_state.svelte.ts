@@ -89,9 +89,9 @@ export const role_grant_offers_state_context = create_context<RoleGrantOffersSta
 
 /**
  * Narrow RPC surface consumed by `RoleGrantOffersState`. Consumers adapt their
- * typed client (e.g. a `create_rpc_client` Proxy) to this shape — the state
- * class stays decoupled from the client's `Result` return type so tests can
- * inject plain-function stubs. Each method takes its action's input as one
+ * typed throwing client (`api` from `create_frontend_rpc_client`, or
+ * `create_throwing_api` over a `create_rpc_client` Proxy) to this shape, so
+ * tests can inject plain-function stubs. Each method takes its action's input as one
  * params object and returns its output, both typed from the action specs, so
  * the typed throwing client's methods bridge with no casts.
  */

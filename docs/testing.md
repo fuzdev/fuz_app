@@ -42,7 +42,7 @@ route assembly to prevent drift.
 export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	create_health_route_spec(),
 	...prefix_route_specs('/api/account', create_account_route_specs(ctx.deps, account_options)),
-	...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),
+	...prefix_route_specs('/api/admin', create_audit_log_route_specs({ stream: require_audit_sse(ctx) })),
 	...prefix_route_specs('/api', my_app_routes(ctx))
 ];
 ```
@@ -62,10 +62,25 @@ single worker over one shared WASM instance per driver:
 ```typescript
 // vite.config.ts
 test: {
-  projects: [
-    {extends: true, test: {name: 'unit', include: ['src/test/**/*.test.ts'], exclude: ['src/test/**/*.db.test.ts']}},
-    {extends: true, test: {name: 'db', include: ['src/test/**/*.db.test.ts'], isolate: false, fileParallelism: false}},
-  ],
+	projects: [
+		{
+			extends: true,
+			test: {
+				name: 'unit',
+				include: ['src/test/**/*.test.ts'],
+				exclude: ['src/test/**/*.db.test.ts']
+			}
+		},
+		{
+			extends: true,
+			test: {
+				name: 'db',
+				include: ['src/test/**/*.db.test.ts'],
+				isolate: false,
+				fileParallelism: false
+			}
+		}
+	]
 }
 ```
 
@@ -82,6 +97,7 @@ import type { Db } from '@fuzdev/fuz_app/db/db.ts';
 import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '@fuzdev/fuz_app/auth/migrations.ts';
 import {
+	auth_integration_truncate_tables,
 	create_default_db_factory,
 	create_pg_factory,
 	type DbFactory
@@ -92,15 +108,8 @@ const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS, MY_APP_MIGRATION_NS]);
 };
 
-// Tables to truncate between tests (order matters for FK constraints)
-const TRUNCATE_TABLES = [
-	'api_token',
-	'auth_session',
-	'role_grant',
-	'actor',
-	'account',
-	...app_tables
-];
+// auth tables plus audit_log, then the app's own (CASCADE covers FK children)
+const TRUNCATE_TABLES = [...auth_integration_truncate_tables, ...MY_APP_TABLES];
 
 export const default_factory = create_default_db_factory(init_schema);
 const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
@@ -112,7 +121,7 @@ export const describe_db = create_describe_db(db_factories, TRUNCATE_TABLES);
 `pg_factory` auto-skips when `TEST_DATABASE_URL` is not set. The default factory
 always runs: pglet-wasm (`@fuzdev/pglet-wasm`, an optional peer — install it as a
 devDependency), or the driver a `set_default_db_factory` call installed before it
-was built (see [Switching the default driver](#switching-the-default-driver)).
+was built (§Switching the default driver).
 `create_pglite_factory` and `create_pglet_wasm_factory` pin a driver. A test
 using a factory directly closes each database it created with
 `factory.close(db)`.
@@ -164,14 +173,23 @@ the builder from a vitest `setupFiles` entry on the `db` project:
 
 ```typescript
 // src/test/db_default.ts
-import {create_pglite_factory, set_default_db_factory} from '@fuzdev/fuz_app/testing/db.ts';
+import { create_pglite_factory, set_default_db_factory } from '@fuzdev/fuz_app/testing/db.ts';
 
 if (process.env.MY_TEST_DB === 'pglite') set_default_db_factory(create_pglite_factory);
 ```
 
 ```typescript
 // vite.config.ts — the `db` project
-{extends: true, test: {name: 'db', include: ['src/test/**/*.db.test.ts'], setupFiles: ['./src/test/db_default.ts'], isolate: false, fileParallelism: false}},
+{
+	extends: true,
+	test: {
+		name: 'db',
+		include: ['src/test/**/*.db.test.ts'],
+		setupFiles: ['./src/test/db_default.ts'],
+		isolate: false,
+		fileParallelism: false
+	}
+}
 ```
 
 The builder is read when a factory is **built**, so it must be installed
@@ -241,10 +259,10 @@ test's app on a database the suite owns, in place of
 Excess properties on the spread are fine — a suite that doesn't read
 `rpc_endpoints` at its top level ignores it.
 
-In-process-only suites (`describe_sse_route_tests`,
-`describe_ws_round_trip_tests`) and the attack-surface and adversarial
-suites — pure schema walks over the surface, with no database or transport —
-keep signatures of their own.
+The in-process-only suite (`describe_sse_route_tests`), the WS test harness
+(`create_ws_test_harness`, `testing/ws_round_trip.ts`), and the attack-surface
+and adversarial suites — pure schema walks over the surface, with no database
+or transport — keep signatures of their own.
 
 ### Database invariants after every test
 
@@ -569,11 +587,8 @@ describe('app-specific integration', () => {
 
 `TestApp` (`testing/test_app.ts`) carries the app, the assembled server and
 surface, header builders for the bootstrapped session, bearer token and
-daemon token, `create_account`, `assert_db_invariants`, and `cleanup` (the
-server's idempotent `close`, throwing when its drain gave up on work the test
-left in flight — bounded by `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS` unless
-`app_options` sets `shutdown_drain_timeout_ms`; a test that gives up on
-purpose reads the report from `server.close()`). `create_account` returns a
+daemon token, `create_account`, `assert_db_invariants`, and `cleanup`
+(§Test apps close when their test finishes). `create_account` returns a
 `TestAccount` with its own header builders, so multi-account tests need no
 cookie assembly:
 
@@ -972,8 +987,7 @@ suites provoke on purpose; add what your own suites provoke with
 `log_path: null` to keep no log. A setup that provokes errors of its own adds
 them with `with_backend_log_allowances(config, allow)`. A line is not
 attributed to the test that provoked it, so an allowance names the error, not
-the test. The TS builder also sets `PUBLIC_LOG_LEVEL` (`'warn'`), without
-which a TS backend's `Logger`s print nothing in a vitest run.
+the test.
 
 ### Consumer wire-up recipe
 
@@ -1018,7 +1032,7 @@ is hidden in the spawn's stderr tail. `prepare_cargo_binary`
 (`testing/cross_backend/cargo_binary.ts`) builds it first with its output shown,
 as the `before_spawn` hook, and the config names the binary
 `resolve_cargo_binary_path` reports (`CARGO_TARGET_DIR` honoured).
-`FUZ_TESTING_NO_REBUILD=1` skips the build:
+`FUZ_TESTING_NO_REBUILD=1` skips the build (§Rebuild-by-default workflow):
 
 ```ts
 // my_backend_config.ts

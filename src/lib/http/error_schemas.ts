@@ -709,9 +709,10 @@ export const derive_route_errors = ({
 		defs.push(REST_AUTHENTICATION_REQUIRED);
 	}
 
-	// 403 fires from any of three gates: the token-scope refusal
-	// (`auth.required_scope`, pre-authorization), the credential-type gate, and
-	// the role gate (both post-authorization), in the order they fire
+	// 403 fires from any of three gates: the credential-type gate and the
+	// token-scope refusal (`auth.required_scope`) — before the authorization
+	// phase on REST, after it in the RPC dispatcher — and the role gate, after
+	// it on both
 	if (auth.required_scope !== undefined) defs.push(REST_TOKEN_SCOPE_REQUIRED);
 	if (auth.credential_types?.length) defs.push(REST_CREDENTIAL_TYPE_REQUIRED);
 	if (auth.roles?.length) defs.push(REST_INSUFFICIENT_PERMISSIONS);

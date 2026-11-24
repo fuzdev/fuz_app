@@ -5,13 +5,14 @@
 > send/receive.
 
 For consumer wiring (client-authoritative vs server-authoritative dispatch,
-role-grant-offer UI integration), see ../../../docs/usage.md §Deriving
-Event Specs from Action Specs, §Single JSON-RPC 2.0 Endpoint, §WebSocket Endpoint. For
-DEV-only output validation semantics see ../../../docs/architecture.md
-§DEV-only Output Validation. For the phase order and middleware ordering see
-the root ../../../CLAUDE.md §Action Spec System (SAES) and §Middleware
-Ordering. The WS security properties (admission, the per-account cap, request
-and outbound bounds, closing on revocation) are ../../../docs/security.md's.
+role-grant-offer UI integration), see ../../../docs/usage.md
+§Deriving Event Specs from Action Specs, §Single JSON-RPC 2.0 Endpoint,
+§WebSocket Endpoint. For DEV-only output validation semantics see
+../../../docs/architecture.md §DEV-only Output Validation. For the phase order
+and middleware ordering see the root ../../../CLAUDE.md
+§Action Spec System (SAES) and §Middleware Ordering. The WS security properties
+(admission, the per-account cap, request and outbound bounds, closing on
+revocation) are ../../../docs/security.md's.
 
 **CLAUDE.md is a map; TSDoc is the detail.** Per-symbol semantics
 (parameters, options, defaults, lifecycle methods, narrowing rules) live on
@@ -133,8 +134,9 @@ The helpers, used by consumer `*.gen.ts` producers, not the runtime:
 `generate_action_specs_record`, `generate_action_inputs_outputs`,
 `generate_frontend_actions_api`, `generate_backend_actions_api`,
 `generate_action_event_datas`, `generate_typed_action_event_alias`,
-`generate_phase_handlers`, `generate_frontend_action_handlers`. The default
-paths are `DEFAULT_COLLECTIONS_PATH` and siblings.
+`generate_phase_handlers`, `generate_frontend_action_handlers`. The
+`collections_path` / `metatypes_path` options default to
+`./action_collections.ts` / `./action_metatypes.ts`.
 
 The rules a consumer acts on:
 
@@ -187,14 +189,7 @@ module's TSDoc and pinned by the `query_shape` cross suite.
   Every answer of the GET route carries `Cache-Control: no-store`
   (`RPC_GET_CACHE_CONTROL`, declared as `response_headers`); a refusal by
   middleware ahead of the route does not.
-- **Phase order: 401 → authz → 403 → 429 → 400 → handler.** Authorize first,
-  throttle, validate after — a caller the authority gates refuse never learns
-  the action's input shape, the coarse authority facts settle before the fine
-  ones, and a malformed flood burns the budget it should. The Rust spine's
-  dispatcher keeps the same order (it refuses a non-object `params` and
-  validates the `acting` selector after the rate limit), so an anonymous
-  `GET` with `?params=42` is a 401 on both spines and an authorized one is
-  `invalid_params`.
+- **Phase order** — §Shared dispatch core.
 - **Errors.** A `ThrownJsonrpcError` (recognized by its realm-global brand,
   `http/CLAUDE.md` §JSON-RPC) keeps its code and data. Any other throw is
   `internal_error` 500, its message the raw error only under `DEV`, unless
@@ -202,17 +197,17 @@ module's TSDoc and pinned by the `query_shape` cross suite.
   HTTP client gone): then it is `request_cancelled`, in the authorization
   phase and the handler alike, logged at debug when the throw is the
   cancellation itself (the signal's reason or an `AbortError`) and at warn
-  when it is anything else — a fault that landed after the cancel.
+  when it is anything else — a fault that landed after the cancel. A result
+  that can't be serialized answers the same 500 rather than throwing: the
+  action has committed by then, and a throw would discard the handler's
+  `post_commit_effects` — the connection closes of a revocation that landed.
   **Twin difference:** the Rust dispatcher answers a handler's `Err` as
   returned, so over WS, with a per-request `cancel` and the socket still open,
   a Rust handler that bails with `internal_error` answers `internal_error` and
   logs at error where the error is built (`internal_error_with_source`); the
   twin's answer is `request_cancelled`. Rust can't twin the log, which is
   written at construction, before the dispatcher sees the error; a Rust
-  handler bails with `request_cancelled`. A result
-  that can't be serialized answers the same 500 rather than throwing: the
-  action has committed by then, and a throw would discard the handler's
-  `post_commit_effects` — the connection closes of a revocation that landed.
+  handler bails with `request_cancelled`.
 
 ### `rpc_action(spec, handler)` — typed binder
 
@@ -237,13 +232,20 @@ The transport-agnostic post-parse pipeline: each transport assembles a
 `notify`, the WS connection and peer client) and binds the
 `PerformActionResult` to its wire shape. `ActionContext`
 (`actions/action_types.ts`) is the one handler context on both transports;
-fields on TSDoc. The steps, in the phase order above:
+fields on TSDoc. The steps run in order: 401 → authz → 403 → 429 → 400 →
+handler. Authorize first, throttle, validate after — a caller the authority
+gates refuse never learns the action's input shape, the coarse authority facts
+settle before the fine ones, and a malformed flood burns the budget it should.
+The Rust spine's dispatcher keeps the same order (it refuses a non-object
+`params` and validates the `acting` selector after the rate limit), so an
+anonymous `GET` with `?params=42` is a 401 on both spines and an authorized one
+is `invalid_params`:
 
 1. Pre-authorization auth (401)
 2. Authorization phase — `apply_authorization_phase` against the account and `read_acting(auth, raw_params)`, which reads the selector off the raw params (malformed reads as omitted) since validation runs later
 3. Post-authorization auth (403) — credential-type gate, then token scope (`rpc:<method>`), then role
 4. Rate limit (429) — charged ahead of validation, so a throttled caller pays no schema work
-5. Validate params (400) — `to_input_params` (`http/schema_helpers.ts`: the `__proto__` and NUL refusals, the void-input normalization, `http/CLAUDE.md` §Schema Helpers), then `spec.input`; a refusal is `to_invalid_params_error`, its `data.reason` the field's declared `invalid_reason` (../../../docs/architecture.md §Error Schema System)
+5. Validate params (400) — `scan_json_value` (the `__proto__` and NUL refusals), then `to_input_params` (the void-input normalization; both `http/schema_helpers.ts`, `http/CLAUDE.md` §Schema Helpers), then `spec.input`; a refusal is `to_invalid_params_error`, its `data.reason` the field's declared `invalid_reason` (../../../docs/architecture.md §Error Schema System)
 6. Dispatch — `spec.side_effects` picks a transaction or the pool; DEV-only output validation
 
 Rules a handler author would miss:

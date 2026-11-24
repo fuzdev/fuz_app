@@ -111,6 +111,11 @@ permits null `source_offer_id` for exactly this case. For tests exercising
 the production grant flow, drive `role_grant_offer_and_accept` from
 `role_grant_helpers.ts` instead.
 
+`soft_delete_test_actor(db, actor_id)` tombstones one actor through the
+production `query_actor_soft_delete` (`true` when an active row flipped), for
+seeding the multi-actor tombstone state directly — no per-actor-delete RPC
+ships.
+
 ### `role_grant_helpers.ts` — RPC-flow role_grant helpers
 
 `role_grant_offer_and_accept({app, rpc_path, grantor, recipient, role})`
@@ -129,7 +134,7 @@ mismatch.
 - `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks the `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts` and the emitter's write-failure counter (`get_audit_write_failures` in `auth/audit_emitter.ts`). Call once at the top of any `describe_db` block firing audit emits — production validation and the emitter's write are fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field, or losing a row the database refused, is silent. A test that fails a write on purpose resets the counter (`reset_audit_write_failures`) once it has asserted it. It also zero-checks the success-outside-a-transaction counter (`get_audit_success_outside_transaction`; `reset_audit_success_outside_transaction` for a test that writes one on purpose).
 - `assert_audit_event_metadata(event, {reject_unknown_keys?})` — the wire-side twin: parses a read audit row's `metadata` against its builtin event type's `audit_metadata_schemas` entry as declared, so a mistyped, `null`, or missing field fails while a consumer-added key passes (the schemas are fuz_schema `loose_object`s, and a builtin's schema can't be overridden, so added keys are a consumer's only extension path). `reject_unknown_keys` closes the world, each `loose_object`'s `def` spread into an `object`: an undeclared key fails too, for a suite whose backend adds none. The wire schema leaves `metadata` a loose record and only the TS spine validates it, at insert and fail-open, so this is what holds every spine's rows to their event's contract. A consumer-registered event type passes unexamined. `list_audit_events` and the admin suite run it on every row they read, with `reject_unknown_keys` from the fixture's `reject_unknown_audit_metadata_keys` (a setup option on `default_cross_process_setup`, `default_in_process_setup` and `default_in_process_suite_options`); fuz_app's own spine wiring turns it on.
 - `assert_no_audit_drift()` — the zero-check itself, for a test that manages the counters. Pair with `await_pending_effects: true`.
-- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released.
+- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit`, `emit_pool` and `emit_role_grant_target` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
 ### `logged_errors.ts` — fail a test on an error it logs
@@ -269,6 +274,7 @@ Key module-scope values:
 - `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`TEST_ORIGIN` allowed, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` spreads it under its own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
 - `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
+- `DEFAULT_TEST_PASSWORD` (`test_credentials.ts`, a hono-free leaf so a cross-process setup imports it without the Hono test app) — the password the in-process and cross-process fixtures bootstrap and log in with.
 
 Two helpers share the "insert account + actor + roles + API token + session +
 cookie" flow, split by intent:
@@ -364,6 +370,10 @@ middleware never sets `TEST_CONTEXT_PRESET_KEY`, and only the symbol counts
 - `diff_migration_trackers(a, b)` / `format_migration_tracker_diffs(diffs, labels?)` / `assert_migration_trackers_equal(a, b, labels?)` — the migration-identity twins of the snapshot diff/format/assert, over two `MigrationTracker`s. `MigrationTrackerDiff` is keyed on `(namespace, name)` (the `schema_version` PK): `tracker_row_only_in` (a migration rename or namespace re-partition) and `tracker_sequence_differs` (a re-order).
 
 fuz_app's own spine gates this cross-process via the `cross_backend_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:parity`. Both legs run on PostgreSQL there: index definitions are compared as the engine renders them, and pglet (what `memory://` gives a TS backend) leaves sort direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT` out of `indexdef`, so a snapshot taken on it differs from a PostgreSQL one with identical DDL. The forge has its own deno↔rust parity gate.
+
+### `schema_ready_fixture.ts` — `sync_expected_schema_fixture`
+
+- `sync_expected_schema_fixture(options)` — guards a consumer's committed `expected_schema.json` (the `/ready` schema-drift probe's fixture, served through `create_ready_route_spec`): introspects a freshly bootstrapped database, writes the fixture when an update flag is set, and reads it back for the test to compare with a fresh bootstrap.
 
 ## Cross-impl RPC-manifest parity
 
@@ -536,7 +546,7 @@ contract-surface concerns a runtime registration check cannot reach.
 
 Policy invariants (configurable, sensible defaults):
 
-- `assert_sensitive_routes_rate_limited` — routes matching `sensitive_route_patterns` (default: `/login`, `/password`, `/bootstrap`, `/tokens/create`) declare rate limiting or a 429 schema.
+- `assert_sensitive_routes_rate_limited` — routes matching `sensitive_route_patterns` (default: `/login`, `/password`, `/bootstrap`) declare rate limiting or a 429 schema.
 - `assert_no_unexpected_public_mutations` — public mutation routes must be in `public_mutation_allowlist`.
 - `assert_mutation_routes_use_post` — routes with input schemas must not be GET (bypasses browser GET idempotency assumptions).
 - `assert_keeper_routes_under_prefix` — keeper routes must be under `keeper_route_prefixes` (default `['/api/']`).
@@ -608,6 +618,7 @@ adversarial/round-trip tests. A value that is no schema throws, naming it.
 - `assert_no_sensitive_fields_in_json(body, blocklist, context)` — rejects any key in the blocklist at any depth.
 - `to_principal_transport(principal, fixture)` — the transport a principal's request goes through, so it carries that principal's credential and nothing else: cookie-free with no `Origin` for the daemon token, cookie-free for a public call, the fixture's own for a session principal (whose `Cookie` header replaces the jar's). An anonymous probe over the fixture's transport authenticates as the keeper, whose cookie its jar carries, and a bearer one throws (`fetch_transport.ts`) — send those through `fixture.fresh_transport()`.
 - `pick_auth_headers(spec, test_app, authed_account, admin_account)` — `RouteAuth` → appropriate test credentials; role `admin` uses `admin_account`, other roles use bootstrapped keeper, `keeper` uses daemon token.
+- `to_principal_headers(principal, keeper, authed_account, admin_account)` — the request headers carrying a principal's credential (the principal `pick_auth_principal` chose).
 
 ## Attack surface suites
 
@@ -693,6 +704,8 @@ own test file.
 Each case declares `validate_expectation: 'called' | 'not_called'` so the
 suite asserts that short-circuit middleware actually fires before token
 validation. Extra cases append to the standard list.
+`create_standard_adversarial_cases(allowed_origin)` returns the standard
+cases alone.
 
 ## Middleware stack — `middleware.ts`
 
@@ -760,6 +773,10 @@ consumer's `register_jsonrpc_error_code`) passes. Options: `{setup_test,
 surface_source, session_cookie_name, rpc_endpoints, skip_methods?,
 input_overrides?, success_fixtures?}`; a method no picked principal can reach
 goes in `skip_methods`.
+`pick_rpc_auth(method, keeper, authed_account, admin_account)` picks that
+principal and its headers from any `KeeperHeaderProvider` (`TestApp` or
+`TestFixture`); `assert_rpc_authenticated(method, status, body, principal)` is
+the 401 and `credential_type_required` check above.
 
 A side-effecting method picked for the authed account runs on a fresh account
 of its own (`round_trip_uses_fresh_account`, keyed on the spec's
@@ -824,7 +841,7 @@ cover real sockets.
 Three layers:
 
 1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` recording `sends` / `closes` over a fake Node-`ws`-shaped `socket` with `bufferedAmount`, `stalled` and `terminate`, for backpressure and frameless-cut tests), `create_fake_hono_context(opts)` (sets the `ResolvedAuth` the auth middleware would — the dispatcher reads it, so a hand-built upgrade context must too), `create_stub_upgrade()` (a stand-in for the runtime's `upgradeWebSocket` that records each upgrade's real `Context`, so an upgrade can run through an assembled app's whole middleware chain — `src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`), `MinimalActionEnvironment`, `dispatch_ws_message`.
-2. **Harness** — `create_ws_test_harness({actions, registry?, receive_timeout?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`; `await harness.connect(identity?)` resolves once the connection is admitted and `on_socket_open` has run. Identities are preset (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read, so tests of the re-read drive `register_action_ws` over a real database (`src/test/actions/register_action_ws.admission.db.test.ts`). Handlers run under the stub db's transaction wrap; domain deps and the audit emitter reach them through the action factory's closure.
+2. **Harness** — `create_ws_test_harness({actions, registry?, receive_timeout?, log?, on_socket_open?, on_socket_close?, on_request?})` → `WsTestHarness`; `await harness.connect(identity?)` resolves once the connection is admitted and `on_socket_open` has run. Identities are preset (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read, so tests of the re-read drive `register_action_ws` over a real database (`src/test/actions/register_action_ws.admission.db.test.ts`). Handlers run under the stub db's transaction wrap; domain deps and the audit emitter reach them through the action factory's closure.
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts).
 
 `WsClient` (in `transports/ws_client.ts`):
@@ -1082,9 +1099,10 @@ One-shot transport:
 - `http_transport(app)` — adapter for anything with a `request()` method.
 - `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
 - `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` keeps only its last value — read `getSetCookie()` for cookies). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
-- `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
+- `RpcCallArgs` — `{app, path, method, params?, params_json?, headers?, id?, verb?, suppress_default_origin?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods. `params_json` sends raw JSON text in place of `params` (exclusive with it) on either verb.
 - `rpc_call_raw(args)` — the same request as `rpc_call`, the response unparsed: `RpcCallRawResult` `{status, headers, set_cookies, body}` with the whole envelope (`set_cookies` every `Set-Cookie` line in order — the headers snapshot folds them). `parse_rpc_call_result(raw, method)` turns it into an `RpcCallResult`; `rpc_call` is the two composed.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: TEST_ORIGIN`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
+- `rpc_call_non_browser(args)` — `rpc_call` without the default `origin`, for bearer probes: a bearer token sent with `Origin` is discarded as browser context, so the probe would never reach token validation.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema (`parse`); throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
 - `rpc_call_for_spec<TSpec>(args)` — spec-bound variant: takes `{..., spec, params}` in place of `{..., method, params}`. `params` is typed from `spec.input` and the success `result` is typed from `spec.output` (runtime-validated, same contract as `rpc_call_typed`). Error branch stays untyped (JSON-RPC `error.data` shapes vary per call site). Use at happy-path + denial-path call sites; fall back to `rpc_call` for adversarial tests that send deliberately-malformed params.
 
@@ -1246,8 +1264,9 @@ here never reaches it.
   the modules left out, each with why: the
   `differential` (two handles), `login_security` and `ws_action_rate_limit`
   (a backend spawned with live limiters, which the standard suites would
-  exhaust), the `conformance_table` runner (the consumer's own cases), and
-  `standard_bundle` (the two standard halves in one call).
+  exhaust), the `conformance_table` runner (the consumer's own cases),
+  `backend_swap` and `backend_both_live` (two backends of their own over one
+  database), and `standard_bundle` (the two standard halves in one call).
   `src/test/testing/cross_backend/spine_suites.test.ts` imports every module
   under `cross_backend/` and holds the two lists to the ones exporting a
   `describe_*` function, whatever the export form (the Bun adapter,
@@ -1370,8 +1389,10 @@ conformance cases assert _expected behavior_ — the security negatives
 (must be refused / must not leak / found-vs-not-found same shape) a
 wire-shape check passes green on even when behavior is wrong.
 
-- `conformance_case.ts` — the `ConformanceCase` type (data, never parsed): `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status, error_reason?, error_code?, fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. `method` resolves its schemas from the live registry (RPC) or the REST auth routes. `as` is a closed `ConformancePrincipal` — fixture accessors, never inline minting; what each principal sends and which leg refuses it is on the type. `acting` (`ConformanceActingBinding`) has the runner fill `params.acting` with a real actor id. Beyond status and reason (`error_reason: null` pins an RPC denial carrying no `data.reason`): `error_code` (else the status's default JSON-RPC code), `equivalence_group` (members answer byte-identical `{status, body}`), `headers` (present-and-equal, or `null` for absent), `set_cookie` (a `SessionCookieEffect`; **omitted means `'none'`**). Always checked: no fingerprint header (`FINGERPRINT_HEADERS`), and no session cookie minted outside 2xx. `check_conformance_cases` refuses a row that can't mean anything.
+- `conformance_case.ts` — the `ConformanceCase` type (data, never parsed): `{name, request: {method, params?, params_json?, as, acting?, verb?}, expect: {status, error_reason?, error_code?, fields?, absent_fields?, headers?, set_cookie?, equivalence_group?}, note?, xfail?}`. `method` resolves its schemas from the live registry (RPC) or the REST auth routes. `as` is a closed `ConformancePrincipal` — fixture accessors, never inline minting; what each principal sends and which leg refuses it is on the type. `acting` (`ConformanceActingBinding`) has the runner fill `params.acting` with a real actor id. Beyond status and reason (`error_reason: null` pins an RPC denial carrying no `data.reason`): `error_code` (else the status's default JSON-RPC code), `equivalence_group` (members answer byte-identical `{status, body}`), `headers` (present-and-equal, or `null` for absent), `set_cookie` (a `SessionCookieEffect`; **omitted means `'none'`**). Always checked: no fingerprint header (`FINGERPRINT_HEADERS`), and no session cookie minted outside 2xx. `check_conformance_cases` refuses a row that can't mean anything.
 - `conformance_table.ts` — `describe_conformance_table_tests({cases, setup_test, surface_source, capabilities, rpc_endpoints, live_rpc_endpoints?, session_cookie_name, principals?, ws?, suite_name?})`, on the Tier 1 fixture protocol, so **one case array runs in-process and cross-process**. Methods resolve from `rpc_endpoints`, then `live_rpc_endpoints` (methods kept off the declared surface; fuz_app's is `create_spine_live_rpc_endpoints()`) — `resolve_conformance_rpc_endpoints`; `send_conformance_case` is the send half the differential shares; `role_holder` / `wrong_role` read an `extra_accounts` username named in `principals`. `ws` (cross-process only) re-sends each case `is_ws_conformance_case` admits as one frame on a socket the principal opens, under the same expectations; an equivalence group left with one member there is dropped.
+- `conformance_principal.ts` — `resolve_conformance_principal(fixture, as, principals?, resolved_rpc_endpoints?)` → the transport and headers a `ConformancePrincipal` sends with; also used by suites that send a principal's requests themselves (`describe_rpc_adversarial_cross_tests`), and apart from the table's WS leg so an HTTP-only suite reaches no socket transport.
+- `session_cookie_effect.ts` — `SessionCookieEffect` (`'none' | 'clear' | 'set' | 'clear_then_set'`) read off a response's `Set-Cookie` lines (`classify_session_cookie_effect`), spelled through the spine's own cookie formatters so a drifted attribute classifies as `null`; shared by the runner's `expect.set_cookie` and the differential.
 - `conformance_rpc_auth.ts` — `generate_rpc_auth_conformance_cases({surface_source,
   live_rpc_endpoints?, skip_methods?})` → `ConformanceCase[]` from each declared RPC method's
   `RouteAuth`, then each live-mounted one the declared surface lacks
@@ -1645,6 +1666,19 @@ Conventions that hold across them:
   (`{dir}/bootstrap/bootstrap_token`, so the burn probe can make that
   directory unwritable without touching the rest), and its parent is not the
   root.
+- `testing/cross_backend/build_test_backend_paths.ts` — each backend's temp
+  layout (`TestBackendPaths`), so concurrent backends and other repos' runs
+  never share a root: `default_test_backend_paths(name)` (what the default
+  builders use, named for the running repo's directory plus the backend) or
+  `build_test_backend_paths(prefix)` for an explicit, already-unique prefix.
+- `testing/cross_backend/default_secrets.ts` — the dev-only bootstrap secrets
+  the default builders thread in (`default_test_bootstrap_token`,
+  `default_test_keeper_username` / `_password`, `default_test_cookie_keys`),
+  each exported so a consumer overrides one alone.
+- `testing/daemon_token_rotation.ts` — the daemon-token producer, test-only:
+  `write_daemon_token` writes the token file atomically at mode `0600`, and
+  `start_daemon_token_rotation` rotates it and returns the state a test binary
+  passes to its server. The consumer half is `auth/daemon_token_middleware.ts`.
 - `testing/cross_backend/create_cross_backend_global_setup.ts` —
   `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
   ensure_databases?, before_spawn?})`, the single-backend `globalSetup` maker:
@@ -1719,16 +1753,18 @@ Conventions that hold across them:
   whole lines at a time, decoding across chunks. A failed log write fails
   teardown. A line is not attributed to its test; a per-test check would need
   a log backdoor on both spines.
-- `testing/transports/fetch_transport.ts` — cookie-threading HTTP transport
-  satisfying `RpcTestTransport`. Carries a name-keyed cookie jar that
-  updates on every response's `Set-Cookie` and re-sends on every request;
-  `Origin` defaults to `base_url` (`origin: null` disables for bearer-only
-  paths). A cookie cleared with `Max-Age` of zero or less leaves the jar, as
-  it leaves a browser's. A request naming `Authorization` or `X-Daemon-Token`
-  and no `Cookie` throws while the jar is non-empty, since the jar's cookie
-  would authenticate beside a dead token; send it over a cookie-free
-  transport, or pass `Cookie` to send both on purpose. Exposes `cookies()` so `ws_transport` can thread the session
-  cookie onto the WS upgrade.
+- `testing/transports/fetch_transport.ts` —
+  `create_fetch_transport({base_url, initial_cookies?, origin?})`, a
+  cookie-threading HTTP transport satisfying `RpcTestTransport`. Carries a
+  name-keyed cookie jar that updates on every response's `Set-Cookie` and
+  re-sends on every request; `Origin` defaults to `base_url` (`origin: null`
+  disables for bearer-only paths). A cookie cleared with `Max-Age` of zero or
+  less leaves the jar, as it leaves a browser's. A request naming
+  `Authorization` or `X-Daemon-Token` and no `Cookie` throws while the jar is
+  non-empty, since the jar's cookie would authenticate beside a dead token; send
+  it over a cookie-free transport, or pass `Cookie` to send both on purpose.
+  Exposes `cookies()` so `ws_transport` can thread the session cookie onto the
+  WS upgrade.
 - `testing/transports/bootstrap.ts` — stateless `bootstrap({transport, config})`
   POSTs `/api/account/bootstrap` against the running binary, parses the
   `{ok, account, actor}` envelope, returns the keeper credentials. The
@@ -1747,7 +1783,7 @@ Conventions that hold across them:
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
   (a server-initiated request flows to `messages`).
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs; a refused upgrade rejects with `WsUpgradeRefusedError`, carrying the refusal's `status` and `body`), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON).
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?, default_timeout_ms?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs; a refused upgrade rejects with `WsUpgradeRefusedError`, carrying the refusal's `status` and `body`), returning a `WsTransportClient` — a `WsClient` plus `send_text(text)`, which writes one frame verbatim (a frame that is not JSON).
   It builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on

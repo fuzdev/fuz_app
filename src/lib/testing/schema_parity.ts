@@ -417,7 +417,7 @@ export type MigrationTrackerDiff =
 			readonly b: number;
 	  };
 
-const tracker_key = (namespace: string, name: string): string => `${namespace} ${name}`;
+const tracker_key = (namespace: string, name: string): string => `${namespace}\0${name}`;
 
 /**
  * Structural diff between two migration trackers — empty array means the two

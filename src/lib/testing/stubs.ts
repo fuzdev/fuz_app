@@ -198,7 +198,7 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
  *
  * `on_audit_event` is a no-op, so nothing is broadcast; the
  * `registry` is a fresh `SseRegistry` instance (call sites that
- * inspect `.size` or call `.close_*` see a real registry, so writes are
+ * inspect `count` or call `.close_*` see a real registry, so writes are
  * isolated per test). Tests that need real SSE plumbing build it via
  * `create_audit_log_sse` against `create_test_app`.
  */

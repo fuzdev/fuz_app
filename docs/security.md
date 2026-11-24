@@ -54,11 +54,11 @@ keeper routes; only a daemon token can.
 | -------------- | --------------------------------------------- | ------------- |
 | Session cookie | Login form (browser only)                     | admin         |
 | API token      | `account_token_create` RPC (CLI/programmatic) | admin         |
-| Daemon token   | Filesystem (operator-only)                    | keeper        |
+| Daemon token   | Test harness only (§Daemon Token)             | keeper        |
 
 Session cookies and API tokens can grant admin-level access. Only a daemon token
-— which requires local filesystem access — can reach keeper-level operations
-(role_grant management, audit, bootstrap recovery).
+can reach the keeper-only surfaces (the db-admin browser and `account_purge`,
+§Daemon Token), and only the cross-process test harness holds one.
 
 Each credential has one accepted spelling in its header, read by one strict
 reader per spine (`auth/credential_headers.ts`, the Rust
@@ -522,7 +522,7 @@ the suite instead of shipping ungated.
 
 ## Daemon Token
 
-Rotating filesystem credential for keeper-level operations:
+The keeper credential, `X-Daemon-Token`:
 
 - The token file lives at `~/.{app}/run/daemon_token` as JSON
   `{"token": "<base64url>"}` — wrapper leaves room for future fields
@@ -536,22 +536,29 @@ Rotating filesystem credential for keeper-level operations:
   cross-process harness's keeper channel (`_testing_reset` &c.);
   `auth/daemon_token_middleware.ts` keeps only the consumer half. No caller
   in the ecosystem sends `X-Daemon-Token` outside that harness
+- **Keeper-only surfaces go with it.** The db-admin browser
+  (`http/db_routes.ts`) and `account_purge` (`auth/admin_action_specs.ts`)
+  need a daemon-token credential and the keeper role, so they stay mounted but
+  no request passes their gates unless the server was given a
+  `daemon_token_state`, which only the test-only producer makes
 - **Mode `0600` is applied at creation.** The test-only producer writes the
   file via `write_file_atomic` with a unique exclusive temp and mode `0600`,
   so it never exists group/other-readable, whatever the umask
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
-- Both the REST guard composition (`require_credential_types(['daemon_token'])`
-  - `require_role(['keeper'])`) and the RPC dispatcher's post-authorization
-    auth gate (`check_action_auth_post_authorization`, JSON-RPC endpoints)
-    check **both**: daemon token credential type AND an active keeper role_grant
+- Both the REST guard composition
+  (`require_credential_types(['daemon_token'])` +
+  `require_role(['keeper'])`) and the RPC dispatcher's post-authorization auth
+  gate (`check_action_auth_post_authorization`, JSON-RPC endpoints) check
+  **both**: daemon token credential type AND an active keeper role_grant
 - **One line, exact shape**: the header must be a single line holding 43
   base64url characters, checked before the constant-time compare on both
   spines. A value of any other shape, and an `X-Daemon-Token` sent on two
   lines, is discarded — the request continues without the credential
 - **Browser context discard**: like a bearer token, a daemon token sent with
   `Origin` or `Referer` is discarded (§CSRF Protection, "Browser/CLI split")
-- Compromising the web layer cannot escalate to keeper — filesystem access required
+- Compromising the web layer cannot escalate to keeper: session and API-token
+  callers are capped at admin, and no production assembly holds a daemon token
 
 ## Test Backdoor Actions
 
@@ -572,8 +579,7 @@ backdoor, fenced on three independent axes:
   A session cookie, an API token, or an anonymous caller is refused before the
   handler runs (401 for no credential, 403 `credential_type_required` for a
   non-daemon one) — the same credential-type ceiling that gates keeper
-  operations. Only the operator with filesystem access to the rotating daemon
-  token can fire them.
+  operations. Only the harness holding the daemon token can fire them.
 - **Off the declared surface.** They are never registered on a
   surface-generating registry, so they appear in no `AppSurface`, no committed
   `*_attack_surface.json` snapshot, and no generated docs — a published binary's
@@ -1106,10 +1112,6 @@ construction (only its `testing_*` crates build
 `RateLimiterMode::DisabledForTesting`, and its release audit forbids linking
 them), while the TS side has only the warning and the banner.
 
-The 5-attempt cap stays: widening it would buy NAT'd-egress headroom by
-loosening the one bound on credential guessing from a single address, and
-splitting the buckets buys that headroom without touching it.
-
 Costs to accept, bounded by the split but not eliminated by it:
 
 - On a NAT'd egress the IP budget is unforgiving within its window — a
@@ -1347,8 +1349,8 @@ validation on both spines, counted in UTF-16 code units (`bounded_string`,
 
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `keeper`    | Daemon token only (filesystem access required) | System-level: role_grants, audit, bootstrap recovery |
-| `admin`     | CLI or web (by keeper)                         | App-level: users, content, config                    |
+| `keeper`    | Bootstrap only; acts via the daemon token      | System-level: role_grants, audit, bootstrap recovery |
+| `admin`     | Bootstrap, or web (by admin)                   | App-level: users, content, config                    |
 | App-defined | Web (by admin)                                 | App-specific (`teacher`, `approved`, etc.)           |
 
 **Role grants vs flags**: Every capability comes from a time-bounded, revocable role_grant
@@ -1840,7 +1842,7 @@ can be claimed by anyone who knows the address. The invite proves the admin's
 intent, not the claimant's identity. Username-only invites have the same
 property — they reserve a name, not a person. Both-field invites are strictly
 stronger (require knowing both values) but still don't prove ownership.
-No step verifies email ownership today.
+No step verifies email ownership.
 
 ## CSRF Protection
 
@@ -2116,17 +2118,11 @@ ReadWritePaths=/var/lib/{app}
 - `ProtectSystem=strict` — Entire filesystem read-only except explicitly allowed paths
 - `ProtectHome=read-only` — Home directories read-only (use `ReadWritePaths` for app data)
 - `PrivateTmp` — Isolated `/tmp` — other services cannot read the app's temp files
-- `ReadWritePaths` — Allowlist for writable directories (DB sockets, daemon token, logs)
+- `ReadWritePaths` — Allowlist for writable directories (DB sockets, the bootstrap token's directory, logs)
 
 These are defense-in-depth: if an attacker achieves code execution through the
 server process, they are sandboxed to the declared paths. Combined with a
 dedicated non-root service user, this limits blast radius significantly.
-
-**When to adopt**: After the deployment is stabilized and server changes are
-infrequent. During active development, `ProtectSystem=strict` requires updating
-`ReadWritePaths` whenever the app writes to a new location — friction that
-isn't worth it while things are still changing. Running as root during early
-development is acceptable when SSH is key-only with fail2ban.
 
 **Dedicated service user**: Create a non-root user for the app process. Copy
 SSH keys from root, verify access, then disable root login. The service user
@@ -2382,8 +2378,8 @@ would have committed, and answers 500.
 
 ### Single-Process Architecture
 
-The in-memory rate limiter, the live-connection registries, and daemon token
-state are designed for **single-process deployments**:
+The in-memory rate limiter and the live-connection registries are designed
+for **single-process deployments**:
 
 - Rate limit counters are not shared across processes. In a horizontally-scaled
   deployment, an attacker distributing requests across N instances can attempt
@@ -2395,8 +2391,6 @@ state are designed for **single-process deployments**:
   The expired-session sweep closes the same way: a second process keeps the
   connections it holds on a session this one swept, and its own pass finds
   the row already gone.
-- Daemon token rotation is file-based. Multiple processes sharing the file may
-  read stale state between token write and fsync.
 - A notification (an offer received, a grant revoked) reaches only the
   sockets of the process that sent it.
 - Bootstrap availability and the daemon token's keeper are read at boot: a
@@ -2415,8 +2409,7 @@ For multi-process deployments, rate limiters would need Redis or a shared DB tab
 (or, for IP-keyed limits, nginx `limit_req`, which every backend instance
 shares; tightening each instance's windows limits the multiplier meanwhile);
 revocation closes would need a cross-process channel (a shared pub/sub, or
-`LISTEN`/`NOTIFY`); daemon tokens would need a distributed lock or a different
-rotation strategy.
+`LISTEN`/`NOTIFY`).
 
 ### Rate Limiter Restart Behavior
 

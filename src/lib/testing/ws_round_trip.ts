@@ -349,11 +349,11 @@ export interface CreateWsTestHarnessOptions {
 	/** Threaded straight through to `register_action_ws`. */
 	on_socket_close?: RegisterActionWsOptions['on_socket_close'];
 	/**
-	 * Optional responder for **server-initiated** requests, applied to every
-	 * `connect()`. Purely additive (and unexercised until the TS server
-	 * gains server-initiated requests): with it set, an
-	 * inbound server→client request is answered rather than surfaced as a
-	 * message; without it, behavior is unchanged. Mirrors the cross-process
+	 * Optional responder for **server-initiated** requests (such as
+	 * `peer/ping`, sent through `request_connection`), applied to every
+	 * `connect()`. Purely additive: with it set, an inbound server→client
+	 * request is answered rather than surfaced as a message; without it,
+	 * behavior is unchanged. Mirrors the cross-process
 	 * `create_ws_transport` seam so suite bodies share one shape.
 	 */
 	on_request?: WsRequestResponder;

@@ -72,9 +72,9 @@ jobs:
   #
   # Not run here: `cross_backend_rust_spine_stub`, `cross_backend_parity` and
   # `cross_backend_security`. They build and spawn the Rust spine's test binary
-  # from its Cargo workspace, which is not public yet, against Postgres. The
-  # fuz repo's nightly `cross-contract` workflow runs them, checking out this
-  # repo's `main` beside its own checkout.
+  # from the fuz repo's Cargo workspace, against Postgres. The fuz repo's
+  # nightly `cross-contract` workflow runs them, checking out this repo's
+  # `main` beside its own checkout.
   cross-ts:
     runs-on: ubuntu-latest
     timeout-minutes: 15

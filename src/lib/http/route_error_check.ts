@@ -11,13 +11,14 @@
  * JSON-RPC error envelope, which no REST error definition describes. A
  * non-JSON response, by `is_json_response`, is not checked at all.
  *
- * Also the hono-free route lookup the test helpers run (`find_route_spec`):
- * a route's Hono path template read segment by segment (`split_route_template`,
- * `parse_route_param`) and compiled to a `RegExp` (`compile_route_path`),
- * and the first route in mount order matching a request, `HEAD` read as
- * `GET` (`find_mounted_route`). The DEV check, on the Hono side, looks routes
- * up with Hono's own router (`create_route_lookup`); the two are pinned
- * against Hono and each other by the route-lookup tests.
+ * Also the hono-free route lookup the test helpers run (`find_route_spec`,
+ * `testing/integration_helpers.ts`): a route's Hono path template read
+ * segment by segment (`split_route_template`, `parse_route_param`) and
+ * compiled to a `RegExp` (`compile_route_path`), and the first route in mount
+ * order matching a request, `HEAD` read as `GET` (`find_mounted_route`). The
+ * DEV check, on the Hono side, looks routes up with Hono's own router
+ * (`create_route_lookup`); the two are pinned against Hono and each other by
+ * the route-lookup tests.
  *
  * Hono-free and `esm-env`-free.
  *

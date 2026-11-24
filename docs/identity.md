@@ -44,25 +44,25 @@ time-bounded, revocable role_grant with a `granted_by` field tracking who grante
 The keep is the fortified core — bootstrap state, audit trails, role_grant authority.
 The keeper role controls the keep.
 
-**Key property: keeper role_grants are CLI-only.** You need filesystem access to
-generate them. Compromising the web layer does not compromise the keep. Admin
-cannot escalate to keeper.
+**Key property: keeper role_grants come only from bootstrap**
+(`grant_paths: ['bootstrap']`), which needs the filesystem token. Compromising
+the web layer does not compromise the keep. Admin cannot escalate to keeper.
 
 This creates a clean trust boundary:
 
-| Role        | Scope        | Granted how            | Controls                                   |
-| ----------- | ------------ | ---------------------- | ------------------------------------------ |
-| **keeper**  | System-level | CLI only (filesystem)  | Role grants, audit, bootstrap recovery     |
-| **admin**   | App-level    | CLI or web (by keeper) | Users, content, config                     |
-| App-defined | Per-app      | Web (by admin)         | App-specific (`teacher`, `approved`, etc.) |
+| Role        | Scope        | Granted how                       | Controls                                   |
+| ----------- | ------------ | --------------------------------- | ------------------------------------------ |
+| **keeper**  | System-level | Bootstrap only (filesystem token) | Role grants, audit, bootstrap recovery     |
+| **admin**   | App-level    | Bootstrap, or web (by admin)      | Users, content, config                     |
+| App-defined | Per-app      | Web (by admin)                    | App-specific (`teacher`, `approved`, etc.) |
 
 Roles are declared at server init via `create_role_registry()`, not stored
-in a DB table; a `role` input is held to the `RoleName` grammar. Builtins (`keeper`, `admin`) are fixed; consumers extend with
-app-defined roles at server init — names of lowercase letters and underscores,
-no leading, trailing or consecutive underscores, at most 64 characters
-(`RoleName`). Intentionally coarse — fine-grained access (per-cell,
-per-resource) is application logic checking cell relationships, not the
-role_grant system.
+in a DB table; a `role` input is held to the `RoleName` grammar. Builtins
+(`keeper`, `admin`) are fixed; consumers extend with app-defined roles at
+server init — names of lowercase letters and underscores, no leading, trailing
+or consecutive underscores, at most 64 characters (`RoleName`). Intentionally
+coarse — fine-grained access (per-cell, per-resource) is application logic
+checking cell relationships, not the role_grant system.
 
 ## Bootstrap
 
@@ -81,31 +81,22 @@ they're the root of trust — the recovery mechanism if all other role_grants ex
 
 ## Three Auth Transports
 
-Browser, CLI, and local daemon use different auth mechanisms by design:
+Browser, CLI/API, and the test harness's keeper channel use different
+credentials by design:
 
 - **Cookie sessions** — for browsers (same-origin, HttpOnly, SameSite=Strict).
   Max privilege: admin.
 - **Bearer tokens** — for CLI/API (`secret_fuz_token_` prefix, blake3-hashed
   server-side). Max privilege: admin.
-- **Daemon token** — for local keeper operations (rotating filesystem credential,
-  written to `~/.{app}/run/daemon_token`). Max privilege: keeper. Requires
-  filesystem access — compromising the web layer cannot reach keeper routes.
+- **Daemon token** — the keeper's loopback credential (`X-Daemon-Token`). Max
+  privilege: keeper. No production assembly mints one; it serves the
+  cross-process test harness (./security.md §Daemon Token).
 
-**Bearer and daemon tokens are discarded when `Origin` or `Referer` headers are
-present.** Browsers send these automatically; CLI tools and the loopback daemon
-don't. This prevents XSS from exploiting stolen tokens — even if an attacker
-extracts a token via browser-side code, the browser adds `Origin`/`Referer`
-automatically and the server discards the credential (passing the request
-through unauthenticated rather than failing it, so downstream auth enforcement
-returns a generic error). Daemon tokens get the same guard for symmetry — they
-are loopback-only and never legitimately carry an `Origin`. The
-`secret_fuz_token_` prefix enables automatic secret scanner detection.
-
-**External bearer auth is enabled.** No deployment strips the `Authorization`
-header at the reverse proxy, so bearer tokens are accepted from external
-traffic; the browser path is protected in-app by the `Origin`/`Referer`
-discard above. See ./security.md §External Bearer Auth Is Enabled for the
-posture, the replay exposure it leaves, and the compensating controls.
+**Bearer and daemon tokens are discarded when `Origin` or `Referer` is
+present**, so a token stolen by browser-side code is useless from the browser,
+while bearer tokens from external non-browser traffic are accepted:
+./security.md §CSRF Protection ("Browser/CLI split") and
+§External Bearer Auth Is Enabled.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper role_grant. Both
@@ -116,17 +107,11 @@ JSON-RPC endpoints) check the credential type (must be daemon token) and an
 active keeper role_grant.
 
 **Cookies are the only path to credential-minting / lockout / privilege-pivot
-operations.** The same `credential_types` axis goes the other direction on
-eight endpoints: `account_token_create` (mint), `account_token_revoke`
-(sibling disruption), `account_session_revoke` +
-`account_session_revoke_all` (lockout), `POST /password` (lockout +
-credential reset), `role_grant_offer_create` (conferring a role on another
-account), and `role_grant_offer_accept` + `self_service_role_set` (the caller
-moving its own authority). `credential_types: ['session']`
-rejects API-token and daemon-token callers. Admin-side revoke specs stay
-unrestricted — admin CLI scripting is legitimate operator workflow. Two more
-endpoints carry the same gate for non-threat reasons — `POST /logout` and
-`GET /audit/stream`. See ./security.md §Credential-channel gating.
+operations.** The same `credential_types` axis runs the other way:
+credential-minting, lockout and privilege-pivot operations take
+`credential_types: ['session']`, so API-token and daemon-token callers are
+refused. The endpoint list and each one's threat are in ./security.md
+§Credential-channel gating.
 
 Sessions reference accounts, not actors. Authentication middleware sets only
 account-grain identity (one `ResolvedAuth`, `get_resolved_auth`); the acting
@@ -137,7 +122,7 @@ account verify) skip resolution and run with `RequestContext.actor: null`.
 
 ## Key Decisions
 
-Distilled from design exploration — the choices that most affect consumers:
+The choices that most affect consumers:
 
 1. **Table name `account`**, not `users` — matches the identity model
 2. **Sessions reference accounts** — actor resolved per-request by the
@@ -156,8 +141,8 @@ Distilled from design exploration — the choices that most affect consumers:
    request-actor checks go through the in-memory
    `has_scoped_role` / `has_any_scoped_role` helpers on the
    `RequestContext` snapshot (scope-only — `(role, scope_kind)`
-   compatibility is informative metadata in v1, INSERT-time enforcement
-   reserved for v2); arbitrary-actor checks read
+   compatibility is informative metadata; INSERT-time enforcement is not
+   built); arbitrary-actor checks read
    `query_role_grant_find_active_for_actor(actor)`
 5. **Username immutable, case-insensitive unique** — username is identity (logs, URLs,
    mental models). Stored lowercase, the form `Username` canonicalizes every
@@ -166,8 +151,6 @@ Distilled from design exploration — the choices that most affect consumers:
    change freely
 6. **Password hashing: Argon2id** with OWASP-recommended parameters
 7. **Token/session hashing: blake3** — fast, tokens are high-entropy
-8. **Single-user mode** — planned for personal local instances,
-   skipping login entirely (not yet implemented)
 
 ## Direct grant vs offer flow
 
@@ -184,11 +167,8 @@ commits. Reserved for legitimate override paths where waiting on consent
 would be a footgun:
 
 - **Keeper bootstrap** — the first account created through
-  `bootstrap_account` grants itself keeper + admin with `granted_by =
-null` (root of trust).
-- **Keeper-gated CLI operations** — role_grant reassignment during emergency
-  recovery. Keeper credentials require filesystem access
-  (`daemon_token`), so the operator is already privileged.
+  `bootstrap_account` grants itself keeper + admin with `granted_by = null`
+  (root of trust).
 - **Migrations and test fixtures** — seeding role_grants that represent
   "already accepted" state.
 

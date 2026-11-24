@@ -28,6 +28,7 @@ Use `create_app_backend` + `create_app_server` — the same two-step pattern
 as full server apps. PGlite is auto-detected from the `database_url`:
 
 ```ts
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
@@ -84,10 +85,10 @@ const { app, close } = await create_app_server({
 ```
 
 This gives you the full auth table set: `account`, `actor`, `role_grant`,
-`auth_session`, `api_token`, `audit_log`, plus the `schema_version`
-tracking table. Migrations are identity-tracked (one tracker row per
-applied migration, name-prefix-verified at boot) — safe to call on every
-startup.
+`role_grant_offer`, `auth_session`, `api_token`, `invite`, `app_settings`,
+`bootstrap_lock`, `audit_log`, plus the `schema_version` tracking table.
+Migrations are identity-tracked (one tracker row per applied migration,
+name-prefix-verified at boot) — safe to call on every startup.
 
 ## Bootstrap Flow
 
@@ -98,15 +99,16 @@ Local daemons typically use a file-based bootstrap token:
 3. **Bootstrap**: User pastes the token + credentials → account created with keeper and admin role_grants, session cookie set
 4. **Token consumed**: The file is deleted inside the bootstrap transaction, before it commits — bootstrap is one-shot, and the server needs write access to the token's directory
 
-A server with a `daemon_token_state` gets the new account as its keeper once
+A server given a `daemon_token_state` (only the cross-process test harness
+wires one; ./security.md §Daemon Token) gets the new account as its keeper once
 the bootstrap commits, so the keeper's daemon token authenticates from the next
 request. The daemon leg never re-reads the keeper: one seeded by another process
 (`seed_dev_account`) authenticates after a restart, as on the Rust spine.
 
 ## Testing
 
-Use the in-memory database for tests (`database_url: 'memory://'`, pglet via
-`@fuzdev/pglet-wasm`):
+`create_test_app` runs on a cached in-memory pglet database
+(`@fuzdev/pglet-wasm`):
 
 ```ts
 import { create_test_app } from '@fuzdev/fuz_app/testing/test_app.ts';
@@ -137,11 +139,11 @@ afterAll(() => cleanup());
 
 **Limitations:**
 
-- PGlite WASM cold-start adds ~500-700ms on first connection (cached after)
+- PGlite's WASM cold start adds a noticeable delay to the first connection
+  (cached after)
 - No WAL-based replication or point-in-time recovery
-- File-based daemon tokens assume single-process — multi-process races are possible
 - The host gate (`forbidden_host`, on by default) refuses a page on a name
   rebound to `127.0.0.1`; a daemon reached by a name its allowlist doesn't
   hold (a LAN address) lists that origin or sets `host_gate: false`
-  (./security.md §DNS Rebinding)
+  (./security.md §DNS Rebinding (Host Gate))
 - In-memory rate limiter state resets on restart

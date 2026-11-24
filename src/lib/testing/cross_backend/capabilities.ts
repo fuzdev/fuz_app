@@ -77,7 +77,7 @@ export interface BackendCapabilities {
 	 * (`describe_ws_connection_cap_cross_tests`), and the front door's
 	 * WS-path cases (`describe_transport_composition_cross_tests`) — the
 	 * upgrade rows, and the rows that ask for no upgrade, which run in-process
-	 * too; the in-process `describe_ws_round_trip_tests` runs against
+	 * too; the in-process WS harness (`create_ws_test_harness`) runs against
 	 * `register_action_ws` directly and ignores this flag.
 	 */
 	readonly ws: boolean;

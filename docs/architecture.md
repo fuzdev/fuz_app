@@ -309,16 +309,16 @@ the status endpoint avoids per-request filesystem/DB queries.
 
 ## App Settings
 
-`app_settings` is a singleton-row table for global app configuration.
-Loaded at startup by `create_app_server` into `AppServerContext.app_settings` — a mutable
-ref following the same pattern as `bootstrap_status`. The admin `app_settings_update`
-RPC action (in `admin_actions.ts`, wired when `AdminActionOptions.app_settings` is
-provided) writes to DB then mutates the ref, so `app_settings_get` and the signup
-middleware read from memory (no DB hit). Currently holds `open_signup` (boolean, default
-`false`). `updated_by` is a plain UUID column (no FK to `actor`) — this is intentional to
-avoid test truncation cascades and because it's audit metadata, not a relational
-constraint. Deleting the singleton makes every settings read throw, so
-`app_settings` is one of `http/db_routes.ts`'s `NON_DELETABLE_TABLES`.
+`app_settings` is a singleton-row table for global app configuration, currently
+`open_signup` (boolean, default `false`). The admin `app_settings_get` /
+`app_settings_update` RPC actions (`auth/admin_actions.ts`) read and write the
+row, and signup reads `open_signup` fresh from it on every request
+(`query_app_settings_load`), so no in-memory copy exists and every process sees
+the same value. `updated_by` is a plain UUID column with no FK to `actor`: it is
+audit metadata, not a relational constraint, and an FK would let a
+`TRUNCATE actor CASCADE` empty the singleton. Deleting the singleton makes every
+settings read throw, so `app_settings` is one of `http/db_routes.ts`'s
+`NON_DELETABLE_TABLES`.
 
 ## Static File Serving
 
@@ -459,7 +459,8 @@ as `internal_error`:
   flat REST error shape `{error: <reason>, message?, ...rest}`. `reason` comes
   from `err.data.reason` (handler override) or falls back to
   `jsonrpc_error_code_to_name(err.code)` (e.g. `-32600` →
-  `invalid_request`). HTTP status comes from `jsonrpc_error_code_to_status`.
+  `invalid_request`). HTTP status comes from
+  `jsonrpc_error_code_to_http_status`.
 - **JSON-RPC + WebSocket** — the shared `perform_action` core in
   `actions/perform_action.ts` catches handler throws, preserves
   `err.code` and `err.data` for `ThrownJsonrpcError`, and folds them
@@ -591,77 +592,7 @@ documented in one place: `src/lib/http/CLAUDE.md` §Pending Effects. Where an
 audit row is written — a success row in its change's transaction, a failure
 row on the pool — is `src/lib/auth/CLAUDE.md` §Audit emitter.
 
-## AsyncSlot
+## AsyncSlot and KeyedAsyncSlot
 
-Composable reactive container for one async operation. Generic:
-`AsyncSlot<T = void, E = string>`. State classes HOLD one or more slots via
-composition (one per distinct async operation — e.g. `list` + `create` +
-`revoke`); slots are not subclassed. Used by every consumer state class
-(`AccountSessionsState`, `AuditLogState`, `AdminAccountsState`,
-`AdminInvitesState`, `AdminSessionsState`, `AppSettingsState`,
-`RoleGrantOffersState`, `TableState`).
-
-Surface:
-
-- Explicit four-value `status`: `'initial' | 'pending' | 'success' | 'failure'`.
-  Distinguishes "never ran" from "succeeded once and now resting" without
-  a per-class `submitted` / `hydrated` flag. Derived booleans `initial` /
-  `loading` / `succeeded` / `failed` for convenient binding.
-- `data: T | undefined` — the success payload (`undefined` sentinel so
-  `null` stays a legitimate success value for nullable `T`s; pass `T = void`
-  for write-only actions whose response isn't worth retaining).
-- Supersession via internal `AbortController` — a second `run()` aborts the
-  first and silently drops its commit even if it resolves. Removes the
-  "in-flight call resolves after the locator advanced" race that
-  locator-style state classes would otherwise need to compensate for.
-- `AbortSignal` threaded to the callback — RPC clients that accept a signal
-  (or `fetch`) get cancellation for free. External signal hookup via
-  `RunOptions.signal` binds the slot's lifetime to a component / page.
-- Per-slot `map_error` — set once in the constructor (e.g. `to_rpc_error_message`),
-  every `run()` gets the right normalization without re-passing per call.
-- `preserve_error_on_retry` — opt-in to keeping the previous error visible
-  while a retry is pending (default clears at the start of each `run()`).
-- `set(data)` — replace `data` directly and mark `'success'` (for
-  post-mutation hydration where the RPC returned the canonical row);
-  aborts any in-flight run first.
-- `reset()` — back to `'initial'`, clears data + error, aborts in-flight.
-
-Method-name collisions (when the slot name matches the natural verb, e.g.
-`create` / `accept` / `delete`) are resolved by the `submit_*` prefix on
-methods or by naming the slot differently (e.g. `remove` instead of
-`delete` to avoid keyword shadowing).
-
-## KeyedAsyncSlot
-
-Keyed sibling of `AsyncSlot`. Generic: `KeyedAsyncSlot<K, T = void, E = string>`.
-Lazily creates an `AsyncSlot` per key in a backing `SvelteMap`, propagating
-`map_error` / `preserve_error_on_retry` to each child. Used for per-row
-in-flight tracking in the admin and account state classes
-(`AdminAccountsState.grant` / `.revoke` / `.retract`, `AdminInvitesState.remove`,
-`AdminSessionsState.revoke_sessions` / `.revoke_tokens`,
-`AccountSessionsState.revoke`).
-
-What it gives over an `AsyncSlot` paired with a `SvelteSet<id>`:
-
-- **Cross-key supersession is correct** — clicking row B while row A is in
-  flight doesn't abort row A; each key has its own `AbortController`.
-- **Per-key error surfacing** — `error(key)` is per-row, not last-error-wins.
-  Components render an inline error indicator next to the failing button.
-
-Surface:
-
-- `run(key, fn, options?)` — lazily creates the slot for `key`, delegates to
-  its `run()`. Per-key supersession matches the unkeyed semantics (a second
-  `run(key, ...)` aborts the first); different keys are fully independent.
-- Reactive sugar: `loading(key)`, `error(key)`, `failed(key)`,
-  `succeeded(key)`, `has(key)`, `size`. Return safe defaults (`false` /
-  `null`) for keys with no entry.
-- `get(key)` — full slot escape hatch (for `error_data`, `data`, or
-  per-key `abort()` / `set()` / `reset()`).
-- Iteration: `keys()` / `values()` / `entries()` (all reactive via the
-  backing `SvelteMap`).
-- Lifecycle: `abort(key)` cancels in-flight without removing the entry;
-  `abort_all()` aborts every in-flight; `delete(key)` aborts + removes
-  (typical "user dismissed the error" UX); `reset()` aborts all + clears.
-  Resolved entries persist by default — required so per-row error UI can
-  read `error(key)` after the run completes.
+The async-operation primitives every UI state class composes:
+`src/lib/ui/CLAUDE.md` §State primitives and the modules' TSDoc.

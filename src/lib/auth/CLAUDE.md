@@ -208,7 +208,7 @@ Modules:
 - `auth/cell_relation_visibility.ts`, `auth/cell_relation_list_limit.ts` — strict relation-read visibility: every relation read drops edges whose far endpoint the caller can't view.
 - `auth/cell_actions.ts` — `create_cell_actions(deps)`, the CRUD, clone, moderate and policy handlers.
 - `auth/cell_action_helpers.ts` — the shared load-and-404-mask gates and `emit_cell_audit`; twins of the Rust `fuz_cell_actions` helpers.
-- `auth/cell_ref_admission.ts` — `require_new_refs_held`: a non-admin write introducing a fact ref its actor holds no `fact_holder` row for is 403 `cell_ref_not_held`. Twin of the Rust `cell_ref_admission`.
+- `auth/cell_ref_admission.ts` — `require_new_refs_held`: a write by anyone but a global admin introducing a fact ref its actor holds no `fact_holder` row for is 403 `forbidden`, reason `cell_ref_not_held`. Twin of the Rust `cell_ref_admission`.
 - `auth/cell_grant_actions.ts` / `cell_field_actions.ts` / `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation, ACL and audit handlers.
 - `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the handler twin of `all_cell_action_specs`. Reach for it whenever a backend mounts the full cell layer, so an HTTP-RPC mount and a WS mount can't diverge.
 - `auth/cell_audit_events.ts` (and the `cell_*_audit_metadata.ts` modules) — `cell_audit_events`, the cell event types' metadata map; consumers spread it into `extra_events`. The cell events are consumer-registered extras, not builtins (§Audit event extensibility).
@@ -237,12 +237,13 @@ the credential leg's account row: an account removed after that read runs an
 account-grain handler on the row, while an actor-grain one finds no actor and
 answers the dead credential's 401, as on the Rust spine.
 
-**Production-middleware invariant.** The credential legs set only
-`RESOLVED_AUTH_KEY`. The route pipeline's authorization phase writes the
-actor-bound context to `REQUEST_CONTEXT_KEY`, which `require_role` reads.
-Test harnesses pre-set `REQUEST_CONTEXT_KEY` and set
-`TEST_CONTEXT_PRESET_KEY` to the `TEST_CONTEXT_PRESET` symbol to skip
-DB-backed resolution (`has_test_context_preset`; any other value is unset).
+**Production-middleware invariant.** The credential legs' one identity output is
+`RESOLVED_AUTH_KEY` (session parsing also hands the verified cookie on under
+`SESSION_TOKEN_KEY` / `SESSION_COOKIE_EXPIRES_AT_KEY`). The route pipeline's
+authorization phase writes the actor-bound context to `REQUEST_CONTEXT_KEY`,
+which `require_role` reads. Test harnesses pre-set `REQUEST_CONTEXT_KEY` and set
+`TEST_CONTEXT_PRESET_KEY` to the `TEST_CONTEXT_PRESET` symbol to skip DB-backed
+resolution (`has_test_context_preset`; any other value is unset).
 
 **The session token key is fixed** (`SESSION_TOKEN_KEY`): the session
 middleware takes only the cookie's name, no context key, so it and the leg
@@ -284,7 +285,7 @@ compose into `create_role_registry` for cross-axis validation:
 
 ```
 create_credential_type_registry()
-create_scope_kind_registry()        → create_role_registry({roles, options}) → role_specs
+create_scope_kind_registry()        → create_role_registry(roles, options) → role_specs
 create_grant_path_registry()
 ```
 

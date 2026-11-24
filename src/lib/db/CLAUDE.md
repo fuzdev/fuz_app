@@ -24,12 +24,12 @@ the code.
 - `postgres_url.ts` — the libpq side of a Postgres `DATABASE_URL`, pure:
   `parse_db_name`, `to_maintenance_database_url` (database swapped for
   `postgres`, or `template1` for a target named `postgres`; password removed),
-  `to_postgres_password_env` (`{PGPASSWORD}` or `{}`), `to_createdb_args` /
-  `to_dropdb_args` (`--no-password`, `--maintenance-db`, `--` before the name),
-  `is_createdb_already_exists`, and `rewrite_query_pairs` — every query rewrite
-  edits raw pairs, since `URLSearchParams` reserializes `%20` as `+`, which
-  libpq reads literally. Used by `dev/setup.ts` and
-  `testing/cross_backend/postgres_database.ts`.
+  `to_postgres_password_env` (`{PGPASSWORD}`, `{}`, or `null` on a malformed
+  percent-escape), `to_createdb_args` / `to_dropdb_args` (`--no-password`,
+  `--maintenance-db`, `--` before the name), `is_createdb_already_exists`, and
+  `rewrite_query_pairs` — every query rewrite edits raw pairs, since
+  `URLSearchParams` reserializes `%20` as `+`, which libpq reads literally. Used
+  by `dev/setup.ts` and `testing/cross_backend/postgres_database.ts`.
 - `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts`'s
   `create_pg_pool` builds the pool with a bounded checkout
   (`connectionTimeoutMillis`, `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`) whose failure
@@ -123,26 +123,25 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   the object test pglet runs too). Nullable `created_by` FK to `actor` (NULL =
   system origin); `updated_by` and `cell_grant.granted_by` are provenance stamps
   with no FK. GIN on `data` / `refs`; global partial-unique on `path`.
-- **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
-delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
-  generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
-  `can_view_cell`, moderation admission included, bound through one
-  `viewer: CellViewer`; the `kind` filter narrows
-  by the `cell.kind` column, the `ref` filter by `cell.refs`, plus `root_id` /
-  `moderation` filters for the per-root feed + mod queue),
-  `query_cell_load_many` (bulk id load of full rows, no visibility filter —
-  the deep-clone walk), and `query_cell_view_load_many` (the
-  `CELL_VIEW_COLUMNS` view facts alone — feeds `filter_visible_target_ids`,
-  the in-memory relation filter the `cell_get` bundle and the clone walk
-  run). `query_cell_set_moderation` is the dedicated
+- **`cell_queries.ts`** —
+  `query_cell_create / get / get_by_path / update / delete / set_moderation`,
+  `_list_by_kind`, the generic `query_cell_list` (filter + SQL-side visibility
+  predicate mirroring `can_view_cell`, moderation admission included, bound
+  through one `viewer: CellViewer`; the `kind` filter narrows by the `cell.kind`
+  column, the `ref` filter by `cell.refs`, plus `root_id` / `moderation` filters
+  for the per-root feed + mod queue), `query_cell_load_many` (bulk id load of
+  full rows, no visibility filter — the deep-clone walk), and
+  `query_cell_view_load_many` (the `CELL_VIEW_COLUMNS` view facts alone — feeds
+  `filter_visible_target_ids`, the in-memory relation filter the `cell_get`
+  bundle and the clone walk run). `query_cell_set_moderation` is the dedicated
   `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
-  author can't self-approve via `cell_update`); approval moves only a
-  `pending` row and rejection a `pending` or `approved` one (the takedown) —
-  the `WHERE` carries the from-state. `query_cell_set_policy` is the dedicated
+  author can't self-approve via `cell_update`); approval moves only a `pending`
+  row and rejection a `pending` or `approved` one (the takedown) — the `WHERE`
+  carries the from-state. `query_cell_set_policy` is the dedicated
   `cell_policy_set` write (`policy` is absent from `CellUpdatePatch`; its
-  `WHERE` matches roots only). `cell.refs` derived from
-  `data` via the exported `derive_cell_refs` on create/update (exact
-  whole-string hashes, sorted — byte-identical with the Rust `extract_refs`). `CellRow.grant_count` is a
+  `WHERE` matches roots only). `cell.refs` derived from `data` via the exported
+  `derive_cell_refs` on create/update (exact whole-string hashes, sorted —
+  byte-identical with the Rust `extract_refs`). `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).
 - **`cell_moderation.ts`** — the `cell.moderation` read rules in pure and
   SQL form side by side (`cell_moderation_admits_audience` /
@@ -162,19 +161,19 @@ delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   `_list_for_cells` (bulk, for the relation-read filter), and
   `query_cell_grants_for_caller_in_cells` (caller-matched enrichment for
   `shared_with: 'me'`, taking the same `CellViewer` the list bound).
-- **`cell_field_queries.ts`** — named relations (`(source_id, name) →
-target_id`): `query_cell_field_set` (UPSERT), `_get`, `_delete`,
+- **`cell_field_queries.ts`** — named relations
+  (`(source_id, name) → target_id`): `query_cell_field_set` (UPSERT), `_delete`,
   `_list_for_source` (`{limit, name_after}`), `_list_for_target`. Reads JOIN
-  cell with `deleted_at IS NULL` so dangling relations don't surface; the
-  list reads take a `CellViewer` and keep only edges whose far end it can
-  view, before `LIMIT`.
-- **`cell_item_queries.ts`** — ordered children (`(parent_id, position) →
-child_id`, fractional-index keyed): `query_cell_item_insert` (throws
-  `23505` on collision), `_get`, `_move`, `_delete`, `_list_for_parent`
-  (`{limit, position_after}`), `_list_for_child`. Same soft-delete JOIN and
-  viewer filter.
+  cell with `deleted_at IS NULL` so dangling relations don't surface; the list
+  reads take a `CellViewer` and keep only edges whose far end it can view,
+  before `LIMIT`.
+- **`cell_item_queries.ts`** — ordered children
+  (`(parent_id, position) → child_id`, fractional-index keyed):
+  `query_cell_item_insert` (throws `23505` on collision), `_move`, `_delete`,
+  `_list_for_parent` (`{limit, position_after}`), `_list_for_child`. Same
+  soft-delete JOIN and viewer filter.
 - **`cell_audit_queries.ts`** — `query_audit_log_list_by_cell`: matches
-  `audit_log` rows whose `metadata` names the cell on any of six cell-domain
+  `audit_log` rows whose `metadata` names the cell on any of the cell-domain
   keys (`cell_id` / `source_id` / `new_id` / `parent_id` / `child_id` /
   `target_id`), bitmap-OR over `idx_audit_log_metadata` (the `jsonb_path_ops`
   GIN the `audit_log_metadata_gin_index` auth migration ships).
@@ -221,19 +220,19 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
 - **`fact_store.ts`** — `PgFactStore`, implementing `HeldFactStore` (reads per
   the `@fuzdev/fuz_util/fact_store.ts` `FactStore` contract; puts take
   `HeldFactPutOptions`, whose required `holder` — an actor id, or `null` for a
-  system put — is recorded in `fact_holder` on every put, a dedup hit included,
-  in one transaction with the fact row and its refs): size-routed writes
-  (embedded ≤ `embedded_threshold` / disk CAS above it), refs exactly as each
-  put declares them (the bytes are never scanned), idempotent put,
-  verify-on-read for disk-backed content. With `disk_root` + `fs` (the
-  `runtime/*Deps`) configured, oversize `put` and the streaming `put_stream`
-  write to the `<shard>/<rest>` disk CAS and `get` reads from it; without them
-  an oversize write throws (`put_stream` needs `fs` for a body of any size).
-  The disk CAS is the only place `get` reads external bytes from; the store
-  makes no network request. A row whose `external_url` is not a
+  system put, which records none — is recorded in `fact_holder` on every put
+  that names one, a dedup hit included, in one transaction with the fact row and
+  its refs): size-routed writes (embedded ≤ `embedded_threshold` / disk CAS
+  above it), refs exactly as each put declares them (the bytes are never
+  scanned), idempotent put, verify-on-read for disk-backed content. With
+  `disk_root` + `fs` (the `runtime/*Deps`) configured, oversize `put` and the
+  streaming `put_stream` write to the `<shard>/<rest>` disk CAS and `get` reads
+  from it; without them an oversize write throws (`put_stream` needs `fs` for a
+  body of any size). The disk CAS is the only place `get` reads external bytes
+  from; the store makes no network request. A row whose `external_url` is not a
   `file:<shard>/<rest>` URL (the store never writes one), and any external row
-  on a store with no disk CAS, reads as `null` with a warning; one naming another
-  fact's file reads as `null` with an error. The serve route 404s both.
+  on a store with no disk CAS, reads as `null` with a warning; one naming
+  another fact's file reads as `null` with an error. The serve route 404s both.
 - **`file_fact_url.ts`** — the canonical `file:<shard>/<rest>` URL shape
   (`FileFactUrl` brand, `mint_file_fact_url` / `parse_file_fact_url` /
   `FILE_FACT_URL_PATTERN`) plus `fact_disk_path(hash) → {shard, rest}`, the

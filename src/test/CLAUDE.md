@@ -109,7 +109,7 @@ created, children first.
 
 ### Integration Tests
 
-Named `.integration.test.ts`. Use `create_test_app()` from
+Named `.integration.db.test.ts`. Use `create_test_app()` from
 `#lib/testing/test_app.ts` to spin up a full Hono app:
 
 ```ts
@@ -433,13 +433,14 @@ npm run test:cross:both-live
 
 **CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
 `npm run test:cross:ts` and `npm run test:cross:ts-differential` on every push
-to `main` and every pull request, with
-Bun pinned in the job's `env` to the version the suites are green on; a bump
-there is a deliberate re-measure. `.github/workflows/cross-canary.yml` runs the
-Bun leg and the Node-vs-Bun differential weekly (and by hand) on the latest Bun
-release and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
-`cross_backend_parity`, `cross_backend_security`, `cross_backend_timing`,
-`cross_backend_swap`, `cross_backend_both_live`) run locally only.
+to `main` and every pull request, with Bun pinned in the job's `env` to the
+version the suites are green on; a bump there is a deliberate re-measure.
+`.github/workflows/cross-canary.yml` runs the Bun leg and the Node-vs-Bun
+differential weekly (and by hand) on the latest Bun release and gates nothing.
+The Rust-backed projects run locally; the fuz repo's nightly `cross-contract`
+workflow also runs `cross_backend_rust_spine_stub`, `cross_backend_parity` and
+`cross_backend_security` against this repo's `main`. `cross_backend_timing`,
+`cross_backend_swap` and `cross_backend_both_live` run locally only.
 
 The TS binary + the reusable test-server core/adapters it's built on live in
 `src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`
@@ -448,7 +449,7 @@ The TS binary + the reusable test-server core/adapters it's built on live in
 ## Cross-impl benchmark
 
 `npm run benchmark:cross-impl` (`src/benchmarks/cross_impl.bench.ts`) spawns
-the TS spine binary on Node + Bun (+ the Rust `spine_stub` when
+the TS spine binary on Node + Bun (+ the Rust `testing_spine_stub` when
 `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
 over real HTTP, and prints per-scenario tables + a Welch verdict. The two TS
 runtimes are apples-to-apples with each other (same in-memory pglet driver);

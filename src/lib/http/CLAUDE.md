@@ -152,18 +152,18 @@ assembles this chain per spec, behind one stage that writes the spec's
 5. **Post-authorization guards** — `require_role` (403 `insufficient_permissions`), the one gate that reads the context step 4 built; multi-role specs admit any-of.
 6. **Input validation** — `read_json_body` + `spec.input`; 400 `invalid_json_body` or `invalid_request_body` (`issues` as `WireIssue`s, DEV only). Skipped on a null input.
 7. **Handler** — in a transaction when the spec says so; its result prepared inside it and emitted after the commit.
-8. **Error catch** — a thrown `ThrownJsonrpcError` (recognized by `to_thrown_jsonrpc_error`) → its HTTP status and the flat REST body `{error: <reason>, message?, ...data}`, the reason from `err.data.reason` or the code's name; anything else → 500 `internal_error` (message in DEV only). The JSON-RPC dispatcher keeps its own envelope on the RPC mount.
+8. **Error catch** — a failed pool checkout → 503 `service_unavailable` (flat, no message); a thrown `ThrownJsonrpcError` (recognized by `to_thrown_jsonrpc_error`) → its HTTP status and the flat REST body `{error: <reason>, message?, ...data}`, the reason from `err.data.reason` or the code's name; anything else → 500 `internal_error` (message in DEV only). The JSON-RPC dispatcher keeps its own envelope on the RPC mount.
 9. **DEV-only output validation** — a 2xx JSON body against `spec.output`.
 
-**Ordering: 401 → authz → 403 → 400 → handler**, the RPC dispatcher's order
-(`actions/action_rpc.ts`) and the Rust spine's, except that the dispatcher
-adds its per-action 429 between 403 and 400. Within the 403s the two
-differ: REST runs its credential-type and token-scope gates ahead of the
-authorization phase (step 3), while the dispatcher (`actions/perform_action.ts`)
-runs them after it, beside the role gate. Body validation runs last so a
-caller the authority gates refuse learns nothing of the input shape; params
-and query validate first because they address the route, and the
-authorization phase reads `acting` off the query on `GET`.
+**Ordering: 415 → params/query → 401 → authz → 403 → 400 → handler**; from 401
+on, the RPC dispatcher's order (`actions/action_rpc.ts`) and the Rust spine's,
+except that the dispatcher adds its per-action 429 between 403 and 400. Within
+the 403s the two differ: REST runs its credential-type and token-scope gates
+ahead of the authorization phase (step 3), while the dispatcher
+(`actions/perform_action.ts`) runs them after it, beside the role gate. Body
+validation runs last so a caller the authority gates refuse learns nothing of
+the input shape; params and query validate first because they address the route,
+and the authorization phase reads `acting` off the query on `GET`.
 
 Duplicate `method path` pairs throw at registration.
 

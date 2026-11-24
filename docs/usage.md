@@ -36,8 +36,9 @@ import { define_route } from '@fuzdev/fuz_app/http/route_spec.ts';
 import { route_fail, route_ok } from '@fuzdev/fuz_app/http/route_result.ts';
 import { REST_FOREIGN_KEY_VIOLATION } from '@fuzdev/fuz_app/http/error_schemas.ts';
 import { literal, min_length, object, pipe, string } from '@fuzdev/fuz_schema/schema.ts';
+import { ActingActor } from '@fuzdev/fuz_app/primitive_schemas.ts';
 
-const My_Input = object({ name: pipe(string, min_length(1)) });
+const My_Input = object({ name: pipe(string, min_length(1)), acting: ActingActor });
 const My_Output = object({ ok: literal(true), id: string });
 
 const my_route_spec = define_route({
@@ -49,7 +50,7 @@ const my_route_spec = define_route({
 	output: My_Output,
 	errors: [REST_FOREIGN_KEY_VIOLATION], // the handler's own codes, beside the derived ones
 	handler: async (route) => {
-		const { name } = route.input; // typed as {name: string}
+		const { name } = route.input; // typed from `My_Input`
 		const id = await create_thing(name);
 		if (id === null) return route_fail(REST_FOREIGN_KEY_VIOLATION); // `{error}` at 409
 		return route_ok({ ok: true, id }); // checked against `My_Output`
@@ -185,7 +186,7 @@ const env_config = validate_server_env(env);
 if (!env_config.ok) {
 	/* log env_config.field + env_config.errors, exit */
 }
-const { keyring, allowed_origins, bootstrap_token_path } = env_config;
+const { keyring, allowed_origins, allow_origin_wildcards, bootstrap_token_path } = env_config;
 
 // 2. Init backend (DB + auth migrations + deps). Throws
 // `TransactionIsolationError` before migrating when the database's
@@ -226,6 +227,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
 	session_cookie_name: 'my_session',
 	allowed_origins,
+	allow_origin_wildcards,
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],
 		get_connection_ip: (c) => getConnInfo(c).remote.address
@@ -406,27 +408,25 @@ const given_up = await server.close();
 if (shutdown_gave_up(given_up)) process.exitCode = 1;
 ```
 
-It stops the auth cleanup schedule, closes every live connection (each
-WebSocket with `WS_CLOSE_GOING_AWAY`, so clients reconnect rather than treat
-their session as revoked), waits for the work still in flight — the auth
-cleanup's pass in progress, every request and WS message accepted, until its
-handler has returned and its effects have flushed, each WebSocket still
-opening (its admission re-read and `on_socket_open`), and the audit emitter's
-writes — bounded by `shutdown_drain_timeout_ms`
-(`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), one bound for all of it, logging what
-it gives up on — then releases what assembly acquired and closes the
-database. It resolves what it gave up on, a `ShutdownDrainGivenUp`
-(`requests`, `audit_writes`, `upkeep`), every count `0` when it drained
-everything; report a give-up as a failed exit, as the Rust spine does
-(`StartupError::ShutdownGivenUp` exits `1`). `shutdown_gave_up(report)` reads
-it. A test app's `cleanup` (`testing/test_app.ts`) throws on a give-up
-instead, bounded by `TEST_SHUTDOWN_DRAIN_TIMEOUT_MS`. From the drain on, an
-arriving HTTP request is refused with 503 `{"error": "service_unavailable"}`.
-The release leaves the backend's emitter, closer and sender as they were
-before assembly, so a backend whose `close` you own (a test harness) can
-host another server; a closed connection registry hosts nothing more. `close`
-is idempotent — a second call resolves the same report. Each step is in the
-`AppServer.close` TSDoc (`server/app_server.ts`).
+It stops the auth cleanup schedule, closes every live connection (each WebSocket
+with `WS_CLOSE_GOING_AWAY`, so clients reconnect rather than treat their session
+as revoked), waits for the work still in flight — the auth cleanup's pass in
+progress, every request and WS message accepted, until its handler has returned
+and its effects have flushed, each WebSocket still opening (its admission
+re-read and `on_socket_open`), and the audit emitter's writes — bounded by
+`shutdown_drain_timeout_ms` (`DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS`), one bound for
+all of it, logging what it gives up on — then releases what assembly acquired
+and closes the database. It resolves what it gave up on, a
+`ShutdownDrainGivenUp` (`requests`, `audit_writes`, `upkeep`), every count `0`
+when it drained everything; report a give-up as a failed exit, as the Rust spine
+does (`StartupError::ShutdownGivenUp` exits `1`). `shutdown_gave_up(report)`
+reads it (test apps: ./testing.md §Test apps close when their test finishes).
+From the drain on, an arriving HTTP request is refused with 503
+`{"error": "service_unavailable"}`. The release leaves the backend's emitter,
+closer and sender as they were before assembly, so a backend whose `close` you
+own (a test harness) can host another server; a closed connection registry hosts
+nothing more. `close` is idempotent — a second call resolves the same report.
+Each step is in the `AppServer.close` TSDoc (`server/app_server.ts`).
 
 ### Auth cleanup
 
@@ -569,7 +569,7 @@ const { app, audit_sse } = await create_app_server({
 	// ...other options...
 	audit_log_sse: true, // or {role: 'custom_role', keep_alive_ms}
 	create_route_specs: (ctx) => [
-		...create_audit_log_route_specs({ stream: ctx.audit_sse! })
+		...prefix_route_specs('/api/admin', create_audit_log_route_specs({ stream: require_audit_sse(ctx) }))
 		// ...other routes
 	]
 });
@@ -931,9 +931,8 @@ two sources via `AbortSignal.any`:
 Handlers that block on I/O should cooperate or the work keeps running
 after the client has moved on. Two patterns:
 
-**Forward `{signal}` to a fetch-compatible API.** All major provider SDKs
-(Anthropic, OpenAI, Gemini) accept `{signal}` on their fetch options —
-just pass it through:
+**Forward `{signal}` to a fetch-compatible API.** Pass `ctx.signal` to any API
+that takes a fetch-style `{signal}`:
 
 ```typescript
 const response = await provider_client.messages.create({ ...request_body }, { signal: ctx.signal });
@@ -1142,21 +1141,23 @@ surface the consentful-role-grants flow to consumer apps. They live under
 role-grant-offer RPC actions and their WS notifications (see
 §Backend-initiated fan-out).
 
-The state class is transport-agnostic: it consumes a narrow
-`RoleGrantOffersRpc` interface (the offer-lifecycle methods of the RPC surface) and
-a subscription callback for WS notifications. Consumers adapt their
-typed client — from `create_rpc_client` or their generated
-`FrontendActionsApi` — to the `RoleGrantOffersRpc` shape, and plumb their
+The state class is transport-agnostic: it consumes a narrow `RoleGrantOffersRpc`
+interface (the offer-lifecycle methods of the RPC surface) and a subscription
+callback for WS notifications. Consumers adapt their throwing typed client —
+`api` from `create_frontend_rpc_client`, or `create_throwing_api` over a
+`create_rpc_client` result — to the `RoleGrantOffersRpc` shape, and plumb their
 `FrontendWebsocketClient` or `ActionDispatcher` receiver into
 `state.subscribe(...)` or call `state.apply_notification(n)` directly.
 
 ```typescript
-import {RoleGrantOffersState, role_grant_offers_state_context}
-	from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.ts';
-import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.ts';
+import {
+	RoleGrantOffersState,
+	role_grant_offers_state_context
+} from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.ts';
+import { auth_state_context } from '@fuzdev/fuz_app/ui/auth_state.svelte.ts';
 
 const auth = auth_state_context.get();
-const api = /* typed client via create_rpc_client */;
+const api = /* the throwing typed client, `api` from create_frontend_rpc_client */;
 
 const role_grant_offers = new RoleGrantOffersState({
 	rpc: {
@@ -1166,13 +1167,13 @@ const role_grant_offers = new RoleGrantOffersState({
 		create: (params) => api.role_grant_offer_create(params),
 		accept: (params) => api.role_grant_offer_accept(params),
 		decline: (params) => api.role_grant_offer_decline(params),
-		retract: (params) => api.role_grant_offer_retract(params),
+		retract: (params) => api.role_grant_offer_retract(params)
 	},
 	account_id: () => auth.account?.id ?? null,
 	// Actor id is needed to classify outgoing offers. Surfaced directly on
 	// `AuthState.actor` (from `GET /api/account/status`) — no need to derive
 	// it from the role_grant list.
-	actor_id: () => auth.actor?.id ?? null,
+	actor_id: () => auth.actor?.id ?? null
 });
 role_grant_offers_state_context.set(role_grant_offers);
 
