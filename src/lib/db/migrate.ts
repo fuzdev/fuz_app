@@ -405,6 +405,12 @@ export const run_migrations = async (
 	return results;
 };
 
+/** Options for `baseline`. */
+export interface BaselineOptions {
+	/** Receives the debug line for a tolerated `schema_version` DDL race. */
+	log?: Logger;
+}
+
 /**
  * Insert tracker rows for the named migrations of a namespace **without
  * executing them**.
@@ -431,6 +437,7 @@ export const run_migrations = async (
  * @param db - the database instance
  * @param ns - the namespace whose migrations are being baselined
  * @param names - prefix of `ns.migrations[].name` to record as already-applied
+ * @param options - `log` for the tolerated DDL race
  * @mutates schema_version - inserts tracker rows for `names` without running
  *   the corresponding migration bodies
  * @throws MigrationError with `kind` of `namespace-reserved` (before touching
@@ -440,10 +447,11 @@ export const run_migrations = async (
 export const baseline = async (
 	db: Db,
 	ns: MigrationNamespace,
-	names: ReadonlyArray<string>
+	names: ReadonlyArray<string>,
+	options?: BaselineOptions
 ): Promise<void> => {
 	assert_migration_namespaces([ns]);
-	await ensure_schema_version_table(db, undefined);
+	await ensure_schema_version_table(db, options?.log);
 
 	const code_names = ns.migrations.map((m) => m.name);
 

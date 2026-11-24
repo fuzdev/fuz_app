@@ -8,6 +8,7 @@
  */
 
 import { assert, describe, test } from 'vitest';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { baseline, namespace_lock_key, run_migrations, type Migration } from '#lib/db/migrate.ts';
@@ -51,6 +52,15 @@ const create_recording_db = (
 };
 
 const lock_statement = (text: string): boolean => text.includes('pg_advisory');
+
+/** A `Logger` that records each `debug` as one joined string. */
+const create_debug_log = (): { log: Logger; debugs: Array<string> } => {
+	const debugs: Array<string> = [];
+	const log = {
+		debug: (...args: Array<unknown>): void => void debugs.push(args.join(' '))
+	} as unknown as Logger;
+	return { log, debugs };
+};
 
 describe('the namespace lock', () => {
 	test('is taken inside the chain transaction, before any migration statement', async () => {
@@ -120,6 +130,25 @@ describe('the schema_version DDL race', () => {
 			'a'
 		]);
 		assert.ok(statements.some((s) => s.text.includes('INSERT INTO schema_version')));
+	});
+
+	test('run_migrations logs the tolerated race at debug', async () => {
+		const { db } = create_recording_db({ ddl_error: pg_error('42710') });
+		const { log, debugs } = create_debug_log();
+		await run_migrations(db, [{ namespace: 'race_ns', migrations: [] }], { log });
+		assert.deepStrictEqual(debugs, ['schema_version DDL raced (42710); another boot won']);
+	});
+
+	test('baseline logs the tolerated race at debug, as run_migrations does', async () => {
+		const { db } = create_recording_db({ ddl_error: pg_error('23505') });
+		const { log, debugs } = create_debug_log();
+		await baseline(
+			db,
+			{ namespace: 'race_ns', migrations: [{ name: 'a', up: async () => {} }] },
+			['a'],
+			{ log }
+		);
+		assert.deepStrictEqual(debugs, ['schema_version DDL raced (23505); another boot won']);
 	});
 
 	test('any other error on the DDL propagates', async () => {
