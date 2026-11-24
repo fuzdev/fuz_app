@@ -11,7 +11,13 @@ import { assert, describe, test } from 'vitest';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
-import { baseline, namespace_lock_key, run_migrations, type Migration } from '#lib/db/migrate.ts';
+import {
+	baseline,
+	MigrationError,
+	namespace_lock_key,
+	run_migrations,
+	type Migration
+} from '#lib/db/migrate.ts';
 
 interface Statement {
 	/** `'pool'` for a `Db.query` outside a transaction, else the transaction's index. */
@@ -26,7 +32,7 @@ const pg_error = (code: string): Error => Object.assign(new Error(`pg ${code}`),
  * rows, so every namespace reads as unapplied.
  */
 const create_recording_db = (
-	options: { ddl_error?: Error } = {}
+	options: { ddl_error?: Error; lock_error?: Error } = {}
 ): { db: Db; statements: Array<Statement> } => {
 	const statements: Array<Statement> = [];
 	const client_for = (scope: Statement['scope']) => ({
@@ -39,6 +45,7 @@ const create_recording_db = (
 			) {
 				throw options.ddl_error;
 			}
+			if (options.lock_error && lock_statement(text)) throw options.lock_error;
 			return { rows: [] };
 		}
 	});
@@ -101,6 +108,50 @@ describe('the namespace lock', () => {
 		assert.strictEqual(tx_statements[0]!.text, 'SELECT pg_advisory_xact_lock($1)');
 		assert.ok(tx_statements.some((s) => s.text.includes('INSERT INTO schema_version')));
 		assert.ok(statements.filter((s) => s.scope === 'pool').every((s) => !lock_statement(s.text)));
+	});
+
+	const assert_lock_failed = (caught: unknown, driver_error: Error): void => {
+		assert.ok(caught instanceof MigrationError, 'a failed lock throws MigrationError');
+		assert.strictEqual(caught.kind, 'migration-lock-failed');
+		assert.strictEqual(caught.namespace, 'lock_ns');
+		assert.include(caught.message, '"lock_ns"');
+		assert.include(caught.message, driver_error.message);
+		assert.strictEqual(caught.cause, driver_error, 'the driver error is the cause');
+	};
+
+	test('a failed lock throws migration-lock-failed naming the namespace', async () => {
+		const failure = pg_error('55P03');
+		const { db, statements } = create_recording_db({ lock_error: failure });
+		let caught: unknown;
+		try {
+			await run_migrations(db, [
+				{ namespace: 'lock_ns', migrations: [{ name: 'm0', up: async () => {} }] }
+			]);
+		} catch (err) {
+			caught = err;
+		}
+		assert_lock_failed(caught, failure);
+		assert.ok(
+			statements.every((s) => !s.text.includes('INSERT INTO schema_version')),
+			'nothing in the namespace was applied'
+		);
+	});
+
+	test('baseline throws migration-lock-failed on a failed lock too', async () => {
+		const failure = pg_error('57014');
+		const { db, statements } = create_recording_db({ lock_error: failure });
+		let caught: unknown;
+		try {
+			await baseline(
+				db,
+				{ namespace: 'lock_ns', migrations: [{ name: 'a', up: async () => {} }] },
+				['a']
+			);
+		} catch (err) {
+			caught = err;
+		}
+		assert_lock_failed(caught, failure);
+		assert.ok(statements.every((s) => !s.text.includes('INSERT INTO schema_version')));
 	});
 
 	test('the key matches the Rust twin, sign and UTF-8 bytes included', () => {

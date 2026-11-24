@@ -158,11 +158,13 @@ phantom `name-divergence-at-N`. Up-to-date namespaces are omitted from
 the result array.
 
 **`MigrationError`** is the only error class `run_migrations` and
-`baseline` raise themselves; a driver failure outside a migration body
-(the DDL, the lock, a checkout) propagates as the driver's error. Branch
-on `.kind`, never on message text. Kinds: `namespace-reserved` (a
-consumer namespace under a reserved spine name, refused before touching
-the database), `binary-older-than-db`, `name-divergence-at-N`,
+`baseline` raise themselves; a failed namespace lock throws
+`migration-lock-failed` naming the namespace, the driver's error as its
+`cause`, and any other driver failure outside a migration body (the DDL,
+a checkout) propagates as the driver's error. Branch on `.kind`, never on
+message text. Kinds: `namespace-reserved` (a consumer namespace under a
+reserved spine name, refused before touching the database),
+`migration-lock-failed`, `binary-older-than-db`, `name-divergence-at-N`,
 `migration-failed`, `baseline-name-not-in-code`,
 `baseline-name-out-of-order`, `baseline-namespace-already-populated`.
 Structured context fields (`namespace`, `at_index`, `unknown_names`)
@@ -176,8 +178,8 @@ Creates the `schema_version` table if absent, acquires the same advisory
 lock as `run_migrations`, refuses if the namespace already has tracker
 rows (per-namespace partial-failure-resume guard), prefix-validates
 against `ns.migrations`, then writes sequences `0..N-1` in one
-transaction. `baseline()` does not verify the schema actually
-matches what the named migrations would have produced — pair with a
+transaction. `baseline()` does not verify the schema actually matches
+what the named migrations would have produced — pair with a
 schema-assertion script post-baseline.
 
 There is **no programmatic bypass on the main `run_migrations` path**.

@@ -110,6 +110,7 @@ export type MigrationErrorKind =
 	| 'binary-older-than-db'
 	| 'name-divergence-at-N'
 	| 'migration-failed'
+	| 'migration-lock-failed'
 	| 'baseline-name-not-in-code'
 	| 'baseline-name-out-of-order'
 	| 'baseline-namespace-already-populated';
@@ -270,10 +271,25 @@ export const namespace_lock_key = (namespace: string): number => {
 
 /**
  * Take the namespace's advisory lock in the open transaction `tx` — held
- * until it commits or rolls back (module doc, "Advisory locking").
+ * until it commits or rolls back (module doc, "Advisory locking"). A failed
+ * lock fails the run naming the namespace, the driver error as its `cause`
+ * (a cancel, a `statement_timeout` or a `lock_timeout` keeps its SQLSTATE
+ * there). Twin of the Rust `MigrationError::LockFailed`.
+ *
+ * @throws MigrationError with `kind` `migration-lock-failed`
  */
 const lock_namespace = async (tx: Db, namespace: string): Promise<void> => {
-	await tx.query('SELECT pg_advisory_xact_lock($1)', [namespace_lock_key(namespace)]);
+	try {
+		await tx.query('SELECT pg_advisory_xact_lock($1)', [namespace_lock_key(namespace)]);
+	} catch (err) {
+		throw new MigrationError(
+			'migration-lock-failed',
+			`Namespace "${namespace}" could not take its advisory lock: ${to_error_message(err)}. ` +
+				`Hint: nothing in this namespace was applied; check the connection and any ` +
+				`\`lock_timeout\` or \`statement_timeout\` set for the role or database, then retry.`,
+			{ namespace, cause: err }
+		);
+	}
 };
 
 /** Options for `run_migrations`. */
@@ -312,8 +328,8 @@ export interface RunMigrationsOptions {
  *   namespaces are omitted)
  * @mutates schema_version - inserts one row per applied migration
  * @throws MigrationError with `kind` of `namespace-reserved` (before touching
- *   the database), `binary-older-than-db`, `name-divergence-at-N`, or
- *   `migration-failed`
+ *   the database), `migration-lock-failed`, `binary-older-than-db`,
+ *   `name-divergence-at-N`, or `migration-failed`
  */
 export const run_migrations = async (
 	db: Db,
@@ -440,7 +456,7 @@ export interface BaselineOptions {
  *   the corresponding migration bodies
  * @throws MigrationError with `kind` of `namespace-reserved` (before touching
  *   the database), `baseline-name-not-in-code`, `baseline-name-out-of-order`,
- *   or `baseline-namespace-already-populated`
+ *   `migration-lock-failed`, or `baseline-namespace-already-populated`
  */
 export const baseline = async (
 	db: Db,
