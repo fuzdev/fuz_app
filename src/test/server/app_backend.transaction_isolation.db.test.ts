@@ -3,9 +3,9 @@
  * passes the default and refuses a session set to any other level on pglet and
  * PGlite, and `create_app_backend` over a Postgres database whose default is
  * REPEATABLE READ is refused before any migration runs. The Postgres half runs
- * only with `TEST_DATABASE_URL` (and `CREATEDB`), on a throwaway database it
- * creates and drops, so the database-level setting never reaches the shared
- * test database. Twin of the Rust spine's
+ * only with `FUZ_TEST_POSTGRES_URL` (and `CREATEDB`), on a throwaway database it
+ * creates and drops, so the database-level setting never reaches another
+ * database on the server. Twin of the Rust spine's
  * `refuses_a_database_not_at_read_committed_before_migrating`.
  *
  * @module
@@ -22,9 +22,16 @@ import {
 	TransactionIsolationError
 } from '#lib/server/app_backend.ts';
 import { create_db } from '#lib/db/create_db.ts';
+import { with_database_name } from '#lib/db/postgres_url.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
 import type { Db } from '#lib/db/db.ts';
 import { stub_password_deps } from '#lib/testing/app_server.ts';
+import {
+	create_test_postgres_database,
+	drop_test_postgres_database,
+	FUZ_TEST_POSTGRES_URL_ENV,
+	TEST_DATABASE_PREFIX
+} from '#lib/testing/db.ts';
 import { create_test_keyring } from '../auth/session_test_helpers.ts';
 
 const REFUSED_LEVELS = ['repeatable read', 'serializable', 'read uncommitted'];
@@ -62,19 +69,16 @@ describe('ensure_read_committed', () => {
 	});
 });
 
-const url = process.env.TEST_DATABASE_URL;
+const postgres_url = process.env[FUZ_TEST_POSTGRES_URL_ENV];
 
-describe.skipIf(!url)('create_app_backend over Postgres', () => {
+describe.skipIf(!postgres_url)('create_app_backend over Postgres', () => {
 	test('a database not at read committed is refused before any migration runs', async () => {
-		const scratch_name = 'fuz_app_test_isolation_guard';
-		const scratch = new URL(url!);
-		scratch.pathname = `/${scratch_name}`;
-		const scratch_url = scratch.href;
+		const scratch_name = `${TEST_DATABASE_PREFIX}isolation_guard_${process.pid}`;
+		const scratch_url = with_database_name(postgres_url!, scratch_name);
 
-		const admin = await create_db(url!);
+		const admin = await create_db(postgres_url!);
 		try {
-			await admin.db.query(`DROP DATABASE IF EXISTS ${scratch_name} WITH (FORCE)`);
-			await admin.db.query(`CREATE DATABASE ${scratch_name}`);
+			await create_test_postgres_database(postgres_url!, scratch_name);
 			try {
 				// the Postgres default passes
 				{
@@ -114,7 +118,7 @@ describe.skipIf(!url)('create_app_backend over Postgres', () => {
 					await probe.close();
 				}
 			} finally {
-				await admin.db.query(`DROP DATABASE IF EXISTS ${scratch_name} WITH (FORCE)`);
+				await drop_test_postgres_database(postgres_url!, scratch_name);
 			}
 		} finally {
 			await admin.close();

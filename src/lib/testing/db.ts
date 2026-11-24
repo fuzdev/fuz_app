@@ -12,7 +12,11 @@ import './assert_dev_env.ts';
  *
  * @example
  * ```ts
- * import {create_default_db_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.ts';
+ * import {
+ *   create_default_db_factory,
+ *   create_pg_factory,
+ *   FUZ_TEST_POSTGRES_URL_ENV
+ * } from '@fuzdev/fuz_app/testing/db.ts';
  * import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
  * import {AUTH_MIGRATION_NS} from '@fuzdev/fuz_app/auth/migrations.ts';
  *
@@ -20,14 +24,17 @@ import './assert_dev_env.ts';
  *   await run_migrations(db, [AUTH_MIGRATION_NS]);
  * };
  * const default_factory = create_default_db_factory(init_schema);
- * const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
+ * const pg_factory = create_pg_factory(init_schema, process.env[FUZ_TEST_POSTGRES_URL_ENV], {
+ *   suite: 'my_app'
+ * });
  * export const db_factories = [default_factory, pg_factory];
  * ```
  *
  * @module
  */
 
-import type { Pool } from 'pg';
+import { threadId } from 'node:worker_threads';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { Db } from '../db/db.ts';
 import { create_pglite_db } from '../db/db_pglite.ts';
@@ -36,9 +43,11 @@ import {
 	create_pg_db,
 	create_pg_pool,
 	DEFAULT_DB_CHECKOUT_TIMEOUT_MS,
-	register_pg_type_parsers
+	register_pg_type_parsers,
+	type DbCheckoutPool
 } from '../db/db_pg.ts';
 import { pg_error_code } from '../db/pg_error.ts';
+import { redact_database_url, with_database_name } from '../db/postgres_url.ts';
 
 /**
  * Factory interface for creating test database instances.
@@ -55,10 +64,9 @@ export interface DbFactory {
  * Reset a test database to a clean slate by dropping and recreating the `public` schema.
  *
  * `DROP SCHEMA public CASCADE; CREATE SCHEMA public` in plain SQL, so it resets
- * every driver: the in-memory factories call it on each `create()`, and it is
- * recommended at the start of `init_schema` callbacks for `create_pg_factory`,
- * whose persistent databases accumulate stale DDL across fuz_app versions.
- * Drift-proof — it wipes every table, type, and sequence regardless of
+ * every driver: the in-memory factories call it on each `create()`, where one
+ * instance serves every suite. (`create_pg_factory` needs none: each of its
+ * databases is new.) Drift-proof — it wipes every table, type, and sequence regardless of
  * namespace, so it needs no upkeep when the schema gains a table. The database
  * instance remains usable after reset.
  *
@@ -189,86 +197,231 @@ export const create_default_db_factory: DbFactoryBuilder = (init_schema) =>
 	(default_db_factory_builder ?? create_pglet_wasm_factory)(init_schema);
 
 /**
+ * The env var naming the PostgreSQL server the tests may create databases on
+ * — a URL whose role has `CREATEDB`, e.g. `postgres://localhost/postgres`. The
+ * variable the Rust spine's `fuz_testing` reads, so one setting turns on the
+ * PostgreSQL leg of both. Unset, the PostgreSQL leg is skipped (or, for a
+ * PostgreSQL-only project, fails naming the variable).
+ */
+export const FUZ_TEST_POSTGRES_URL_ENV = 'FUZ_TEST_POSTGRES_URL';
+
+/**
+ * What every database the test harness creates on PostgreSQL begins with — the
+ * Rust spine's prefix too, so one prefix finds what a killed run of either left
+ * behind.
+ */
+export const TEST_DATABASE_PREFIX = 'fuz_testing_';
+
+/**
+ * The longest suite name `create_pg_factory` takes: PostgreSQL truncates a
+ * name past 63 bytes, and `fuz_testing_`, `_<pid>`, `_<thread id>` and `_<n>`
+ * take the rest. The Rust spine's `SUITE_NAME_LENGTH_MAX`.
+ */
+export const TEST_SUITE_NAME_LENGTH_MAX = 24;
+
+/** Lowercase ASCII, digits and `_`, starting with a letter — a name PostgreSQL keeps as written. */
+const TEST_DATABASE_NAME_PART = /^[a-z][a-z0-9_]*$/;
+
+/**
+ * Refuse a name part that wouldn't make a database name PostgreSQL keeps as
+ * written, unquoted: anything but lowercase ASCII, digits and `_` starting
+ * with a letter, or longer than `max_length`. The Rust spine's rule for its
+ * suite names.
+ *
+ * @param kind - what the name is, for the message (`'test suite name'`)
+ * @param name - the name part
+ * @param max_length - its longest allowed length, in bytes
+ * @throws Error when the name breaks the rule
+ */
+export const assert_test_database_name_part = (
+	kind: string,
+	name: string,
+	max_length: number
+): void => {
+	if (!TEST_DATABASE_NAME_PART.test(name) || name.length > max_length) {
+		throw new Error(
+			`${kind} ${JSON.stringify(name)} must be lowercase ASCII, digits, and \`_\`, start with ` +
+				`a letter, and be at most ${max_length} bytes`
+		);
+	}
+};
+
+/** How many times a refused `DROP DATABASE` is retried, and how long apart (ms) — the Rust spine's. */
+const DROP_RETRIES = 50;
+const DROP_RETRY_DELAY_MS = 100;
+
+/**
+ * Run one statement over an admin connection to the server `postgres_url`
+ * names, opened and closed for it.
+ */
+const run_admin_statement = async (postgres_url: string, sql: string): Promise<void> => {
+	const { default: pg } = await import('pg');
+	const client = new pg.Client({ connectionString: postgres_url });
+	try {
+		await client.connect();
+	} catch (error) {
+		throw new Error(
+			`connect through ${FUZ_TEST_POSTGRES_URL_ENV} (${redact_database_url(postgres_url)}): ` +
+				to_error_message(error),
+			{ cause: error }
+		);
+	}
+	try {
+		await client.query(sql);
+	} finally {
+		await client.end();
+	}
+};
+
+/**
+ * Create the database `name` on the server `postgres_url` names, from
+ * `template0`, so it holds nothing a template added.
+ *
+ * @param postgres_url - the server, through a role with `CREATEDB` (`FUZ_TEST_POSTGRES_URL`)
+ * @param name - the database to create, a name `assert_test_database_name_part` admits
+ * @throws Error naming the variable when the server can't be reached, and
+ *   saying the role needs `CREATEDB` when it may not create databases
+ */
+export const create_test_postgres_database = async (
+	postgres_url: string,
+	name: string
+): Promise<void> => {
+	try {
+		await run_admin_statement(postgres_url, `CREATE DATABASE ${name} TEMPLATE template0`);
+	} catch (error) {
+		// 42501 insufficient_privilege
+		if (pg_error_code(error) === '42501') {
+			throw new Error(
+				`create ${name} through ${FUZ_TEST_POSTGRES_URL_ENV}: the role needs CREATEDB ` +
+					`(${to_error_message(error)})`,
+				{ cause: error }
+			);
+		}
+		throw error;
+	}
+};
+
+/**
+ * Drop the database `name` if it exists, `WITH (FORCE)` so connections still
+ * open on it are ended. A refusal that passes in moments is retried, as the
+ * Rust spine does: `FORCE` can't end an autovacuum worker for a role that
+ * isn't a superuser (`42501`), and a connection can open between its
+ * terminations and the drop (`55006`).
+ *
+ * @param postgres_url - the server, through a role with `CREATEDB` (`FUZ_TEST_POSTGRES_URL`)
+ * @param name - the database to drop
+ */
+export const drop_test_postgres_database = async (
+	postgres_url: string,
+	name: string
+): Promise<void> => {
+	const sql = `DROP DATABASE IF EXISTS ${name} WITH (FORCE)`;
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await run_admin_statement(postgres_url, sql);
+			return;
+		} catch (error) {
+			const code = pg_error_code(error);
+			if (attempt >= DROP_RETRIES || (code !== '42501' && code !== '55006')) throw error;
+			await new Promise((resolve) => setTimeout(resolve, DROP_RETRY_DELAY_MS));
+		}
+	}
+};
+
+/** Options for `create_pg_factory`. */
+export interface PgFactoryOptions {
+	/**
+	 * Names the factory's databases, `fuz_testing_<suite>_<pid>_<thread id>_<n>` —
+	 * lowercase ASCII, digits and `_`, starting with a letter, at most
+	 * `TEST_SUITE_NAME_LENGTH_MAX` bytes.
+	 */
+	readonly suite: string;
+}
+
+/**
+ * Numbers the databases this module instance creates. Each worker thread
+ * loads its own instance, so the name carries the thread id beside the pid.
+ */
+let next_test_database = 0;
+
+/**
  * Create a pg (PostgreSQL) database factory for tests.
  *
- * Skipped when `test_url` is not provided. Each `create()` opens a pool,
- * resets the `public` schema (`reset_public_schema`) and runs `init_schema` —
- * the lifecycle every factory here shares, so a persistent test database never
- * carries stale DDL or tracker rows from an earlier run or another suite's
- * schema. Point `test_url` at a database used only for tests.
+ * Skipped when `postgres_url` is not provided — callers pass
+ * `process.env[FUZ_TEST_POSTGRES_URL_ENV]`; the factory never reads the
+ * environment. `postgres_url` names a server and a role with `CREATEDB`, and
+ * is used only as the admin connection: each `create()` creates a database of
+ * its own there, `fuz_testing_<suite>_<pid>_<thread id>_<n>` from
+ * `template0` (the thread id, from `node:worker_threads`, keeps names apart
+ * under a threads pool), opens production's pool on it and runs
+ * `init_schema`; `close()` ends the pool and drops the database
+ * `WITH (FORCE)`. The Rust spine's `fuz_testing` creates and drops its
+ * databases the same way under the same prefix (its names carry no thread
+ * id), so a run of either killed before its `close()` leaves `fuz_testing_*`
+ * databases — drop them by that prefix.
  *
  * @param init_schema - callback to initialize the database schema
- * @param test_url - PostgreSQL connection URL (e.g. from `TEST_DATABASE_URL`)
+ * @param postgres_url - the server to create databases on (`FUZ_TEST_POSTGRES_URL`), or `undefined` to skip
+ * @param options - the suite name the databases are named for
  * @returns a factory that creates pg databases. The returned `create()`
- *   throws when `test_url` is unset (despite the `skip: true` flag — defense
- *   against direct invocation), and rewrites Postgres "database does not
- *   exist" errors into a `createdb` hint message.
+ *   throws naming the variable when `postgres_url` is unset (despite the
+ *   `skip: true` flag — defense against direct invocation), and says the role
+ *   needs `CREATEDB` when it may not create databases.
+ * @throws Error when `options.suite` breaks the naming rule
  */
 export const create_pg_factory = (
 	init_schema: (db: Db) => Promise<void>,
-	test_url?: string
+	postgres_url: string | undefined,
+	options: PgFactoryOptions
 ): DbFactory => {
-	const should_skip = !test_url;
-	const skip_reason = !test_url ? 'TEST_DATABASE_URL not set' : undefined;
-
-	let pool_ref: Pool | null = null;
+	const { suite } = options;
+	assert_test_database_name_part('test suite name', suite, TEST_SUITE_NAME_LENGTH_MAX);
+	// each database this factory created and has not closed, by the `Db` on it
+	const open: Map<Db, { pool: DbCheckoutPool; name: string }> = new Map();
 
 	return {
 		name: 'pg',
-		skip: should_skip,
-		skip_reason,
+		skip: !postgres_url,
+		skip_reason: postgres_url ? undefined : `${FUZ_TEST_POSTGRES_URL_ENV} not set`,
 		async create() {
-			if (!test_url) {
-				throw new Error('TEST_DATABASE_URL required for pg tests.');
+			if (!postgres_url) {
+				throw new Error(`${FUZ_TEST_POSTGRES_URL_ENV} required for pg tests.`);
 			}
-			// Close any previous pool to prevent leaks on repeated create() calls.
-			// With isolate: false, the pool may have been ended by a previous file's close().
-			if (pool_ref) {
-				try {
-					await pool_ref.end();
-				} catch {
-					// pool already ended — safe to ignore
-				}
-				pool_ref = null;
-			}
-			const { default: pg } = await import('pg');
-			// Mirror production's int8→number coercion (`create_db`) so the
-			// test pg pool reads `BIGSERIAL` columns (e.g. `audit_log.seq`)
-			// as numbers like PGlite does — without this the pg leg of a
-			// `.db.test.ts` sees `seq` as a string and wire-schema parses fail.
-			await register_pg_type_parsers();
-			// production's pool, so a test reads production's checkout semantics
-			const pool = create_pg_pool(pg, {
-				connection_string: test_url,
-				checkout_timeout_ms: DEFAULT_DB_CHECKOUT_TIMEOUT_MS
-			});
-			pool_ref = pool;
-			const { db } = create_pg_db(pool);
+			const name = `${TEST_DATABASE_PREFIX}${suite}_${process.pid}_${threadId}_${next_test_database++}`;
+			await create_test_postgres_database(postgres_url, name);
+			let pool: DbCheckoutPool | null = null;
 			try {
-				await reset_public_schema(db);
+				const { default: pg } = await import('pg');
+				// Mirror production's int8→number coercion (`create_db`) so the
+				// test pg pool reads `BIGSERIAL` columns (e.g. `audit_log.seq`)
+				// as numbers like PGlite does — without this the pg leg of a
+				// `.db.test.ts` sees `seq` as a string and wire-schema parses fail.
+				await register_pg_type_parsers();
+				// production's pool, so a test reads production's checkout semantics
+				pool = create_pg_pool(pg, {
+					connection_string: with_database_name(postgres_url, name),
+					checkout_timeout_ms: DEFAULT_DB_CHECKOUT_TIMEOUT_MS
+				});
+				const { db } = create_pg_db(pool);
 				await init_schema(db);
+				open.set(db, { pool, name });
+				return db;
 			} catch (error) {
-				await pool.end();
-				// 3D000 invalid_catalog_name — the database itself is missing, not
-				// something a migration referenced
-				if (pg_error_code(error) === '3D000') {
-					const db_name = test_url.split('/').pop()?.split('?')[0] ?? 'test_db';
-					throw new Error(
-						`Database "${db_name}" does not exist. Create it with: createdb ${db_name}`
-					);
-				}
+				await pool?.end().catch(() => {});
+				await drop_test_postgres_database(postgres_url, name).catch((drop_error: unknown) => {
+					console.error(`a test database was left behind: ${name}`, drop_error);
+				});
 				throw error;
 			}
-			return db;
 		},
-		async close() {
-			if (pool_ref) {
-				try {
-					await pool_ref.end();
-				} catch {
-					// pool already ended — safe to ignore
-				}
-				pool_ref = null;
+		async close(db) {
+			const entry = open.get(db);
+			if (!entry || !postgres_url) return;
+			open.delete(db);
+			try {
+				await entry.pool.end();
+			} finally {
+				await drop_test_postgres_database(postgres_url, entry.name);
 			}
 		}
 	};

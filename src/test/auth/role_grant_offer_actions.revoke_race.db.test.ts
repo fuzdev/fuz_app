@@ -8,7 +8,7 @@
  * revokes park inside the guard's count, then releases them together.
  * Row-lock contention needs concurrent transactions on real `pg` connections
  * (the in-memory drivers run transactions serially), so this runs against
- * `pg_factory` only and skips when `TEST_DATABASE_URL` is unset. Twin of the
+ * `pg_factory` only and skips when `FUZ_TEST_POSTGRES_URL` is unset. Twin of the
  * Rust `cross_revokes_of_the_last_two_admins_serialize` (`fuz_auth`).
  *
  * @module

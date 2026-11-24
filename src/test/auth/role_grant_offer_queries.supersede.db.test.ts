@@ -533,7 +533,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	});
 
 	// The Postgres engines only (the `pg` and PGlite legs; `pg` needs
-	// `TEST_DATABASE_URL`): pglet returns the rows in write order whether or not
+	// `FUZ_TEST_POSTGRES_URL`): pglet returns the rows in write order whether or not
 	// the cascade sorts them, so only those tell an ordered cascade from an
 	// unordered one. The scan is pinned to the heap,
 	// where the refreshed row sits last: through an index the unordered order

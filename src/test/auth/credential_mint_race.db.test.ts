@@ -20,7 +20,7 @@
  * the mint commits first — ends with the credential revoked. Those run on
  * every driver: nothing is held inside a transaction.
  *
- * The lock is shown to serialize on real `pg` only (`TEST_DATABASE_URL`): a
+ * The lock is shown to serialize on real `pg` only (`FUZ_TEST_POSTGRES_URL`): a
  * mint waits on an uncommitted change's row lock, and a change waits on an
  * uncommitted mint's — so the change's revoke, which runs after its account
  * write, reaches the session the mint inserted. Two mints of one account at

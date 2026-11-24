@@ -61,7 +61,9 @@ jobs:
       - run: npm ci
       - run: npx @fuzdev/gro check --workspace --build
         env:
-          TEST_DATABASE_URL: postgres://fuz_test:fuz_test@localhost:5432/fuz_test
+          # the server the `pg` leg creates a database of its own on per test
+          # suite; the image's `POSTGRES_USER` is a superuser, so it has CREATEDB
+          FUZ_TEST_POSTGRES_URL: postgres://fuz_test:fuz_test@localhost:5432/fuz_test
 
   # The TS spine over real HTTP, WebSocket and SSE on each JS runtime — the
   # `cross_backend_ts_node` and `cross_backend_ts_bun` vitest projects — and the
@@ -72,9 +74,10 @@ jobs:
   #
   # Not run here: `cross_backend_rust_spine_stub`, `cross_backend_parity` and
   # `cross_backend_security`. They build and spawn the Rust spine's test binary
-  # from the fuz repo's Cargo workspace, against Postgres. The fuz repo's
-  # nightly `cross-contract` workflow runs them, checking out this repo's
-  # `main` beside its own checkout.
+  # from the fuz repo's Cargo workspace, each over a `pglet_server` built there
+  # (parity over PostgreSQL only, through `FUZ_TEST_POSTGRES_URL`). The fuz
+  # repo's nightly `cross-contract` workflow runs them, checking out this
+  # repo's `main` beside its own checkout.
   cross-ts:
     runs-on: ubuntu-latest
     timeout-minutes: 15

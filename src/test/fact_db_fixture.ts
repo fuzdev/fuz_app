@@ -15,6 +15,7 @@ import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '#lib/db/fact_ddl.ts';
 import { create_db_fixture } from './create_db_fixture.ts';
 
 export const { describe_db } = create_db_fixture(
+	'fact',
 	[AUTH_MIGRATION_NS, FACT_MIGRATION_NS],
 	[...FACT_DROP_TABLES, ...auth_integration_truncate_tables]
 );

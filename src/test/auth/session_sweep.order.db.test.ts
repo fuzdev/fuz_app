@@ -10,7 +10,7 @@
  * lowest holding neither, and both commit; any other order holds the highest
  * and deadlocks.
  *
- * Real `pg` only (`TEST_DATABASE_URL`): the in-memory drivers have one
+ * Real `pg` only (`FUZ_TEST_POSTGRES_URL`): the in-memory drivers have one
  * connection, so the sweep would queue behind the holder whatever it locks.
  * The spines serve no sweep over the wire, so this is its pin where the other
  * credential deletes have theirs in `cross_backend/lock_pins.cross.test.ts`.

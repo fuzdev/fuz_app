@@ -4,7 +4,7 @@
  * on the lock the Rust spine's runner holds — a session `pg_advisory_lock` on
  * the same `bigint` key.
  *
- * Real `pg` only (`TEST_DATABASE_URL`): the in-memory drivers have one
+ * Real `pg` only (`FUZ_TEST_POSTGRES_URL`): the in-memory drivers have one
  * connection and run one transaction at a time, so nothing there races.
  *
  * @module

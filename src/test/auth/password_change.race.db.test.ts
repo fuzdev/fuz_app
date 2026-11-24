@@ -22,7 +22,7 @@
  * Real `pg` only: the loser's middleware read needs a second database
  * connection while the winner's transaction is open. The in-memory drivers
  * have one connection — the read would queue behind the held transaction and
- * the case would deadlock. Skipped when `TEST_DATABASE_URL` is unset.
+ * the case would deadlock. Skipped when `FUZ_TEST_POSTGRES_URL` is unset.
  *
  * @module
  */

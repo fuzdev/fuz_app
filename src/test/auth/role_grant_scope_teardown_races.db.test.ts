@@ -35,7 +35,7 @@
  *   the folded key, asserted as literals; the vectors themselves are pinned in
  *   `scope_advisory_lock_key.test.ts`.
  *
- * Real `pg` only (`TEST_DATABASE_URL`): the in-memory drivers have one
+ * Real `pg` only (`FUZ_TEST_POSTGRES_URL`): the in-memory drivers have one
  * connection, so a second transaction would queue behind the held one
  * whatever it locks. Twin of the Rust `fuz_auth` `tests/scope_teardown_races.rs`.
  *

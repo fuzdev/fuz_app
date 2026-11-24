@@ -7,7 +7,7 @@
  * the last two admins can't both pass. Row-lock serialization needs two
  * concurrent transactions on real `pg` connections (the in-memory drivers run
  * transactions serially), so this runs against `pg_factory` only and skips
- * when `TEST_DATABASE_URL` is unset. Twin of the Rust
+ * when `FUZ_TEST_POSTGRES_URL` is unset. Twin of the Rust
  * `the_admin_count_locks_what_it_counted` (`fuz_auth`).
  *
  * @module

@@ -26,10 +26,12 @@ the code.
   `postgres`, or `template1` for a target named `postgres`; password removed),
   `to_postgres_password_env` (`{PGPASSWORD}`, `{}`, or `null` on a malformed
   percent-escape), `to_createdb_args` / `to_dropdb_args` (`--no-password`,
-  `--maintenance-db`, `--` before the name), `is_createdb_already_exists`, and
-  `rewrite_query_pairs` — every query rewrite edits raw pairs, since
-  `URLSearchParams` reserializes `%20` as `+`, which libpq reads literally. Used
-  by `dev/setup.ts` and `testing/cross_backend/postgres_database.ts`.
+  `--maintenance-db`, `--` before the name), `is_createdb_already_exists`,
+  `with_database_name` (another database on the same server),
+  `redact_database_url` (a URL fit to print), and `rewrite_query_pairs` — every
+  query rewrite edits raw pairs, since `URLSearchParams` reserializes `%20` as
+  `+`, which libpq reads literally. Used by `dev/setup.ts` and the test
+  databases (`testing/db.ts`, `testing/cross_backend/test_database.ts`).
 - `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts`'s
   `create_pg_pool` builds the pool with a bounded checkout
   (`connectionTimeoutMillis`, `DEFAULT_DB_CHECKOUT_TIMEOUT_MS`) whose failure

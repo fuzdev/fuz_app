@@ -19,20 +19,12 @@ import '../assert_dev_env.ts';
  * the env var at the resulting `target/cross-test/testing_spine_stub`;
  * operators / CI cache the binary across runs for fast spawns.
  *
- * **Operator setup** — the target Postgres database must exist before the
- * stub boots. The harness creates it only when a setup asks
- * (`ensure_database_for_url`, or `create_cross_backend_global_setup`'s
- * `ensure_databases`), so a test role needs no `CREATEDB` grant otherwise.
- *
- * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` points the stub at another
- * server (e.g. a scratch cluster on a spare port).
- *
- * The binary self-wipes the auth-namespace schema on every boot
- * (`FUZ_TESTING_RESET_DB_ON_STARTUP=true`, set by the Rust-family builder),
- * so no manual `DROP TABLE` between sessions is needed; per-test reset is
- * the orthogonal `_testing_reset` RPC action `default_cross_process_setup`
- * fires. `reset_db_on_startup: false` boots it over the database as it finds
- * it, for the backend swap (`backend_swap.ts`).
+ * **Its database** — `database_url` is required: the database a setup
+ * provisioned for the stub (`open_test_database`), a `pglet_server` of its own
+ * by default or a PostgreSQL database under `FUZ_TEST_POSTGRES_URL`, empty
+ * at the spawn. Per-test reset is the `_testing_reset` RPC action
+ * `default_cross_process_setup` fires; the backend swap (`backend_swap.ts`)
+ * boots the stub over a database another backend wrote.
  *
  * @module
  */
@@ -56,14 +48,6 @@ import {
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
 export const RUST_SPINE_STUB_BIN_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_BIN';
-
-/**
- * Env var overriding the stub's Postgres URL when `database_url` is omitted —
- * e.g. a scratch cluster on a spare port, keeping the run off the machine's
- * default server. A runner that creates the stub's database before the spawn
- * must create the one this URL names, on the server it names.
- */
-export const RUST_SPINE_STUB_DATABASE_URL_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL';
 
 /**
  * Env var the stub reads for the absolute path of the committed
@@ -116,18 +100,14 @@ export const RUST_SPINE_STUB_DEFAULT_PORT = 1177;
 /** The preset's default backend name — its spawn label and temp directory. */
 export const RUST_SPINE_STUB_DEFAULT_NAME = 'spine_stub';
 
-/** Default Postgres database — real PG (PGlite isn't reachable from `tokio-postgres`). */
-export const RUST_SPINE_STUB_DEFAULT_DATABASE_URL =
-	'postgres://localhost/fuz_app_test_rust_spine_stub';
-
 export interface SpineStubBackendConfigOptions {
 	/** Listening port. Default `RUST_SPINE_STUB_DEFAULT_PORT`. */
 	readonly port?: number;
 	/**
-	 * Postgres connection URL. Default `$FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`,
-	 * then `RUST_SPINE_STUB_DEFAULT_DATABASE_URL`.
+	 * The `postgres://` URL of the database provisioned for the stub
+	 * (`open_test_database`) — a `pglet_server`, or PostgreSQL.
 	 */
-	readonly database_url?: string;
+	readonly database_url: string;
 	/**
 	 * Backend name — labels the spawn in errors and logs, and names its
 	 * directory under `os.tmpdir()` (`default_test_backend_paths`, namespaced
@@ -196,13 +176,6 @@ export interface SpineStubBackendConfigOptions {
 	 * `TsSpineBackendConfigOptions.db_audit_checkout_timeout_ms`.
 	 */
 	readonly db_audit_checkout_timeout_ms?: number;
-	/**
-	 * Whether the stub drops the database's `public` schema before its
-	 * migrations on boot. Default `true`. `false` keeps what another backend
-	 * left there — the backend swap (`backend_swap.ts`). Passed to
-	 * `make_default_rust_backend_config`.
-	 */
-	readonly reset_db_on_startup?: boolean;
 }
 
 /**
@@ -217,17 +190,15 @@ export interface SpineStubBackendConfigOptions {
  * @throws Error when no binary path is available.
  */
 export const rust_spine_stub_backend_config = (
-	options: SpineStubBackendConfigOptions = {}
+	options: SpineStubBackendConfigOptions
 ): BackendConfig => {
 	const {
 		port = RUST_SPINE_STUB_DEFAULT_PORT,
-		database_url = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV] ||
-			RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
+		database_url,
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
 		trusted_proxies,
-		name = RUST_SPINE_STUB_DEFAULT_NAME,
-		reset_db_on_startup
+		name = RUST_SPINE_STUB_DEFAULT_NAME
 	} = options;
 	if (!binary_path) {
 		throw new Error(
@@ -256,7 +227,6 @@ export const rust_spine_stub_backend_config = (
 		// dir to `paths.root`, which makes that `paths.daemon_token_path`, the
 		// file `spawn_backend` reads after the health probe.
 		daemon_token_dir_env: 'FUZ_RUST_SPINE_STUB_DIR',
-		reset_db_on_startup,
 		extra_env: {
 			// Absolute path to the committed spine `expected_schema.json` — the
 			// stub's `/ready` gate introspects the live DB against it. The SAME

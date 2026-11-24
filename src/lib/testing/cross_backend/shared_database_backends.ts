@@ -1,7 +1,8 @@
 import '../assert_dev_env.ts';
 
 /**
- * Helpers for suites that run several spines over one Postgres database —
+ * Helpers for suites that run several spines over one database (a
+ * `TestDatabase`, on a `pglet_server` or PostgreSQL) —
  * the backend swap (`backend_swap.ts`, one backend at a time) and both spines
  * live (`backend_both_live.ts`, at once). They share what a credential and a
  * write need to carry from one spine to the other: the config checks, a
@@ -11,14 +12,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import { createHash } from 'node:crypto';
 import { assert } from 'vitest';
-import { parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
+import type { Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import { SessionAccountJson } from '../../auth/account_schema.ts';
 import { InviteListOutput } from '../../auth/admin_action_specs.ts';
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import type { Db } from '../../db/db.ts';
-import { EnvStringbool } from '../../env/env_schemas.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
@@ -35,9 +36,6 @@ const DATABASE_URL_ENV = 'DATABASE_URL';
 
 /** The cookie-signing keys env var both spine families read. */
 const COOKIE_KEYS_ENV = 'SECRET_FUZ_COOKIE_KEYS';
-
-/** The Rust family's startup-reset gate (`make_default_rust_backend_config`). */
-const RESET_DB_ON_STARTUP_ENV = 'FUZ_TESTING_RESET_DB_ON_STARTUP';
 
 /** The backdoors every shared-database suite drives: the drain and the invariants. */
 export const SHARED_DATABASE_BACKDOORS = [
@@ -58,7 +56,7 @@ export interface SharedDatabaseOrder {
 	readonly second: BackendConfig;
 }
 
-/** One table's content: its row count and a digest of its rows as text, in order. */
+/** One table's content: its row count and a digest of its rows as text, sorted. */
 export interface SharedDatabaseTableContent {
 	readonly rows: number;
 	readonly digest: string;
@@ -73,6 +71,38 @@ export interface SharedDatabaseSnapshot {
 	readonly schema_version: ReadonlyArray<Record<string, unknown>>;
 	readonly tables: Readonly<Record<string, SharedDatabaseTableContent>>;
 }
+
+/**
+ * One table's content: every column cast to text by the engine, so a value
+ * reads exactly as stored (no driver parsing, no lost precision), each row
+ * serialized and the rows sorted and digested here rather than in SQL — the
+ * whole-row cast, `string_agg` and an aggregate's `ORDER BY` are PostgreSQL's,
+ * and the shared database may be a `pglet_server`.
+ */
+const read_table_content = async (
+	db: Db,
+	schemaname: string,
+	tablename: string
+): Promise<SharedDatabaseTableContent> => {
+	const columns = await db.query<{ column_name: string }>(
+		'SELECT column_name FROM information_schema.columns ' +
+			'WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position',
+		[schemaname, tablename]
+	);
+	const select = columns
+		.map(({ column_name }, i) => `"${column_name.replaceAll('"', '""')}"::text AS c${i}`)
+		.join(', ');
+	const rows = await db.query<Record<string, string | null>>(
+		`SELECT ${select || 'NULL'} FROM "${schemaname}"."${tablename}"`
+	);
+	const lines = rows
+		.map((row) => JSON.stringify(columns.map((_, i) => row[`c${i}`] ?? null)))
+		.sort();
+	return {
+		rows: rows.length,
+		digest: createHash('sha256').update(lines.join('\n')).digest('hex')
+	};
+};
 
 /**
  * Read the migrations and every table's content over `db`. Read it after the
@@ -93,12 +123,7 @@ export const read_shared_database_snapshot = async (db: Db): Promise<SharedDatab
 	);
 	const content: Record<string, SharedDatabaseTableContent> = {};
 	for (const { schemaname, tablename } of tables) {
-		const [row] = await db.query<SharedDatabaseTableContent>(
-			'SELECT count(*)::int AS rows, ' +
-				"md5(coalesce(string_agg(t::text, E'\\n' ORDER BY t::text), '')) AS digest " +
-				`FROM "${schemaname}"."${tablename}" t`
-		);
-		content[`${schemaname}.${tablename}`] = row!;
+		content[`${schemaname}.${tablename}`] = await read_table_content(db, schemaname, tablename);
 	}
 	return { schema_version, tables: content };
 };
@@ -122,35 +147,14 @@ export const to_changed_tables = (
 };
 
 /**
- * Why a config's startup-reset env doesn't leave the reset off, or `null` when
- * it does — read as the Rust spine reads it: unset or a false stringbool is
- * off, a true one resets, and any other value fails its boot. A config that
- * leaves it out reads the harness process's own, which `spawn_backend` passes
- * to the child.
- */
-const to_reset_problem = (config: BackendConfig): string | null => {
-	const value = config.env[RESET_DB_ON_STARTUP_ENV] ?? process.env[RESET_DB_ON_STARTUP_ENV];
-	if (value === undefined) return null;
-	const parsed = parse(EnvStringbool, value);
-	if (!parsed.ok) {
-		return `${config.name}'s ${RESET_DB_ON_STARTUP_ENV} is no stringbool (${JSON.stringify(value)})`;
-	}
-	return parsed.value
-		? `${config.name} resets its database at startup (${RESET_DB_ON_STARTUP_ENV})`
-		: null;
-};
-
-/**
  * Each way `configs` can't share `database_url`: they must name it in
  * `DATABASE_URL` (compared as exact strings, so two spellings of one database
  * are refused), share the session cookie name and a set
  * `SECRET_FUZ_COOKIE_KEYS` (a cookie one spine signs, another must verify),
- * keep a startup reset off (`FUZ_TESTING_RESET_DB_ON_STARTUP` unset or a false
- * stringbool, as the Rust spine parses it), and declare the
- * `SHARED_DATABASE_BACKDOORS`.
+ * and declare the `SHARED_DATABASE_BACKDOORS`.
  *
  * @param configs - the backends that run over the database
- * @param database_url - the `postgres://` database they share
+ * @param database_url - the `postgres://` database they share (a `TestDatabase`'s URL)
  * @returns the problems, empty when they can share it
  */
 export const to_shared_database_problems = (
@@ -175,8 +179,6 @@ export const to_shared_database_problems = (
 		} else if (url !== database_url) {
 			problems.push(`${config.name}'s ${DATABASE_URL_ENV} is not the shared database`);
 		}
-		const reset_problem = to_reset_problem(config);
-		if (reset_problem !== null) problems.push(reset_problem);
 		for (const method of SHARED_DATABASE_BACKDOORS) {
 			if (!config.capabilities.testing_backdoors.includes(method)) {
 				problems.push(`${config.name} doesn't declare ${method}`);

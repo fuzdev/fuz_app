@@ -3,7 +3,7 @@
  *
  * `global_setup_timing.ts` starts BOTH impls with `FUZ_DB_CHECKOUT_TIMEOUT_MS`
  * and `FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS` set — the Rust `testing_spine_stub`
- * over real Postgres, where they bound its pool, and the TS spine over
+ * over a database server (its own `pglet_server`, or PostgreSQL), where they bound its pool, and the TS spine over
  * in-memory pglet, which has no pool and warns that they have no effect. Both
  * must accept the values at boot and keep serving: `/health` answers, and
  * `/ready` reads the database (a checkout under the shortened bound on the

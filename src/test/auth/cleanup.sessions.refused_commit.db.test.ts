@@ -10,7 +10,7 @@
  * Real Postgres only: the four-leg `cleanup.sessions.db.test.ts` drives the
  * same branch on every driver through `create_gated_db`'s `hold_commit`,
  * which can only stand in for a refused `COMMIT` — here Postgres refuses it
- * (and pglet has no triggers). Skipped when `TEST_DATABASE_URL` is unset.
+ * (and pglet has no triggers). Skipped when `FUZ_TEST_POSTGRES_URL` is unset.
  *
  * @module
  */

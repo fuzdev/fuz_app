@@ -10,12 +10,14 @@
  *
  * Run: `gro run src/benchmarks/cross_impl.bench.ts` (or `npm run benchmark:cross-impl`).
  *
- * **DB-layer caveat.** The TS binaries run in-memory pglet while the Rust
- * spine runs real Postgres (`tokio-postgres` can't reach an in-process database) — so the
- * TS-vs-Rust columns are NOT apples-to-apples at the DB layer; the
- * TS-node-vs-TS-bun comparison is (same driver). The Rust column
- * only appears when `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
- * `rust_spine_stub_backend_config`); TS-only is the zero-infra default.
+ * **DB-layer caveat.** The TS binaries run in-process pglet (`memory://`)
+ * while the Rust spine runs over the wire, on a `pglet_server` of its own —
+ * or a PostgreSQL database of its own under `FUZ_TEST_POSTGRES_URL`
+ * (`open_test_database`) — so the TS-vs-Rust columns are NOT apples-to-apples
+ * at the DB layer; the TS-node-vs-TS-bun comparison is (same driver). The
+ * Rust column only appears when `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set; its
+ * `pglet_server` is `PGLET_SERVER_BIN`, else built in the stub's Cargo
+ * workspace. TS-only is the zero-infra default.
  *
  * @module
  */
@@ -34,6 +36,13 @@ import type { BackendConfig } from '../lib/testing/cross_backend/backend_config.
 import { bootstrap_backend } from '../lib/testing/cross_backend/bootstrap_backend.ts';
 import type { BootstrappedBackendHandle } from '../lib/testing/cross_backend/setup.ts';
 import {
+	open_test_database,
+	prepare_pglet_server_binary,
+	type TestDatabase
+} from '../lib/testing/cross_backend/test_database.ts';
+import { FUZ_TEST_POSTGRES_URL_ENV } from '../lib/testing/db.ts';
+import { to_rust_spine_pglet_server } from '../test/cross_backend/global_setup_helpers.ts';
+import {
 	RUST_SPINE_STUB_BIN_ENV,
 	rust_spine_stub_backend_config
 } from '../lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
@@ -51,10 +60,18 @@ const configs: Array<BackendConfig> = [
 ];
 
 // Include the Rust spine only when its prebuilt binary is available — keeps
-// the TS-only run zero-infra. (Real Postgres for the stub DB still required.)
+// the TS-only run zero-infra.
+let stub_database: TestDatabase | null = null;
 if (process.env[RUST_SPINE_STUB_BIN_ENV]) {
-	configs.push(rust_spine_stub_backend_config());
-	console.log(`including Rust spine_stub (${RUST_SPINE_STUB_BIN_ENV} set)`);
+	stub_database = await open_test_database({
+		name: 'spine_stub_bench',
+		postgres_url: process.env[FUZ_TEST_POSTGRES_URL_ENV],
+		pglet_server_bin: () => prepare_pglet_server_binary(to_rust_spine_pglet_server())
+	});
+	configs.push(rust_spine_stub_backend_config({ database_url: stub_database.url }));
+	console.log(
+		`including Rust spine_stub (${RUST_SPINE_STUB_BIN_ENV} set, ${stub_database.engine})`
+	);
 } else {
 	console.log(`skipping Rust spine_stub (${RUST_SPINE_STUB_BIN_ENV} unset) — TS-only run`);
 }
@@ -81,4 +98,5 @@ try {
 	for (const settled of torn_down) {
 		if (settled.status === 'rejected') console.error(settled.reason);
 	}
+	await stub_database?.close();
 }

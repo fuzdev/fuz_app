@@ -2,7 +2,7 @@
  * Cross-backend SSE keep-alive gate for fuz_app's own spine.
  *
  * Opens the audit stream as the keeper on BOTH impls — the TS spine (Node +
- * in-memory pglet) and the Rust `testing_spine_stub` (real Postgres) — spawned
+ * in-memory pglet) and the Rust `testing_spine_stub` (over its own `pglet_server`, or PostgreSQL) — spawned
  * by the dual-spawn `global_setup_timing.ts` with the keep-alive interval
  * shortened, and reads the raw body bytes: the connect comment, then
  * keep-alive comments, byte-identical to `SSE_CONNECTED_COMMENT` and

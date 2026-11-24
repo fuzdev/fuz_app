@@ -15,7 +15,7 @@
  *   FUZ_TEST_DB_DEFAULT=pglet-server PGLET_SERVER_BIN=... npx vitest run --project db
  *
  * It decides only the default factory. `PGLET_SERVER_BIN` and
- * `TEST_DATABASE_URL` on their own decide something else — they un-skip the
+ * `FUZ_TEST_POSTGRES_URL` on their own decide something else — they un-skip the
  * four-driver fixture's `pglet-server` and `pg` legs. An unrecognized value, or
  * `pglet-server` without its binary, throws rather than quietly running
  * pglet-wasm under another label.

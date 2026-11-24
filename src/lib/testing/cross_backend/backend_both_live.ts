@@ -41,8 +41,8 @@ import '../assert_dev_env.ts';
  *
  * **What the configs must share** is the swap's
  * (`to_shared_database_problems`): the database (`DATABASE_URL`, exact
- * strings), the cookie name and `SECRET_FUZ_COOKIE_KEYS`, a startup reset
- * off, and the drain and invariant backdoors. Their daemon-token, bootstrap
+ * strings), the cookie name and `SECRET_FUZ_COOKIE_KEYS`, and the drain and
+ * invariant backdoors. Their daemon-token, bootstrap
  * token and fact directories stay their own (each config's paths). The
  * socket cases run when the first backend declares `ws` and
  * `ws_account_actions` (and `ws_role_gated` for the gated case; `ws` and
@@ -126,14 +126,15 @@ export interface BackendBothLiveTestOptions {
 	 */
 	readonly orders: ReadonlyArray<SharedDatabaseOrder>;
 	/**
-	 * The `postgres://` database both configs run over, read directly for the
-	 * snapshots — each config's `DATABASE_URL` env must be this exact string.
+	 * The `postgres://` database both configs run over (a `TestDatabase`'s
+	 * URL), read directly for the snapshots — each config's `DATABASE_URL` env
+	 * must be this exact string.
 	 */
 	readonly database_url: string;
 	/**
 	 * Empty the database — each order calls it before each of its two spawn
-	 * sequences, so the keeper bootstrap finds no account. The caller owns the
-	 * guard on which database it drops (`empty_owned_database`).
+	 * sequences, so the keeper bootstrap finds no account — the
+	 * `TestDatabase`'s `empty()`, or `empty_test_database` over its URL.
 	 */
 	readonly empty_database: () => Promise<void>;
 	/**

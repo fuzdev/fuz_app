@@ -3,21 +3,22 @@
  * (which builds each with `make_cross_backend_project`) and by `run_cross.ts`
  * (`npm run test:cross`, which runs each in a `vitest` invocation of its own).
  *
- * Every project spawns its backends on ports, Postgres databases and temp
- * directories no other project uses, so any set of them can run at once. The
- * claims live in one table, `CROSS_PROJECT_RESOURCES`: each project's global
- * setup reads its backends' names, ports and databases from it, and
+ * Every project spawns its backends on ports, databases and temp directories
+ * no other project uses, so any set of them can run at once. The claims live
+ * in one table, `CROSS_PROJECT_RESOURCES`: each project's global setup reads
+ * its backends' names, ports and databases from it, and
  * `cross_backend_projects.test.ts` holds every port, database and temp
  * directory unique across the table — a database shared by the backends of
  * one project only where `SHARED_DATABASE_PROJECTS` names it. A backend's
  * name (prefixed with the repo directory) is also its directory under
  * `os.tmpdir()`.
  *
- * The single-backend Rust stub's database is the one
- * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names when it is set. The other
- * stub databases, and the parity project's TS one, sit on the server that URL
- * names (else the local default); each project's `globalSetup` creates the
- * ones it uses.
+ * Each named database is opened by the project's `globalSetup`
+ * (`open_rust_spine_database`, `create_dual_spawn_global_setup`'s
+ * `databases`): a `pglet_server` of its own, or under `FUZ_TEST_POSTGRES_URL`
+ * a PostgreSQL database named for it (`fuz_testing_fuz_app_<database>`), new
+ * each run and dropped after it. A project in `POSTGRES_ONLY_PROJECTS` fails
+ * naming the variable when it is unset.
  *
  * Config-time module: dependency-free, like `make_cross_backend_project`.
  *
@@ -35,7 +36,11 @@ export interface CrossBackendResources {
 	readonly name: string;
 	/** Listening port. */
 	readonly port: number;
-	/** The Postgres database it runs over, `null` on `memory://`. */
+	/**
+	 * The database it runs over — `open_test_database`'s `name`: a
+	 * `pglet_server`, or `fuz_testing_<repo>_<database>` on PostgreSQL —
+	 * `null` on `memory://`.
+	 */
 	readonly database: string | null;
 }
 
@@ -46,7 +51,7 @@ export interface CrossBackendResources {
  */
 export const CROSS_PROJECT_RESOURCES = {
 	cross_backend_rust_spine_stub: {
-		stub: { name: 'spine_stub', port: 1177, database: 'fuz_app_test_rust_spine_stub' }
+		stub: { name: 'spine_stub', port: 1177, database: 'spine_stub' }
 	},
 	cross_backend_ts_node: {
 		node: { name: 'ts_spine_node', port: 1178, database: null },
@@ -58,20 +63,12 @@ export const CROSS_PROJECT_RESOURCES = {
 		shutdown: { name: 'ts_spine_bun_shutdown', port: 1190, database: null }
 	},
 	cross_backend_parity: {
-		ts: { name: 'ts_spine_node_parity', port: 1181, database: 'fuz_app_test_ts_spine_parity' },
-		stub: {
-			name: 'spine_stub_parity',
-			port: 1182,
-			database: 'fuz_app_test_rust_spine_stub_parity'
-		}
+		ts: { name: 'ts_spine_node_parity', port: 1181, database: 'ts_spine_node_parity' },
+		stub: { name: 'spine_stub_parity', port: 1182, database: 'spine_stub_parity' }
 	},
 	cross_backend_security: {
 		ts: { name: 'ts_spine_node_security', port: 1183, database: null },
-		stub: {
-			name: 'spine_stub_security',
-			port: 1184,
-			database: 'fuz_app_test_rust_spine_stub_security'
-		}
+		stub: { name: 'spine_stub_security', port: 1184, database: 'spine_stub_security' }
 	},
 	cross_backend_ts_differential: {
 		node: { name: 'ts_spine_node_differential', port: 1185, database: null },
@@ -79,40 +76,19 @@ export const CROSS_PROJECT_RESOURCES = {
 	},
 	cross_backend_timing: {
 		ts: { name: 'ts_spine_node_timing', port: 1187, database: null },
-		stub: {
-			name: 'spine_stub_timing',
-			port: 1188,
-			database: 'fuz_app_test_rust_spine_stub_timing'
-		}
+		stub: { name: 'spine_stub_timing', port: 1188, database: 'spine_stub_timing' }
 	},
 	// both on one database, never at once (`SHARED_DATABASE_PROJECTS`)
 	cross_backend_swap: {
-		ts: { name: 'ts_spine_node_swap', port: 1191, database: 'fuz_app_test_backend_swap' },
-		stub: { name: 'spine_stub_swap', port: 1192, database: 'fuz_app_test_backend_swap' }
+		ts: { name: 'ts_spine_node_swap', port: 1191, database: 'backend_swap' },
+		stub: { name: 'spine_stub_swap', port: 1192, database: 'backend_swap' }
 	},
 	// both on one database at once (`SHARED_DATABASE_PROJECTS`)
 	cross_backend_both_live: {
-		ts: {
-			name: 'ts_spine_node_both_live',
-			port: 1193,
-			database: 'fuz_app_test_backend_both_live'
-		},
-		stub: {
-			name: 'spine_stub_both_live',
-			port: 1194,
-			database: 'fuz_app_test_backend_both_live'
-		}
+		ts: { name: 'ts_spine_node_both_live', port: 1193, database: 'backend_both_live' },
+		stub: { name: 'spine_stub_both_live', port: 1194, database: 'backend_both_live' }
 	}
 } as const satisfies Record<string, Record<string, CrossBackendResources>>;
-
-/**
- * The Postgres database `npm run test:cross` hands its `db` step as
- * `TEST_DATABASE_URL` (`run_cross.ts`), on the server
- * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names: a database of its own,
- * since the step's factories reset its `public` schema, so it runs beside the
- * cross projects and beside a `db` run on another database.
- */
-export const CROSS_DB_POSTGRES_DATABASE = 'fuz_app_test_cross_db_postgres';
 
 /** A cross project's name — a key of `CROSS_PROJECT_RESOURCES`. */
 export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
@@ -126,6 +102,16 @@ export type CrossProjectName = keyof typeof CROSS_PROJECT_RESOURCES;
 export const SHARED_DATABASE_PROJECTS: ReadonlySet<CrossProjectName> = new Set([
 	'cross_backend_swap',
 	'cross_backend_both_live'
+]);
+
+/**
+ * The projects that run only on PostgreSQL — the parity gates (index
+ * rendering, the lock pins, the invariant twin's direct reads), which pglet
+ * can't answer. Their setup fails naming `FUZ_TEST_POSTGRES_URL` when it is
+ * unset, and `run_cross.ts` reports them "not run (postgres-only)" then.
+ */
+export const POSTGRES_ONLY_PROJECTS: ReadonlySet<CrossProjectName> = new Set([
+	'cross_backend_parity'
 ]);
 
 /**
@@ -154,7 +140,8 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	// request and answer diffed). The copy check of the twin conformance
 	// tables rides here too: it reads the Rust checkout the stub was built from.
 	// So do the lock pins, which need both spines on PostgreSQL, and the
-	// invariant twin, which reads each spine's database directly.
+	// invariant twin, which reads each spine's database directly — so the
+	// project runs only on PostgreSQL (`POSTGRES_ONLY_PROJECTS`).
 	{
 		name: 'cross_backend_parity',
 		global_setup: './src/test/cross_backend/global_setup_schema_parity.ts',
@@ -212,7 +199,7 @@ const DUAL_SPAWN_PROJECTS: ReadonlyArray<DualSpawnProject> = [
 	},
 	// The differential and the transcript differential again, between two JS
 	// runtimes: the TS spine on Node and on Bun, both on `memory://` — no Rust,
-	// no Postgres, so it runs in CI.
+	// no database server, so it runs in CI.
 	{
 		name: 'cross_backend_ts_differential',
 		global_setup: './src/test/cross_backend/global_setup_ts_differential.ts',

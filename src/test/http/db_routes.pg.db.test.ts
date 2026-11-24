@@ -1,6 +1,6 @@
 /**
  * The `db_routes` row DELETE's refusals on real Postgres — skipped unless
- * `TEST_DATABASE_URL` is set.
+ * `FUZ_TEST_POSTGRES_URL` is set.
  *
  * The 404 (an id the PK type cannot hold) and 409 (a referenced row) answer
  * from a failed `DELETE`. On Postgres the failure aborts the route's

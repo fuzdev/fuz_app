@@ -100,6 +100,7 @@ import {
 	auth_integration_truncate_tables,
 	create_default_db_factory,
 	create_pg_factory,
+	FUZ_TEST_POSTGRES_URL_ENV,
 	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
 import { create_describe_db } from '@fuzdev/fuz_app/testing/describe_db.ts';
@@ -112,13 +113,17 @@ const init_schema = async (db: Db): Promise<void> => {
 const TRUNCATE_TABLES = [...auth_integration_truncate_tables, ...MY_APP_TABLES];
 
 export const default_factory = create_default_db_factory(init_schema);
-const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
+const pg_factory = create_pg_factory(init_schema, process.env[FUZ_TEST_POSTGRES_URL_ENV], {
+	suite: 'my_app'
+});
 export const db_factories: Array<DbFactory> = [default_factory, pg_factory];
 
 export const describe_db = create_describe_db(db_factories, TRUNCATE_TABLES);
 ```
 
-`pg_factory` auto-skips when `TEST_DATABASE_URL` is not set. The default factory
+`pg_factory` auto-skips when `FUZ_TEST_POSTGRES_URL` is not set — the variable
+the Rust spine's `fuz_testing` reads too, naming a PostgreSQL server and a role
+with `CREATEDB` (`postgres://localhost/postgres`). The default factory
 always runs: pglet-wasm (`@fuzdev/pglet-wasm`, an optional peer — install it as a
 devDependency), or the driver a `set_default_db_factory` call installed before it
 was built (§Switching the default driver).
@@ -158,10 +163,21 @@ describe_db('ClassroomQueries', (get_db) => {
 
 ### Every `create()` starts from an empty schema
 
-Every factory — in-memory or pg — resets the whole `public` schema
+The in-memory factories reset the whole `public` schema
 (`reset_public_schema`) before running `init_schema`, so `init_schema` only
-migrates. On a persistent `TEST_DATABASE_URL` that means stale tables never
-survive into a run; point it at a database used only for tests.
+migrates. The pg factory needs no reset: each `create()` creates a database of
+its own on the `FUZ_TEST_POSTGRES_URL` server,
+`fuz_testing_<suite>_<pid>_<thread id>_<n>` from `template0` (the thread id
+keeps names apart under a threads pool), and `close()` drops it
+`WITH (FORCE)`. The Rust spine's `fuz_testing` uses the same prefix (its names
+carry no thread id), so a run of either killed before its `close()` leaves
+`fuz_testing_*` databases, dropped by that prefix:
+
+```bash
+psql postgres://localhost/postgres -Atc \
+	"SELECT 'DROP DATABASE ' || datname || ' WITH (FORCE);' FROM pg_database WHERE datname LIKE 'fuz\_testing\_%'" \
+	| psql postgres://localhost/postgres
+```
 
 ### Switching the default driver
 
@@ -1004,12 +1020,13 @@ defaults don't cover — and set no timeout of their own.
 ```ts
 // global_setup.ts — one backend per vitest project, provided as `backend_handle`
 import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
-import { node_backend_config, rust_backend_config } from './my_backend_config.ts';
+import { MY_CARGO_BINARY, node_backend_config, rust_backend_config } from './my_backend_config.ts';
 
 export default create_cross_backend_global_setup({
-	configs: { node: node_backend_config, rust: rust_backend_config },
-	// `createdb` for each config's `postgres:` DATABASE_URL, when it's missing
-	ensure_databases: true
+	configs: { node: () => node_backend_config(), rust: rust_backend_config },
+	// the Rust backend's own database: a `pglet_server` built in its Cargo workspace,
+	// or a PostgreSQL database under `FUZ_TEST_POSTGRES_URL`
+	databases: { rust: MY_CARGO_BINARY }
 });
 ```
 
@@ -1021,10 +1038,24 @@ the cookie keys, the allowed origins, the bootstrap token path, a TS
 backend's `PUBLIC_LOG_LEVEL` (`'warn'`: it inherits `VITEST`, under which
 every fuz_util `Logger` is off), and — given
 `daemon_token_dir_env`, the env var your binary reads its daemon-token
-directory from — the directory `spawn_backend` reads the token from. With
-`ensure_databases` there is no manual `createdb` step
-(`ensure_database_for_url` in `testing/cross_backend/postgres_database.ts` is
-the same for a setup of your own).
+directory from — the directory `spawn_backend` reads the token from.
+
+A Rust backend's database is the harness's to provision, never a URL the
+config names: `databases` opens one per backend before its config is built
+(`open_test_database`, `testing/cross_backend/test_database.ts`) and the
+config factory takes its URL. By default it is a native `pglet_server` of its
+own (pglet speaks the Postgres wire protocol, so the binary connects as to
+PostgreSQL), built with `cargo build -p pglet_server --bin pglet_server` in the
+workspace and profile the entry gives — the backend's own, whose lockfile
+already holds the pglet the spine's `fuz_testing` runs — or named by
+`PGLET_SERVER_BIN`. Under `FUZ_TEST_POSTGRES_URL` it is a PostgreSQL database
+`fuz_testing_<repo>_<backend>` instead, dropped if a killed run left it and
+again after the teardown. An entry of `null` runs the backend only on
+PostgreSQL — the setup fails naming the variable without it — for a gate
+pglet can't answer (index rendering, a lock pin). There is no manual
+`createdb` step, and nothing to wipe at boot: every database starts empty. A
+setup of your own calls `open_test_database` the same way;
+`create_dual_spawn_global_setup` takes `databases` per side.
 
 A Rust backend spawns its built binary, not `cargo run`: a build inside the
 spawn runs in the startup window, where a cold one can time out, and its output
@@ -1050,12 +1081,12 @@ export const MY_CARGO_BINARY = {
 	bin: 'testing_myd' // default the package name; `profile` defaults to `dev`
 };
 
-export const rust_backend_config = (): BackendConfig =>
+export const rust_backend_config = (database_url: string): BackendConfig =>
 	make_default_rust_backend_config({
 		name: 'rust',
 		port: 14141,
 		start_command: [resolve_cargo_binary_path(MY_CARGO_BINARY)],
-		database_url: 'postgres://localhost/my_app_test_rust',
+		database_url,
 		daemon_token_dir_env: 'MY_APP_DAEMON_TOKEN_DIR',
 		capabilities: {
 			...rust_default_capabilities /* every MountFlag stated */,
@@ -1070,7 +1101,7 @@ import { MY_CARGO_BINARY, rust_backend_config } from './my_backend_config.ts';
 
 export default create_cross_backend_global_setup({
 	configs: { rust: rust_backend_config },
-	ensure_databases: true,
+	databases: { rust: MY_CARGO_BINARY },
 	before_spawn: { rust: () => prepare_cargo_binary(MY_CARGO_BINARY) }
 });
 ```
@@ -1288,7 +1319,8 @@ fuz_app ships `rust_spine_stub_backend_config()`
 spine's standard surface with no domain layer on top, keeping the spine API
 exercised from outside any one product. The dependency is operational (a
 binary path, a default port, declared capabilities), not a code dependency.
-Its binary and database env vars are on the preset.
+Its binary env var is on the preset; its database is the one a setup
+provisioned (`database_url`, required).
 
 ### Rebuild-by-default workflow
 
@@ -1296,8 +1328,10 @@ A stale prebuilt spine-stub binary fails every cell/RPC case with
 `method not found` while auth cases pass, so a lagging build reads as a
 regression. The fix is workflow: the `cross_backend_rust_spine_stub`
 project's `globalSetup` rebuilds the binary (`prepare_cargo_binary` in the
-`cross-test` profile — a no-op when nothing changed) and `createdb`s its
-database before spawning, so the common path is one command:
+`cross-test` profile — a no-op when nothing changed) and opens its database
+before spawning — a `pglet_server` built in the same workspace and profile, or
+a PostgreSQL database under `FUZ_TEST_POSTGRES_URL` — so the common path is one
+command:
 
 ```bash
 npm run test:cross:rust-spine-stub
@@ -1306,8 +1340,9 @@ npm run test:cross:rust-spine-stub
 `FUZ_TESTING_NO_REBUILD=1` skips the rebuild when you know the binary is
 current. `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR` points the build at the Cargo
 workspace (CI, non-default checkouts), `FUZ_TESTING_RUST_SPINE_STUB_BIN` pins
-a prebuilt binary, and `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` points the
-stub at another Postgres server or database. The rest is in
+a prebuilt binary, `PGLET_SERVER_BIN` a prebuilt `pglet_server`, and
+`FUZ_TEST_POSTGRES_URL` moves every stub database to a PostgreSQL server (the
+parity project runs only there). The rest is in
 ../src/test/CLAUDE.md §Cross-backend self-tests.
 
 ### Declarative conformance table
@@ -1424,7 +1459,7 @@ differential of the runtime, and its ledger is normally empty.
 The differential holds two backends to the same answers; the swap holds them
 to one database. `describe_backend_swap_tests`
 (`testing/cross_backend/backend_swap.ts`) runs each order — first, second,
-first again — over one Postgres database, one backend at a time: the first
+first again — over one database, one backend at a time: the first
 bootstraps and, through its real routes, mints keeper and member sessions
 and API tokens, the member's password and two pending offers; the second
 boots over that database — nothing migrated, no row written or rewritten
@@ -1442,20 +1477,19 @@ describe_backend_swap_tests({
     {label: 'TS → Rust', first: ts_config, second: rust_config},
     {label: 'Rust → TS', first: rust_config, second: ts_config},
   ],
-  database_url,
-  empty_database: () =>
-    empty_owned_database(database_url, {
-      owned_name: 'my_app_test_swap',
-      label: 'swap',
-    }),
+  database_url: database.url,
+  empty_database: database.empty,
 });
 ```
 
+`database` is a `TestDatabase` (`open_test_database`) both configs run over —
+one `pglet_server` both reach over the wire, or one PostgreSQL database under
+`FUZ_TEST_POSTGRES_URL`. A test file that gets only the URL from its global
+setup empties it with `empty_test_database(database_url)`.
+
 Both configs name that database in `DATABASE_URL` (the same string), the
 same session cookie name and the same `SECRET_FUZ_COOKIE_KEYS` — a cookie one
-signs, the other must verify — a Rust-family config turns its startup wipe
-off (`reset_db_on_startup: false`), or its boot drops what the other wrote,
-and both declare the drain and invariant backdoors
+signs, the other must verify — and both declare the drain and invariant backdoors
 (`SHARED_DATABASE_BACKDOORS`). The suite checks these first, then spawns and
 stops each backend itself, so its project's global setup only prepares them
 and must run alone on the database. The declined offer is of

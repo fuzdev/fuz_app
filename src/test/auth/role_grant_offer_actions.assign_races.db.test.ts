@@ -16,7 +16,7 @@
  * before its caller's actor is tombstoned by hand (its account left live), is
  * held before its transaction begins (`hold_begin`) while that commits, then
  * released; and an admin assigns to its own account, one id twice in the lock
- * statement. On real `pg` only (`TEST_DATABASE_URL`), the lock is shown to
+ * statement. On real `pg` only (`FUZ_TEST_POSTGRES_URL`), the lock is shown to
  * serialize in both directions against a delete of the recipient, and an
  * assign is shown to wait on a purge (a purge waits on an uncommitted assign
  * through the grant's foreign key, lock or not); the lock is replayed in both

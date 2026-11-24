@@ -4,6 +4,7 @@
  * @module
  */
 
+import { threadId } from 'node:worker_threads';
 import { describe, assert, test, beforeAll, afterAll, vi } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
@@ -12,11 +13,14 @@ import {
 	create_pglet_wasm_factory,
 	create_pglite_factory,
 	create_pg_factory,
+	FUZ_TEST_POSTGRES_URL_ENV,
 	log_db_factory_status,
 	set_default_db_factory,
+	TEST_DATABASE_PREFIX,
 	type DbFactory,
 	type DbFactoryBuilder
 } from '#lib/testing/db.ts';
+import { create_db } from '#lib/db/create_db.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
@@ -138,52 +142,86 @@ describe('set_default_db_factory', () => {
 	});
 });
 
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+const postgres_url = process.env[FUZ_TEST_POSTGRES_URL_ENV];
+
+/** The databases named `prefix…` on the server, through the admin connection. */
+const list_databases = async (prefix: string): Promise<Array<string>> => {
+	const { db, close } = await create_db(postgres_url!);
+	try {
+		const rows = await db.query<{ datname: string }>(
+			'SELECT datname FROM pg_database WHERE starts_with(datname, $1) ORDER BY datname',
+			[prefix]
+		);
+		return rows.map((row) => row.datname);
+	} finally {
+		await close();
+	}
+};
 
 describe('create_pg_factory', () => {
-	test('skips when no test_url is provided', () => {
-		const factory = create_pg_factory(noop_init);
+	test('skips when no postgres_url is provided', () => {
+		const factory = create_pg_factory(noop_init, undefined, { suite: 'pg_factory' });
 		assert.strictEqual(factory.name, 'pg');
 		assert.strictEqual(factory.skip, true);
-		assert.strictEqual(factory.skip_reason, 'TEST_DATABASE_URL not set');
+		assert.strictEqual(factory.skip_reason, 'FUZ_TEST_POSTGRES_URL not set');
 	});
 
-	test('throws when create is called without test_url', async () => {
-		const factory = create_pg_factory(noop_init);
-		await assert_rejects(() => factory.create(), /TEST_DATABASE_URL required/);
+	test('throws when create is called without postgres_url', async () => {
+		const factory = create_pg_factory(noop_init, undefined, { suite: 'pg_factory' });
+		await assert_rejects(() => factory.create(), /FUZ_TEST_POSTGRES_URL required/);
 	});
 
-	describe.skipIf(!TEST_DATABASE_URL)('against a live server', () => {
-		test('resets the public schema on every create()', async () => {
-			const factory = create_pg_factory(noop_init, TEST_DATABASE_URL);
+	test('refuses a suite name PostgreSQL would not keep as written', () => {
+		for (const suite of ['', 'Upper', '1st', 'has-dash', 'a'.repeat(25)]) {
+			assert.throws(
+				() => create_pg_factory(noop_init, undefined, { suite }),
+				/test suite name .* must be lowercase ASCII/,
+				JSON.stringify(suite)
+			);
+		}
+		create_pg_factory(noop_init, undefined, { suite: 'a'.repeat(24) });
+	});
+
+	describe.skipIf(!postgres_url)('against a live server', () => {
+		// the thread id beside the pid, so worker threads sharing a pid never collide
+		const prefix = `${TEST_DATABASE_PREFIX}pg_factory_${process.pid}_${threadId}_`;
+
+		test('each create() is a database of its own, dropped on close()', async () => {
+			const factory = create_pg_factory(noop_init, postgres_url, { suite: 'pg_factory' });
 			const first = await factory.create();
-			await first.query('CREATE TABLE pg_factory_stale (id INT)');
-			await factory.close(first);
-			const db = await factory.create();
+			const second = await factory.create();
 			try {
-				const rows = await db.query(
-					`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'pg_factory_stale'`
+				await first.query('CREATE TABLE pg_factory_own (id INT)');
+				const rows = await second.query(
+					`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'pg_factory_own'`
 				);
-				assert.strictEqual(rows.length, 0);
+				assert.strictEqual(rows.length, 0, "the second database doesn't see the first's table");
+				assert.lengthOf(await list_databases(prefix), 2);
 			} finally {
-				await factory.close(db);
+				await factory.close(first);
+				await factory.close(second);
 			}
+			assert.deepEqual(await list_databases(prefix), []);
 		});
 
-		test('a missing database gets the createdb hint', async () => {
-			const url = new URL(TEST_DATABASE_URL!);
-			url.pathname = '/fuz_app_test_db_that_does_not_exist';
-			const factory = create_pg_factory(noop_init, url.href);
-			await assert_rejects(() => factory.create(), /does not exist\. Create it with: createdb/);
-		});
-
-		test('an init_schema "does not exist" error passes through unchanged', async () => {
-			const factory = create_pg_factory(async (db) => {
-				await db.query('SELECT * FROM pg_factory_missing_relation');
-			}, TEST_DATABASE_URL);
+		test('a failed init_schema drops its database and passes the error through', async () => {
+			const factory = create_pg_factory(
+				async (db) => {
+					await db.query('SELECT * FROM pg_factory_missing_relation');
+				},
+				postgres_url,
+				{ suite: 'pg_factory' }
+			);
 			const error = await assert_rejects(() => factory.create());
 			assert.include(error.message, 'pg_factory_missing_relation');
-			assert.notInclude(error.message, 'createdb');
+			assert.deepEqual(await list_databases(prefix), []);
+		});
+
+		test('an unreachable server is named by its variable', async () => {
+			const url = new URL(postgres_url!);
+			url.pathname = '/fuz_testing_no_such_admin_database';
+			const factory = create_pg_factory(noop_init, url.href, { suite: 'pg_factory' });
+			await assert_rejects(() => factory.create(), /connect through FUZ_TEST_POSTGRES_URL/);
 		});
 	});
 });

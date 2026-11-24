@@ -192,11 +192,12 @@ Factory builders for parameterized DB tests. Consumer projects pass their
 factories accept any migration namespace set.
 
 - `DbFactory` — `{name, create, close, skip, skip_reason?}`.
-- `reset_public_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, in plain SQL, so it resets every driver. Every factory calls it per `create()`, so `init_schema` only migrates. Drift-proof — no drop list to maintain.
+- `reset_public_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, in plain SQL, so it resets every driver. Every in-memory factory calls it per `create()`, so `init_schema` only migrates (the pg factory's databases are new). Drift-proof — no drop list to maintain.
 - `create_default_db_factory(init_schema)` — the default in-memory factory: pglet-wasm, or the builder `set_default_db_factory` installed before it was built. What fuz_app's own helpers fall back to (`create_test_app_server`, `describe_rate_limiting_tests`, `describe_sse_route_tests`).
 - `create_pglet_wasm_factory(init_schema)` / `create_pglite_factory(init_schema)` — pin pglet-wasm (`@fuzdev/pglet-wasm`, created with `PGLET_COERCION`) or PGlite; each needs its optional peer installed; `skip: false`. See WASM caching below.
 - `set_default_db_factory(create_factory | null)` — install a `DbFactoryBuilder` for `create_default_db_factory`, so suites written against the default run on another driver without being edited (`create_pglite_factory` to run them on PGlite); returns the builder it replaced, so a caller can put it back. Install from a `db`-project `setupFiles` entry, before any factory is built (../../../docs/testing.md §Switching the default driver). Injected rather than selected here: a driver it can wrap may live in test-side code this shipped module can't import (fuz_app's `pglet-server`). fuz_app's own switch is `src/test/db_default.ts` (`FUZ_TEST_DB_DEFAULT`).
-- `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Each `create()` opens a pool and resets the `public` schema before `init_schema`, like every other factory, so a persistent test database carries no stale DDL; a missing database (`3D000`) gets a `createdb` hint. Pool reused + cleaned up across `create()` calls.
+- `create_pg_factory(init_schema, postgres_url, {suite})` — PostgreSQL; `skip: true` when `postgres_url` is unset (callers pass `process.env[FUZ_TEST_POSTGRES_URL_ENV]`; the factory reads no env). `postgres_url` names a server and a role with `CREATEDB` and is only the admin connection: each `create()` creates `fuz_testing_<suite>_<pid>_<thread id>_<n>` from `template0` (the thread id keeps names apart under a threads pool), opens production's pool on it and runs `init_schema`; `close()` ends the pool and drops it `WITH (FORCE)` — the Rust spine's `fuz_testing` prefix and drop (its names carry no thread id). `suite` is lowercase ASCII, digits and `_`, starting with a letter, at most `TEST_SUITE_NAME_LENGTH_MAX` (24) bytes. A role without `CREATEDB` fails saying so; an unreachable server names the variable. A run killed before its `close()` leaves `fuz_testing_*` databases — drop them by that prefix.
+- `FUZ_TEST_POSTGRES_URL_ENV` (`'FUZ_TEST_POSTGRES_URL'`) — the one variable that turns on the PostgreSQL leg, the TS harness's and the Rust spine's. `TEST_DATABASE_PREFIX` (`fuz_testing_`), `create_test_postgres_database(postgres_url, name)` / `drop_test_postgres_database(postgres_url, name)` (from `template0`; `IF EXISTS … WITH (FORCE)`, retrying the passing refusals `42501` and `55006` as Rust does) and `assert_test_database_name_part` are the pieces it and `cross_backend/test_database.ts` share; a test needing a scratch database of its own uses them too.
 - `auth_truncate_tables` — `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.
 - `auth_integration_truncate_tables` — `auth_truncate_tables + ['audit_log']` for integration suites that exercise the audit path.
 - `log_db_factory_status(factories)` — console summary of enabled / skipped factories.
@@ -444,7 +445,7 @@ field a loose output schema passes on one spine, shows up as a difference.
 
 - `cross_backend/differential_normalize.ts` — `normalize_differential_response` → `DifferentialResponse` `{status, body, header_names, session_cookie}`: volatile values in their canonical spelling (`VOLATILE_VALUE_PATTERNS`) become positional placeholders, so identity relations inside one response survive; header values are never compared, and the cookie compares as its `SessionCookieEffect`. `diff_differential_responses` → one `DifferentialDiff` per leaf path. The rules are the module's TSDoc.
 - `cross_backend/differential.ts` — `describe_differential_conformance_tests({cases, backends: [a, b], …})`: per case, each backend's own fixture, the request sent through `send_conformance_case`, both answers normalized and diffed (each case's `expect` is its conformance leg's, not asserted here). `ws` on both re-runs the WS-eligible cases over sockets; `db_state` on both also compares the database each case leaves (either on one backend alone throws at registration). The `KnownDivergence` ledger is the only ignore path and turns red like `xfail_until` when an entry stops matching (`check_known_divergence_ledger` is the static half); a pin compares against the normalized value, so it never matches a raw one.
-- `cross_backend/db_state_diff.ts` — `create_db_state_probe(handle)` reads every `public` table but `schema_version` from the backend's own Postgres after draining its audit writes; `normalize_db_state` makes ids, tokens and timestamps comparable; `diff_db_states` names differences `db.<table>[i].<column>`. The normalization rules are the module's TSDoc.
+- `cross_backend/db_state_diff.ts` — `create_db_state_probe(handle)` reads every `public` table but `schema_version` from the backend's own database (its `DATABASE_URL`) after draining its audit writes; `normalize_db_state` makes ids, tokens and timestamps comparable; `diff_db_states` names differences `db.<table>[i].<column>`. The normalization rules are the module's TSDoc.
 
 fuz_app's wiring (TS vs Rust under `cross_backend_parity`, Node vs Bun under
 `cross_backend_ts_differential`, both through
@@ -455,7 +456,8 @@ self-tests.
 
 `cross_backend/backend_swap.ts` — `describe_backend_swap_tests({orders,
 database_url, empty_database, declined_role?})`: two backends over one
-Postgres database, one at a time. Per order the first mints through its real
+database (a `TestDatabase`: a `pglet_server` both reach over the wire, or
+PostgreSQL), one at a time. Per order the first mints through its real
 routes (bootstrap, a second keeper session and a keeper API token, invite,
 signup, login, a member API token, two pending offers); the second boots over
 that database — its migrations and every table's content digest unchanged —
@@ -467,10 +469,8 @@ ended them) beside the keeper's first cookie, the member's sessions and token
 ended by the password change. Each phase spawns, drains and tears down its
 own backend, and an `afterEach` tears down one a timed-out phase left
 running. The configs must share the database (`DATABASE_URL`, compared as
-exact strings), the cookie name and a set `SECRET_FUZ_COOKIE_KEYS`, keep a
-startup reset off (`FUZ_TESTING_RESET_DB_ON_STARTUP` unset or a false
-stringbool, as the Rust spine parses it; `reset_db_on_startup: false` on the
-Rust family builder) and declare `_testing_drain_effects` and
+exact strings), the cookie name and a set `SECRET_FUZ_COOKIE_KEYS`, and
+declare `_testing_drain_effects` and
 `_testing_db_invariants`, and `declined_role` must not be `admin` — all
 checked before the first spawn. A standalone suite
 (`STANDALONE_CROSS_SUITES`). fuz_app's wiring is the `cross_backend_swap`
@@ -480,7 +480,7 @@ project (../../test/CLAUDE.md §Cross-backend self-tests).
 
 `cross_backend/backend_both_live.ts` —
 `describe_backend_both_live_tests({orders, database_url, empty_database,
-offer_role?, gated_ws_path?})`: two backends over one Postgres database at
+offer_role?, gated_ws_path?})`: two backends over one database at
 once, over an emptied database per order (never `_testing_reset`, which would
 drop what the other spine holds). A credential minted on the first is revoked
 on the second and refused on the first at once, each revoke bracketed by
@@ -1643,8 +1643,8 @@ Conventions that hold across them:
 - `testing/cross_backend/backend_config.ts` — `BackendConfig` +
   `BackendBootstrapConfig` interfaces. Consumer factories
   (`node_backend_config()`, `rust_backend_config()`,
-  `rust_spine_stub_backend_config()`) produce these; fuz_app ships
-  `rust_spine_stub_backend_config()` as a convenience preset for the non-domain
+  `rust_spine_stub_backend_config`) produce these; fuz_app ships
+  `rust_spine_stub_backend_config` as a convenience preset for the non-domain
   third spine consumer, but otherwise backend-specific paths and env are a
   consumer concern.
 - `testing/cross_backend/default_backend_configs.ts` —
@@ -1653,8 +1653,9 @@ Conventions that hold across them:
   to `DEFAULT_TEST_BACKEND_HOST`, `127.0.0.1`; the port under
   `port_env_var`; cookie keys; allowed origins; the bootstrap token path; the
   TS family's `PUBLIC_LOG_LEVEL`, `TS_BACKEND_LOG_LEVEL` — the spawned binary
-  inherits `VITEST`, which turns every fuz_util `Logger` off; the Rust startup
-  self-wipe, off with `reset_db_on_startup: false`), the default paths, the
+  inherits `VITEST`, which turns every fuz_util `Logger` off; the Rust
+  family's required `database_url`, the database the harness provisioned), the
+  default paths, the
   `log` (`backend.log` under the temp root,
   `SPINE_CROSS_SUITE_BACKEND_ERRORS` plus `log_allow_errors` allowed;
   `log_path: null` for none), and the required `capabilities`.
@@ -1681,17 +1682,41 @@ Conventions that hold across them:
   passes to its server. The consumer half is `auth/daemon_token_middleware.ts`.
 - `testing/cross_backend/create_cross_backend_global_setup.ts` —
   `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
-  ensure_databases?, before_spawn?})`, the single-backend `globalSetup` maker:
+  databases?, before_spawn?})`, the single-backend `globalSetup` maker:
   the backend name derived from the vitest project name selects a config,
   which is spawned, bootstrapped and provided. `before_spawn` (by backend
   name; a key naming no config, an inherited one included, throws at
-  construction) runs first for the selected backend — `prepare_cargo_binary`
-  for a Rust one — then its config factory, then `ensure_databases: true`
-  creates the database the config's `postgres:` `env.DATABASE_URL` names
-  (`ensure_database_for_url`), then the spawn. A second argument
-  (`CrossBackendGlobalSetupDeps`) swaps the database creator and the spawn,
-  for testing the setup itself.
-- `testing/cross_backend/bootstrap_backend.ts` / `create_dual_spawn_global_setup.ts` — spawn and bootstrap one backend, or two (`provide_keys`); `before_bootstrap(config)` runs once the backend is healthy and before its keeper bootstrap, for a probe of the pre-bootstrap window, and a throw from it tears the backend down and fails the setup. The dual spawn's `after_bootstrap(handle, side)` runs once a backend's bootstrap has succeeded, before any test, for a read of what the bootstrap wrote; a throw tears down every backend spawned so far.
+  construction, as for `databases`) runs first for the selected backend —
+  `prepare_cargo_binary` for a Rust one — then, when `databases` names the
+  backend, its database opens (`open_test_database`, named for the backend:
+  a `pglet_server` built in the Cargo workspace the entry gives, or a
+  PostgreSQL database under `FUZ_TEST_POSTGRES_URL`; `null` for
+  PostgreSQL-only), then its config factory gets the database's URL
+  (`'memory://'` for a backend `databases` doesn't name), then the spawn. The
+  teardown closes the database after the backend's. A second argument
+  (`CrossBackendGlobalSetupDeps`) swaps the database opener, the spawn and the
+  PostgreSQL server, for testing the setup itself.
+- `testing/cross_backend/test_database.ts` — the database a spawned backend
+  runs over: `open_test_database({name, postgres_url, pglet_server_bin})` →
+  `TestDatabase` (`{url, engine, empty(), close()}`). Without `postgres_url`,
+  a `pglet_server` of its own (`spawn_pglet_server`: `--port 0`, the address
+  read from its listening line, its process group SIGKILLed by `close()` and
+  at this process's exit or a terminating signal) — pglet keeps one store per
+  process and ignores the database name, so isolation is a server each; with
+  it, a PostgreSQL database `fuz_testing_<repo>_<name>`
+  (`to_test_database_name`, the repo directory's name made one PostgreSQL
+  keeps, as temp directories are namespaced), dropped if a killed run left it,
+  created from `template0`, and dropped again by `close()`.
+  `pglet_server_bin: null` makes it PostgreSQL-only: no `postgres_url` throws
+  naming the variable. `empty()` / `empty_test_database(url)` drop and recreate
+  the `public` schema — the shared-database suites' reset, and the second for
+  a test file that has only the URL a setup provided.
+  `prepare_pglet_server_binary({workspace_dir, profile?, bin_override?})`
+  builds `cargo build -p pglet_server --bin pglet_server` in the backend's own
+  workspace (its lockfile holds the pglet the Rust spine runs; the same profile
+  reuses the built library) through `prepare_cargo_binary`, unless
+  `PGLET_SERVER_BIN` (`PGLET_SERVER_BIN_ENV`) names a prebuilt one.
+- `testing/cross_backend/bootstrap_backend.ts` / `create_dual_spawn_global_setup.ts` — spawn and bootstrap one backend, or two (`provide_keys`); the dual spawn's `databases` (`{a?, b?}`, each a `DualSpawnDatabase`, `{name, pglet_server}`) opens each side's database before either spawn, its config factory getting the URL (`'memory://'` for a side with none), and closes them after both teardowns; `before_bootstrap(config)` runs once the backend is healthy and before its keeper bootstrap, for a probe of the pre-bootstrap window, and a throw from it tears the backend down and fails the setup. The dual spawn's `after_bootstrap(handle, side)` runs once a backend's bootstrap has succeeded, before any test, for a read of what the bootstrap wrote; a throw tears down every backend spawned so far.
 - `testing/cross_backend/cargo_binary.ts` — `prepare_cargo_binary({workspace_dir,
   package, bin?, profile?})` builds a Cargo binary (`cargo build -p --bin
   --profile`, output inherited, a failed build throws) unless
@@ -1704,23 +1729,6 @@ Conventions that hold across them:
   `create_cross_backend_global_setup`'s `before_spawn` hook, the build happens
   before the spawn's startup window, with its output shown. fuz_app's own stub
   rebuild (`rebuild_rust_spine_stub`) is built on it.
-- `testing/cross_backend/postgres_database.ts` — `ensure_database(database,
-  server_url?, deps?)` (idempotent `createdb` on the server the URL names, its
-  password passed in the environment, run by a synchronous `execFileSync`
-  since a vitest global setup is no task root; argv, password env and the
-  already-exists predicate from `db/postgres_url.ts`, the dev helpers' too;
-  `createdb`'s already-exists refusal is the quiet success case, and any other failure
-  is reported through `deps.warn` — `console.warn` by default — with
-  `createdb`'s stderr, never thrown), `ensure_database_for_url(url, deps?)` (the
-  database a `postgres:` URL names; anything else left alone),
-  `with_database_name`, `redact_database_url` (a URL fit to print, its other
-  query pairs as written), `is_postgres_url`, and `empty_owned_database(url,
-  {owned_name, label, hint?})` — drops and recreates the `public` schema of
-  the one database a setup owns (any other name in the URL is refused before
-  connecting), for a backend that does not wipe its own database; a missing
-  database (`3D000`), an unreachable server or a role that cannot connect
-  throws with what to check. The harness creates a database only
-  when a setup asks, so a test role needs no `CREATEDB` grant otherwise.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.
   Refuses a port that already accepts connections, writes the bootstrap
   token, deletes a stale daemon-token file, spawns `detached: true` in its

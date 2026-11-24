@@ -7,7 +7,7 @@
  * is its account `DELETE` (`query_purge_account`).
  *
  * On every driver, a cell grant by a granter purged after its request was
- * authorized is written. On real `pg` only (`TEST_DATABASE_URL`), an owner's
+ * authorized is written. On real `pg` only (`FUZ_TEST_POSTGRES_URL`), an owner's
  * first edit of their own cell across their purge: the purge's cascade pinned
  * by a third transaction holding the owner's grant, a row it reaches before
  * any cell row. The in-memory drivers have one connection, so the edit would

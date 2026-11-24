@@ -11,7 +11,7 @@
  *
  * Exact, not hammered. On every driver, a toggle authorized before the removal
  * is held before its transaction begins (`hold_begin`) while the removal
- * commits, then released. On real `pg` only (`TEST_DATABASE_URL`), the lock is
+ * commits, then released. On real `pg` only (`FUZ_TEST_POSTGRES_URL`), the lock is
  * shown to serialize in both directions, and the account lock is replayed
  * against the writers that take the caller's row beside other rows — another
  * admin's removal, whose last-admin guard locks every admin's account in id

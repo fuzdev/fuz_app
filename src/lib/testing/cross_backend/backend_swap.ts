@@ -42,14 +42,11 @@ import '../assert_dev_env.ts';
  * which holds the backend to exit `0` with no unexpected error in its log
  * (`spawn_backend`).
  *
- * **What the configs must share.** One Postgres database — each config's
- * `DATABASE_URL` env names `database_url`, compared as exact strings, so two
- * spellings of one database are refused — the session cookie name and a
- * `SECRET_FUZ_COOKIE_KEYS` both set: a cookie one spine signs, the other must
- * verify. A backend that resets its database at boot must have it off, or
- * it drops what the other wrote: `FUZ_TESTING_RESET_DB_ON_STARTUP` (the Rust
- * family's `reset_db_on_startup`) unset or a false stringbool, read as the
- * Rust spine reads it (`EnvStringbool`). Both mount `_testing_drain_effects`
+ * **What the configs must share.** One database (a `TestDatabase`, on a
+ * `pglet_server` or PostgreSQL) — each config's `DATABASE_URL` env names
+ * `database_url`, compared as exact strings, so two spellings of one database
+ * are refused — the session cookie name and a `SECRET_FUZ_COOKIE_KEYS` both
+ * set: a cookie one spine signs, the other must verify. Both mount `_testing_drain_effects`
  * and `_testing_db_invariants`, and `declined_role` is not `admin`. The
  * suite checks all of it first. Per-process state — rate limiters, socket
  * registries, the daemon token — is not carried over, by design.
@@ -110,8 +107,9 @@ export interface BackendSwapTestOptions {
 	 */
 	readonly orders: ReadonlyArray<SharedDatabaseOrder>;
 	/**
-	 * The `postgres://` database every config runs over, read directly for the
-	 * snapshots — each config's `DATABASE_URL` env must be this exact string.
+	 * The `postgres://` database every config runs over (a `TestDatabase`'s
+	 * URL), read directly for the snapshots — each config's `DATABASE_URL` env
+	 * must be this exact string.
 	 */
 	readonly database_url: string;
 	/**
@@ -123,8 +121,8 @@ export interface BackendSwapTestOptions {
 	readonly declined_role?: string;
 	/**
 	 * Empty the database — each order calls it before its first spawn, so the
-	 * keeper bootstrap finds no account. The caller owns the guard on which
-	 * database it drops (`empty_owned_database`).
+	 * keeper bootstrap finds no account — the `TestDatabase`'s `empty()`, or
+	 * `empty_test_database` over its URL.
 	 */
 	readonly empty_database: () => Promise<void>;
 }

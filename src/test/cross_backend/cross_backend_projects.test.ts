@@ -1,8 +1,8 @@
 /**
  * Tests for `cross_backend_projects.ts` — the cross projects run at once, so
- * every port, Postgres database and temp directory `CROSS_PROJECT_RESOURCES`
- * claims must be claimed once (and the `db_postgres` step's database by
- * none), and the table must cover exactly the projects
+ * every port, database and temp directory `CROSS_PROJECT_RESOURCES` claims
+ * must be claimed once, every database must make a PostgreSQL database name,
+ * and the table must cover exactly the projects
  * `CROSS_BACKEND_PROJECTS` defines. The one exception: the backends of a
  * project `SHARED_DATABASE_PROJECTS` names may share a database among
  * themselves, never with another project.
@@ -14,15 +14,15 @@ import { describe, test, assert } from 'vitest';
 
 import { default_test_backend_prefix } from '#lib/testing/cross_backend/build_test_backend_paths.ts';
 import {
-	RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 	RUST_SPINE_STUB_DEFAULT_NAME,
 	RUST_SPINE_STUB_DEFAULT_PORT
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import { to_test_database_name } from '#lib/testing/cross_backend/test_database.ts';
 
 import {
 	CROSS_BACKEND_PROJECTS,
-	CROSS_DB_POSTGRES_DATABASE,
 	CROSS_PROJECT_RESOURCES,
+	POSTGRES_ONLY_PROJECTS,
 	SHARED_DATABASE_PROJECTS,
 	type CrossBackendResources,
 	type CrossProjectName
@@ -83,7 +83,7 @@ describe('CROSS_PROJECT_RESOURCES', () => {
 		);
 	});
 
-	test('every Postgres database is claimed once, but within a sharing project', () => {
+	test('every database is claimed once, but within a sharing project', () => {
 		assert.deepEqual(
 			find_duplicates((r) => r.database, SHARED_DATABASE_PROJECTS),
 			[]
@@ -108,11 +108,16 @@ describe('CROSS_PROJECT_RESOURCES', () => {
 		}
 	});
 
-	test("no backend claims the db_postgres step's database", () => {
-		assert.deepEqual(
-			backends.filter(([, r]) => r.database === CROSS_DB_POSTGRES_DATABASE).map(([l]) => l),
-			[]
-		);
+	test('every database makes a PostgreSQL database name', () => {
+		for (const [label, { database }] of backends) {
+			if (database !== null) assert.doesNotThrow(() => to_test_database_name(database), label);
+		}
+	});
+
+	test('every Postgres-only project is a cross project', () => {
+		for (const project of POSTGRES_ONLY_PROJECTS) {
+			assert.ok(Object.hasOwn(CROSS_PROJECT_RESOURCES, project), project);
+		}
 	});
 
 	test('every backend name, and so every temp directory, is claimed once', () => {
@@ -127,13 +132,7 @@ describe('CROSS_PROJECT_RESOURCES', () => {
 	});
 
 	test("the single-backend stub's row is the preset's defaults", () => {
-		// its setup leaves the database to the stub's URL, so the default URL
-		// must name the database the table claims
 		const { stub } = CROSS_PROJECT_RESOURCES.cross_backend_rust_spine_stub;
-		assert.strictEqual(
-			new URL(RUST_SPINE_STUB_DEFAULT_DATABASE_URL).pathname.slice(1),
-			stub.database
-		);
 		assert.strictEqual(stub.port, RUST_SPINE_STUB_DEFAULT_PORT);
 		assert.strictEqual(stub.name, RUST_SPINE_STUB_DEFAULT_NAME);
 	});

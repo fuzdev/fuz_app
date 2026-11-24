@@ -5,7 +5,7 @@
  * transactions against a real `pg` pool — the in-memory drivers (pglet,
  * PGlite) run transactions serially, so the cross-tx interleavings that matter
  * here are only reachable with real connection-level concurrency. Runs against `pg_factory` only;
- * skipped when `TEST_DATABASE_URL` is unset.
+ * skipped when `FUZ_TEST_POSTGRES_URL` is unset.
  *
  * @module
  */

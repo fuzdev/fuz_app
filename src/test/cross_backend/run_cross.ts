@@ -7,23 +7,26 @@
  * invocation of its own, all concurrently — which the projects' disjoint
  * ports, databases and temp directories allow (`cross_backend_projects.ts`).
  * The Rust stub is rebuilt once first (`rebuild_rust_spine_stub`, skipped by
- * `FUZ_TESTING_NO_REBUILD=1` as usual), and every invocation is handed
- * `FUZ_TESTING_NO_REBUILD=1` and the binary path, so no two builds race on
- * Cargo's lock.
+ * `FUZ_TESTING_NO_REBUILD=1` as usual), and so is the `pglet_server` its
+ * projects' databases run on (`prepare_pglet_server_binary`); every
+ * invocation is handed `FUZ_TESTING_NO_REBUILD=1` and both binary paths, so
+ * no two builds race on Cargo's lock.
  *
- * Beside them runs the `db` project with `TEST_DATABASE_URL` set (the
- * `db_postgres` step), so the real-Postgres halves a plain `gro test` skips — the race,
- * lock-order and row-order files on `pg_factory`, the `TEST_DATABASE_URL`
- * suites, and every four-driver suite's `pg` leg — run with the matrix. Its
- * database is `CROSS_DB_POSTGRES_DATABASE`, created when missing on the
- * server `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names (the stub's
- * server), whatever `TEST_DATABASE_URL` the caller has set. The whole project
- * rather than a list of files: a Postgres-only file added later runs here
- * with no list to keep. The Rust spine's `#[ignore]` Postgres suites are the
- * fuz workspace's own gate (`cargo test -- --include-ignored`), not run here:
- * they build every test target of the spine crates in another profile than
- * the stub's, and the parity project's lock pins already hold both spines'
- * locks over the wire.
+ * `FUZ_TEST_POSTGRES_URL` decides the engine. Unset, every Rust-backed
+ * project runs on `pglet_server`s, and the PostgreSQL-only projects
+ * (`POSTGRES_ONLY_PROJECTS`) are reported "not run (postgres-only)", as the
+ * Rust spine's ignored tests are. Set, every project's databases are
+ * PostgreSQL databases of their own on that server, and beside the projects
+ * runs the `db` project with the variable passed on (the `db_postgres` step),
+ * so the PostgreSQL halves a plain `gro test` skips — the race, lock-order and
+ * row-order files on `pg_factory`, the `FUZ_TEST_POSTGRES_URL` suites, and
+ * every four-driver suite's `pg` leg — run with the matrix, each on databases
+ * of its own. The whole project rather than a list of files: a
+ * PostgreSQL-only file added later runs here with no list to keep. The Rust
+ * spine's `#[ignore]` Postgres suites are the fuz workspace's own gate
+ * (`cargo test -- --include-ignored`), not run here: they build every test
+ * target of the spine crates in another profile than the stub's, and the
+ * parity project's lock pins already hold both spines' locks over the wire.
  *
  * Each invocation's output is held and printed whole when it finishes, with
  * one line naming the projects still running; an invocation still running
@@ -61,22 +64,24 @@ import { dirname, join, relative } from 'node:path';
 
 import { NO_REBUILD_ENV } from '#lib/testing/cross_backend/cargo_binary.ts';
 import {
-	ensure_database_for_url,
-	with_database_name
-} from '#lib/testing/cross_backend/postgres_database.ts';
+	PGLET_SERVER_BIN_ENV,
+	prepare_pglet_server_binary
+} from '#lib/testing/cross_backend/test_database.ts';
+import { FUZ_TEST_POSTGRES_URL_ENV } from '#lib/testing/db.ts';
 
 import {
 	CROSS_BACKEND_ENV,
 	CROSS_BACKEND_PROJECTS,
-	CROSS_DB_POSTGRES_DATABASE
+	POSTGRES_ONLY_PROJECTS,
+	type CrossProjectName
 } from './cross_backend_projects.ts';
 import {
 	rebuild_rust_spine_stub,
-	resolve_rust_spine_stub_database_url,
-	RUST_SPINE_STUB_CRATE
+	RUST_SPINE_STUB_CRATE,
+	to_rust_spine_pglet_server
 } from './global_setup_helpers.ts';
 
-/** The summary's name for the `db` project run with `TEST_DATABASE_URL`. */
+/** The summary's name for the `db` project run with `FUZ_TEST_POSTGRES_URL`. */
 const DB_POSTGRES_STEP = 'db_postgres';
 
 /**
@@ -261,32 +266,46 @@ parent_poll.unref();
 
 const started_at = performance.now();
 
+const postgres_url = process.env[FUZ_TEST_POSTGRES_URL_ENV] || undefined;
+
 // one build for every Rust-backed project; it also defaults the binary path
 // in this process's env, which every invocation inherits
 rebuild_rust_spine_stub({ crate: RUST_SPINE_STUB_CRATE });
 const env: NodeJS.ProcessEnv = {
 	...process.env,
 	[CROSS_BACKEND_ENV]: '1',
-	[NO_REBUILD_ENV]: '1'
+	[NO_REBUILD_ENV]: '1',
+	// on PostgreSQL no project spawns a pglet server
+	...(postgres_url
+		? {}
+		: { [PGLET_SERVER_BIN_ENV]: prepare_pglet_server_binary(to_rust_spine_pglet_server()) })
 };
 
-// the `db` step: the caller's env without the cross switch, its Postgres
-// database the step's own
-const db_postgres_url = with_database_name(
-	resolve_rust_spine_stub_database_url(),
-	CROSS_DB_POSTGRES_DATABASE
-);
-ensure_database_for_url(db_postgres_url);
-const db_postgres_env: NodeJS.ProcessEnv = { ...process.env, TEST_DATABASE_URL: db_postgres_url };
+// the `db` step, only on PostgreSQL: the caller's env without the cross switch
+const db_postgres_env: NodeJS.ProcessEnv = { ...process.env };
 delete db_postgres_env[CROSS_BACKEND_ENV];
+
+/** The projects not run: the PostgreSQL-only ones, without a PostgreSQL server. */
+const not_run = CROSS_BACKEND_PROJECTS.map((project) => project.name).filter(
+	(name) => !postgres_url && POSTGRES_ONLY_PROJECTS.has(name as CrossProjectName)
+);
 
 /** Each step: its summary name, the vitest project it runs, and its env. */
 const steps: ReadonlyArray<{ name: string; project: string; env: NodeJS.ProcessEnv }> = [
-	...CROSS_BACKEND_PROJECTS.map((project) => ({ name: project.name, project: project.name, env })),
-	{ name: DB_POSTGRES_STEP, project: 'db', env: db_postgres_env }
+	...CROSS_BACKEND_PROJECTS.filter((project) => !not_run.includes(project.name)).map((project) => ({
+		name: project.name,
+		project: project.name,
+		env
+	})),
+	...(postgres_url ? [{ name: DB_POSTGRES_STEP, project: 'db', env: db_postgres_env }] : [])
 ];
 const names = steps.map((step) => step.name);
-console.log(`running ${names.length} steps concurrently: ${names.join(', ')}`);
+console.log(
+	`running ${names.length} steps concurrently: ${names.join(', ')}` +
+		(not_run.length
+			? ` — not run (postgres-only, ${FUZ_TEST_POSTGRES_URL_ENV} unset): ${not_run.join(', ')}`
+			: '')
+);
 
 const report_dir = await mkdtemp(join(tmpdir(), 'fuz_app_cross_'));
 let runs: Array<ProjectRun>;
@@ -300,7 +319,7 @@ try {
 	await rm(report_dir, { recursive: true, force: true });
 }
 
-const width = Math.max(...names.map((name) => name.length));
+const width = Math.max(...[...names, ...not_run].map((name) => name.length));
 console.log('\n── test:cross summary ──');
 for (const run of runs) {
 	const ok = run.outcome === 'passed';
@@ -319,6 +338,9 @@ for (const run of runs) {
 					: 'no failed test reported — see its output above';
 		console.log(`        ${note}`);
 	}
+}
+for (const name of not_run) {
+	console.log(`skip  ${name.padEnd(width)}  not run (postgres-only)`);
 }
 const failed = runs.filter((run) => run.outcome !== 'passed');
 console.log(

@@ -1,6 +1,6 @@
 /**
  * `create_pg_pool`'s checkout bound against the installed pg-pool, on real
- * Postgres — skipped unless `TEST_DATABASE_URL` is set.
+ * Postgres — skipped unless `FUZ_TEST_POSTGRES_URL` is set.
  *
  * Every case holds the pool's one client so a checkout must wait, then reads
  * what the wait answers: a `DbCheckoutError` once the bound passes (on a
@@ -30,8 +30,10 @@ import {
 } from '#lib/db/db_pg.ts';
 import { is_db_checkout_error } from '#lib/db/db_checkout_error.ts';
 import { pg_error_code } from '#lib/db/pg_error.ts';
+import { FUZ_TEST_POSTGRES_URL_ENV } from '#lib/testing/db.ts';
 
-const url = process.env.TEST_DATABASE_URL;
+// the server's admin database itself: every case here only reads and ends connections
+const url = process.env[FUZ_TEST_POSTGRES_URL_ENV];
 
 /** A pool of one client whose checkouts give up after `checkout_timeout_ms`. */
 const create_one_client_pool = async (

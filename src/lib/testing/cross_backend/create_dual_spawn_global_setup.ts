@@ -19,10 +19,11 @@ import '../assert_dev_env.ts';
  * ```ts
  * import {create_dual_spawn_global_setup} from
  *   '@fuzdev/fuz_app/testing/cross_backend/create_dual_spawn_global_setup.ts';
- * import {node_backend_config, rust_backend_config} from './my_backend_config.ts';
+ * import {MY_CARGO_BINARY, node_backend_config, rust_backend_config} from './my_backend_config.ts';
  *
  * export default create_dual_spawn_global_setup({
- *   configs: {a: node_backend_config, b: rust_backend_config},
+ *   configs: {a: () => node_backend_config(), b: (database_url) => rust_backend_config(database_url)},
+ *   databases: {b: {name: 'parity_rust', pglet_server: MY_CARGO_BINARY}},
  * });
  * ```
  *
@@ -37,17 +38,51 @@ import '../assert_dev_env.ts';
 
 import type { TestProject } from 'vitest/node';
 
+import { FUZ_TEST_POSTGRES_URL_ENV } from '../db.ts';
 import type { BackendConfig } from './backend_config.ts';
 import { bootstrap_backend } from './bootstrap_backend.ts';
 import { serialize_bootstrapped_handle, type BootstrappedBackendHandle } from './setup.ts';
+import {
+	assert_config_on_database,
+	open_test_database,
+	prepare_pglet_server_binary,
+	type PgletServerBinaryOptions,
+	type TestDatabase
+} from './test_database.ts';
+
+/** One side's database in a dual spawn (`DualSpawnGlobalSetupOptions.databases`). */
+export interface DualSpawnDatabase {
+	/** Names it (`open_test_database`'s `name`), unique among the repo's cross backends. */
+	readonly name: string;
+	/**
+	 * The Cargo workspace (and profile) its `pglet_server` is built in, the
+	 * backend binary's own (`prepare_pglet_server_binary`), or `null` for a
+	 * side that runs only on PostgreSQL, failing the setup naming
+	 * `FUZ_TEST_POSTGRES_URL` when it is unset.
+	 */
+	readonly pglet_server: PgletServerBinaryOptions | null;
+}
 
 export interface DualSpawnGlobalSetupOptions {
 	/**
 	 * The two backend config factories to spawn. `a` is spawned first; on
 	 * its success `b` is spawned (with `a` torn down if `b` throws). Label
 	 * them in the consuming test (e.g. via `assert_schema_snapshots_equal`'s labels).
+	 * Each gets the URL of the database `databases` provisions for its side,
+	 * or `'memory://'` (in-process pglet, the TS family's default) for a side
+	 * with none.
 	 */
-	readonly configs: { readonly a: () => BackendConfig; readonly b: () => BackendConfig };
+	readonly configs: {
+		readonly a: (database_url: string) => BackendConfig;
+		readonly b: (database_url: string) => BackendConfig;
+	};
+	/**
+	 * The sides that run over a database the setup provisions before any
+	 * spawn (`open_test_database`): a `pglet_server` of its own, or a
+	 * PostgreSQL database of its own under `FUZ_TEST_POSTGRES_URL`. Each is
+	 * closed after both backends' teardown. Omit a side for none.
+	 */
+	readonly databases?: { readonly a?: DualSpawnDatabase; readonly b?: DualSpawnDatabase };
 	/**
 	 * `project.provide` keys for the two serialized handles (read by
 	 * `inject` in the test). Default `parity_handle_a` / `parity_handle_b`
@@ -73,37 +108,73 @@ export interface DualSpawnGlobalSetupOptions {
 }
 
 /**
- * Build a vitest `globalSetup` default export that spawns both backends.
+ * Build a vitest `globalSetup` default export that provisions the sides'
+ * databases, then spawns both backends.
  */
 export const create_dual_spawn_global_setup = ({
 	configs,
+	databases = {},
 	provide_keys = { a: 'parity_handle_a', b: 'parity_handle_b' },
 	before_bootstrap,
 	after_bootstrap
 }: DualSpawnGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
+	if (databases.a && databases.b && databases.a.name === databases.b.name) {
+		throw new Error(
+			`create_dual_spawn_global_setup: both sides name the database '${databases.a.name}' — ` +
+				'each side opens one of its own, so the second would drop the first'
+		);
+	}
 	return async (project) => {
-		const a = await bootstrap_backend(configs.a(), { before_bootstrap });
-		// Tear down what is up if `b` fails to spawn or either hook throws — no
-		// orphaned child process.
+		// every database, then the spawns, so a missing PostgreSQL fails before
+		// any backend starts; what was opened closes after everything spawned
+		const opened: Array<TestDatabase> = [];
+		const side_databases: { a?: TestDatabase; b?: TestDatabase } = {};
+		// a side's config over its database's URL, refused when it ignores it
+		const build_config = (side: 'a' | 'b'): BackendConfig => {
+			const database = side_databases[side];
+			const config = configs[side](database?.url ?? 'memory://');
+			if (database) assert_config_on_database(config, database);
+			return config;
+		};
+		let a: BootstrappedBackendHandle | null = null;
 		let b: BootstrappedBackendHandle | null = null;
 		try {
+			for (const side of ['a', 'b'] as const) {
+				const request = databases[side];
+				if (!request) continue;
+				const { pglet_server } = request;
+				const database = await open_test_database({
+					name: request.name,
+					postgres_url: process.env[FUZ_TEST_POSTGRES_URL_ENV],
+					pglet_server_bin: pglet_server && (() => prepare_pglet_server_binary(pglet_server))
+				});
+				opened.push(database);
+				side_databases[side] = database;
+			}
+			a = await bootstrap_backend(build_config('a'), { before_bootstrap });
 			await after_bootstrap?.(a, 'a');
-			b = await bootstrap_backend(configs.b(), { before_bootstrap });
+			b = await bootstrap_backend(build_config('b'), { before_bootstrap });
 			await after_bootstrap?.(b, 'b');
 		} catch (err) {
 			// the setup's error is the report; a teardown that also failed is
-			// logged beside it
-			const failures = await teardown_each(b ? [b, a] : [a]);
+			// logged beside it. Tear down what is up — no orphaned child process.
+			const spawned = [b, a].filter((handle) => handle !== null);
+			const failures = [...(await teardown_each(spawned)), ...(await close_each(opened))];
 			for (const failure of failures) console.error(failure);
 			throw err;
 		}
+		const spawned_a = a;
 		const spawned_b = b;
 		const provide = project.provide as (key: string, value: unknown) => void;
-		provide(provide_keys.a, serialize_bootstrapped_handle(a));
+		provide(provide_keys.a, serialize_bootstrapped_handle(spawned_a));
 		provide(provide_keys.b, serialize_bootstrapped_handle(spawned_b));
 		return async () => {
-			// both, whichever fails — a failed exit of one must not strand the other
-			const failures = await teardown_each([spawned_b, a]);
+			// both, whichever fails — a failed exit of one must not strand the
+			// other — then the databases
+			const failures = [
+				...(await teardown_each([spawned_b, spawned_a])),
+				...(await close_each(opened))
+			];
 			if (failures.length === 1) throw failures[0];
 			if (failures.length > 1) {
 				throw new Error(
@@ -112,6 +183,19 @@ export const create_dual_spawn_global_setup = ({
 			}
 		};
 	};
+};
+
+/** Close each database in turn, returning the failures rather than stopping at the first. */
+const close_each = async (databases: ReadonlyArray<TestDatabase>): Promise<Array<unknown>> => {
+	const failures: Array<unknown> = [];
+	for (const database of databases) {
+		try {
+			await database.close();
+		} catch (error) {
+			failures.push(error);
+		}
+	}
+	return failures;
 };
 
 /** Tear each handle down in turn, returning the failures rather than stopping at the first. */

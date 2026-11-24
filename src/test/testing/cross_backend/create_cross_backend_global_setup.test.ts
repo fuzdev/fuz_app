@@ -1,7 +1,7 @@
 /**
  * Tests for `create_cross_backend_global_setup` — the options it refuses
- * before any backend spawns, and the order a setup runs its hook, its config
- * factory, its database creation and its spawn in.
+ * before any backend spawns, and the order a setup runs its hook, its
+ * database, its config factory and its spawn in.
  *
  * @module
  */
@@ -21,23 +21,55 @@ const unused_config = (): BackendConfig => {
 
 /** A config carrying only what the setup reads before the spawn. */
 const stub_config = (database_url: string): BackendConfig =>
-	({ env: { DATABASE_URL: database_url } }) as unknown as BackendConfig;
+	({ name: 'stub', env: { DATABASE_URL: database_url } }) as unknown as BackendConfig;
 
 const SPAWN_STOPPED = 'spawn stopped by the test';
 
 /** Deps recording each call, whose spawn throws so no backend starts. */
-const recording_deps = (calls: Array<string>): CrossBackendGlobalSetupDeps => ({
-	ensure_database_for_url: (url) => calls.push(`ensure ${url}`),
-	bootstrap_backend: () => {
-		calls.push('spawn');
+const recording_deps = (
+	calls: Array<string>,
+	postgres_url?: string
+): CrossBackendGlobalSetupDeps => ({
+	open_test_database: async (options) => {
+		calls.push(
+			`open ${options.name} on ${options.postgres_url ?? 'pglet'}` +
+				(options.pglet_server_bin === null ? ' (postgres only)' : '')
+		);
+		return {
+			url: `postgres://test/${options.name}`,
+			engine: options.postgres_url ? 'postgres' : 'pglet',
+			empty: async () => undefined,
+			close: async () => {
+				calls.push(`close ${options.name}`);
+			}
+		};
+	},
+	bootstrap_backend: (config) => {
+		calls.push(`spawn ${config.env.DATABASE_URL}`);
 		return Promise.reject(new Error(SPAWN_STOPPED));
-	}
+	},
+	postgres_url: () => postgres_url
 });
 
 const project = (name: string): TestProject => ({ name }) as unknown as TestProject;
 
+/** Run the setup to its stopped spawn. */
+const run_to_stopped_spawn = async (
+	setup: (project: TestProject) => Promise<unknown>,
+	name: string
+): Promise<void> => {
+	try {
+		await setup(project(name));
+		assert.fail('expected the stopped spawn');
+	} catch (error) {
+		assert.strictEqual((error as Error).message, SPAWN_STOPPED);
+	}
+};
+
+const PGLET_SERVER = { workspace_dir: '/nonexistent/workspace', profile: 'cross-test' };
+
 describe('create_cross_backend_global_setup', () => {
-	test('a before_spawn hook naming no config throws, prototype keys included', () => {
+	test('a before_spawn hook or database naming no config throws, prototype keys included', () => {
 		for (const name of ['rsut', 'constructor', 'toString']) {
 			assert.throws(
 				() =>
@@ -46,6 +78,14 @@ describe('create_cross_backend_global_setup', () => {
 						before_spawn: { [name]: () => undefined }
 					}),
 				new RegExp(`before_spawn names '${name}'`)
+			);
+			assert.throws(
+				() =>
+					create_cross_backend_global_setup({
+						configs: { rust: unused_config },
+						databases: { [name]: PGLET_SERVER }
+					}),
+				new RegExp(`databases names '${name}'`)
 			);
 		}
 	});
@@ -60,53 +100,78 @@ describe('create_cross_backend_global_setup', () => {
 		}
 	});
 
-	test("the selected backend's hook runs before its config factory, then the database, then the spawn", async () => {
+	test("the selected backend's hook runs, then its database opens, then its config is built over it and spawned", async () => {
 		const calls: Array<string> = [];
 		const setup = create_cross_backend_global_setup(
 			{
 				configs: {
-					rust: () => {
-						calls.push('rust config');
-						return stub_config('postgres://localhost/app_test_rust');
+					rust: (database_url) => {
+						calls.push(`rust config ${database_url}`);
+						return stub_config(database_url);
 					},
-					node: () => {
-						calls.push('node config');
-						return stub_config('memory://');
+					node: (database_url) => {
+						calls.push(`node config ${database_url}`);
+						return stub_config(database_url);
 					}
 				},
+				databases: { rust: PGLET_SERVER },
 				before_spawn: {
 					rust: () => calls.push('rust hook'),
 					node: () => calls.push('node hook')
-				},
-				ensure_databases: true
+				}
+			},
+			recording_deps(calls)
+		);
+		await run_to_stopped_spawn(setup, 'cross_backend_rust');
+		assert.deepStrictEqual(calls, [
+			'rust hook',
+			'open rust on pglet',
+			'rust config postgres://test/rust',
+			'spawn postgres://test/rust',
+			// a failed spawn closes what was opened for it
+			'close rust'
+		]);
+	});
+
+	test('FUZ_TEST_POSTGRES_URL reaches the database opener', async () => {
+		const calls: Array<string> = [];
+		const setup = create_cross_backend_global_setup(
+			{ configs: { rust: stub_config }, databases: { rust: null } },
+			recording_deps(calls, 'postgres://localhost/postgres')
+		);
+		await run_to_stopped_spawn(setup, 'cross_backend_rust');
+		assert.deepStrictEqual(calls, [
+			'open rust on postgres://localhost/postgres (postgres only)',
+			'spawn postgres://test/rust',
+			'close rust'
+		]);
+	});
+
+	test('a backend databases does not name gets memory:// and no database', async () => {
+		const calls: Array<string> = [];
+		const setup = create_cross_backend_global_setup(
+			{ configs: { node: stub_config } },
+			recording_deps(calls)
+		);
+		await run_to_stopped_spawn(setup, 'cross_backend_ts_node');
+		assert.deepStrictEqual(calls, ['spawn memory://']);
+	});
+
+	test("a config that ignores its database's URL is refused, naming the backend, and the database closed", async () => {
+		const calls: Array<string> = [];
+		const setup = create_cross_backend_global_setup(
+			{
+				configs: { rust: () => stub_config('postgres://localhost/hardcoded') },
+				databases: { rust: PGLET_SERVER }
 			},
 			recording_deps(calls)
 		);
 		try {
 			await setup(project('cross_backend_rust'));
-			assert.fail('expected the stopped spawn');
+			assert.fail('expected the refusal');
 		} catch (error) {
-			assert.strictEqual((error as Error).message, SPAWN_STOPPED);
+			assert.match((error as Error).message, /backend stub's DATABASE_URL is not the database/);
 		}
-		assert.deepStrictEqual(calls, [
-			'rust hook',
-			'rust config',
-			'ensure postgres://localhost/app_test_rust',
-			'spawn'
-		]);
-	});
-
-	test('without ensure_databases no database is created', async () => {
-		const calls: Array<string> = [];
-		const setup = create_cross_backend_global_setup(
-			{ configs: { rust: () => stub_config('postgres://localhost/app_test_rust') } },
-			recording_deps(calls)
-		);
-		try {
-			await setup(project('cross_backend_rust'));
-		} catch {
-			// the stopped spawn
-		}
-		assert.deepStrictEqual(calls, ['spawn']);
+		assert.deepStrictEqual(calls, ['open rust on pglet', 'close rust']);
 	});
 });

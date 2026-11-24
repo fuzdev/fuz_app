@@ -28,7 +28,7 @@
  *   or is waited for and is superseded; a scope teardown supersedes only the
  *   offers its lock took.
  *
- * Real `pg` only (`TEST_DATABASE_URL`): the in-memory drivers have one
+ * Real `pg` only (`FUZ_TEST_POSTGRES_URL`): the in-memory drivers have one
  * connection, so the query would queue behind the holder whatever it locks.
  * Their wire twins are in `cross_backend/lock_pins.cross.test.ts`; the Rust
  * twins in `fuz_auth`'s `tests/account_delete_races.rs`.

@@ -1,6 +1,7 @@
 /**
  * Tests for db/postgres_url.ts — the database name, the maintenance URL, the
- * password environment, the already-exists predicate, and the client argv.
+ * password environment, the already-exists predicate, the client argv, and
+ * the URL with another database or redacted.
  *
  * @module
  */
@@ -10,12 +11,14 @@ import { describe, test, assert } from 'vitest';
 import {
 	is_createdb_already_exists,
 	parse_db_name,
+	redact_database_url,
 	rewrite_query_pairs,
 	to_createdb_args,
 	to_dropdb_args,
 	to_maintenance_database_name,
 	to_maintenance_database_url,
-	to_postgres_password_env
+	to_postgres_password_env,
+	with_database_name
 } from '#lib/db/postgres_url.ts';
 
 describe('parse_db_name', () => {
@@ -176,5 +179,45 @@ describe('client argv', () => {
 			'--',
 			'postgres'
 		]);
+	});
+});
+
+describe('with_database_name', () => {
+	test('replaces the database and keeps the server, role and query', () => {
+		assert.strictEqual(
+			with_database_name('postgres://user:pw@db.local:5433/first?sslmode=disable', 'second'),
+			'postgres://user:pw@db.local:5433/second?sslmode=disable'
+		);
+	});
+
+	test('adds a database to a URL naming none', () => {
+		assert.strictEqual(
+			with_database_name('postgres://localhost', 'fuz_app_test_x'),
+			'postgres://localhost/fuz_app_test_x'
+		);
+	});
+});
+
+describe('redact_database_url', () => {
+	test('replaces a userinfo password and a password parameter', () => {
+		const redacted = redact_database_url(
+			'postgres://user:hunter2@db.local/app?password=hunter3&sslmode=require'
+		);
+		assert.notInclude(redacted, 'hunter2');
+		assert.notInclude(redacted, 'hunter3');
+		assert.include(redacted, 'user:REDACTED@db.local');
+		assert.include(redacted, 'password=REDACTED');
+		assert.include(redacted, 'sslmode=require');
+	});
+
+	test('prints every other query parameter as written', () => {
+		assert.strictEqual(
+			redact_database_url('postgres://h/app?options=-c%20search_path%3Dapp&password=x'),
+			'postgres://h/app?options=-c%20search_path%3Dapp&password=REDACTED'
+		);
+	});
+
+	test('leaves a URL with no password as it was', () => {
+		assert.strictEqual(redact_database_url('postgres://localhost/app'), 'postgres://localhost/app');
 	});
 });

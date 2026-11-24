@@ -2,7 +2,7 @@
  * Cross-backend WebSocket receive-timeout gate for fuz_app's own spine.
  *
  * Runs against BOTH impls — the TS spine (Node + in-memory pglet) and the
- * Rust `testing_spine_stub` (real Postgres) — spawned by the dual-spawn
+ * Rust `testing_spine_stub` (over its own `pglet_server`, or PostgreSQL) — spawned by the dual-spawn
  * `global_setup_timing.ts` with the WS endpoints' receive timeout shortened.
  * An admitted socket that sends nothing more is closed with
  * `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` and its reason, no sooner than the

@@ -17,14 +17,14 @@ Tests live in `src/test/`, mirroring `src/lib/` structure
 `create_describe_db(factories, truncate_tables)` from `#lib/testing/describe_db.ts`
 returns a `describe_db(name, fn)` function bound to the given factories.
 Runs suites against the default in-memory driver (pglet-wasm) and optionally
-PostgreSQL (when `TEST_DATABASE_URL` is set). Consumer projects create a
+PostgreSQL (when `FUZ_TEST_POSTGRES_URL` is set). Consumer projects create a
 `db_fixture.ts` that calls `create_describe_db` with their factories and truncate
 tables.
 
 fuz_app's own suites reach a database two ways:
 
 - **The four-driver fixture.** `create_db_fixture.ts` exports
-  `create_db_fixture(namespaces, truncate_tables)`, which builds the four
+  `create_db_fixture(suite, namespaces, truncate_tables)`, which builds the four
   drivers — pglite, pg, `pglet-server` (the native wire server,
   `db_pglet_server_factory.ts`) and the forking pglet-wasm leg
   (`db_pglet_wasm_factory.ts`) — and binds `describe_db` over them, so each suite
@@ -45,7 +45,7 @@ fuz_app's own suites reach a database two ways:
 Postgres-only tests — lock and ordering behavior the in-memory drivers can't
 show (one connection, every transaction serialized), among others — are built
 on a fixture's `pg_factory` (`create_db_fixture.ts`) and run only with
-`TEST_DATABASE_URL` (CI sets it; a local `gro check` without it skips them);
+`FUZ_TEST_POSTGRES_URL` (CI sets it; a local `gro check` without it skips them);
 each module doc names its Postgres-only half. A change to a row lock, a
 locking read or a `RETURNING` order runs them locally first, and
 `npm run test:cross:parity`, whose `lock_pins.cross.test.ts` holds the same
@@ -59,14 +59,17 @@ default factory's driver, the other two add legs to the four-driver set:
 | --------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `FUZ_TEST_DB_DEFAULT` | `pglet-wasm` (unset), `pglite`, or `pglet-server` (needs `PGLET_SERVER_BIN`); the four-driver set is unaffected |
 | `PGLET_SERVER_BIN`    | path to a built `pglet_server`; un-skips the `pglet-server` leg                                             |
-| `TEST_DATABASE_URL`   | a Postgres URL; un-skips the `pg` leg                                                                      |
+| `FUZ_TEST_POSTGRES_URL` | a PostgreSQL server and a role with `CREATEDB` (`postgres://localhost/postgres`); un-skips the `pg` leg |
 
 `FUZ_TEST_DB_DEFAULT` is applied by `db_default.ts`, the `db` project's
 `setupFiles` entry, through `set_default_db_factory`; the run prints
 `[db tests] default driver: …` once, and an unknown value or a missing binary
-throws. Every factory but the forking pglet-wasm leg resets the `public`
-schema + re-migrates per `create()`, and all but pg and that leg share one
-instance per driver for the run. The `unit` project's `setupFiles` entry,
+throws. The pg leg creates a database of its own per `create()`
+(`fuz_testing_<suite>_<pid>_<thread id>_<n>`, the suite `auth`, `cell` or `fact`) and
+drops it on `close()`; a killed run leaves `fuz_testing_*` databases to drop
+by that prefix. Every other factory but the forking pglet-wasm leg resets the
+`public` schema + re-migrates per `create()` and shares one instance per
+driver for the run. The `unit` project's `setupFiles` entry,
 `unit_db_guard.ts`, installs a default factory whose `create()` throws, so a
 test that opens a database without the `.db.test.ts` suffix fails loudly
 rather than running on its own instance outside these switches.
@@ -319,19 +322,23 @@ projects (`DUAL_SPAWN_TESTS` in `cross_backend_projects.ts`;
 
 | project (`npm run …`) | backends | files |
 | --- | --- | --- |
-| `cross_backend_parity` (`test:cross:parity`) | TS spine + `testing_spine_stub`, each on its own Postgres database | `schema_parity` (DDL and migration-tracker identity), `bootstrap_db_state` (the database each keeper bootstrap left, read by the global setup's `after_bootstrap` before any test, since every test's reset reseeds by SQL), `action_manifest_parity`, `differential` (ledger `differential_known_divergences.ts`, database state compared), `transcript_differential`, `conformance_table_copies` (each twin table, the X-Accel corpus and `db_invariants.sql` byte-equal to the Rust copy), `lock_pins`, `db_invariants_twin` |
+| `cross_backend_parity` (`test:cross:parity`) | TS spine + `testing_spine_stub`, each on its own PostgreSQL database — PostgreSQL only | `schema_parity` (DDL and migration-tracker identity), `bootstrap_db_state` (the database each keeper bootstrap left, read by the global setup's `after_bootstrap` before any test, since every test's reset reseeds by SQL), `action_manifest_parity`, `differential` (ledger `differential_known_divergences.ts`, database state compared), `transcript_differential`, `conformance_table_copies` (each twin table, the X-Accel corpus and `db_invariants.sql` byte-equal to the Rust copy), `lock_pins`, `db_invariants_twin` |
 | `cross_backend_ts_differential` (`test:cross:ts-differential`) | the TS spine on Node and on Bun, `memory://` | `differential_ts`, `transcript_differential_ts` (empty ledgers, no database comparison) |
 | `cross_backend_security` (`test:cross:security`) | TS spine + stub, login and action limiters on, loopback proxy trusted | `login_security`, `ws_action_rate_limit`, `bootstrap_rate_limit` |
 | `cross_backend_timing` (`test:cross:timing`) | TS spine + stub, SSE keep-alive, WS receive timeout and pool checkout bounds shortened | `sse_keep_alive`, `ws_receive_timeout`, `db_checkout_timeout` |
-| `cross_backend_swap` (`test:cross:swap`) | TS spine + stub over **one** Postgres database, spawned one at a time by the tests (the setup only prepares them; the stub's startup reset off) | `backend_swap` (`describe_backend_swap_tests` both ways: each spine boots over the other's database with no migration and no row written or rewritten, honors the sessions, tokens, password hashes and offers the other minted, and honors the other's writes — a keeper session logged out and a keeper token revoked, an offer accepted and one declined, a password change) |
-| `cross_backend_both_live` (`test:cross:both-live`) | TS spine + stub over **one** Postgres database **at once**, spawned by the tests, the first bootstrapped before the second boots (one boot-state test spawns the second first; the setup only prepares them; the stub's startup reset off) | `backend_both_live` (`describe_backend_both_live_tests` both ways: a session, token, password change and account delete revoked on one spine refused on the other at once, an offer accepted across, each revoke's changed tables by digest; the per-process limits pinned by name — sockets outliving the other spine's revocations, notifications not crossing, boot-time bootstrap state) |
+| `cross_backend_swap` (`test:cross:swap`) | TS spine + stub over **one** database (a `pglet_server`, or PostgreSQL), spawned one at a time by the tests (the setup only prepares them) | `backend_swap` (`describe_backend_swap_tests` both ways: each spine boots over the other's database with no migration and no row written or rewritten, honors the sessions, tokens, password hashes and offers the other minted, and honors the other's writes — a keeper session logged out and a keeper token revoked, an offer accepted and one declined, a password change) |
+| `cross_backend_both_live` (`test:cross:both-live`) | TS spine + stub over **one** database (a `pglet_server`, or PostgreSQL) **at once**, spawned by the tests, the first bootstrapped before the second boots (one boot-state test spawns the second first; the setup only prepares them) | `backend_both_live` (`describe_backend_both_live_tests` both ways: a session, token, password change and account delete revoked on one spine refused on the other at once, an offer accepted across, each revoke's changed tables by digest; the per-process limits pinned by name — sockets outliving the other spine's revocations, notifications not crossing, boot-time bootstrap state) |
 
-Parity runs on real Postgres because pglet's `indexdef` leaves out index
-modifiers, so a pglet leg would report every such index as drift; the setup
-creates each database when missing (on the server
-`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` names), empties the TS spine's
-before every spawn (the TS binary doesn't wipe at startup), and fails the
-project on an unreachable server, never skips it. The TS binary hashes
+**Databases.** Every Rust-backed project gives each stub a database of its own
+(`open_rust_spine_database`, `create_dual_spawn_global_setup`'s `databases`):
+a `pglet_server` built in the stub's Cargo workspace and profile by default,
+or under `FUZ_TEST_POSTGRES_URL` a PostgreSQL database
+`fuz_testing_fuz_app_<database>`, new each run and dropped after it; the swap
+and both-live spines share one. Parity runs only on PostgreSQL
+(`POSTGRES_ONLY_PROJECTS`) because pglet's `indexdef` leaves out index
+modifiers, so a pglet leg would report every such index as drift, and the lock
+pins assert PostgreSQL; both legs get a database of their own there, and the
+project fails naming the variable when it is unset, never skips. The TS binary hashes
 passwords as the stub does (`testing_password_argon2.ts`) so database state
 compares. Security and timing are their own projects because a live limiter
 or a short receive timeout would break the standard suites sharing a backend.
@@ -373,26 +380,27 @@ alike; the cell suites' in-process legs share `create_cell_parity_setup`
   in-process and pins its surface — `/api/ws` and the role-gated `/api/gated/ws` listed, the surface invariants
   passing.
 - `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
-  `globalSetup` rebuilds the crate and creates its Postgres DB by default
-  (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
-  path is `npm run test:cross:rust-spine-stub` with no manual setup.
+  `globalSetup` rebuilds the crate and opens its database (a `pglet_server`
+  by default; see ../../docs/testing.md §Rebuild-by-default workflow), so the
+  common path is `npm run test:cross:rust-spine-stub` with no manual setup.
 
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
 spawn external backends). They are listed in
 `cross_backend/cross_backend_projects.ts`, whose `CROSS_PROJECT_RESOURCES`
-table holds each one's ports, Postgres databases and backend names — every
+table holds each one's ports, databases and backend names — every
 global setup reads its backends from it, and
 `cross_backend/cross_backend_projects.test.ts` holds each port, database and
 temp directory unique — but the database the backends of a project in
 `SHARED_DATABASE_PROJECTS` share, never across projects — so any set of them
 can run at once. `npm run test:cross` does that —
-`cross_backend/run_cross.ts` rebuilds the Rust stub once, runs each
-project in its own `vitest` invocation concurrently (with
-`FUZ_TESTING_NO_REBUILD=1`), beside them the `db` project with
-`TEST_DATABASE_URL` on a database of its own (`CROSS_DB_POSTGRES_DATABASE`,
-the `db_postgres` step, so the Postgres-only tests of §Database Tests run
-with the matrix), prints each invocation's output as it finishes,
+`cross_backend/run_cross.ts` rebuilds the Rust stub and its `pglet_server`
+once, runs each project in its own `vitest` invocation concurrently (with
+`FUZ_TESTING_NO_REBUILD=1`), and under `FUZ_TEST_POSTGRES_URL` runs every
+project on PostgreSQL and beside them the `db` project (the `db_postgres`
+step, so the Postgres-only tests of §Database Tests run with the matrix) —
+without it, the PostgreSQL-only projects are reported "not run
+(postgres-only)" — prints each invocation's output as it finishes,
 then one summary of counts and failed tests. One `vitest` invocation over
 several projects also works, but runs them one after another: vitest gives a
 project with `fileParallelism` off one worker, a `groupOrder` group runs on
@@ -406,19 +414,21 @@ chain and rethrows a plain `Error` — vitest otherwise maps the setup's stack
 through vite's module runner and hides the error.
 
 ```bash
-# the whole matrix, concurrently, one summary:
+# the whole matrix, concurrently, one summary (parity reported not run):
 npm run test:cross
+# the whole matrix on PostgreSQL, parity and the `db` project's pg leg included:
+FUZ_TEST_POSTGRES_URL=postgres://localhost/postgres npm run test:cross
 # or one project:
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun
 # or both TS runtimes at once:
 npm run test:cross:ts
-# the Rust stub rebuilds + creates its DB by default:
+# the Rust stub rebuilds + gets a pglet server by default:
 npm run test:cross:rust-spine-stub
 # skip the rebuild when the binary is known current:
 FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
-# the dual-spawn parity gates (schema, action-manifest, differential):
-npm run test:cross:parity
+# the dual-spawn parity gates (schema, action-manifest, differential), PostgreSQL only:
+FUZ_TEST_POSTGRES_URL=postgres://localhost/postgres npm run test:cross:parity
 # the dual-spawn login + action rate-limit gates (limiters enabled on both spines):
 npm run test:cross:security
 # the dual-spawn SSE keep-alive + WS receive-timeout gates (timers shortened on both spines):
@@ -453,5 +463,6 @@ the TS spine binary on Node + Bun (+ the Rust `testing_spine_stub` when
 `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
 over real HTTP, and prints per-scenario tables + a Welch verdict. The two TS
 runtimes are apples-to-apples with each other (same in-memory pglet driver);
-TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is
+TS-vs-Rust carries a DB-layer caveat: in-process pglet against the stub's own
+`pglet_server` (or PostgreSQL under `FUZ_TEST_POSTGRES_URL`) over the wire. The `*.latest.json` artifact is
 gitignored.

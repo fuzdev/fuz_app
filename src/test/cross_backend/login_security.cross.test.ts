@@ -2,7 +2,7 @@
  * Cross-backend login-security gate for fuz_app's own spine.
  *
  * Runs `describe_login_security_cross_tests` against BOTH impls — the TS spine
- * (Node + in-memory pglet) and the Rust `testing_spine_stub` (real Postgres) — spawned
+ * (Node + in-memory pglet) and the Rust `testing_spine_stub` (over its own `pglet_server`, or PostgreSQL) — spawned
  * by the dual-spawn `global_setup_login_security.ts` with the login limiters
  * enabled + the loopback proxy trusted. It proves the per-IP login `429` +
  * `Retry-After` shape and the `X-Forwarded-For` bucket keying converge over the
@@ -54,7 +54,7 @@ describe('Rust spine_stub', () => {
 	describe_login_security_cross_tests({
 		setup_test: default_cross_process_setup(rust, { reject_unknown_audit_metadata_keys: true }),
 		base_url: rust.config.base_url,
-		// real Postgres behind a pool; the TS spine here runs on one pglet-wasm
+		// a database server behind a pool; the TS spine here runs on one pglet-wasm
 		// connection, which refuses concurrent top-level transactions
 		concurrent_transactions: true
 	});

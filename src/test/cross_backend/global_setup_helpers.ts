@@ -23,16 +23,15 @@ import {
 	NO_REBUILD_ENV,
 	prepare_cargo_binary
 } from '#lib/testing/cross_backend/cargo_binary.ts';
-import {
-	ensure_database_for_url,
-	is_postgres_url
-} from '#lib/testing/cross_backend/postgres_database.ts';
 import { serialize_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
+import { RUST_SPINE_STUB_BIN_ENV } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import {
-	RUST_SPINE_STUB_BIN_ENV,
-	RUST_SPINE_STUB_DATABASE_URL_ENV,
-	RUST_SPINE_STUB_DEFAULT_DATABASE_URL
-} from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+	open_test_database,
+	prepare_pglet_server_binary,
+	type PgletServerBinaryOptions,
+	type TestDatabase
+} from '#lib/testing/cross_backend/test_database.ts';
+import { FUZ_TEST_POSTGRES_URL_ENV } from '#lib/testing/db.ts';
 
 import { with_backend_log_allowances } from '#lib/testing/cross_backend/backend_log.ts';
 
@@ -70,15 +69,10 @@ export interface RustSpineRebuildOptions {
 	readonly workspace_dir?: string;
 }
 
-/** Options for `prepare_rust_spine_backend` and `make_rust_spine_global_setup`. */
+/** Options for `make_rust_spine_global_setup`. */
 export interface RustSpineGlobalSetupOptions extends RustSpineRebuildOptions {
-	/**
-	 * The Postgres URL the binary connects to. The database it names is created
-	 * when missing (idempotent `createdb`), on the server it names. Defaults to
-	 * `resolve_rust_spine_stub_database_url()` — the URL
-	 * `rust_spine_stub_backend_config` hands the stub. `null` skips database setup.
-	 */
-	readonly database_url?: string | null;
+	/** Names the stub's database (`open_rust_spine_database`). */
+	readonly database: string;
 }
 
 /**
@@ -92,26 +86,45 @@ export const resolve_rust_spine_stub_workspace_dir = (override?: string): string
 	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'fuz');
 
 /**
- * The Postgres URL the Rust stub connects to, as `rust_spine_stub_backend_config`
- * resolves it: `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` when set, else the
- * local default.
- *
- * @returns the URL, known to parse as a `postgres:` / `postgresql:` URL
- * @throws Error when the env var is set to something that is not a Postgres
- * URL — named by its variable, and without echoing a value that may hold a
- * password
+ * Where the Rust stub's `pglet_server` is built: the stub's own Cargo
+ * workspace and profile, so the pglet library the stub links is built once.
  */
-export const resolve_rust_spine_stub_database_url = (): string => {
-	const from_env = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV];
-	if (!from_env) return RUST_SPINE_STUB_DEFAULT_DATABASE_URL;
-	if (!is_postgres_url(from_env)) {
-		throw new Error(
-			`${RUST_SPINE_STUB_DATABASE_URL_ENV} is not a valid URL — expected the form ` +
-				`postgres://user@host:port/database`
-		);
-	}
-	return from_env;
-};
+export const to_rust_spine_pglet_server = (workspace_dir?: string): PgletServerBinaryOptions => ({
+	workspace_dir: resolve_rust_spine_stub_workspace_dir(workspace_dir),
+	profile: RUST_SPINE_STUB_CARGO_PROFILE
+});
+
+/** Options for `open_rust_spine_database`. */
+export interface OpenRustSpineDatabaseOptions {
+	/**
+	 * Whether the database must be PostgreSQL — a gate pglet can't answer. Unset
+	 * `FUZ_TEST_POSTGRES_URL` then fails the setup naming the variable.
+	 */
+	readonly postgres_only?: boolean;
+	/** The stub's Cargo workspace, as `RustSpineRebuildOptions.workspace_dir`. */
+	readonly workspace_dir?: string;
+}
+
+/**
+ * Open a database for a backend of fuz_app's cross projects
+ * (`open_test_database`): a `pglet_server` built in the stub's workspace, or
+ * under `FUZ_TEST_POSTGRES_URL` a PostgreSQL database of its own.
+ *
+ * @param name - the database's name (`CROSS_PROJECT_RESOURCES`' `database`)
+ * @param options - whether it must be PostgreSQL, and the stub's workspace
+ * @returns the database; close it after the backends' teardown
+ */
+export const open_rust_spine_database = (
+	name: string,
+	options: OpenRustSpineDatabaseOptions = {}
+): Promise<TestDatabase> =>
+	open_test_database({
+		name,
+		postgres_url: process.env[FUZ_TEST_POSTGRES_URL_ENV],
+		pglet_server_bin: options.postgres_only
+			? null
+			: () => prepare_pglet_server_binary(to_rust_spine_pglet_server(options.workspace_dir))
+	});
 
 /** Pins `rebuild_rust_spine_stub` already warned about, shared across one vitest process. */
 const WARNED_PINS_KEY = '__fuz_app_rust_spine_stub_warned_pins';
@@ -176,50 +189,44 @@ export const rebuild_rust_spine_stub = (options: RustSpineRebuildOptions): void 
 };
 
 /**
- * Make the Rust spine binary current before it spawns — rebuild by
- * default (`rebuild_rust_spine_stub`), fold in `createdb`, and default the
- * binary-path env so the common path is one command
- * (`npm run test:cross:rust-spine-stub`).
+ * Like `make_spine_global_setup`, but first makes the Rust spine binary
+ * current (`rebuild_rust_spine_stub`) and opens its database
+ * (`open_rust_spine_database`), whose URL `config_factory` gets; the
+ * teardown closes the database after the backend's. Use for the
+ * `cross_backend_rust_spine_stub` project; the TS-spine projects need no
+ * rebuild and run on `memory://`.
  *
- * The database created is the one the binary's URL names, on the server that
- * URL names — so `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` alone moves the
- * run to another server or another database.
- *
- * Rationale: a stale prebuilt binary fails every cell/RPC case with
- * `method not found` while auth cases pass, so a lagging build reads as a
- * regression rather than "rebuild me". `cargo build` is incremental, so an
- * unconditional rebuild is cheap when nothing changed. Set `NO_REBUILD_ENV`
- * to `1` to skip the rebuild for fast iteration on a known-current binary.
+ * Rationale for the rebuild: a stale prebuilt binary fails every cell/RPC
+ * case with `method not found` while auth cases pass, so a lagging build
+ * reads as a regression rather than "rebuild me". `cargo build` is
+ * incremental, so an unconditional rebuild is cheap when nothing changed. Set
+ * `NO_REBUILD_ENV` to `1` to skip it for fast iteration on a known-current
+ * binary.
  *
  * Lives in the runner wiring (test-only, Rust-aware), not the shipped
  * `src/lib` harness, which stays Rust-agnostic.
  */
-export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
-	rebuild_rust_spine_stub(options);
-
-	const database_url =
-		options.database_url === undefined
-			? resolve_rust_spine_stub_database_url()
-			: options.database_url;
-	// the stub connects to the database its URL names, so that is the one to
-	// ensure; a URL naming none leaves the choice to the server
-	if (database_url !== null) ensure_database_for_url(database_url);
-};
-
-/**
- * Like `make_spine_global_setup`, but first makes the Rust spine
- * binary current (rebuild + `createdb` + binary-path default) via
- * `prepare_rust_spine_backend`. Use for the `cross_backend_rust_spine_stub`
- * project; the TS-spine projects need no rebuild.
- */
 export const make_rust_spine_global_setup =
-	(config_factory: () => BackendConfig, options: RustSpineGlobalSetupOptions) =>
+	(config_factory: (database_url: string) => BackendConfig, options: RustSpineGlobalSetupOptions) =>
 	(project: TestProject): Promise<() => Promise<void>> =>
 		with_legible_setup_failure('rust spine', async () => {
-			prepare_rust_spine_backend(options);
-			// Delegate to the standard maker — `config_factory` reads the now-set
-			// binary-path env when it runs inside.
-			return make_spine_global_setup(config_factory)(project);
+			rebuild_rust_spine_stub(options);
+			const database = await open_rust_spine_database(options.database, options);
+			let teardown: () => Promise<void>;
+			try {
+				// `config_factory` reads the binary-path env the rebuild just set
+				teardown = await make_spine_global_setup(() => config_factory(database.url))(project);
+			} catch (error) {
+				await database.close().catch((close_error: unknown) => console.error(close_error));
+				throw error;
+			}
+			return async () => {
+				try {
+					await teardown();
+				} finally {
+					await database.close();
+				}
+			};
 		})();
 
 /**

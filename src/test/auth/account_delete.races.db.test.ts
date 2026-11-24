@@ -16,7 +16,7 @@
  * commits, then released: it is refused — 404 `not_found` for a deleted
  * recipient, the dead credential's 401 for a deleted grantor or issuer — and
  * writes nothing; and an invite committed before its issuer's delete is
- * deleted by it. On real `pg` only (`TEST_DATABASE_URL`), each lock is shown
+ * deleted by it. On real `pg` only (`FUZ_TEST_POSTGRES_URL`), each lock is shown
  * to serialize: a create waits on an uncommitted delete and is then refused,
  * and a delete waits on an uncommitted create and then ends what it wrote.
  * The in-memory drivers have one connection, so the second transaction would

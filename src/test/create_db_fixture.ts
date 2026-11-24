@@ -15,6 +15,7 @@ import {
 	create_default_db_factory,
 	create_pglite_factory,
 	create_pg_factory,
+	FUZ_TEST_POSTGRES_URL_ENV,
 	log_db_factory_status,
 	type DbFactory
 } from '#lib/testing/db.ts';
@@ -40,7 +41,8 @@ export interface DbFixture {
 /**
  * Build the four-driver fixture for a migration namespace list.
  *
- * pg auto-skips when `TEST_DATABASE_URL` is unset, and pglet-server when
+ * pg auto-skips when `FUZ_TEST_POSTGRES_URL` is unset, and creates a database
+ * of its own per `create()` named for `suite` when it is set; pglet-server skips when
  * `PGLET_SERVER_BIN` is (pglite and pglet-wasm always run). Every namespace's migration is idempotent (guarded
  * `CREATE TYPE` + `CREATE TABLE IF NOT EXISTS`), so re-running it is safe on
  * any driver.
@@ -50,18 +52,22 @@ export interface DbFixture {
  * assert over the *whole* schema (`auth/account_schema.db.test.ts`'s foreign
  * key inventory) depend on that.
  *
+ * @param suite - names the fixture's PostgreSQL databases (`create_pg_factory`)
  * @param namespaces - migration namespaces to run, in order
  * @param truncate_tables - tables to truncate between tests (children first)
  * @returns the default-driver + pg factories, the full four-driver list, and the bound `describe_db`
  */
 export const create_db_fixture = (
+	suite: string,
 	namespaces: Array<MigrationNamespace>,
 	truncate_tables: Array<string>
 ): DbFixture => {
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, namespaces);
 	};
-	const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
+	const pg_factory = create_pg_factory(init_schema, process.env[FUZ_TEST_POSTGRES_URL_ENV], {
+		suite
+	});
 	const db_factories = [
 		create_pglite_factory(init_schema),
 		pg_factory,

@@ -1,10 +1,10 @@
 /**
  * The backend swap between fuz_app's TS spine and the Rust
- * `testing_spine_stub`, both ways: TS→Rust and Rust→TS over one Postgres
+ * `testing_spine_stub`, both ways: TS→Rust and Rust→TS over one
  * database, each spine booting over what the other left and honoring it
  * (`describe_backend_swap_tests`). The configs come from
- * `global_setup_swap.ts`, the stub's startup reset off; the database is the
- * project's own, emptied before each order.
+ * `global_setup_swap.ts`; the database (a `pglet_server`, or PostgreSQL under
+ * `FUZ_TEST_POSTGRES_URL`) is the project's own, emptied before each order.
  *
  * @module
  */
@@ -12,9 +12,8 @@
 import { inject } from 'vitest';
 
 import { describe_backend_swap_tests } from '#lib/testing/cross_backend/backend_swap.ts';
-import { empty_owned_database } from '#lib/testing/cross_backend/postgres_database.ts';
+import { empty_test_database } from '#lib/testing/cross_backend/test_database.ts';
 
-import { CROSS_PROJECT_RESOURCES } from './cross_backend_projects.ts';
 import './cross_test_types.ts';
 
 const { ts, stub } = inject('swap_backend_configs');
@@ -29,9 +28,5 @@ describe_backend_swap_tests({
 		{ label: 'Rust → TS', first: stub, second: ts }
 	],
 	database_url,
-	empty_database: () =>
-		empty_owned_database(database_url, {
-			owned_name: CROSS_PROJECT_RESOURCES.cross_backend_swap.ts.database,
-			label: 'backend swap'
-		})
+	empty_database: () => empty_test_database(database_url)
 });

@@ -249,7 +249,12 @@ over real HTTP: its TS spine binary on Node and Bun
 (`testing/cross_backend/testing_server_core.ts` + adapters) and the Rust
 `testing_spine_stub`, in the opt-in `cross_backend_*` vitest projects
 (`FUZ_TEST_CROSS_BACKEND=1`, never a bare `gro test`; `npm run test:cross`
-runs them all, and the `db` project on Postgres beside them), and in the `npm run benchmark:cross-impl` run. Map:
+runs them all), and in the `npm run benchmark:cross-impl` run. A Rust
+backend runs over a `pglet_server` of its own, or under
+`FUZ_TEST_POSTGRES_URL` (a PostgreSQL server and a `CREATEDB` role, the one
+variable the `pg` test leg and the Rust spine's `fuz_testing` also read) a
+PostgreSQL database of its own — where `npm run test:cross` also runs the
+parity project, which runs only there, and the `db` project. Map:
 ./src/test/CLAUDE.md §Cross-backend self-tests; building a binary:
 `src/lib/testing/CLAUDE.md` §"Building a TS test-server binary".
 
@@ -257,7 +262,7 @@ runs them all, and the `db` project on Postgres beside them), and in the `npm ru
 migration namespaces, names and partitioning, so a consumer can swap TS↔Rust
 without re-bootstrapping. Migration names are descriptive
 (`full_auth_schema`, `role_grant_offer_and_scoped_role_grants`), never `_vN`
-— `schema_version.sequence` carries order. `npm run test:cross:parity` holds
+— `schema_version.sequence` carries order. `npm run test:cross:parity` (PostgreSQL only) holds
 the twins to it: the schema snapshot, the migration-tracker rows the snapshot
 excludes, the action manifest, the conformance differential, and the
 transcript differential. Consumers gate their own pair with

@@ -8,7 +8,7 @@
  * committed rather than the one its own snapshot held — needs two concurrent
  * transactions on real `pg` connections (the in-memory drivers run
  * transactions serially), so it runs against `pg_factory` only and skips when
- * `TEST_DATABASE_URL` is unset. Twin of the Rust
+ * `FUZ_TEST_POSTGRES_URL` is unset. Twin of the Rust
  * `policy_set_reads_the_previous_policy_under_its_lock` (`fuz_cell`).
  *
  * @module

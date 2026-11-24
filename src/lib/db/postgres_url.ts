@@ -1,10 +1,10 @@
 /**
  * The libpq side of a Postgres `DATABASE_URL`: the database it names, the
  * maintenance connection a client program like `createdb` or `dropdb` reaches
- * its server through, the environment that carries the URL's password, and the
- * argv those programs get. Pure functions, shared by the dev setup helpers
- * (`dev/setup.ts`) and the cross-backend test setup
- * (`testing/cross_backend/postgres_database.ts`).
+ * its server through, the environment that carries the URL's password, the
+ * argv those programs get, and the URL with another database or fit to print.
+ * Pure functions, shared by the dev setup helpers (`dev/setup.ts`) and the
+ * test databases (`testing/db.ts`, `testing/cross_backend/test_database.ts`).
  *
  * URL rewrites edit the raw query pairs, never `URLSearchParams`, which
  * reserializes every value form-encoded: a space becomes `+`, which libpq reads
@@ -174,3 +174,35 @@ export const to_dropdb_args = (database: string, server_url: string): Array<stri
 	'--',
 	database
 ];
+
+/**
+ * `database_url` with its database replaced by `database` — a connection to
+ * another database on the same server, as the same role, with the same query
+ * parameters.
+ *
+ * @param database_url - a `postgres://` URL on the target server
+ * @param database - the database name to put in it
+ * @returns the URL naming `database` on the same server
+ */
+export const with_database_name = (database_url: string, database: string): string => {
+	const url = new URL(database_url);
+	url.pathname = `/${database}`;
+	return url.href;
+};
+
+/**
+ * A database URL fit to print: the password, when there is one, replaced —
+ * in the userinfo and in the `password` query parameter `pg` and libpq also
+ * take. The whole URL rather than its host, which is empty for a socket URL
+ * that names its server in the query string.
+ *
+ * @param database_url - a `postgres://` URL
+ * @returns the URL with any password replaced by `REDACTED`
+ */
+export const redact_database_url = (database_url: string): string => {
+	const url = new URL(database_url);
+	if (url.password) url.password = 'REDACTED';
+	// the raw pairs, so every other parameter prints as written
+	rewrite_query_pairs(url, (pair, key) => (key === 'password' ? 'password=REDACTED' : pair));
+	return url.href;
+};

@@ -15,6 +15,7 @@ import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '#lib/db/fact_ddl.ts';
 import { create_db_fixture } from './create_db_fixture.ts';
 
 export const { describe_db, pg_factory } = create_db_fixture(
+	'cell',
 	[AUTH_MIGRATION_NS, CELL_MIGRATION_NS, FACT_MIGRATION_NS],
 	[...CELL_DROP_TABLES, ...FACT_DROP_TABLES, ...auth_integration_truncate_tables]
 );
