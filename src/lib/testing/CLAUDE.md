@@ -468,38 +468,27 @@ project (../../test/CLAUDE.md §Cross-backend self-tests).
 
 ## Both spines live
 
-`cross_backend/backend_both_live.ts` — `describe_backend_both_live_tests({orders,
-database_url, empty_database, offer_role?, gated_ws_path?})`: two backends over
-one Postgres database at once. Per order, over an emptied database (never
-`_testing_reset`, which would drop what the other spine holds): a boot-state
-phase spawns the second before the first's bootstrap and pins what it keeps
-from its boot — `/status` still advertising bootstrap and its daemon token
-resolving no keeper; a `POST /bootstrap` on it refused by the lock, which
-closes its window but leaves the keeper unresolved — then both stop; the
-boot spawns the first, bootstraps it, then spawns the second, so its daemon
-leg resolves the keeper at assembly. The live cases mint on the first,
-prove the credential on both, revoke on the second and assert the refusal on
-the first at once (logout, session revoke by id, token revoke, password
-change, account delete; an offer accepted on the second conferring on the
-first), each revoke bracketed by drained per-table digests
-(`to_changed_tables`) and followed by both backends' invariant check. The
-declared limits (`docs/security.md` §Single-Process Architecture) are pinned
-by test name: a socket on the first outlives the second's password change,
-logout and token revoke and still answers `account_verify`; a role-gated socket
-outlives the second's role revoke, refused a per-message call needing the role
-and still receiving the account's offer push; an offer made on either spine
-reaches its own socket and no socket on the other. A closing test drains,
-checks and tears down both. Config requirements are the swap's. A standalone
-suite (`STANDALONE_CROSS_SUITES`); fuz_app's wiring is the
-`cross_backend_both_live` project.
+`cross_backend/backend_both_live.ts` —
+`describe_backend_both_live_tests({orders, database_url, empty_database,
+offer_role?, gated_ws_path?})`: two backends over one Postgres database at
+once, over an emptied database per order (never `_testing_reset`, which would
+drop what the other spine holds). A credential minted on the first is revoked
+on the second and refused on the first at once, each revoke bracketed by
+drained per-table digests (`to_changed_tables`); the per-process limits
+(../../../docs/security.md §Single-Process Architecture) are pinned by test
+name. Phases and capability gates: ../../../docs/testing.md §Both spines live.
+Config requirements are the swap's. A standalone suite
+(`STANDALONE_CROSS_SUITES`); fuz_app's wiring is the `cross_backend_both_live`
+project (../../test/CLAUDE.md §Cross-backend self-tests).
 
 `cross_backend/shared_database_backends.ts` holds what the two share:
-`to_shared_database_problems` (the config checks), `read_shared_database_snapshot`
-and `to_changed_tables` (per-table content digests), `with_live_backend` /
-`teardown_live_backend` over a `LiveBackend` holder, the transport and RPC
-helpers (`backend_transport`, `backend_rpc`, `backend_rpc_as`,
-`backend_daemon_rpc`, `backend_post_json`), `drain_backend_effects`,
-`assert_backend_invariants`, `verified_account_id` and `passes_admin_gate`.
+`to_shared_database_problems` (the config checks),
+`read_shared_database_snapshot` and `to_changed_tables` (per-table content
+digests), `with_live_backend` / `teardown_live_backend` over a `LiveBackend`
+holder, the transport and RPC helpers (`backend_transport`, `backend_rpc`,
+`backend_rpc_as`, `backend_daemon_rpc`, `backend_post_json`),
+`drain_backend_effects`, `assert_backend_invariants`, `verified_account_id`
+and `passes_admin_gate`.
 
 ## Assertions, coverage, helpers
 

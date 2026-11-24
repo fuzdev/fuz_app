@@ -2242,28 +2242,26 @@ transactions meet the same rows in opposite orders. A scope lock, where one
 is taken, comes before them all.
 
 - **The scope lock first.** A transaction-scoped advisory lock per scope
-  (`scope_advisory_lock_key`: `fuzs`, then the scope UUID's four 32-bit
-  words folded by XOR) orders a scope's teardown against the writes that
-  bring a grant or an offer into it. `query_role_grant_revoke_for_scope`
-  takes it exclusive as its first statement; a scoped
-  `role_grant_offer_create` and `role_grant_assign` take it shared before
-  the consumer's `authorize` callback reads the scope,
-  `query_role_grant_offer_create` and `query_create_role_grant` take it
-  shared first thing (re-entrant, so the handlers' second take is free), and
-  `query_accept_offer` after its unlocked head read, before any row. A write
-  whose callback reads the scope after a teardown committed is refused (403
+  (`scope_advisory_lock_key`) orders a scope's teardown against the writes
+  that bring a grant or an offer into it. `query_role_grant_revoke_for_scope`
+  takes it exclusive as its first statement. The scoped writes take it
+  shared before any row: `role_grant_offer_create` and `role_grant_assign`
+  before the consumer's `authorize` callback reads the scope,
+  `query_role_grant_offer_create` and `query_create_role_grant` first thing,
+  and `query_accept_offer` after its unlocked head read. The lock is
+  re-entrant, so a later take in the same transaction is free; a direct
+  caller of these queries takes it before any row too, unless its
+  transaction already holds it. A write whose callback reads the scope
+  after a teardown committed is refused (403
   `role_grant_offer_not_authorized`); a teardown after a write waits for it
-  and then ends what it wrote. Every spine path takes it before any row (a
-  later re-take in the same transaction is free); a direct caller of these
-  queries must too, unless its transaction already holds the scope lock. The
-  teardown takes no row a
-  writer holds while waiting on it, so the lock adds no cycle; the accept
-  takes it before its claim, since a teardown holding it waits on the
-  claimed offer. A consumer's own path that reads its scope row and then
-  brings something into the scope takes `query_scope_lock_shared` before the
-  read, and a consumer teardown calls the cascade before it touches its
-  scope row (or takes `query_scope_lock_exclusive` first). No path here
-  takes two scope locks.
+  and then ends what it wrote. The teardown takes no row a writer holds
+  while waiting on it, so the lock adds no cycle; the accept takes it before
+  its claim, since a teardown holding it waits on the claimed offer. A
+  consumer's own path that reads its scope row and then brings something
+  into the scope takes `query_scope_lock_shared` before the read, and a
+  consumer teardown calls the cascade before it touches its scope row (or
+  takes `query_scope_lock_exclusive` first). No path here takes two scope
+  locks.
 - **Accounts first.** Every writer of an account takes its row before the
   rows that hang off it: a login and a token creation through their
   re-check (`FOR NO KEY UPDATE`, so two mints of one account take turns and
@@ -2398,11 +2396,9 @@ state are designed for **single-process deployments**:
 
 A TS spine and a Rust spine serving one database are two processes: each
 limitation above applies between them as between any two instances.
-`describe_backend_both_live_tests` pins, by test name, that a socket outlives
-the other spine's password change, logout, token revoke and role revoke, that
-an offer-received notification stays in its process, and the boot-time state,
-so a cross-process channel that lifts one within `STAYS_OPEN_MS` fails its
-test.
+`describe_backend_both_live_tests` pins the socket, notification and
+boot-time limits by test name (./testing.md §Both spines live), so a
+cross-process channel that lifts one fails its test.
 
 For multi-process deployments, rate limiters would need Redis or a shared DB table
 (or, for IP-keyed limits, nginx `limit_req`, which every backend instance

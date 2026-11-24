@@ -1456,20 +1456,16 @@ API token, a password change, an account delete, and an offer the second
 accepts conferring on the first. Each revoke's changed tables are compared by
 content digest after both backends drain.
 
-What each process keeps to itself is pinned as a declared limit, by test
-name (./security.md §Single-Process Architecture): a socket on the first
-outlives the second's password change, logout, token revoke and role revoke,
-an offer made on either notifies no socket on the other, and a second
-backend booted before the first's bootstrap keeps advertising bootstrap until
-it restarts or a valid bootstrap attempt on it is refused by the database's
-lock (which closes its window), and resolves no keeper for its daemon token
-until it restarts. Each assertion holds
-today's behavior, so a cross-process close or notification that lands within
-the watch window fails it. The socket
-cases need `ws` and `ws_account_actions` on the first backend (the gated case
-`ws_role_gated`, and `ws` and `ws_account_actions` on both for the
-notification); `offer_role` (default `participant`, never `admin`) is the role
-the notification case offers on the first; its reverse direction offers
+The limits each process keeps to itself (./security.md §Single-Process
+Architecture) are pinned by test name: the socket ones (password change,
+logout, token revoke, role revoke), the notification one, and the boot-time
+bootstrap state, which a boot-state test reaches by spawning the second
+backend before the first's bootstrap. A cross-process close or notification
+that lands within the watch window fails its test. The socket cases need `ws`
+and `ws_account_actions` on the first backend (the gated case also
+`ws_role_gated`; the notification case `ws` and `ws_account_actions` on
+both); `offer_role` (default `participant`, never `admin`) is the role the
+notification case offers on the first, and its reverse direction offers
 `admin` on the second, so the two offers never collide.
 
 ### Malformed envelopes and invalid params

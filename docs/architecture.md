@@ -176,8 +176,8 @@ the result array.
 (the DDL, the lock, a checkout) propagates as the driver's error. Branch
 on `.kind`, never on message text. Kinds: `namespace-reserved` (a
 consumer namespace under a reserved spine name, refused before touching
-the database), `binary-older-than-db`,
-`name-divergence-at-N`, `migration-failed`, `baseline-name-not-in-code`,
+the database), `binary-older-than-db`, `name-divergence-at-N`,
+`migration-failed`, `baseline-name-not-in-code`,
 `baseline-name-out-of-order`, `baseline-namespace-already-populated`.
 Structured context fields (`namespace`, `at_index`, `unknown_names`)
 accompany each kind.

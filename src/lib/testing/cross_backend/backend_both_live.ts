@@ -33,7 +33,7 @@ import '../assert_dev_env.ts';
  *   and keeps answering per-message calls; a role-gated socket on the first
  *   outlives the second's role revoke and keeps receiving the account's
  *   pushes; an offer made on either notifies no socket on the other. Each
- *   assertion holds today's behavior, so a cross-process close or
+ *   assertion holds the current behavior, so a cross-process close or
  *   notification that lands within `STAYS_OPEN_MS` fails it loudly — then
  *   the limit is lifted and the test flipped.
  * - **Close** — both drained, invariants checked on both, then each torn down
@@ -45,8 +45,8 @@ import '../assert_dev_env.ts';
  * off, and the drain and invariant backdoors. Their daemon-token, bootstrap
  * token and fact directories stay their own (each config's paths). The
  * socket cases run when the first backend declares `ws` and
- * `ws_account_actions` (and `ws_role_gated` for the gated case; `ws` on both
- * for the notification case).
+ * `ws_account_actions` (and `ws_role_gated` for the gated case; `ws` and
+ * `ws_account_actions` on both for the notification case).
  *
  * @module
  */

@@ -1220,6 +1220,12 @@ distinctly. `RoleGrantOfferHistory` is backed by the
 `role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.
 
+A consumer's scope teardown calls `query_role_grant_revoke_for_scope` before
+it touches its scope row, or takes `query_scope_lock_exclusive` first; a path
+that writes a row its scope delete cascades into, and then reaches a scoped
+grant or offer write, takes `query_scope_lock_shared` before that row
+(./security.md §Row Locks).
+
 `role_grant_revoked` is a subscribed notification but is a no-op in
 the offer cache — it belongs to whatever state class owns role_grants
 (typically an auth or role_grants refresh), and the state class ignores it
