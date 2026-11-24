@@ -231,7 +231,12 @@ grants); `extra_keeper_roles` adds to them. `app_options` overrides
 `create_app_server` options the helper doesn't manage. Pass `surface_source`
 when surface assembly needs inputs outside the shared subset (`env_schema`,
 `event_specs`, `ws_endpoints`, `transform_middleware`); otherwise the helper
-builds one from the same factory inputs. `bootstrap` is §Bootstrap Coverage.
+builds one from the same factory inputs. `audit_factory` and
+`migration_namespaces` reach the test backend as `create_test_app` takes
+them, for a suite that needs the consumer's audit config or tables beyond
+auth; `get_db` (`describe_db`'s, read on each `setup_test`) runs each
+test's app on a database the suite owns, in place of
+`migration_namespaces`. `bootstrap` is §Bootstrap Coverage.
 
 Excess properties on the spread are fine — a suite that doesn't read
 `rpc_endpoints` at its top level ignores it.

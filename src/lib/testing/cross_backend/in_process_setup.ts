@@ -19,6 +19,8 @@ import '../assert_dev_env.ts';
 
 import type { Uuid } from '../../primitive_schemas.ts';
 import type { Db } from '../../db/db.ts';
+import type { MigrationNamespace } from '../../db/migrate.ts';
+import type { AuditFactory } from '../../server/app_backend.ts';
 
 import type { RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';
@@ -388,6 +390,28 @@ export interface DefaultInProcessSuiteOptions {
 	 */
 	exclude_db_invariants?: DbInvariantExclusions;
 	/**
+	 * Builds the test backend's `AuditEmitter`, for a suite that needs the
+	 * consumer's own audit config — see `InProcessSetupOptions.audit_factory`.
+	 */
+	audit_factory?: AuditFactory;
+	/**
+	 * Namespaces migrated after the auth one in each test's database, for a
+	 * suite whose routes read the consumer's own tables — see
+	 * `InProcessSetupOptions.migration_namespaces`.
+	 */
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
+	/**
+	 * The database each test's app runs on, for a suite whose routes need the
+	 * consumer's own schema — passed as `InProcessSetupOptions.db`. A function,
+	 * read on each `setup_test` call: `describe_db` fills its `get_db` in a
+	 * `beforeAll`, after these options are built. Exclusive with
+	 * `migration_namespaces` (each `setup_test` refuses both). On a `get_db`
+	 * database `create_test_app` resets only `app_settings`, so the suite's
+	 * `describe_db` must truncate the auth tables
+	 * (`auth_integration_truncate_tables`) for each test's keeper bootstrap.
+	 */
+	get_db?: () => Db;
+	/**
 	 * Pre-built `AppSurfaceSpec` — overrides the default which calls
 	 * `create_test_app_surface_spec` against the same factory inputs.
 	 * Pass when surface assembly needs fields outside the shared subset
@@ -448,8 +472,8 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 	rpc_endpoints: O['rpc_endpoints'];
 	base_url: null;
 	max_body_bytes: number | undefined;
-} => ({
-	setup_test: default_in_process_setup({
+} => {
+	const setup_options: InProcessSetupOptions = {
 		session_cookie_name: options.session_cookie_name,
 		create_route_specs: options.create_route_specs,
 		rpc_endpoints: options.rpc_endpoints,
@@ -459,30 +483,47 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 		extra_accounts: options.extra_accounts,
 		extra_actors: options.extra_actors,
 		reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys,
-		exclude_db_invariants: options.exclude_db_invariants
-	}),
-	surface_source:
-		options.surface_source ??
-		create_test_app_surface_spec({
-			session_cookie_name: options.session_cookie_name,
-			create_route_specs: options.create_route_specs,
-			rpc_endpoints: options.rpc_endpoints,
-			// Mirror what `create_test_app` → `create_app_server` will mount.
-			// Both helpers read from the top-level `bootstrap` slot so surface
-			// and live app stay in sync by construction.
-			bootstrap: options.bootstrap,
-			surface_route: options.app_options?.surface_route,
-			max_body_size: options.app_options?.max_body_size,
-			host_gate: options.app_options?.host_gate,
-			origin_carve_outs: options.app_options?.origin_carve_outs,
-			// `create_test_app` always passes a `daemon_token_state`
-			daemon_token: true
-		}),
-	capabilities: in_process_capabilities,
-	session_cookie_name: options.session_cookie_name,
-	create_route_specs: options.create_route_specs,
-	rpc_endpoints: options.rpc_endpoints,
-	// in-process: no socket, and the limit `create_app_server` mounts
-	base_url: null,
-	max_body_bytes: options.app_options?.max_body_size ?? undefined
-});
+		exclude_db_invariants: options.exclude_db_invariants,
+		audit_factory: options.audit_factory,
+		migration_namespaces: options.migration_namespaces
+	};
+	const { get_db } = options;
+	let setup_test: SetupTest;
+	if (get_db) {
+		// the per-test setup validates too, but only once a test runs
+		validate_db_invariant_exclusions(
+			options.exclude_db_invariants,
+			'default_in_process_suite_options'
+		);
+		setup_test = () => default_in_process_setup({ ...setup_options, db: get_db() })();
+	} else {
+		setup_test = default_in_process_setup(setup_options);
+	}
+	return {
+		setup_test,
+		surface_source:
+			options.surface_source ??
+			create_test_app_surface_spec({
+				session_cookie_name: options.session_cookie_name,
+				create_route_specs: options.create_route_specs,
+				rpc_endpoints: options.rpc_endpoints,
+				// Mirror what `create_test_app` → `create_app_server` will mount.
+				// Both helpers read from the top-level `bootstrap` slot so surface
+				// and live app stay in sync by construction.
+				bootstrap: options.bootstrap,
+				surface_route: options.app_options?.surface_route,
+				max_body_size: options.app_options?.max_body_size,
+				host_gate: options.app_options?.host_gate,
+				origin_carve_outs: options.app_options?.origin_carve_outs,
+				// `create_test_app` always passes a `daemon_token_state`
+				daemon_token: true
+			}),
+		capabilities: in_process_capabilities,
+		session_cookie_name: options.session_cookie_name,
+		create_route_specs: options.create_route_specs,
+		rpc_endpoints: options.rpc_endpoints,
+		// in-process: no socket, and the limit `create_app_server` mounts
+		base_url: null,
+		max_body_bytes: options.app_options?.max_body_size ?? undefined
+	};
+};
