@@ -45,6 +45,19 @@ export const SHARED_DATABASE_BACKDOORS = [
 	'_testing_db_invariants'
 ] as const;
 
+/**
+ * One order of a shared-database suite: the two configs it runs over the one
+ * database, `first` before `second` — the backend swap
+ * (`describe_backend_swap_tests`) and both spines live
+ * (`describe_backend_both_live_tests`) each say what each side does.
+ */
+export interface SharedDatabaseOrder {
+	/** Names the order's `describe`. */
+	readonly label: string;
+	readonly first: BackendConfig;
+	readonly second: BackendConfig;
+}
+
 /** One table's content: its row count and a digest of its rows as text, in order. */
 export interface SharedDatabaseTableContent {
 	readonly rows: number;

@@ -90,6 +90,7 @@ import {
 	verified_account_id,
 	with_live_backend,
 	type LiveBackend,
+	type SharedDatabaseOrder,
 	type SharedDatabaseSnapshot
 } from './shared_database_backends.ts';
 import {
@@ -101,18 +102,13 @@ import {
 	SPINE_PARTICIPANT_ROLE
 } from './spine_surface_constants.ts';
 
-/** One order of the swap: `first` mints, `second` honors, `first` checks. */
-export interface BackendSwapOrder {
-	/** Names the order's `describe`. */
-	readonly label: string;
-	readonly first: BackendConfig;
-	readonly second: BackendConfig;
-}
-
 /** Options for `describe_backend_swap_tests`. */
 export interface BackendSwapTestOptions {
-	/** The orders to run, one after another over the one database. */
-	readonly orders: ReadonlyArray<BackendSwapOrder>;
+	/**
+	 * The orders to run (`SharedDatabaseOrder`), one after another over the one
+	 * database: `first` mints, `second` honors, `first` checks.
+	 */
+	readonly orders: ReadonlyArray<SharedDatabaseOrder>;
 	/**
 	 * The `postgres://` database every config runs over, read directly for the
 	 * snapshots — each config's `DATABASE_URL` env must be this exact string.
@@ -473,7 +469,7 @@ const check_swap_writes = async (
  * (`to_shared_database_problems`, and `declined_role` not `admin`).
  */
 const assert_swappable = (
-	order: BackendSwapOrder,
+	order: SharedDatabaseOrder,
 	database_url: string,
 	declined_role: string
 ): void => {

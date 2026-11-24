@@ -482,6 +482,7 @@ Config requirements are the swap's. A standalone suite
 project (../../test/CLAUDE.md §Cross-backend self-tests).
 
 `cross_backend/shared_database_backends.ts` holds what the two share:
+`SharedDatabaseOrder` (one entry of either suite's `orders`),
 `to_shared_database_problems` (the config checks),
 `read_shared_database_snapshot` and `to_changed_tables` (per-table content
 digests), `with_live_backend` / `teardown_live_backend` over a `LiveBackend`

@@ -104,6 +104,7 @@ import {
 	verified_account_id,
 	with_live_backend,
 	type LiveBackend,
+	type SharedDatabaseOrder,
 	type SharedDatabaseSnapshot
 } from './shared_database_backends.ts';
 import {
@@ -116,18 +117,14 @@ import {
 	SPINE_ROLE_GATED_WS_PATH
 } from './spine_surface_constants.ts';
 
-/** One order: `first` boots and bootstraps, `second` boots over it; both then run at once. */
-export interface BackendBothLiveOrder {
-	/** Names the order's `describe`. */
-	readonly label: string;
-	readonly first: BackendConfig;
-	readonly second: BackendConfig;
-}
-
 /** Options for `describe_backend_both_live_tests`. */
 export interface BackendBothLiveTestOptions {
-	/** The orders to run, one after another over the one database. */
-	readonly orders: ReadonlyArray<BackendBothLiveOrder>;
+	/**
+	 * The orders to run (`SharedDatabaseOrder`), one after another over the one
+	 * database: `first` boots and bootstraps, `second` boots over it, and both
+	 * then run at once.
+	 */
+	readonly orders: ReadonlyArray<SharedDatabaseOrder>;
 	/**
 	 * The `postgres://` database both configs run over, read directly for the
 	 * snapshots — each config's `DATABASE_URL` env must be this exact string.
@@ -381,7 +378,7 @@ const read_status = async (
  * `database_url` (`to_shared_database_problems`, and `offer_role` not `admin`).
  */
 const assert_both_live = (
-	order: BackendBothLiveOrder,
+	order: SharedDatabaseOrder,
 	database_url: string,
 	offer_role: string
 ): void => {
