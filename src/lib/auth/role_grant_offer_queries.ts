@@ -241,7 +241,8 @@ export class RoleGrantOfferGrantorNotActiveError extends Error {
  * (`query_role_grant_revoke_for_scope`) in flight is waited for, and one that
  * starts after it waits for this transaction and then supersedes the offer. A
  * caller that judged the scope live takes the lock before that read, holding
- * no row; the spine's handler does.
+ * no row (a scope it created itself and has not committed aside); the spine's handler
+ * does.
  *
  * @mutates `role_grant_offer` table - inserts a new offer or upserts the matching pending row
  * @throws RoleGrantOfferSelfTargetError if the offering actor belongs to `to_account_id`

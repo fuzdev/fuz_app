@@ -156,6 +156,11 @@ with a `(namespace, name)` PK and a `(namespace, sequence)` unique
 constraint. `Migration` is `{name, up}`; the name appears in error
 messages and is the unit of identity in the tracker.
 
+`create_app_backend` reads `default_transaction_isolation` first and
+refuses anything but `read committed` (`TransactionIsolationError`) before
+any migration runs: the read after the lock below sees a concurrent boot's
+commit only under READ COMMITTED.
+
 **Boot algorithm** (per namespace, in one chain transaction that opens
 with `pg_advisory_xact_lock` on the namespace's key, the key the Rust
 runner's session lock takes, so concurrent boots of either spine take

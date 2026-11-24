@@ -56,7 +56,9 @@
  * chains running at once collide on their own DDL and the loser's boot
  * fails. The read after the lock sees the winner's commit only at READ
  * COMMITTED, the default: under REPEATABLE READ the transaction's snapshot
- * predates the lock's wait. pglet and PGlite take the lock as Postgres does.
+ * predates the lock's wait, so `create_app_backend` refuses a database at any
+ * other default before it migrates (`ensure_read_committed`). pglet and
+ * PGlite take the lock as Postgres does.
  *
  * @module
  */

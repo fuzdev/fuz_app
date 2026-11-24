@@ -187,7 +187,9 @@ if (!env_config.ok) {
 }
 const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 
-// 2. Init backend (DB + auth migrations + deps)
+// 2. Init backend (DB + auth migrations + deps). Throws
+// `TransactionIsolationError` before migrating when the database's
+// `default_transaction_isolation` is not `read committed`.
 //
 // `audit_log_config` registers consumer audit event types. It folds into the
 // bound `AppDeps.audit` emitter and validates every `audit.emit` call site.

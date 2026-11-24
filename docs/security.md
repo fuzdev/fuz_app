@@ -2241,6 +2241,12 @@ then grants and actors — and within a class in id order, so no two
 transactions meet the same rows in opposite orders. A scope lock, where one
 is taken, comes before them all.
 
+These rules assume READ COMMITTED, where a read after a lock sees what
+committed during the wait. `create_app_backend` refuses to boot, before any
+migration, over a database whose `default_transaction_isolation` is anything
+but `read committed` (`ensure_read_committed`, twin of the Rust spine's
+guard).
+
 - **The scope lock first.** A transaction-scoped advisory lock per scope
   (`scope_advisory_lock_key`) orders a scope's teardown against the writes
   that bring a grant or an offer into it. `query_role_grant_revoke_for_scope`
@@ -2251,10 +2257,13 @@ is taken, comes before them all.
   and `query_accept_offer` after its unlocked head read. The lock is
   re-entrant, so a later take in the same transaction is free; a direct
   caller of these queries takes it before any row too, unless its
-  transaction already holds it. A write whose callback reads the scope
-  after a teardown committed is refused (403
-  `role_grant_offer_not_authorized`); a teardown after a write waits for it
-  and then ends what it wrote. The teardown takes no row a writer holds
+  transaction already holds it; a transaction that created the scope itself
+  and has not committed is exempt, since no teardown can reach the scope yet
+  (a create verb that inserts its scope row and grants its creator), but an
+  insert at an existing scope is not: its foreign key holds the scope row a
+  teardown deletes. A write whose callback reads the scope after a teardown
+  committed is refused (403 `role_grant_offer_not_authorized`); a teardown
+  after a write waits for it and then ends what it wrote. The teardown takes no row a writer holds
   while waiting on it, so the lock adds no cycle; the accept takes it before
   its claim, since a teardown holding it waits on the claimed offer. A
   consumer's own path that reads its scope row and then brings something

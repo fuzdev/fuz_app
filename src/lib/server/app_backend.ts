@@ -169,16 +169,86 @@ export interface CreateAppBackendOptions {
 }
 
 /**
+ * The one `default_transaction_isolation` the server runs under. Twin of the
+ * Rust `REQUIRED_TRANSACTION_ISOLATION`.
+ *
+ * The spine relies on READ COMMITTED: `Db.transaction` opens with a plain
+ * `BEGIN`, so transactions run at the database's default, and a read made
+ * after a lock (the migration chain's read after its advisory lock, a scope
+ * read after the scope lock, a last-admin count) sees what committed during
+ * the wait only under the fresh per-statement snapshot READ COMMITTED takes.
+ * `read uncommitted` is refused too, though Postgres runs it as READ
+ * COMMITTED: it names a level the spine does not run at, a
+ * Postgres-compatible engine might honor it, and refusing it costs nothing.
+ */
+export const REQUIRED_TRANSACTION_ISOLATION = 'read committed';
+
+/**
+ * Thrown by `create_app_backend` when the database runs new transactions at a
+ * level other than `REQUIRED_TRANSACTION_ISOLATION`. Twin of the Rust
+ * `StartupError::TransactionIsolation`; the message carries the operator hint.
+ */
+export class TransactionIsolationError extends Error {
+	/** The setting as `current_setting('default_transaction_isolation')` reports it. */
+	readonly found: string;
+
+	constructor(found: string) {
+		super(
+			`Postgres's default_transaction_isolation is ${JSON.stringify(found)}; ` +
+				`the server requires ${JSON.stringify(REQUIRED_TRANSACTION_ISOLATION)}. ` +
+				`Hint: set default_transaction_isolation back to 'read committed', the Postgres default, ` +
+				`wherever it was changed: postgresql.conf, ALTER DATABASE ... SET, or ALTER ROLE ... SET ` +
+				`(psql's \\drds lists the database and role settings).`
+		);
+		this.name = 'TransactionIsolationError';
+		this.found = found;
+	}
+}
+
+/**
+ * Refuse a `default_transaction_isolation` setting that is not exactly
+ * `REQUIRED_TRANSACTION_ISOLATION`. Twin of the Rust
+ * `check_transaction_isolation`.
+ *
+ * @param value - the setting, as `current_setting` reports it
+ * @throws TransactionIsolationError for any other value
+ */
+export const check_transaction_isolation = (value: string): void => {
+	if (value !== REQUIRED_TRANSACTION_ISOLATION) throw new TransactionIsolationError(value);
+};
+
+/**
+ * Refuse a database whose `default_transaction_isolation` is anything but
+ * `REQUIRED_TRANSACTION_ISOLATION`. Twin of the Rust `ensure_read_committed`.
+ *
+ * One connection answers for all: every connection the pool opens has the
+ * same server, database, role and startup options (a URL's `options`,
+ * `PGOPTIONS`), and `create_db` adds no per-connection setting. It is read once, at boot; a setting changed while
+ * the server runs reaches new connections unchecked until the next restart.
+ *
+ * @param db - the backend's pool-level `Db`
+ * @throws TransactionIsolationError for any other setting
+ */
+export const ensure_read_committed = async (db: Db): Promise<void> => {
+	const row = await db.query_one<{ value: string }>(
+		`SELECT current_setting('default_transaction_isolation') AS value`
+	);
+	check_transaction_isolation(row?.value ?? '');
+};
+
+/**
  * Initialize the backend: database + auth migrations + deps.
  *
- * Calls `create_db` → `run_migrations` (auth namespace, then any
- * `migration_namespaces` from options in order) → `audit_factory({db, log})`
- * (`db` with the audit checkout bound)
- * and bundles the result with the provided keyring and password deps and a
- * `connection_closer` (empty until `create_app_server` adds its transports).
+ * Calls `create_db` → `ensure_read_committed`, before anything writes →
+ * `run_migrations` (auth namespace, then any `migration_namespaces` from
+ * options in order) → `audit_factory({db, log})` (`db` with the audit checkout
+ * bound) and bundles the result with the provided keyring and password deps
+ * and a `connection_closer` (empty until `create_app_server` adds its
+ * transports).
  *
  * @param options - keyring, password deps, `audit_factory`, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
+ * @throws TransactionIsolationError when the database's `default_transaction_isolation` is not `read committed`
  * @throws MigrationError `namespace-reserved` if a `migration_namespaces` entry bears a `reserved_migration_namespaces` name and is not the spine's own namespace
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
@@ -197,13 +267,14 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 			`${db_type} has no connection pool; FUZ_DB_CHECKOUT_TIMEOUT_MS and FUZ_DB_AUDIT_CHECKOUT_TIMEOUT_MS have no effect`
 		);
 	}
-	// Everything after `create_db` can throw — `run_migrations` (its
-	// `MigrationError` kinds include the reserved-namespace refusal),
-	// `audit_factory`.
+	// Everything after `create_db` can throw — `ensure_read_committed`,
+	// `run_migrations` (its `MigrationError` kinds include the
+	// reserved-namespace refusal), `audit_factory`.
 	// Without this guard the pool leaks because `close` is only returned
 	// on the success path. Cleanup errors are logged and swallowed so the
 	// caller sees the original failure, not a teardown-shaped one.
 	try {
+		await ensure_read_committed(db);
 		const migration_results = await run_migrations(
 			db,
 			[AUTH_MIGRATION_NS, ...(options.migration_namespaces ?? [])],

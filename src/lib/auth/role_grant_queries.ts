@@ -113,10 +113,15 @@ export const scope_advisory_lock_key = (scope_id: Uuid): [number, number] => {
  * Take it first, holding no row: the teardown holds it while it waits on offer
  * and grant rows and on whatever its consumer's scope delete cascades into (an
  * invite or a request at the scope), so a transaction that waits on it holding
- * one of those deadlocks. The scope id may come from an unlocked read of a
- * column that never changes, as the accept's head read does. Use it on a
- * consumer path that reads its own scope row and then brings something into the
- * scope (an invite accept, a join decision): the lock, then the read. A
+ * one of those deadlocks. The one exception is a scope the transaction created
+ * itself and has not committed: no teardown can reach a scope before it
+ * commits, so a create that inserts its scope row and then grants its creator
+ * there is fine. A row inserted at an existing scope is no exception: its
+ * foreign key holds the scope row a teardown deletes. The scope id may come
+ * from an unlocked read of a column that never changes, as the accept's head
+ * read does. Use it on a consumer path that reads its own scope row and then
+ * brings something into the scope (an invite accept, a join decision): the
+ * lock, then the read. A
  * transaction never takes two scope locks here; one that must should take them
  * in key order. Twin of the Rust
  * `fuz_auth::role_grant_offer_queries::query_scope_lock_shared`.
@@ -179,9 +184,9 @@ export const query_scope_lock_exclusive = async (
  * so a teardown of the scope (`query_role_grant_revoke_for_scope`) in flight
  * is waited for, and one that starts after it waits for this transaction and
  * then revokes the grant. Run it inside the caller's transaction, holding no
- * row unless the transaction already holds this scope's lock (the lock's
- * rule; a re-take is free); a caller that judged the scope live takes the
- * lock before that read.
+ * row (a scope it created itself and has not committed aside) unless the transaction
+ * already holds this scope's lock (the lock's rule; a re-take is free); a
+ * caller that judged the scope live takes the lock before that read.
  *
  * @param deps - query dependencies
  * @param input - the role_grant fields
