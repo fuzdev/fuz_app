@@ -59,7 +59,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npx @fuzdev/gro check --workspace --build
+      - run: npx @fuzdev/gro check --workspace --build --lint
         env:
           # the server the `pg` leg creates a database of its own on per test
           # suite; the image's `POSTGRES_USER` is a superuser, so it has CREATEDB

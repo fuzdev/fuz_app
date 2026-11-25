@@ -48,10 +48,10 @@ Consumer projects import fuz_app's `dist/` (the `exports` map serves both
 
 ```bash
 cd ~/dev/fuz_app && gro build    # rebuild dist/ with updated types
-cd ~/dev/{consumer} && gro check --build --no-lint --no-gen   # check consumer
+cd ~/dev/{consumer} && gro check --build --no-gen   # check consumer
 ```
 
-Consumers use `--no-lint --no-gen` because lint and gen are fuz_app-local concerns.
+Consumers use `--no-gen` because gen is a fuz_app-local concern.
 
 ### Symlink Recipe for Cross-Repo Iteration
 
