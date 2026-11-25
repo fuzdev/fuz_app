@@ -1,16 +1,16 @@
 /**
  * Tests for `create_app_server` factory.
  *
- * Uses a single cached WASM database instance (via `create_default_db_factory`) shared
- * across all tests. Schema is reset before each `create_config` call, avoiding
- * repeated WASM cold starts while keeping tests isolated.
+ * Each `create_config` call takes a fresh database from the default factory
+ * (`create_default_db_factory`), avoiding repeated WASM cold starts while
+ * keeping tests isolated.
  *
  * @module
  */
 
 import { route_ok } from '#lib/http/route_result.ts';
 import { define_route } from '#lib/http/route_spec.ts';
-import { describe, test, assert, beforeAll } from 'vitest';
+import { describe, test, assert, beforeAll, afterAll, afterEach } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -43,6 +43,7 @@ import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
 import { TEST_ORIGIN } from '#lib/testing/test_origin.ts';
 import { create_default_db_factory } from '#lib/testing/db.ts';
+import type { Db } from '#lib/db/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { AUTH_MIGRATION_NS } from '#lib/auth/migrations.ts';
 import { BaseServerEnv } from '#lib/server/env.ts';
@@ -77,8 +78,8 @@ const log = new Logger('test', { level: 'off' });
 const missing_token_store = (): BootstrapTokenStore =>
 	create_file_bootstrap_token_store(create_mock_runtime(), '/nonexistent/token');
 
-// Shared database WASM instance — schema is reset on each factory.create() call,
-// but the expensive WASM cold start only happens once per worker thread.
+// Each factory.create() is a fresh, empty database; the WASM cold start happens
+// once per worker thread.
 const factory = create_default_db_factory(async () => {
 	// No-op: create_config runs migrations manually to capture MigrationResult.
 });
@@ -91,12 +92,20 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 	create_route_specs: () => [create_health_route_spec()]
 };
 
+// the databases `create_config` opened that a hook has yet to close
+const open_dbs: Array<Db> = [];
+
+afterEach(async () => {
+	await Promise.all(open_dbs.splice(0).map((db) => factory.close(db)));
+});
+
 /**
- * Create options from the cached database. Resets schema and re-runs auth
- * migrations on each call to keep tests isolated without WASM cold starts.
+ * Create options over a fresh database, running the auth migrations on it to
+ * capture their `MigrationResult`s.
  */
 const create_config = async (overrides?: Partial<AppServerOptions>): Promise<AppServerOptions> => {
 	const db = await factory.create();
+	open_dbs.push(db);
 	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
 	const backend: AppBackend = {
 		db_type: 'pglet-memory',
@@ -120,9 +129,16 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 describe('create_app_server', () => {
 	// Shared instance for read-only assertions (avoids repeated database cold starts)
 	let shared: AppServer;
+	let shared_db: Db;
 
 	beforeAll(async () => {
 		shared = await create_app_server(await create_config());
+		// the suite's, so the per-test hook leaves it open
+		shared_db = open_dbs.pop()!;
+	});
+
+	afterAll(async () => {
+		await factory.close(shared_db);
 	});
 
 	test('creates a working Hono app with health route', async () => {

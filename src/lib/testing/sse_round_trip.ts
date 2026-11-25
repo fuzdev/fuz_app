@@ -34,6 +34,8 @@ import {
 } from './test_app.ts';
 import { check_db_invariants_after_suite } from './db_invariants.ts';
 import { create_default_db_factory, type DbFactory } from './db.ts';
+import { init_test_auth_schema } from './app_server.ts';
+import { close_after_error } from './close_after_error.ts';
 import { find_route_spec, pick_auth_headers } from './integration_helpers.ts';
 import {
 	rpc_call,
@@ -41,8 +43,6 @@ import {
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import { run_migrations } from '../db/migrate.ts';
-import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import type { Db } from '../db/db.ts';
 import { account_session_revoke_all_action_spec } from '../auth/account_action_specs.ts';
 import { create_sse_frame_reader } from './transports/sse_frame_reader.ts';
@@ -179,10 +179,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
-	};
-	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
+	const factories = options.db_factories ?? [create_default_db_factory(init_test_auth_schema)];
 
 	for (const factory of factories) {
 		const describe_fn = factory.skip ? describe.skip : describe;
@@ -226,12 +223,21 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 					// once the describe's tests are done, ahead of the cleanup
 					// eslint-disable-next-line no-empty-pattern
 					afterAll(async ({}, suite) => {
+						// both closes run whatever came before; the first failure leads
+						const close = async (): Promise<void> => {
+							try {
+								await test_app.cleanup();
+							} catch (error) {
+								return close_after_error(() => factory.close(db), error);
+							}
+							await factory.close(db);
+						};
 						try {
 							await check_db_invariants_after_suite(suite, test_app);
-						} finally {
-							await test_app.cleanup();
-							await factory.close(db);
+						} catch (error) {
+							return close_after_error(close, error);
 						}
+						await close();
 					});
 
 					test('opens, emits payload, closes on revoke', async () => {

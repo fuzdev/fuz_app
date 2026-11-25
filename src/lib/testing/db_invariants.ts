@@ -21,6 +21,7 @@ import {
 	type DbInvariantExclusions,
 	type DbInvariantRow
 } from './db_invariant_queries.ts';
+import { close_after_error } from './close_after_error.ts';
 
 /** The exclusion sets already logged, by label and set — the log's dedupe. */
 const announced_db_invariant_exclusions = new Set<string>();
@@ -168,5 +169,52 @@ export const check_db_invariants_after_all = (
 	// eslint-disable-next-line no-empty-pattern
 	afterAll(async ({}, suite) => {
 		await check_db_invariants_after_suite(suite, get_fixture());
+	});
+};
+
+/** A fixture the describe checks and then closes. */
+export interface ClosableDbInvariantsFixture {
+	readonly assert_db_invariants: () => Promise<void>;
+	readonly close: () => Promise<void>;
+}
+
+/**
+ * Check a describe-scoped fixture (`check_db_invariants_after_suite`), then
+ * close it whatever the check found: a violation is thrown ahead of a failing
+ * close (`close_after_error`). The body of
+ * `check_db_invariants_and_close_after_all`'s hook.
+ *
+ * @param suite - the describe's task, the `afterAll` hook's second argument
+ * @param fixture - the shared fixture, `null` or `undefined` until built
+ * @throws Error the violation, the close's failure, or an `AggregateError` of both
+ */
+export const check_db_invariants_and_close = async (
+	suite: RunnerTask,
+	fixture: ClosableDbInvariantsFixture | null | undefined
+): Promise<void> => {
+	if (!fixture) return;
+	try {
+		await check_db_invariants_after_suite(suite, fixture);
+	} catch (error) {
+		return close_after_error(fixture.close, error);
+	}
+	await fixture.close();
+};
+
+/**
+ * `check_db_invariants_after_all` for a fixture the describe also owns: one
+ * `afterAll` running `check_db_invariants_and_close` — the shape for a
+ * `setup_test()` fixture built in `beforeAll`, whose in-process `close` frees
+ * its app and database. Call inside the `describe`, at collection.
+ *
+ * @param get_fixture - the shared fixture, `null` or `undefined` until built
+ */
+export const check_db_invariants_and_close_after_all = (
+	get_fixture: () => ClosableDbInvariantsFixture | null | undefined
+): void => {
+	// vitest requires the hook's context argument to be a destructuring pattern
+	// eslint-disable-next-line no-empty-pattern
+	afterAll(async ({}, suite) => {
+		await check_db_invariants_and_close(suite, get_fixture());
 	});
 };

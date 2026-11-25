@@ -291,9 +291,18 @@ export interface TestFixture {
 	 * own database; a no-op when the setup excludes `all`. The setup
 	 * already runs it when each test finishes if built inside that test; a
 	 * fixture built in `beforeAll` and shared by a describe is checked by the
-	 * suite (`check_db_invariants_after_all`).
+	 * suite (`check_db_invariants_and_close_after_all`).
 	 */
 	readonly assert_db_invariants: () => Promise<void>;
+	/**
+	 * Release what the setup built for this fixture. In-process it closes the
+	 * test app and its database (`TestApp.cleanup`), so a fixture built in
+	 * `beforeAll` is closed by the suite after its invariant check
+	 * (`check_db_invariants_and_close_after_all`); one built inside a test is
+	 * closed when the test finishes, and a second close is a no-op.
+	 * Cross-process a no-op: the backend outlives the fixture, reset per setup.
+	 */
+	readonly close: () => Promise<void>;
 }
 
 /**
@@ -1484,6 +1493,8 @@ export const default_cross_process_setup = (
 				);
 				assert_db_invariant_rows(answer.rows, handle.config.name, exclude_db_invariants);
 			},
+			// the backend outlives the fixture; the next setup resets it
+			close: async () => {},
 			mint_expired_session: async () => {
 				const other = await mint_expired_account('mint_expired_session', 'sessions', (account) => ({
 					cookie: `${cookie_name}=${account.session_cookie}`

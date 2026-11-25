@@ -25,8 +25,8 @@ import { Db, no_nested_transaction } from '#lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 
-// The two in-memory builders share one shape: a module-level instance per driver,
-// reset and re-initialized on every `create()`.
+// The two in-memory builders: PGlite shares one module-level instance and resets it
+// per `create()`, pglet-wasm migrates a base once per `init_schema` and forks it.
 const IN_MEMORY_BUILDERS: Array<{ name: string; build: DbFactoryBuilder }> = [
 	{ name: 'pglite', build: create_pglite_factory },
 	{ name: 'pglet-wasm', build: create_pglet_wasm_factory }
@@ -34,8 +34,23 @@ const IN_MEMORY_BUILDERS: Array<{ name: string; build: DbFactoryBuilder }> = [
 
 // Warm up both WASM instances before tests so the cold-start cost is outside individual test timers.
 beforeAll(async () => {
-	for (const { build } of IN_MEMORY_BUILDERS) await build(noop_init).create();
+	for (const { build } of IN_MEMORY_BUILDERS) {
+		const factory = build(noop_init);
+		await factory.close(await factory.create());
+	}
 });
+
+/** Whether `db` has a `public` table named `table`. */
+const query_has_table = async (db: Db, table: string): Promise<boolean> => {
+	const [row] = await db.query<{ found: boolean }>(
+		`SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = $1
+		) AS found`,
+		[table]
+	);
+	return row!.found;
+};
 
 for (const { name, build } of IN_MEMORY_BUILDERS) {
 	describe(`the ${name} factory`, () => {
@@ -46,16 +61,16 @@ for (const { name, build } of IN_MEMORY_BUILDERS) {
 		});
 
 		test('creates a working in-memory database', async () => {
-			const init_called: Array<Db> = [];
-			const factory = build((db) => {
-				init_called.push(db);
+			const init_called: Array<unknown> = [];
+			const factory = build((init_db) => {
+				init_called.push(init_db);
 				return Promise.resolve();
 			});
 
 			const db = await factory.create();
 			assert.ok(db instanceof Db);
 			assert.strictEqual(init_called.length, 1);
-			assert.strictEqual(init_called[0], db);
+			assert.ok(init_called[0] instanceof Db, 'init_schema receives a Db');
 
 			// verify db is functional
 			const rows = await db.query<{ result: number }>('SELECT 1 as result');
@@ -79,26 +94,150 @@ for (const { name, build } of IN_MEMORY_BUILDERS) {
 			await factory.close(db);
 		});
 
-		test("a second factory's first create resets the shared instance", async () => {
-			const first = build(async (db) => {
-				await db.query('CREATE TABLE only_in_first (id INT)');
-			});
-			const db = await first.create();
-			const second = build(noop_init);
-			assert.strictEqual(await second.create(), db, 'the factories share one instance');
-			const rows = await db.query<{ table_name: string }>(
-				"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-			);
-			assert.deepEqual(rows, []);
-		});
-
 		test('reads int8 as a number', async () => {
-			const db = await build(noop_init).create();
+			const factory = build(noop_init);
+			const db = await factory.create();
 			const rows = await db.query<{ big: unknown }>('SELECT 9007199254740991::int8 AS big');
 			assert.strictEqual(rows[0]!.big, 9007199254740991);
+			await factory.close(db);
 		});
 	});
 }
+
+describe('the pglite factory', () => {
+	test("a second factory's first create resets the shared instance", async () => {
+		const first = create_pglite_factory(async (db) => {
+			await db.query('CREATE TABLE only_in_first (id INT)');
+		});
+		const db = await first.create();
+		const second = create_pglite_factory(noop_init);
+		assert.strictEqual(await second.create(), db, 'the factories share one instance');
+		assert.ok(!(await query_has_table(db, 'only_in_first')), 'the reset dropped it');
+		await second.close(db);
+	});
+});
+
+describe('the pglet-wasm factory', () => {
+	test('each create forks the migrated base: a fork sees its tables, and init runs once', async () => {
+		let init_calls = 0;
+		const factory = create_pglet_wasm_factory(async (db) => {
+			init_calls++;
+			await db.query('CREATE TABLE forked_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL)');
+			await db.query("INSERT INTO forked_items (name) VALUES ('seeded')");
+		});
+		const first = await factory.create();
+		const second = await factory.create();
+		try {
+			assert.strictEqual(init_calls, 1, 'the second create forked, not re-migrated');
+			assert.notStrictEqual(first, second);
+			for (const db of [first, second]) {
+				const rows = await db.query<{ name: string }>('SELECT name FROM forked_items');
+				assert.deepEqual(rows, [{ name: 'seeded' }]);
+			}
+		} finally {
+			await factory.close(first);
+			await factory.close(second);
+		}
+	});
+
+	test('forks are isolated from each other and from the base', async () => {
+		const init_schema = async (db: Db): Promise<void> => {
+			await db.query('CREATE TABLE isolated_items (name TEXT NOT NULL)');
+		};
+		const factory = create_pglet_wasm_factory(init_schema);
+		const first = await factory.create();
+		const second = await factory.create();
+		try {
+			await first.query("INSERT INTO isolated_items (name) VALUES ('first')");
+			await first.query('CREATE TABLE only_in_first (id INT)');
+			await second.query('DROP TABLE isolated_items');
+
+			const first_rows = await first.query<{ name: string }>('SELECT name FROM isolated_items');
+			assert.deepEqual(first_rows, [{ name: 'first' }]);
+			assert.ok(!(await query_has_table(second, 'isolated_items')));
+			assert.ok(!(await query_has_table(second, 'only_in_first')));
+
+			// a later fork is of the base, which neither fork's writes reached
+			const third = await factory.create();
+			try {
+				assert.deepEqual(await third.query('SELECT name FROM isolated_items'), []);
+				assert.ok(!(await query_has_table(third, 'only_in_first')));
+			} finally {
+				await factory.close(third);
+			}
+		} finally {
+			await factory.close(first);
+			await factory.close(second);
+		}
+	});
+
+	test('factories built with one init_schema share its base; another init_schema gets its own', async () => {
+		let init_calls = 0;
+		const init_schema = async (db: Db): Promise<void> => {
+			init_calls++;
+			await db.query('CREATE TABLE shared_base_items (id INT)');
+		};
+		const a = create_pglet_wasm_factory(init_schema);
+		const b = create_pglet_wasm_factory(init_schema);
+		const other = create_pglet_wasm_factory(noop_init);
+		const [db_a, db_b, db_other] = await Promise.all([a.create(), b.create(), other.create()]);
+		try {
+			assert.strictEqual(init_calls, 1, 'concurrent first creates migrated one base');
+			assert.ok(await query_has_table(db_a, 'shared_base_items'));
+			assert.ok(await query_has_table(db_b, 'shared_base_items'));
+			assert.ok(!(await query_has_table(db_other, 'shared_base_items')));
+		} finally {
+			await a.close(db_a);
+			await b.close(db_b);
+			await other.close(db_other);
+		}
+	});
+
+	test('close closes the fork and a second close is a no-op; the base keeps forking', async () => {
+		const factory = create_pglet_wasm_factory(noop_init);
+		const db = await factory.create();
+		await factory.close(db);
+		await assert_rejects(() => db.query('SELECT 1'), /closed/);
+		await factory.close(db);
+		const next = await factory.create();
+		try {
+			assert.deepEqual(await next.query<{ one: number }>('SELECT 1 AS one'), [{ one: 1 }]);
+		} finally {
+			await factory.close(next);
+		}
+	});
+
+	test('close throws on a database the factory did not create', async () => {
+		const factory = create_pglet_wasm_factory(noop_init);
+		const other = create_pglet_wasm_factory(noop_init);
+		const db = await other.create();
+		try {
+			await assert_rejects(() => factory.close(db), /did not create/);
+		} finally {
+			await other.close(db);
+		}
+	});
+
+	test('a fork of a base whose init_schema left a block open is refused with 25001', async () => {
+		const factory = create_pglet_wasm_factory(async (db) => {
+			await db.query('BEGIN');
+			await db.query('CREATE TABLE never_committed (id INT)');
+		});
+		const error = await assert_rejects(() => factory.create());
+		assert.strictEqual((error as { code?: unknown }).code, '25001');
+	});
+
+	test('a failed init_schema is the error every create with it reports', async () => {
+		let init_calls = 0;
+		const factory = create_pglet_wasm_factory(async () => {
+			init_calls++;
+			throw new Error('init failed');
+		});
+		await assert_rejects(() => factory.create(), /init failed/);
+		await assert_rejects(() => factory.create(), /init failed/);
+		assert.strictEqual(init_calls, 1);
+	});
+});
 
 describe('set_default_db_factory', () => {
 	// The only automated check on the default-driver seam. A run that installs no

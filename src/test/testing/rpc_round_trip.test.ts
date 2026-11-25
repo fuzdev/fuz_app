@@ -404,7 +404,8 @@ const fake_fixture = {
 		return create_account_stub(cookie);
 	},
 	// no database behind the fake
-	assert_db_invariants: async () => {}
+	assert_db_invariants: async () => {},
+	close: async () => {}
 } as unknown as TestFixture;
 
 describe_rpc_round_trip_tests({

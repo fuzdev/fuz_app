@@ -26,8 +26,7 @@ fuz_app's own suites reach a database two ways:
 - **The four-driver fixture.** `create_db_fixture.ts` exports
   `create_db_fixture(suite, namespaces, truncate_tables)`, which builds the four
   drivers — pglite, pg, `pglet-server` (the native wire server,
-  `db_pglet_server_factory.ts`) and the forking pglet-wasm leg
-  (`db_pglet_wasm_factory.ts`) — and binds `describe_db` over them, so each suite
+  `db_pglet_server_factory.ts`) and pglet-wasm (`create_pglet_wasm_factory`) — and binds `describe_db` over them, so each suite
   runs once per enabled driver. The fixture modules call it once each, so
   importing one constructs only its own factories: `db_fixture.ts` (auth-only —
   what most suites use), `cell_db_fixture.ts` (full spine: auth + cell + fact,
@@ -67,9 +66,9 @@ default factory's driver, the other two add legs to the four-driver set:
 throws. The pg leg creates a database of its own per `create()`
 (`fuz_testing_<suite>_<pid>_<thread id>_<n>`, the suite `auth`, `cell` or `fact`) and
 drops it on `close()`; a killed run leaves `fuz_testing_*` databases to drop
-by that prefix. Every other factory but the forking pglet-wasm leg resets the
-`public` schema + re-migrates per `create()` and shares one instance per
-driver for the run. The `unit` project's `setupFiles` entry,
+by that prefix. pglet-wasm migrates once per `init_schema` and forks that
+base per `create()`; pglite and pglet-server reset the `public` schema +
+re-migrate per `create()` and share one instance per driver for the run. The `unit` project's `setupFiles` entry,
 `unit_db_guard.ts`, installs a default factory whose `create()` throws, so a
 test that opens a database without the `.db.test.ts` suffix fails loudly
 rather than running on its own instance outside these switches.
@@ -134,8 +133,9 @@ Key helpers:
 - `create_account({username?, password_value?, roles?})` — create additional accounts for multi-account tests
 - `assert_response_matches_spec(route_specs, method, path, response, route_error_maps?)` — validate response body against the route's output, or its error map at the status
 
-**WASM caching**: the in-memory factories share one WASM instance per driver
-across the `db` project's run (../lib/testing/CLAUDE.md §Database).
+**WASM caching**: pglet-wasm migrates one base per `init_schema` and forks it
+per `create()`; PGlite shares one instance across the `db` project's run
+(../lib/testing/CLAUDE.md §Database).
 `create_test_app` builds a fresh Hono app per call, since middleware closures
 bind to the server's deps.
 

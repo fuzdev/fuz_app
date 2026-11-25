@@ -34,6 +34,7 @@ import './assert_dev_env.ts';
  */
 
 import { threadId } from 'node:worker_threads';
+import type { PgletDb } from '@fuzdev/pglet-wasm';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { Db } from '../db/db.ts';
@@ -64,9 +65,10 @@ export interface DbFactory {
  * Reset a test database to a clean slate by dropping and recreating the `public` schema.
  *
  * `DROP SCHEMA public CASCADE; CREATE SCHEMA public` in plain SQL, so it resets
- * every driver: the in-memory factories call it on each `create()`, where one
- * instance serves every suite. (`create_pg_factory` needs none: each of its
- * databases is new.) Drift-proof — it wipes every table, type, and sequence regardless of
+ * every driver: `create_pglite_factory` calls it on each `create()`, where one
+ * instance serves every suite. (`create_pglet_wasm_factory` and
+ * `create_pg_factory` need none: each `create()` hands out a fork or a new
+ * database.) Drift-proof — it wipes every table, type, and sequence regardless of
  * namespace, so it needs no upkeep when the schema gains a table. The database
  * instance remains usable after reset.
  *
@@ -83,42 +85,8 @@ export const reset_public_schema = async (db: Db): Promise<void> => {
  */
 export type DbFactoryBuilder = (init_schema: (db: Db) => Promise<void>) => DbFactory;
 
-/**
- * Build a factory over one module-level instance per driver: the first
- * `create()` creates it, and each `create()` resets its `public` schema and
- * runs `init_schema`, so only the first pays the WASM cold start.
- *
- * The instance lives as long as this module stays loaded — under the `db`
- * project's `isolate: false` + `fileParallelism: false` that is the whole run;
- * a project that isolates its files gets one per worker. A promise rather than
- * a value, so two concurrent first `create()` calls build one instance, and a
- * failed first load is the error every later `create()` reports.
- */
-const create_shared_instance_factory = (
-	name: string,
-	resolve_db: () => Promise<Db>,
-	init_schema: (db: Db) => Promise<void>
-): DbFactory => {
-	return {
-		name,
-		skip: false,
-		async create() {
-			const db = await resolve_db();
-			// the instance is shared with every factory of this driver, so it may hold any schema
-			await reset_public_schema(db);
-			await init_schema(db);
-			return db;
-		},
-		async close() {
-			// No-op: the instance is module-level, so it lives as long as this module
-			// stays loaded. Nothing frees it earlier.
-		}
-	};
-};
-
-// The module-level instances the shared factories hand out, created on first use.
+// The module-level PGlite instance the PGlite factories share, created on first use.
 let pglite_db: Promise<Db> | null = null;
-let pglet_wasm_db: Promise<Db> | null = null;
 
 const resolve_pglite_db = (): Promise<Db> =>
 	(pglite_db ??= (async () => {
@@ -126,34 +94,125 @@ const resolve_pglite_db = (): Promise<Db> =>
 		return create_pglite_db(new PGlite()).db;
 	})());
 
-const resolve_pglet_wasm_db = (): Promise<Db> =>
-	(pglet_wasm_db ??= create_pglet_instance().then((pglet) => create_pglet_db_driver(pglet).db));
-
 /**
  * Create a PGlite (in-memory) database factory for tests.
  *
  * Always enabled — needs the optional `@electric-sql/pglite` peer installed.
- * Shares one PGlite WASM instance across the PGlite factories this module
- * builds; each `create()` resets the schema via `DROP SCHEMA public CASCADE`
- * instead of paying the cold start again.
+ * Shares one module-level PGlite WASM instance across the PGlite factories this
+ * module builds: the first `create()` creates it, and each `create()` resets its
+ * `public` schema (`reset_public_schema`) and runs `init_schema`, so only the
+ * first pays the WASM cold start. Every `create()` returns that one instance, so
+ * a `create()` resets the database an earlier one returned; `close()` is a no-op.
+ *
+ * The instance lives as long as this module stays loaded — under the `db`
+ * project's `isolate: false` + `fileParallelism: false` that is the whole run;
+ * a project that isolates its files gets one per worker. A promise rather than
+ * a value, so two concurrent first `create()` calls build one instance, and a
+ * failed first load is the error every later `create()` reports.
  *
  * @param init_schema - callback to initialize the database schema
  */
-export const create_pglite_factory: DbFactoryBuilder = (init_schema) =>
-	create_shared_instance_factory('pglite', resolve_pglite_db, init_schema);
+export const create_pglite_factory: DbFactoryBuilder = (init_schema) => ({
+	name: 'pglite',
+	skip: false,
+	async create() {
+		const db = await resolve_pglite_db();
+		// the instance is shared with every PGlite factory, so it may hold any schema
+		await reset_public_schema(db);
+		await init_schema(db);
+		return db;
+	},
+	async close() {
+		// No-op: the instance is module-level, so it lives as long as this module
+		// stays loaded. Nothing frees it earlier.
+	}
+});
+
+/**
+ * The migrated pglet bases, one per `init_schema` function, shared by every
+ * pglet-wasm factory built with it. Weakly keyed, so a base lives as long as
+ * its `init_schema` is reachable (a module-level initializer: the whole run)
+ * and is freed with it; nothing closes a base explicitly.
+ */
+const pglet_wasm_bases: WeakMap<(db: Db) => Promise<void>, Promise<PgletDb>> = new WeakMap();
+
+/**
+ * Resolve the migrated base for `init_schema`, creating it and running
+ * `init_schema` on it on first use. A promise rather than a value, so two
+ * concurrent first `create()` calls migrate one base, and a failed
+ * `init_schema` is the error every later `create()` with it reports.
+ *
+ * The base's `Db` never leaves this function, so nothing but `init_schema`
+ * runs on it, and the promise settles only once `init_schema` has — no
+ * transaction of the base's is open when a fork is taken. One `init_schema`
+ * leaves open (a raw `BEGIN` with no `COMMIT`) makes `fork()` reject `25001`.
+ */
+const resolve_pglet_wasm_base = (init_schema: (db: Db) => Promise<void>): Promise<PgletDb> => {
+	let base = pglet_wasm_bases.get(init_schema);
+	if (!base) {
+		base = (async () => {
+			const pglet = await create_pglet_instance();
+			try {
+				await init_schema(create_pglet_db_driver(pglet).db);
+			} catch (error) {
+				// a half-migrated base is never forked; free it, and report the init's error
+				await pglet.close().catch(() => {});
+				throw error;
+			}
+			return pglet;
+		})();
+		pglet_wasm_bases.set(init_schema, base);
+	}
+	return base;
+};
 
 /**
  * Create a pglet-wasm (in-memory) database factory for tests.
  *
  * Always enabled — needs the optional `@fuzdev/pglet-wasm` peer installed.
- * Shares one pglet instance across the pglet-wasm factories this module
- * builds, created with fuz_app's value coercion (`PGLET_COERCION`); each
- * `create()` resets the schema via `DROP SCHEMA public CASCADE`.
+ * Migrates once per `init_schema`: the first `create()` creates a pglet
+ * instance (with fuz_app's value coercion, `PGLET_COERCION`) and runs
+ * `init_schema` on it, and that migrated base is shared by every pglet-wasm
+ * factory built with the same `init_schema` function. Each `create()` returns a
+ * `fork()` of the base — a copy-on-write branch that shares the base's pages
+ * until written — so every database it returns is isolated from the base and
+ * from every other, and a `create()` never re-runs `init_schema`.
  *
- * @param init_schema - callback to initialize the database schema
+ * `close(db)` closes that fork; a fork is resident until then, so close every
+ * database this returns (`create_describe_db` does). Closing one twice is a
+ * no-op; closing a database this factory did not create throws. The base is never closed: it lives
+ * as long as `init_schema` is reachable.
+ *
+ * @param init_schema - callback to initialize the database schema, run once per function on the base
  */
-export const create_pglet_wasm_factory: DbFactoryBuilder = (init_schema) =>
-	create_shared_instance_factory('pglet-wasm', resolve_pglet_wasm_db, init_schema);
+export const create_pglet_wasm_factory: DbFactoryBuilder = (init_schema) => {
+	// each live fork's close, keyed by the `Db` handed out
+	const fork_closers: WeakMap<Db, () => Promise<void>> = new WeakMap();
+	// the forks already closed, so a second close is a no-op and not a foreign `Db`
+	const closed_forks: WeakSet<Db> = new WeakSet();
+	return {
+		name: 'pglet-wasm',
+		skip: false,
+		async create() {
+			const base = await resolve_pglet_wasm_base(init_schema);
+			const { db, close } = create_pglet_db_driver(await base.fork());
+			fork_closers.set(db, close);
+			return db;
+		},
+		async close(db) {
+			if (closed_forks.has(db)) return;
+			const close = fork_closers.get(db);
+			if (!close) {
+				throw new Error(
+					'create_pglet_wasm_factory: close() got a database this factory did not create'
+				);
+			}
+			fork_closers.delete(db);
+			closed_forks.add(db);
+			await close();
+		}
+	};
+};
 
 // The builder `create_default_db_factory` uses, `null` for pglet-wasm.
 let default_db_factory_builder: DbFactoryBuilder | null = null;

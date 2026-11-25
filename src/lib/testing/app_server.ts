@@ -4,10 +4,11 @@ import './assert_dev_env.ts';
  * Bootstrapped app server factory for integration tests.
  *
  * Creates a keeper account, API token, and signed session cookie on a
- * database. By default uses a cached in-memory pglet (one shared WASM instance
- * per loaded copy of `testing/db.ts` — once per run under the `db` project's
- * `isolate: false` + `fileParallelism: false`); pass `db` to use
- * an existing database (any driver) instead.
+ * database. By default one from the default factory, closed by `cleanup`: on
+ * pglet-wasm a fork of a base migrated once per `init_schema` (once per run
+ * under the `db` project's `isolate: false` + `fileParallelism: false`), on a
+ * driver `set_default_db_factory` installed whatever that factory hands out;
+ * pass `db` to use an existing database (any driver) instead.
  *
  * Vitest-free, so the spawned spine binary, the reset actions and a
  * consumer's test server build can import it — its import graph is held to
@@ -23,6 +24,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
+import { close_after_error } from './close_after_error.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '../auth/role_schema.ts';
 import { create_keyring, type Keyring } from '../auth/keyring.ts';
 import { generate_api_token } from '../auth/api_token.ts';
@@ -77,18 +79,27 @@ export const DEFAULT_TEST_KEEPER_ROLES: ReadonlyArray<string> = [ROLE_KEEPER, RO
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 
-// Module-level default factory (pglet-wasm unless `set_default_db_factory` installed
-// another) for create_test_app_server when no db is provided. Shares the WASM instance
-// cache from `testing/db.ts`, avoiding redundant cold starts within one loaded copy of
-// that module. Schema is reset on each create() call.
-const fallback_db_factory = create_default_db_factory(async (db) => {
+/**
+ * The auth-only `init_schema` (`AUTH_MIGRATION_NS`) the shipped suites and
+ * `create_test_app_server`'s fallback pass to `create_default_db_factory`.
+ * One module-level function, so on pglet-wasm they share one migrated base.
+ *
+ * @param db - the database to migrate
+ */
+export const init_test_auth_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
-});
+};
+
+// Module-level default factory (pglet-wasm unless `set_default_db_factory` installed
+// another) for create_test_app_server when no db is provided. Its `init_schema` is
+// module-level too, so pglet-wasm migrates it once per loaded copy of `testing/db.ts`
+// and each create() is a fresh fork of that base.
+const fallback_db_factory = create_default_db_factory(init_test_auth_schema);
 
 // Auto-created default factories keyed by extra-namespace identity. Suites
 // whose backend needs tables beyond auth (e.g. the cell layer) share one
-// factory per distinct namespace set — and the worker-cached WASM instance —
-// rather than each hand-building its own. The cell parity suite is the first
+// factory per distinct namespace set — and its migrated base — rather than
+// each hand-building its own. The cell parity suite is the first
 // user.
 const fallback_factories_by_namespaces = new Map<string, DbFactory>();
 
@@ -96,8 +107,8 @@ const fallback_factories_by_namespaces = new Map<string, DbFactory>();
  * Resolve the no-`db` default factory for the requested extra migration
  * namespaces. Empty / omitted → the shared auth-only `fallback_db_factory`;
  * otherwise a memoized factory whose `init` runs
- * `[AUTH_MIGRATION_NS, ...migration_namespaces]` on each reset. The
- * reset-on-`create` gives the same fresh-db-per-test isolation as the
+ * `[AUTH_MIGRATION_NS, ...migration_namespaces]`. Each `create` returns a
+ * fresh database (a fork, on pglet-wasm), the same per-test isolation as the
  * auth-only default. Mirrors `create_app_backend`'s `migration_namespaces`
  * seam at the test layer.
  */
@@ -304,7 +315,7 @@ export interface TestAppServer extends AppBackend {
 	session_cookie: string;
 	/** Keyring used for cookie signing — exposed for forging expired/tampered cookies in tests. */
 	keyring: Keyring;
-	/** Release test resources (no-op when DB is injected or factory-cached). */
+	/** Release test resources: closes the database it created (a pglet-wasm fork); a no-op for an injected `db`. */
 	cleanup: () => Promise<void>;
 }
 
@@ -403,6 +414,7 @@ const _build_test_backend = async (
 
 	let db: Db;
 	let db_name: string;
+	let close_db: () => Promise<void>;
 	if (existing_db) {
 		// Reset singleton config row from a previous test (harmless on a fresh database).
 		await existing_db.query(
@@ -410,15 +422,19 @@ const _build_test_backend = async (
 		);
 		db = existing_db;
 		db_name = 'test';
+		// the caller owns a supplied database
+		close_db = async () => {};
 	} else {
-		// In-memory default driver via cached factory — reuses the WASM instance from
-		// `testing/db.ts` instead of creating a new instance each time. Schema is reset and migrations re-run
-		// on each call, but the expensive WASM cold start only happens once per loaded
-		// copy of `testing/db.ts` — under the `db` project's `isolate: false` +
-		// `fileParallelism: false` that is once for the whole run.
+		// In-memory default driver via a memoized factory: on pglet-wasm its schema is
+		// migrated once per loaded copy of `testing/db.ts` (under the `db` project's
+		// `isolate: false` + `fileParallelism: false`, once for the whole run) and each
+		// call forks that base, which the backend's close frees.
 		// `migration_namespaces` selects an auth+extras factory; auth-only is the default.
-		db = await resolve_fallback_factory(migration_namespaces).create();
+		const factory = resolve_fallback_factory(migration_namespaces);
+		const created = await factory.create();
+		db = created;
 		db_name = '(memory)';
+		close_db = () => factory.close(created);
 	}
 	const backend: AppBackend = {
 		// a supplied `db` reports the caller's `db_type`; the auto-created one names
@@ -430,7 +446,7 @@ const _build_test_backend = async (
 		db_name,
 		// the factory's init ran the migrations, for a supplied `db` and the auto-created one alike
 		migration_results: [],
-		close: async () => {},
+		close: close_db,
 		deps: {
 			keyring: keyring_result.keyring,
 			password,
@@ -478,14 +494,19 @@ export const create_test_app_server = async (
 
 	const { backend, keyring } = await _build_test_backend(options);
 
-	const bootstrapped = await bootstrap_test_keeper({
-		db: backend.deps.db,
-		keyring,
-		password,
-		username,
-		password_value,
-		roles
-	});
+	let bootstrapped: Awaited<ReturnType<typeof bootstrap_test_keeper>>;
+	try {
+		bootstrapped = await bootstrap_test_keeper({
+			db: backend.deps.db,
+			keyring,
+			password,
+			username,
+			password_value,
+			roles
+		});
+	} catch (error) {
+		return close_after_error(backend.close, error);
+	}
 
 	return {
 		...backend,

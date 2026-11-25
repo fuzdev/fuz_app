@@ -167,14 +167,16 @@ const create_test_server = async (
 	wrap_db: (db: Db) => Db = (db) => db,
 	server_log: Logger = log
 ): Promise<TestServer> => {
-	const db = wrap_db(await factory.create());
+	const raw_db = await factory.create();
+	const db = wrap_db(raw_db);
 	const migration_results = await run_migrations(db, [AUTH_MIGRATION_NS]);
 	const audit = audit_factory({ db, log });
 	const backend: AppBackend = {
 		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
-		close: async () => {},
+		// the server's close closes its database
+		close: () => factory.close(raw_db),
 		deps: {
 			log: server_log,
 			keyring,

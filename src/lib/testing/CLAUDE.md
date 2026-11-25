@@ -192,7 +192,7 @@ Factory builders for parameterized DB tests. Consumer projects pass their
 factories accept any migration namespace set.
 
 - `DbFactory` — `{name, create, close, skip, skip_reason?}`.
-- `reset_public_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, in plain SQL, so it resets every driver. Every in-memory factory calls it per `create()`, so `init_schema` only migrates (the pg factory's databases are new). Drift-proof — no drop list to maintain.
+- `reset_public_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, in plain SQL, so it resets every driver. `create_pglite_factory` calls it per `create()`, so `init_schema` only migrates (pglet-wasm hands out forks and pg new databases). Drift-proof — no drop list to maintain.
 - `create_default_db_factory(init_schema)` — the default in-memory factory: pglet-wasm, or the builder `set_default_db_factory` installed before it was built. What fuz_app's own helpers fall back to (`create_test_app_server`, `describe_rate_limiting_tests`, `describe_sse_route_tests`).
 - `create_pglet_wasm_factory(init_schema)` / `create_pglite_factory(init_schema)` — pin pglet-wasm (`@fuzdev/pglet-wasm`, created with `PGLET_COERCION`) or PGlite; each needs its optional peer installed; `skip: false`. See WASM caching below.
 - `set_default_db_factory(create_factory | null)` — install a `DbFactoryBuilder` for `create_default_db_factory`, so suites written against the default run on another driver without being edited (`create_pglite_factory` to run them on PGlite); returns the builder it replaced, so a caller can put it back. Install from a `db`-project `setupFiles` entry, before any factory is built (../../../docs/testing.md §Switching the default driver). Injected rather than selected here: a driver it can wrap may live in test-side code this shipped module can't import (fuz_app's `pglet-server`). fuz_app's own switch is `src/test/db_default.ts` (`FUZ_TEST_DB_DEFAULT`).
@@ -208,14 +208,26 @@ spine binary); the two helpers that call vitest live in `describe_db.ts`:
 - `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `assert_columns_match_live(db, table, columns)` — the named-projection drift guard: asserts a `*_COLUMNS` const (`ACCOUNT_COLUMNS`, `CELL_COLUMNS`, a consumer's own) names exactly the live `public`-schema columns of `table`, via `query_public_columns(db, {table})`. Per module, or iterated from a table → const registry (fuz_app's own: `src/test/db/column_projections.db.test.ts`).
 
-**WASM caching.** `create_pglite_factory` and `create_pglet_wasm_factory` each
-share a single instance of their driver, held in a module-level promise, across the
-factories they build. Every `create()` calls `DROP SCHEMA public CASCADE` and
-re-runs its `init_schema` instead of paying the WASM cold start again, so suites
-share state until the next reset. The `db` vitest project (opted into by the `.db.test.ts` suffix) runs
-with `isolate: false` + `fileParallelism: false` to amortize WASM boot across
-every DB test file — which also makes that one instance the whole run's; a
-project that isolates its files gets one per worker instead.
+**WASM caching.** `create_pglet_wasm_factory` migrates once per `init_schema`
+function: the first `create()` creates a pglet instance and runs `init_schema` on
+it, and that base, held in a module-level `WeakMap` keyed on the function, is
+shared by every pglet-wasm factory built with it. Each `create()` returns a
+`fork()` of the base — copy-on-write, isolated from the base and every other
+fork — so `init_schema` never runs twice; `close(db)` closes the fork (a
+second close is a no-op, a `Db` the factory did not create throws). The base is never closed: it lives while its `init_schema` is
+reachable. The base's `Db` never leaves the factory, and it resolves only once
+`init_schema` has settled, so no base transaction is open when a fork is taken
+(a raw `BEGIN` left open by `init_schema` makes `fork()` reject `25001`); a
+failed `init_schema` is the error every later `create()` with it reports.
+`create_pglite_factory` shares a single PGlite instance, held in a module-level
+promise, across the factories it builds: every `create()` calls `DROP SCHEMA
+public CASCADE` and re-runs its `init_schema` on it, so a `create()` resets the
+database an earlier one returned, and `close()` is a no-op. `describe_db`
+truncates between tests on either — one database per describe, not per test.
+The `db` vitest project (opted into by the `.db.test.ts` suffix) runs with
+`isolate: false` + `fileParallelism: false` to amortize WASM boot across every
+DB test file — which also makes the bases and the PGlite instance the whole
+run's; a project that isolates its files gets them per worker instead.
 
 ### `db_invariant_queries.ts` + `db_invariants.ts` — auth-schema invariants after every test
 
@@ -232,7 +244,12 @@ which the Rust `fuz_testing` embeds byte for byte
 `format_db_invariant_violations`. `db_invariants.ts` holds the hooks:
 `assert_db_invariants` (over a `Db`), `assert_db_invariant_rows` (over
 rows a backend answered), `register_db_invariants_check`,
-`check_db_invariants_after_all`, `check_db_invariants_after_suite`.
+`check_db_invariants_after_all`, `check_db_invariants_after_suite`,
+`check_db_invariants_and_close_after_all` (one `afterAll` running
+`check_db_invariants_and_close`: check, then the fixture's `close` whatever
+the check found, a violation thrown ahead of a failing close).
+
+- `close_after_error(close, error)` (`close_after_error.ts`, a vitest-free leaf, so `db_invariants.ts` and the suites reach it without `app_server.ts`'s import graph) — run `close` after a failed step, then rethrow `error`, or an `AggregateError` of it and the close's failure. `create_test_app_server` (a failed keeper bootstrap) and `create_test_app` (a failed `create_app_server` or app close) and the invariant hooks and `describe_sse_route_tests` use it so a failure doesn't leak the fork.
 
 `create_test_app` runs its `assert_db_invariants` when the test that built it
 finishes (only inside a running test — its body or a `beforeEach`; skipped
@@ -247,6 +264,7 @@ checked too. A backend not declaring `_testing_db_invariants` in
 `capabilities.testing_backdoors` throws at setup unless the setup passes
 `exclude_db_invariants: {all: reason}`. An app or fixture built in `beforeAll` is
 checked once its describe's tests are done (`check_db_invariants_after_all`,
+`check_db_invariants_and_close_after_all` for a fixture the describe closes,
 or `check_db_invariants_after_suite` inside a describe's own closing
 `afterAll`, ahead of the close). Opt out per invariant with `exclude_db_invariants: {[name]:
 reason}` on `create_test_app` or the setup — reason required, validated on
@@ -274,7 +292,8 @@ Key module-scope values:
 - `TEST_ORIGIN` / `create_test_request_headers(extra?)` (from the dependency-free `testing/test_origin.ts`, so a cross-process suite reads them without the server assembly) — `'http://localhost:5173'`, the origin an in-process test request comes from (and `rpc_call`'s default `Origin`, cross-process too) and the one origin the loopback options allow, and the `{host: 'localhost', origin: TEST_ORIGIN}` pair every in-process request starts from, `extra` added after (the session headers builders are built on it).
 - `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`TEST_ORIGIN` allowed, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` spreads it under its own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_keyring`. Never used in production — the stub guard plus fixed value is the contract.
-- `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
+- `init_test_auth_schema` — the auth-only `init_schema` (`AUTH_MIGRATION_NS`) the fallback factory, `describe_rate_limiting_tests` and `describe_sse_route_tests` pass to `create_default_db_factory`: one module-level function, so on pglet-wasm they share one base.
+- `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed (on pglet-wasm, a fork of a base migrated once for the run), closed by the backend's `close`. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[AUTH_MIGRATION_NS, ...migration_namespaces]` is used instead — a base of its own, extra tables. `create_test_app` defers that close for an app built in a test until the invariant check when the test finishes has run, so a test that called `cleanup` itself is still checked; reading the database after `cleanup` rejects.
 - `DEFAULT_TEST_PASSWORD` (`test_credentials.ts`, a hono-free leaf so a cross-process setup imports it without the Hono test app) — the password the in-process and cross-process fixtures bootstrap and log in with.
 
 Two helpers share the "insert account + actor + roles + API token + session +
@@ -321,9 +340,10 @@ close fails the test on a give-up, unless the test failed or closed the app
 itself (`cleanup` or `server.close()`; `TestApp.server` is the assembled
 server with its `close` marking that). An app built in `beforeAll` registers
 nothing and is its suite's to close, so a fixture shared across tests is
-built there — `describe_middleware_gate_tests`' in-process fixture is built
-in `beforeAll` and checked once after its probes (a `TestFixture` has no
-close). Inside a concurrent test `create_test_app` throws: vitest names
+built there — the round-trip, data-exposure and middleware-gate suites
+build their in-process fixture in `beforeAll` and check then close it once
+after their tests (`check_db_invariants_and_close_after_all`, over
+`TestFixture.close`). Inside a concurrent test `create_test_app` throws: vitest names
 whichever concurrent test started last as current, so the close would land
 on a sibling's app — build the app in `beforeAll` and close it in `afterAll`.
 

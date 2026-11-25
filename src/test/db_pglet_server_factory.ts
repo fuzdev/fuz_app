@@ -62,8 +62,8 @@ const resolve_server_db = (bin: string): Promise<Db> =>
  *
  * Skipped unless `PGLET_SERVER_BIN` is set. Every factory shares one server for
  * the run, and each `create()` resets the whole `public` schema and runs
- * `init_schema` — the lifecycle the in-memory factories in `testing/db.ts` give
- * their drivers, so fixtures migrating different schemas never see each
+ * `init_schema` — the lifecycle `create_pglite_factory` (`testing/db.ts`)
+ * gives PGlite, so fixtures migrating different schemas never see each
  * other's tables, and a suite written against the default meets the same
  * create/reset shape here.
  *

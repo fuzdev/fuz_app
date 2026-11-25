@@ -133,7 +133,8 @@ const create_test_setup = async (): Promise<{
 		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
-		close: async () => {},
+		// the server's close closes its database
+		close: () => factory.close(db),
 		deps: {
 			log,
 			keyring,
@@ -149,9 +150,8 @@ const create_test_setup = async (): Promise<{
 };
 
 // Every server a test assembles is closed after it — that disposes the
-// limiters it built and closes its connections. The database is the shared
-// instance the default factory hands out, which outlives the file, so the
-// backend's `close` leaves it open.
+// limiters it built and closes its connections, then the backend's `close`
+// closes the database the default factory handed out for it.
 const servers: Array<AppServer> = [];
 afterEach(async () => {
 	await Promise.all(servers.splice(0).map((s) => s.close()));

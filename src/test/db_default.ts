@@ -23,7 +23,7 @@
  * A `setupFiles` entry is re-imported per test file, so this module's top level
  * runs once per `.db.test.ts` file rather than once per run. The install is
  * idempotent and the modules it imports are loaded once for the run, so the
- * installed driver's shared server / wasm instance is still one for the run;
+ * installed driver's shared server, instance or bases are still the run's;
  * only the banner is worth de-duplicating, and a flag outside this module is
  * what survives the re-import.
  *

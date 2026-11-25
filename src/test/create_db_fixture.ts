@@ -13,6 +13,7 @@ import type { Db } from '#lib/db/db.ts';
 import { run_migrations, type MigrationNamespace } from '#lib/db/migrate.ts';
 import {
 	create_default_db_factory,
+	create_pglet_wasm_factory,
 	create_pglite_factory,
 	create_pg_factory,
 	FUZ_TEST_POSTGRES_URL_ENV,
@@ -21,7 +22,6 @@ import {
 } from '#lib/testing/db.ts';
 import { create_describe_db } from '#lib/testing/describe_db.ts';
 import { create_pglet_server_factory } from './db_pglet_server_factory.ts';
-import { create_pglet_wasm_fork_factory } from './db_pglet_wasm_factory.ts';
 
 /** The four-driver fixture `create_db_fixture` builds. */
 export interface DbFixture {
@@ -47,8 +47,10 @@ export interface DbFixture {
  * `CREATE TYPE` + `CREATE TABLE IF NOT EXISTS`), so re-running it is safe on
  * any driver.
  * *
- * Every factory resets the whole `public` schema per `create()`, so the
- * fixtures' different schemas never leak into each other — the suites that
+ * Every `create()` starts from this fixture's schema alone — pglite and
+ * pglet-server reset the whole `public` schema first, pg creates a database,
+ * and pglet-wasm forks a base migrated with this fixture's `init_schema` — so
+ * the fixtures' different schemas never leak into each other — the suites that
  * assert over the *whole* schema (`auth/account_schema.db.test.ts`'s foreign
  * key inventory) depend on that.
  *
@@ -72,7 +74,7 @@ export const create_db_fixture = (
 		create_pglite_factory(init_schema),
 		pg_factory,
 		create_pglet_server_factory(init_schema),
-		create_pglet_wasm_fork_factory(init_schema)
+		create_pglet_wasm_factory(init_schema)
 	];
 	log_db_factory_status(db_factories);
 	return {

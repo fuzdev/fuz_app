@@ -30,7 +30,7 @@ import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const log = new Logger('test', { level: 'off' });
 
-// Shared WASM database instance via factory cache — avoids cold start overhead.
+// The default factory: migrated once, a fresh database per create().
 const factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });

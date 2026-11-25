@@ -57,7 +57,7 @@ import {
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
-import { check_db_invariants_after_all } from './db_invariants.ts';
+import { check_db_invariants_and_close_after_all } from './db_invariants.ts';
 import { to_route_content_type } from './schema_generators.ts';
 import { raw_http_send_head } from './transports/raw_http.ts';
 import { SPINE_BODY_LIMIT_DEFAULT_BYTES } from './cross_backend/spine_surface_constants.ts';
@@ -380,7 +380,7 @@ export const describe_middleware_gate_tests = (options: MiddlewareGateTestOption
 				fixture = await options.setup_test();
 				in_process_transport = fixture.fresh_transport({ origin: null });
 			});
-			check_db_invariants_after_all(() => fixture);
+			check_db_invariants_and_close_after_all(() => fixture);
 		}
 		for (const probe of probes) {
 			test(format_middleware_gate_probe(probe), async () => {

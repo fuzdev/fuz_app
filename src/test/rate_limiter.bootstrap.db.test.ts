@@ -74,16 +74,19 @@ interface BootstrapTestApp {
 	read_token: ReturnType<typeof vi.fn>;
 }
 
-// Cached default-driver factory for bootstrap tests — single WASM init, reset between calls.
+// Default-driver factory for bootstrap tests — migrated once, a fork per call.
 const bootstrap_factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [AUTH_MIGRATION_NS]);
 });
 
+// the databases `create_bootstrap_app` opened, closed after each test
+const open_dbs: Array<Db> = [];
+
 /**
  * Create a bootstrap test app backed by a real in-memory database.
  *
- * Uses a cached WASM database instance (via `create_default_db_factory`) to avoid
- * repeated WASM cold-start overhead. The schema is reset between calls.
+ * Takes a fresh database from the default factory (`create_default_db_factory`)
+ * per call, avoiding repeated WASM cold-start overhead.
  *
  * @param rate_limiter - Rate limiter to wire in (null to disable)
  * @param read_token - Override for the token file read. Defaults to returning 'wrong_token_wrong_token_wrong_token'
@@ -106,6 +109,7 @@ const create_bootstrap_app = async (
 	}
 ): Promise<BootstrapTestApp> => {
 	const db = await bootstrap_factory.create();
+	open_dbs.push(db);
 
 	const bootstrap_status = { available: true };
 	const token_store: BootstrapTokenStore = {
@@ -184,11 +188,12 @@ const bootstrap_request = (
 
 // Warm up the database WASM before tests so the cold-start cost is outside individual test timers.
 beforeAll(async () => {
-	await bootstrap_factory.create();
+	await bootstrap_factory.close(await bootstrap_factory.create());
 });
 
-afterEach(() => {
+afterEach(async () => {
 	vi.restoreAllMocks();
+	await Promise.all(open_dbs.splice(0).map((db) => bootstrap_factory.close(db)));
 });
 
 describe('bootstrap handler rate limiting', () => {

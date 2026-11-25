@@ -15,6 +15,7 @@ import './assert_dev_env.ts';
 
 import type { Hono } from 'hono';
 import { onTestFinished, TestRunner } from 'vitest';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import {
@@ -42,6 +43,7 @@ import {
 	type TestAppServer,
 	type TestAppServerOptions
 } from './app_server.ts';
+import { close_after_error } from './close_after_error.ts';
 import { announce_db_invariant_exclusions, assert_db_invariants } from './db_invariants.ts';
 import type { DbInvariantExclusions } from './db_invariant_queries.ts';
 
@@ -177,7 +179,9 @@ export interface TestApp {
 	 * schedule, closes live connections, drains the work in flight within its
 	 * bound (`TEST_SHUTDOWN_DRAIN_TIMEOUT_MS` unless `app_options` sets one),
 	 * disposes the limiters the server built and removes the audit listeners
-	 * and closer members it added, then the backend's `close`. Idempotent. A
+	 * and closer members it added, then the backend's `close`. The database
+	 * the app created (no `db` passed) closes with it, or, for an app built in
+	 * a test, after the invariant check when that test finishes. Idempotent. A
 	 * test that gives up on purpose calls `server.close()`, which resolves the
 	 * report instead.
 	 *
@@ -294,16 +298,27 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		keeper_account_id: test_server.account.id
 	};
 
-	const result = await create_app_server({
-		...test_app_options(),
-		backend: test_server,
-		session_cookie_name: options.session_cookie_name,
-		daemon_token_state,
-		rpc_endpoints: options.rpc_endpoints,
-		bootstrap: options.bootstrap,
-		...options.app_options,
-		create_route_specs: options.create_route_specs
-	});
+	// closes the database `create_test_app_server` opened (a no-op for a supplied `db`)
+	const release_db = (): Promise<void> => test_server.close();
+
+	let result: AppServer;
+	try {
+		result = await create_app_server({
+			...test_app_options(),
+			// the app's close leaves the database open: an app built in a test keeps
+			// it for the invariant check when the test finishes, which may follow a
+			// close the test made itself, and `release_db` closes it after that
+			backend: { ...test_server, close: async () => {} },
+			session_cookie_name: options.session_cookie_name,
+			daemon_token_state,
+			rpc_endpoints: options.rpc_endpoints,
+			bootstrap: options.bootstrap,
+			...options.app_options,
+			create_route_specs: options.create_route_specs
+		});
+	} catch (error) {
+		return close_after_error(release_db, error);
+	}
 	const { app, surface_spec } = result;
 
 	const cookie_name = options.session_cookie_name;
@@ -352,9 +367,18 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 
 	// a test that closes the app itself owns the outcome
 	let closed_by_test = false;
-	const close = (): Promise<ShutdownDrainGivenUp> => {
+	const close = async (): Promise<ShutdownDrainGivenUp> => {
 		closed_by_test = true;
-		return result.close();
+		// built in a test, the database waits for the check when it finishes
+		if (current_test) return result.close();
+		let given_up: ShutdownDrainGivenUp;
+		try {
+			given_up = await result.close();
+		} catch (error) {
+			return close_after_error(release_db, error);
+		}
+		await release_db();
+		return given_up;
 	};
 	// one hook, so the check runs ahead of the close
 	if (current_test) {
@@ -370,9 +394,22 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 				}
 			}
 			const owned_by_test = closed_by_test;
-			const given_up = await result.close();
-			if (violation) throw violation.error;
-			if (!failed && !owned_by_test && shutdown_gave_up(given_up)) {
+			// every close runs whatever came before; the violation is reported first
+			const errors: Array<unknown> = violation ? [violation.error] : [];
+			let given_up: ShutdownDrainGivenUp | null = null;
+			try {
+				given_up = await result.close();
+			} catch (error) {
+				errors.push(error);
+			}
+			try {
+				await release_db();
+			} catch (error) {
+				errors.push(error);
+			}
+			if (errors.length === 1) throw errors[0];
+			if (errors.length > 1) throw new AggregateError(errors, to_error_message(errors[0]));
+			if (!failed && !owned_by_test && given_up && shutdown_gave_up(given_up)) {
 				throw new Error(format_close_given_up('the close when the test finished', given_up));
 			}
 		});

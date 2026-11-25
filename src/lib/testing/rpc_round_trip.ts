@@ -29,7 +29,7 @@ import './assert_dev_env.ts';
 
 import { describe, test, beforeAll, assert } from 'vitest';
 
-import { check_db_invariants_after_all } from './db_invariants.ts';
+import { check_db_invariants_and_close_after_all } from './db_invariants.ts';
 import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -369,7 +369,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 	describe('RPC round-trip validation', () => {
 		let fixture: TestFixture;
 		// `fixture` is unassigned until `beforeAll` runs, which the check allows for
-		check_db_invariants_after_all(() => fixture);
+		check_db_invariants_and_close_after_all(() => fixture);
 		let authed_account: TestAccount;
 		let admin_account: TestAccount;
 

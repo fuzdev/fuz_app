@@ -8,7 +8,7 @@
  * @module
  */
 
-import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
+import { describe, assert, test, beforeAll, beforeEach, afterAll } from 'vitest';
 
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { run_migrations, type Migration, type MigrationNamespace } from '#lib/db/migrate.ts';
@@ -21,6 +21,10 @@ let db: Db;
 
 beforeAll(async () => {
 	db = await factory.create();
+});
+
+afterAll(async () => {
+	await factory.close(db);
 });
 
 beforeEach(async () => {

@@ -29,7 +29,6 @@ import type { AppServerContext } from '../server/app_server_context.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
 import { REST_RATE_LIMIT_EXCEEDED } from '../http/error_schemas.ts';
-import { AUTH_MIGRATION_NS } from '../auth/migrations.ts';
 import { create_test_app, type SuiteAppOptions } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
@@ -40,8 +39,7 @@ import {
 import { create_describe_db } from './describe_db.ts';
 import { find_auth_route, assert_rate_limit_retry_after_header } from './integration_helpers.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
-import { run_migrations } from '../db/migrate.ts';
-import type { Db } from '../db/db.ts';
+import { init_test_auth_schema } from './app_server.ts';
 
 /**
  * Configuration for `describe_rate_limiting_tests`.
@@ -93,10 +91,7 @@ export interface RateLimitingTestOptions {
  */
 export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): void => {
 	const max_attempts = options.max_attempts ?? 2;
-	const init_schema = async (db: Db): Promise<void> => {
-		await run_migrations(db, [AUTH_MIGRATION_NS]);
-	};
-	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
+	const factories = options.db_factories ?? [create_default_db_factory(init_test_auth_schema)];
 	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);
 
 	/** Create a tight rate limiter for testing — low attempt count, long window. */

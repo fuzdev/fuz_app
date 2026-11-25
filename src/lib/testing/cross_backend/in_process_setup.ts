@@ -173,9 +173,9 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 	return async () => {
 		// Per-test fresh db. When `options.migration_namespaces` is set,
 		// `create_test_app` provisions an auth+extras database (e.g. the cell
-		// layer); otherwise the auth-only default. Either way the factory
-		// resets + re-migrates on each `create`, so the per-test keeper
-		// bootstrap below lands on a clean DB.
+		// layer); otherwise the auth-only default. Either way each `create`
+		// returns a fresh database, so the per-test keeper bootstrap below
+		// lands on a clean DB.
 		const test_app = await create_test_app(options);
 
 		// Seed bootstrap-time secondaries against the same DB the keeper
@@ -271,6 +271,7 @@ export const default_in_process_setup = (options: InProcessSetupOptions): SetupT
 			extra_actors,
 			reject_unknown_audit_metadata_keys: options.reject_unknown_audit_metadata_keys ?? false,
 			assert_db_invariants: test_app.assert_db_invariants,
+			close: test_app.cleanup,
 			mint_expired_session: async () => {
 				const other = await mint_expired_account('mint_expired_session', 'sessions', (account) => ({
 					cookie: `${cookie_name}=${account.session_cookie}`

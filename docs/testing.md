@@ -56,8 +56,8 @@ which expect `(ctx: AppServerContext) => RouteSpec[]`.
 ## Vitest Projects and `.db.test.ts` Convention
 
 A test file that uses a database is named `.db.test.ts` (the `.db` segment
-right before `.test.ts`), so one vitest project runs every such file in a
-single worker over one shared WASM instance per driver:
+right before `.test.ts`), and one vitest project runs every such file in a
+single worker, where each in-memory driver pays its WASM start once per run:
 
 ```typescript
 // vite.config.ts
@@ -161,11 +161,24 @@ describe_db('ClassroomQueries', (get_db) => {
 });
 ```
 
-### Every `create()` starts from an empty schema
+### Every `create()` starts from the migrated schema alone
 
-The in-memory factories reset the whole `public` schema
-(`reset_public_schema`) before running `init_schema`, so `init_schema` only
-migrates. The pg factory needs no reset: each `create()` creates a database of
+pglet-wasm (`create_pglet_wasm_factory`, the default) migrates once per
+`init_schema` function: the first `create()` runs `init_schema` on a base
+instance, shared by every pglet-wasm factory built with that function, and
+each `create()` returns a copy-on-write `fork()` of it, isolated from the base
+and from every other fork. `init_schema` never runs twice, and `close(db)`
+closes the fork (twice is a no-op; a database the factory did not create
+throws) — close every database a factory returns (`describe_db` does),
+since a fork stays in memory until then. `describe_db` truncates its tables
+between tests, so a suite shares one fork. Pass the same `init_schema` function
+(a module-level one) to share a base; a new closure per factory migrates
+again.
+
+PGlite (`create_pglite_factory`) shares one instance across its factories and
+resets the whole `public` schema (`reset_public_schema`) before running
+`init_schema`, so a `create()` resets the database an earlier one returned. The
+pg factory needs no reset: each `create()` creates a database of
 its own on the `FUZ_TEST_POSTGRES_URL` server,
 `fuz_testing_<suite>_<pid>_<thread id>_<n>` from `template0` (the thread id
 keeps names apart under a threads pool), and `close()` drops it
@@ -288,10 +301,27 @@ or transport — keep signatures of their own.
 (`DB_INVARIANTS` in `@fuzdev/fuz_app/testing/db_invariant_queries.ts`) when
 each test that built an app or called `setup_test()` finishes. A test that
 already failed is not checked again. An app or fixture built in `beforeAll`
-registers nothing; check it once its describe's tests are done with
-`check_db_invariants_after_all(() => test_app)`, or, when the describe closes
-the app in its own `afterAll`, `check_db_invariants_after_suite(suite,
-test_app)` inside that hook ahead of the close (`testing/db_invariants.ts`).
+registers nothing, and its describe checks and then closes it once its tests
+are done (`testing/db_invariants.ts`): a `setup_test()` fixture with
+`check_db_invariants_and_close_after_all(() => fixture)`, which closes it
+(`TestFixture.close`) whatever the check found, and a test app in the
+describe's own `afterAll`, the check ahead of `cleanup`, which closes the
+app's database:
+
+```typescript
+afterAll(async ({}, suite) => {
+	try {
+		await check_db_invariants_after_suite(suite, test_app);
+	} catch (error) {
+		// the violation leads; a failing cleanup is aggregated after it
+		return close_after_error(test_app.cleanup, error);
+	}
+	await test_app.cleanup();
+});
+```
+
+(`close_after_error` is `@fuzdev/fuz_app/testing/close_after_error.ts`'s.)
+
 `TestApp.assert_db_invariants` checks on demand.
 
 Cross-process, the check calls the backend's `_testing_db_invariants`

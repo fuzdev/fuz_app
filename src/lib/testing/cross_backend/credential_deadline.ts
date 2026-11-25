@@ -43,7 +43,7 @@ import '../assert_dev_env.ts';
 
 import { assert, beforeAll, describe } from 'vitest';
 
-import { check_db_invariants_after_all } from '../db_invariants.ts';
+import { check_db_invariants_and_close_after_all } from '../db_invariants.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
@@ -164,7 +164,7 @@ export const describe_credential_deadline_cross_tests = (
 		// One reset for the suite: the cases share no state past it, since each
 		// mints its own account and the seam touches only that account.
 		let suite_fixture: TestFixture | null = null;
-		check_db_invariants_after_all(() => suite_fixture);
+		check_db_invariants_and_close_after_all(() => suite_fixture);
 		beforeAll(async () => {
 			if (capabilities.ws || capabilities.sse) suite_fixture = await setup_test();
 		});

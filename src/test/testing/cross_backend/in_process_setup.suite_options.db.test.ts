@@ -84,9 +84,9 @@ describe_db('default_in_process_suite_options get_db', (get_db) => {
 
 	test('the app runs on the database get_db returns', async () => {
 		recording.dbs.length = 0;
-		// the in-memory drivers share one instance, so identity can't tell the
-		// databases apart: a marker table can, since the fallback factory
-		// resets the schema it would have handed out
+		// PGlite hands every factory its one instance, so identity can't tell the
+		// databases apart: a marker table can, since a fallback database never
+		// holds it (a pglet-wasm fork of the migrated base, or a reset PGlite)
 		const db = get_db();
 		await db.query('CREATE TABLE suite_options_marker (id int)');
 		try {

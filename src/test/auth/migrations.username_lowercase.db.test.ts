@@ -8,7 +8,7 @@
  * @module
  */
 
-import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
+import { describe, assert, test, beforeAll, beforeEach, afterAll } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import type { Db } from '#lib/db/db.ts';
@@ -22,6 +22,10 @@ let db: Db;
 
 beforeAll(async () => {
 	db = await factory.create();
+});
+
+afterAll(async () => {
+	await factory.close(db);
 });
 
 beforeEach(async () => {

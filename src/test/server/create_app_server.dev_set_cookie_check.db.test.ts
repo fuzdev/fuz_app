@@ -11,7 +11,7 @@
  * @module
  */
 
-import { describe, test, assert, beforeAll } from 'vitest';
+import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { literal, loose_object } from '@fuzdev/fuz_schema/schema.ts';
 
@@ -53,7 +53,8 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 			db_type: 'pglet-memory',
 			db_name: '(memory)',
 			migration_results,
-			close: async () => {},
+			// the server's close closes its database
+			close: () => factory.close(db),
 			deps: {
 				log,
 				keyring,
@@ -89,6 +90,10 @@ describe('the DEV Set-Cookie check in create_app_server', () => {
 				}
 			]
 		});
+	});
+
+	afterAll(async () => {
+		await server.close();
 	});
 
 	const request = async (path: string, cookie: string | null): Promise<Response> => {
