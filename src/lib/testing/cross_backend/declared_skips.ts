@@ -164,3 +164,17 @@ export const check_declared_skips = (expected: Readonly<Record<string, string>>)
 		assert.deepEqual(find_declared_skip_problems(expected, tests), [], 'gated skips');
 	});
 };
+
+/**
+ * Declare `paths` skipped for one `reason` — the entries a backend's
+ * `expected_skips` spreads in per cause, so the reason a capability gap
+ * skips several tests for is written once.
+ *
+ * @param reason - why each test skips on this backend
+ * @param paths - test name paths, as `check_declared_skips` keys them
+ * @returns each path mapped to `reason`
+ */
+export const declare_skips = (
+	reason: string,
+	paths: ReadonlyArray<string>
+): Record<string, string> => Object.fromEntries(paths.map((path) => [path, reason]));

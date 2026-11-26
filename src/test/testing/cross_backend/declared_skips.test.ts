@@ -14,6 +14,7 @@ import { test_if } from '#lib/testing/cross_backend/capabilities.ts';
 import {
 	check_declared_skips,
 	DECLARED_SKIPS_CHECK_NAME,
+	declare_skips,
 	find_declared_skip_problems,
 	is_gated_skip
 } from '#lib/testing/cross_backend/declared_skips.ts';
@@ -54,6 +55,33 @@ describe('find_declared_skip_problems', () => {
 	});
 });
 
+describe('declare_skips', () => {
+	test('maps every path to the one reason', () => {
+		assert.deepEqual(declare_skips(REASON, ['a > one', 'b > two']), {
+			'a > one': REASON,
+			'b > two': REASON
+		});
+	});
+
+	test('no paths declare nothing', () => {
+		assert.deepEqual(declare_skips(REASON, []), {});
+	});
+
+	test('spreads beside other declarations into one expected list', () => {
+		const expected: Record<string, string> = {
+			...declare_skips('no cells', ['cells > create', 'cells > list']),
+			...declare_skips('no ready', ['ready > probe']),
+			'other > case': REASON
+		};
+		assert.deepEqual(expected, {
+			'cells > create': 'no cells',
+			'cells > list': 'no cells',
+			'ready > probe': 'no ready',
+			'other > case': REASON
+		});
+	});
+});
+
 describe('check_declared_skips reasons', () => {
 	test('an entry with no reason throws at registration', () => {
 		assert.throws(
@@ -85,6 +113,12 @@ describe('a declared skip passes', () => {
 	});
 	test_if(true, 'gated on', () => {});
 	check_declared_skips({ 'nested > gated off': REASON });
+});
+
+describe('skips declared by declare_skips pass', () => {
+	test_if(false, 'first gated off', () => {});
+	test_if(false, 'second gated off', () => {});
+	check_declared_skips(declare_skips(REASON, ['first gated off', 'second gated off']));
 });
 
 describe('a check at the end of its suite sees tests registered after it', () => {

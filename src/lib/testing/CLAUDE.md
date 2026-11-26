@@ -1543,10 +1543,12 @@ wire-shape check passes green on even when behavior is wrong.
   (`find_declared_skip_problems`, the pure half): an undeclared skip fails, so
   does an entry whose test was registered to run (stale) or that names no
   test. A nested suite with a check of its own owns its subtree: an outer
-  check neither collects nor needs declared what sits below it. fuz_app calls it in every single-backend cross file with a gated case,
-  and per backend in the security and timing projects; the transcript
-  differential holds both sides to its `expected_skips` the same way and
-  leaves the declared skips out of its whole-run count.
+  check neither collects nor needs declared what sits below it. fuz_app calls
+  it in every single-backend cross file with a gated case, and per backend in
+  the security and timing projects; the transcript differential holds both
+  sides to its `expected_skips` the same way and leaves the declared skips out
+  of its whole-run count. `declare_skips(reason, paths)` maps each path to one
+  reason, the entries a backend's `expected_skips` spreads in per cause.
 - `xfail.ts` — `xfail_until(marker, name, fn)` for deferred-by-design rows,
   `marker` an `XfailMarker` `{tracking_id, reason, fails_with}`. `fails_with`
   is required — a `RegExp` over the thrown message or a predicate over the

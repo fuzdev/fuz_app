@@ -1316,6 +1316,10 @@ options, each with its rules in its TSDoc there:
   }
   ```
 
+  Where one gap skips several tests, `declare_skips(reason, paths)`
+  (`testing/cross_backend/declared_skips.ts`) writes the reason once:
+  `...declare_skips('no cell routes (cell_crud: false)', [path_a, path_b])`.
+
 - `overrides` — a shallow merge over a suite's derived options, typed per
   suite (`SuiteOverrides`), or a function of the derived options returning
   the patch: a role list, an `xfail` for a tracked divergence, a path your
