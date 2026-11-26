@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CRXetCk-.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.AfCA46RM.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.49Ph9Ui5.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BljJV0WC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/D72rVJso.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CltqCWw8.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BKIAojRg.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CPXhBHrT.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -768,14 +768,14 @@ context (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-li
 ever authenticates through a builtin. Consumer-declared types live in
 the registry <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/credential_type_schema.ts#create_credential_type_registry"><!--[0--><!--[-1-->create_credential_type_registry<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> builds, consulted when
 validating <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RoleSpec.required_credential_types<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/daemon_token_middleware.ts"><!--[-1-->auth/daemon_token_middleware.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Daemon token middleware — the credential <!--]--><!--[4--><strong><!--[--><!--[2-->consumer<!--]--><!--]--><!----></strong><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Validates a presented <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->X-Daemon-Token<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and resolves the keeper account.
-The producer half (rotation + file persistence) lives in
-<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/daemon_token_rotation.ts"><!--[0--><!--[-1-->testing/daemon_token_rotation.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> behind the dev-env guard: no production
+The producer half (a static token and its file) lives in
+<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/daemon_token_file.ts"><!--[0--><!--[-1-->testing/daemon_token_file.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> behind the dev-env guard: no production
 assembly mints daemon tokens — the credential's only remaining role is the
 cross-process test harness's keeper channel — mirroring the Rust spine,
 whose producer is confined to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_testing<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Pure token primitives (schema, generation, validation) live in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/daemon_token.ts"><!--[0--><!--[-1-->auth/daemon_token.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.
 See docs/identity.md for design rationale.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/daemon_token.ts"><!--[-1-->auth/daemon_token.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Daemon token primitives — schema, generation, and validation.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Pure auth operations with no I/O or state management.
-The middleware, rotation, and persistence logic lives in
-<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/daemon_token_middleware.ts"><!--[0--><!--[-1-->auth/daemon_token_middleware.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/deps.ts"><!--[-1-->auth/deps.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Capabilities bundle for fuz_app backends.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/deps.ts#AppDeps"><!--[0--><!--[-1-->AppDeps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is the central dependency injection type — injectable and swappable
+The middleware lives in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/daemon_token_middleware.ts"><!--[0--><!--[-1-->auth/daemon_token_middleware.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->; the test-only
+producer that writes the token file in <!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/testing/daemon_token_file.ts"><!--[0--><!--[-1-->testing/daemon_token_file.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/deps.ts"><!--[-1-->auth/deps.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Capabilities bundle for fuz_app backends.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/deps.ts#AppDeps"><!--[0--><!--[-1-->AppDeps<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is the central dependency injection type — injectable and swappable
 per environment (production vs test). Does not contain config (static values)
 or app runtime state (mutable refs like <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bootstrap_status<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->); the audit emitter
 and the realtime fan-outs hold only their registered members.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/auth/fail_floor.ts"><!--[-1-->auth/fail_floor.ts<!--]--></a><!--]--><!----></h3> <!--[-1--><!--]--><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->The wall-clock floor on auth-denial responses, shared by login and signup.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Without a floor on denial paths, an attacker can tell cheap rejections
@@ -1093,16 +1093,16 @@ the reads that answer it as anonymous and the server status read.<!--]--><!--]--
 			
 			<script>
 				{
-					__sveltekit_16bsxyd = {
+					__sveltekit_8rqhbc = {
 						base: "",
-						version: "7e230c4d9a51d5ddd78c5c3196611578a3126baf"
+						version: "1a6238a1aca77056956ad98ceae1f0902392e59c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_16bsxyd);
-						const app = await import("/_app/immutable/entry/app.CRXetCk-.js");
+						kit.init(__sveltekit_8rqhbc);
+						const app = await import("/_app/immutable/entry/app.49Ph9Ui5.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/DGWDGHf_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/hWJyV7ZK.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Ps7GoRyz.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.CRXetCk-.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.AfCA46RM.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.49Ph9Ui5.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.BljJV0WC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/pg0D3VT_.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BYMpAOEn.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdZ8kYh_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/D72rVJso.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.CltqCWw8.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BKIAojRg.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.CPXhBHrT.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BKFGZtr7.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BkOGAUkd.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CMLJYHjj.js" rel="modulepreload">
@@ -827,9 +827,8 @@ with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-l
 
 <span class="token_special_keyword">export</span> <span class="token_special_keyword">default</span> <span class="token_function">create_cross_backend_global_setup</span><span class="token_punctuation">({</span>
   configs<span class="token_operator">:</span> <span class="token_punctuation">{</span><span class="token_function_variable token_function">node</span><span class="token_operator">:</span> <span class="token_punctuation">()</span> <span class="token_operator">=></span> <span class="token_function">node_backend_config</span><span class="token_punctuation">(),</span> <span class="token_function_variable token_function">rust</span><span class="token_operator">:</span> <span class="token_punctuation">(</span>database_url<span class="token_punctuation">)</span> <span class="token_operator">=></span> <span class="token_function">rust_backend_config</span><span class="token_punctuation">(</span>database_url<span class="token_punctuation">)},</span>
-  <span class="token_comment">// the Rust backend's database, its pglet server built in the backend's own Cargo workspace</span>
-  databases<span class="token_operator">:</span> <span class="token_punctuation">{</span>rust<span class="token_operator">:</span> <span class="token_constant">MY_CARGO_BINARY</span><span class="token_punctuation">},</span>
-  before_spawn<span class="token_operator">:</span> <span class="token_punctuation">{</span><span class="token_function_variable token_function">rust</span><span class="token_operator">:</span> <span class="token_punctuation">()</span> <span class="token_operator">=></span> <span class="token_function">prepare_cargo_binary</span><span class="token_punctuation">(</span><span class="token_constant">MY_CARGO_BINARY</span><span class="token_punctuation">)},</span>
+  <span class="token_comment">// the Rust backend, built before its spawn, over a pglet server built in its Cargo workspace</span>
+  cargo_binaries<span class="token_operator">:</span> <span class="token_punctuation">{</span>rust<span class="token_operator">:</span> <span class="token_constant">MY_CARGO_BINARY</span><span class="token_punctuation">},</span>
 <span class="token_punctuation">});</span><!----><!--]--></code><!--]--><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->vitest 4's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->provide<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> hard-rejects non-serializable values, so the live
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->child<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->teardown<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->keeper_transport<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> are stripped via
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/setup.ts#serialize_bootstrapped_handle"><!--[0--><!--[-1-->serialize_bootstrapped_handle<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->; the teardown closure stays in the
@@ -1359,7 +1358,7 @@ property: <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/secur
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->*.cross.test.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> files against its own bootstrapped binary. The paired
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/create_cross_backend_global_setup.ts#create_cross_backend_global_setup"><!--[0--><!--[-1-->create_cross_backend_global_setup<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->global_setup.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) reads the
 project's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->name<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to pick which <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/backend_config.ts#BackendConfig"><!--[0--><!--[-1-->BackendConfig<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> to spawn, so the project
-name is the single source of truth for backend selection.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumers compose these into their <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->vite.config.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> cross_backend_projects <span class="token_operator">=</span> process<span class="token_punctuation">.</span>env<span class="token_punctuation">.</span><span class="token_constant">FUZ_TEST_CROSS_BACKEND</span>
+name is the single source of truth for backend selection.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Consumers compose these into their <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->vite.config.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->:<!--]--><!--]--><!----></p><!--]--><!--[15--><!--[0--><!--[--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_keyword">const</span> cross_backend_projects <span class="token_operator">=</span> <span class="token_function">cross_backend_enabled</span><span class="token_punctuation">()</span>
   <span class="token_operator">?</span> <span class="token_punctuation">[</span>
       <span class="token_function">make_cross_backend_project</span><span class="token_punctuation">({</span>name<span class="token_operator">:</span> <span class="token_string">'cross_backend_ts_node'</span><span class="token_punctuation">,</span> global_setup<span class="token_operator">:</span> <span class="token_constant">GLOBAL_SETUP</span><span class="token_punctuation">}),</span>
       <span class="token_function">make_cross_backend_project</span><span class="token_punctuation">({</span>name<span class="token_operator">:</span> <span class="token_string">'cross_backend_rust'</span><span class="token_punctuation">,</span> global_setup<span class="token_operator">:</span> <span class="token_constant">GLOBAL_SETUP</span><span class="token_punctuation">}),</span>
@@ -2097,10 +2096,11 @@ skipped with its reason, and an entry matching no collected test of its
 suite fails the closing check test.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->expected_skips<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> declares the gated skips the backend owes — the cases a
 suite skips because the backend lacks what they gate on (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/capabilities.ts#test_if"><!--[0--><!--[-1-->test_if<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and
 the suites skipped for an undeclared backdoor — each by its name path with
-a required reason. When given, a closing test (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/declared_skips.ts#check_declared_skips"><!--[0--><!--[-1-->check_declared_skips<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->)
-fails on a gated skip it doesn't list and on an entry whose test runs or
-that names no test, so a skip is never only a skipped line in the report.
-An <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->exclude<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> entry declares its suite's skip itself.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->overrides<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> replaces a suite's derived options, field by field (a shallow
+a required reason. Required — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> declares that the backend owes none — so
+a closing test (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/declared_skips.ts#check_declared_skips"><!--[0--><!--[-1-->check_declared_skips<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) always fails on a gated skip it
+doesn't list and on an entry whose test runs or that names no test, and a
+skip is never only a skipped line in the report. An <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->exclude<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> entry
+declares its suite's skip itself.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->overrides<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> replaces a suite's derived options, field by field (a shallow
 merge over what the handle gives) — a role list the backend's WS upgrade
 requires, an <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->xfail<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for a tracked divergence, a narrower capability set.
 An entry can be a function of the derived options instead, for a change
@@ -2835,16 +2835,16 @@ tracking id, a reason, and the failure expected, nothing more.<!--]--><!--]--><!
 			
 			<script>
 				{
-					__sveltekit_16bsxyd = {
+					__sveltekit_8rqhbc = {
 						base: "",
-						version: "7e230c4d9a51d5ddd78c5c3196611578a3126baf"
+						version: "1a6238a1aca77056956ad98ceae1f0902392e59c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.Don10HnE.js").then(async (kit) => {
-						kit.init(__sveltekit_16bsxyd);
-						const app = await import("/_app/immutable/entry/app.CRXetCk-.js");
+						kit.init(__sveltekit_8rqhbc);
+						const app = await import("/_app/immutable/entry/app.49Ph9Ui5.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
