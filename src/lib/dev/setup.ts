@@ -39,8 +39,11 @@ import {
 	query_actors_by_account,
 	query_create_account_with_actor
 } from '../auth/account_queries.ts';
-import { query_create_role_grant } from '../auth/role_grant_queries.ts';
-import type { Uuid } from '../primitive_schemas.ts';
+import {
+	query_create_role_grant,
+	query_role_grant_find_account_id_for_role
+} from '../auth/role_grant_queries.ts';
+import { BUILTIN_ROLES } from '../auth/role_schema.ts';
 
 /**
  * Optional logger for setup helpers.
@@ -51,6 +54,8 @@ import type { Uuid } from '../primitive_schemas.ts';
 export interface SetupLogger {
 	ok: (msg: string) => void;
 	skip: (msg: string) => void;
+	/** A state the run leaves that an operator must act on, though nothing failed. */
+	warn: (msg: string) => void;
 	error: (msg: string) => void;
 }
 
@@ -58,6 +63,7 @@ export interface SetupLogger {
 export const default_setup_logger: SetupLogger = {
 	ok: (msg) => console.log(`  [ok] ${msg}`),
 	skip: (msg) => console.log(`  [skip] ${msg}`),
+	warn: (msg) => console.warn(`  [warn] ${msg}`),
 	error: (msg) => console.error(`  [error] ${msg}`)
 };
 
@@ -652,7 +658,10 @@ export interface SeedDevAccountDeps extends QueryDeps {
  * never reads as open for bootstrap, so the lock stays the single signal
  * production trusts. Seed after bootstrapping, or seed the keeper itself — a
  * keeper seeded while a server runs reaches its daemon-token leg after a
- * restart, which resolves the keeper once at startup.
+ * restart, which resolves the keeper once at startup. A seed that leaves the
+ * database with no live keeper or no live admin logs a `warn`: bootstrap is
+ * closed, so nothing will grant either, until an account is seeded with the
+ * missing role or the database is reset.
  *
  * Intended for a dev setup task — do not call in production.
  *
@@ -667,46 +676,58 @@ export const seed_dev_account = async (
 	const log = options?.log ?? default_setup_logger;
 	const username = input.username.toLowerCase();
 
-	const result = await deps.db.transaction(async (tx) => {
+	const { missing_roles, ...seeded } = await deps.db.transaction(async (tx) => {
 		const query_deps: QueryDeps = { db: tx };
 		await tx.query(
 			'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false'
 		);
-		const grant_roles = async (actor_id: Uuid): Promise<void> => {
-			for (const role of input.roles ?? []) {
-				await query_create_role_grant(query_deps, {
-					actor_id,
-					role,
-					granted_by: null,
-					expires_at: null
-				});
-			}
-		};
 
-		const existing = await query_account_by_username(query_deps, username);
-		if (existing) {
-			const actors = await query_actors_by_account(query_deps, existing.id);
-			if (actors.length === 0) {
-				log.error(`dev account '${input.username}' exists but has no actor`);
-				throw new Error(`dev account '${input.username}' has no actor`);
+		const resolve_account = async () => {
+			const existing = await query_account_by_username(query_deps, username);
+			if (existing) {
+				const actors = await query_actors_by_account(query_deps, existing.id);
+				if (actors.length === 0) {
+					log.error(`dev account '${input.username}' exists but has no actor`);
+					throw new Error(`dev account '${input.username}' has no actor`);
+				}
+				// Dev seed is single-actor by construction; pick the first.
+				return { account_id: existing.id, actor_id: actors[0]!.id, created: false };
 			}
-			// Dev seed is single-actor by construction; pick the first.
-			const actor = actors[0]!;
-			await grant_roles(actor.id);
-			return { account_id: existing.id, actor_id: actor.id, created: false };
+			const { account, actor } = await query_create_account_with_actor(query_deps, {
+				username,
+				password_hash: await deps.hash_password(input.password)
+			});
+			return { account_id: account.id, actor_id: actor.id, created: true };
+		};
+		const account = await resolve_account();
+
+		for (const role of input.roles ?? []) {
+			await query_create_role_grant(query_deps, {
+				actor_id: account.actor_id,
+				role,
+				granted_by: null,
+				expires_at: null
+			});
 		}
 
-		const { account, actor } = await query_create_account_with_actor(query_deps, {
-			username,
-			password_hash: await deps.hash_password(input.password)
-		});
-		await grant_roles(actor.id);
-		return { account_id: account.id, actor_id: actor.id, created: true };
+		// read in the transaction, after the grants, so it sees the state the seed commits
+		const missing_roles: Array<string> = [];
+		for (const role of BUILTIN_ROLES) {
+			if ((await query_role_grant_find_account_id_for_role(query_deps, role)) === null) {
+				missing_roles.push(role);
+			}
+		}
+		return { ...account, missing_roles };
 	});
-	if (result.created) {
+	if (seeded.created) {
 		log.ok(`Seeded dev account '${input.username}'`);
 	} else {
 		log.skip(`Dev account '${input.username}' already exists`);
 	}
-	return result;
+	if (missing_roles.length > 0) {
+		log.warn(
+			`bootstrap is closed and no live account holds the ${missing_roles.map((r) => `'${r}'`).join(' or ')} role — bootstrap refuses, so nothing will grant it; seed an account with roles: [${BUILTIN_ROLES.map((r) => `'${r}'`).join(', ')}] or reset the database`
+		);
+	}
+	return seeded;
 };

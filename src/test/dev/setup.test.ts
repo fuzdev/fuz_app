@@ -33,7 +33,7 @@ import {
 } from '#lib/runtime/mock.ts';
 import type { ProgramOutput } from '#lib/runtime/deps.ts';
 
-const silent_log: SetupLogger = { ok: () => {}, skip: () => {}, error: () => {} };
+const silent_log: SetupLogger = { ok: () => {}, skip: () => {}, warn: () => {}, error: () => {} };
 
 /** A logger recording each line as `[level] msg`. */
 const create_recording_log = (): SetupLogger & { lines: Array<string> } => {
@@ -42,6 +42,7 @@ const create_recording_log = (): SetupLogger & { lines: Array<string> } => {
 		lines,
 		ok: (msg) => lines.push(`[ok] ${msg}`),
 		skip: (msg) => lines.push(`[skip] ${msg}`),
+		warn: (msg) => lines.push(`[warn] ${msg}`),
 		error: (msg) => lines.push(`[error] ${msg}`)
 	};
 };
