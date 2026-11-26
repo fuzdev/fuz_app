@@ -186,6 +186,12 @@ measures one. Hono-free, imported by the cross-process token suite.
 - `RecordedClose` — `ConnectionCloseTarget | {kind: 'all'}`.
 - `RecordingCloser` — `{closer, calls}`.
 
+### `setup_logger_helpers.ts` — `SetupFlowLogger` test double
+
+- `create_recording_setup_flow_logger()` — a `SetupFlowLogger` (`dev/setup.ts`) recording each call into `entries` as `[method, msg]`, in order, printing nothing. A `SetupLogger` too, so one recorder passes to a consumer's setup flow and to the `dev/setup.ts` helpers it calls, and the test asserts the whole output in order.
+- `setup_flow_log_messages(log, method)` — one method's messages, in order.
+- `RecordingSetupFlowLogger`, `SetupFlowLogEntry`, `SetupFlowLogMethod` (`keyof SetupFlowLogger`).
+
 ### `action_spec_invariants.ts` — `describe_action_spec_invariants`
 
 `describe_action_spec_invariants({specs, method_enum?, collections?})` — the

@@ -67,6 +67,30 @@ export const default_setup_logger: SetupLogger = {
 	error: (msg) => console.error(`  [error] ${msg}`)
 };
 
+/**
+ * A `SetupLogger` that also prints plain lines, the sink of a consumer's
+ * setup flow.
+ *
+ * The helpers here take a `SetupLogger` and only print bracketed status
+ * lines. A flow composing them (a dev setup or reset task, a db-status
+ * report) also prints headings, blank lines, and next steps, so it takes
+ * this wider sink and passes the same object to the helpers, keeping the
+ * flow's output in order wherever it goes.
+ */
+export interface SetupFlowLogger extends SetupLogger {
+	/** Prints `msg` as it is to stdout; `''` prints a blank line. */
+	print: (msg: string) => void;
+	/** Prints `msg` as it is to stderr, unlike `error`'s bracketed status line. */
+	print_error: (msg: string) => void;
+}
+
+/** Default flow logger: `default_setup_logger`'s bracket format plus plain `console` lines. */
+export const default_setup_flow_logger: SetupFlowLogger = {
+	...default_setup_logger,
+	print: (msg) => console.log(msg),
+	print_error: (msg) => console.error(msg)
+};
+
 /** Result of `setup_env_file`. */
 export interface SetupEnvResult {
 	/** Whether a new file was created (vs updating existing). */

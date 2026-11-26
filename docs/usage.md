@@ -1569,6 +1569,14 @@ A URL that isn't Postgres runs neither program: `file://` (PGlite) resets by
 removing the `pglite_data_dir` the caller names, and `memory://` has nothing
 to reset.
 
+The helpers report through a `SetupLogger` (`log` in their options,
+`default_setup_logger` when omitted): bracketed `ok`, `skip`, `warn` and
+`error` lines. A task that prints lines of its own (headings, next steps)
+takes a `SetupFlowLogger`, which adds `print` (stdout) and `print_error`
+(stderr), and passes that one sink to the helpers too, so its output stays in
+order; `default_setup_flow_logger` writes to the console, and tests pass
+`create_recording_setup_flow_logger()` (`testing/setup_logger_helpers.ts`).
+
 ## Testing with Database Factories
 
 The database factories (`create_default_db_factory`, `create_pg_factory`, …)
