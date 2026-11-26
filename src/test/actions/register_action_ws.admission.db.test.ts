@@ -372,950 +372,977 @@ const PERMISSION_REVOKED_WHILE_PENDING =
 const parse_frames = (fake: FakeWs): Array<Record<string, unknown>> =>
 	fake.sends.map((frame) => JSON.parse(frame));
 
-describe_db('register_action_ws admission', (get_db) => {
-	describe('the credential re-read', () => {
-		test('a stalled upgrade no revocation touches is admitted', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
+describe_db(
+	'register_action_ws admission',
+	(get_db) => {
+		describe('the credential re-read', () => {
+			test('a stalled upgrade no revocation touches is admitted', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(endpoint.registry.connection_count(), 0, 'not admitted yet');
-			assert.deepStrictEqual(endpoint.opened, [], 'on_socket_open waits for admission');
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.strictEqual(endpoint.registry.connection_count(), 0, 'not admitted yet');
+				assert.deepStrictEqual(endpoint.opened, [], 'on_socket_open waits for admission');
 
-			stalled.release();
-			await socket.opening;
+				stalled.release();
+				await socket.opening;
 
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.strictEqual(endpoint.opened.length, 1);
-			assert.strictEqual(endpoint.opened[0]!.signal.aborted, false);
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.strictEqual(endpoint.opened.length, 1);
+				assert.strictEqual(endpoint.opened[0]!.signal.aborted, false);
 
-			await socket.send(echo_request(1, 'hi'));
-			assert.deepStrictEqual(parse_frames(socket.fake), [
-				{ jsonrpc: '2.0', id: 1, result: { value: 'hi' } }
-			]);
-		});
-
-		test('a session revoked during the upgrade is closed with 4001 — the re-read alone', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			// the row goes and *no* close is delivered — the shape of a revocation
-			// whose close ran before the connection registered and found nothing
-			assert.ok(await query_session_revoke_for_account({ db }, session.token_hash, account_id));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, [], 'a refused socket runs no on_socket_open');
-
-			// a client that withholds its close frame gets nothing dispatched
-			await socket.send(echo_request(1, 'after refusal'));
-			assert.deepStrictEqual(endpoint.handled, []);
-			assert.deepStrictEqual(socket.fake.sends, []);
-
-			await socket.close();
-			assert.deepStrictEqual(endpoint.closed, [], 'and no on_socket_close');
-		});
-
-		test('an api token revoked during the upgrade is closed with 4001', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const { id, token_hash } = generate_api_token();
-			await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, { api_token_id: id });
-
-			const { socket, stalled } = await open_stalled(endpoint, c, is_api_token_live_read);
-			assert.ok(await query_revoke_api_token_for_account({ db }, id, account_id));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-		});
-
-		test('a live api token is admitted', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const { id, token_hash } = generate_api_token();
-			await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, { api_token_id: id });
-
-			const { socket, stalled } = await open_stalled(endpoint, c, is_api_token_live_read);
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-		});
-
-		test('a password change during the upgrade refuses sessions and tokens', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const { id, token_hash } = generate_api_token();
-			await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
-			const endpoint = create_endpoint(db);
-
-			const by_session = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, session)
-			);
-			// what `/password` does once the new hash is stored
-			await query_session_revoke_all_for_account({ db }, account_id);
-			await query_revoke_all_api_tokens_for_account({ db }, account_id);
-			by_session.stalled.release();
-			await by_session.socket.opening;
-			assert.deepStrictEqual(by_session.socket.fake.closes, [REVOKED_CLOSE]);
-
-			// a bearer upgrade resolved before the change is refused the same way
-			const by_token = await open_socket(
-				endpoint,
-				await create_upgrade_context(db, account_id, { api_token_id: id })
-			);
-			await by_token.opening;
-			assert.deepStrictEqual(by_token.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-		});
-
-		test('an account soft-deleted during the upgrade is closed with 4001', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			// the tombstone alone — the session row is still there
-			assert.ok(await query_account_soft_delete({ db }, account_id, null));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-		});
-
-		test("another session's revocation still admits", async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const other = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.ok(await query_session_revoke_for_account({ db }, other.token_hash, account_id));
-			assert.strictEqual(
-				endpoint.registry.close_connections({ kind: 'session', session_hash: other.token_hash }),
-				0
-			);
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-		});
-
-		test('a failing re-check closes the socket with 1011 — never admitted unchecked', async () => {
-			expect_logged_error(
-				'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
-			);
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const queued = socket.send(echo_request(1, 'queued'));
-			stalled.fail(new Error('connection lost'));
-			await socket.opening;
-			await queued;
-
-			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
-			]);
-			assert.deepStrictEqual(socket.fake.sends, []);
-			assert.deepStrictEqual(endpoint.handled, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-		});
-	});
-
-	describe('the credential the upgrade resolves', () => {
-		test('a session is admitted from the credential the session leg resolved, and closeable by its hash', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-			// the upgrade reads the resolved credential, never the raw token the
-			// session middleware left
-			c.set(SESSION_TOKEN_KEY, null);
-
-			const socket = await open_socket(endpoint, c);
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-			assert.strictEqual(
-				endpoint.opened[0]!.identity.session_hash,
-				session.token_hash,
-				'registered under the hash the middleware resolved'
-			);
-			assert.strictEqual(
-				endpoint.registry.close_connections({ kind: 'session', session_hash: session.token_hash }),
-				1
-			);
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-		});
-
-		test('an upgrade with no resolved credential throws before the socket exists', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const endpoint = create_endpoint(db);
-			const c = create_context({
-				[REQUEST_CONTEXT_KEY]: await account_context(db, account_id)
+				await socket.send(echo_request(1, 'hi'));
+				assert.deepStrictEqual(parse_frames(socket.fake), [
+					{ jsonrpc: '2.0', id: 1, result: { value: 'hi' } }
+				]);
 			});
 
-			await assert_rejects(() => endpoint.create_events(c), /no resolved credential/);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+			test('a session revoked during the upgrade is closed with 4001 — the re-read alone', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				// the row goes and *no* close is delivered — the shape of a revocation
+				// whose close ran before the connection registered and found nothing
+				assert.ok(await query_session_revoke_for_account({ db }, session.token_hash, account_id));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, [], 'a refused socket runs no on_socket_open');
+
+				// a client that withholds its close frame gets nothing dispatched
+				await socket.send(echo_request(1, 'after refusal'));
+				assert.deepStrictEqual(endpoint.handled, []);
+				assert.deepStrictEqual(socket.fake.sends, []);
+
+				await socket.close();
+				assert.deepStrictEqual(endpoint.closed, [], 'and no on_socket_close');
+			});
+
+			test('an api token revoked during the upgrade is closed with 4001', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const { id, token_hash } = generate_api_token();
+				await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, { api_token_id: id });
+
+				const { socket, stalled } = await open_stalled(endpoint, c, is_api_token_live_read);
+				assert.ok(await query_revoke_api_token_for_account({ db }, id, account_id));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+			});
+
+			test('a live api token is admitted', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const { id, token_hash } = generate_api_token();
+				await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, { api_token_id: id });
+
+				const { socket, stalled } = await open_stalled(endpoint, c, is_api_token_live_read);
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+			});
+
+			test('a password change during the upgrade refuses sessions and tokens', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const { id, token_hash } = generate_api_token();
+				await query_create_api_token({ db }, id, account_id, 'ws', token_hash, token_scope_full());
+				const endpoint = create_endpoint(db);
+
+				const by_session = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, session)
+				);
+				// what `/password` does once the new hash is stored
+				await query_session_revoke_all_for_account({ db }, account_id);
+				await query_revoke_all_api_tokens_for_account({ db }, account_id);
+				by_session.stalled.release();
+				await by_session.socket.opening;
+				assert.deepStrictEqual(by_session.socket.fake.closes, [REVOKED_CLOSE]);
+
+				// a bearer upgrade resolved before the change is refused the same way
+				const by_token = await open_socket(
+					endpoint,
+					await create_upgrade_context(db, account_id, { api_token_id: id })
+				);
+				await by_token.opening;
+				assert.deepStrictEqual(by_token.fake.closes, [REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+			});
+
+			test('an account soft-deleted during the upgrade is closed with 4001', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				// the tombstone alone — the session row is still there
+				assert.ok(await query_account_soft_delete({ db }, account_id, null));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+			});
+
+			test("another session's revocation still admits", async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const other = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.ok(await query_session_revoke_for_account({ db }, other.token_hash, account_id));
+				assert.strictEqual(
+					endpoint.registry.close_connections({ kind: 'session', session_hash: other.token_hash }),
+					0
+				);
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+			});
+
+			test('a failing re-check closes the socket with 1011 — never admitted unchecked', async () => {
+				expect_logged_error(
+					'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
+				);
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const queued = socket.send(echo_request(1, 'queued'));
+				stalled.fail(new Error('connection lost'));
+				await socket.opening;
+				await queued;
+
+				assert.deepStrictEqual(socket.fake.closes, [
+					{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
+				]);
+				assert.deepStrictEqual(socket.fake.sends, []);
+				assert.deepStrictEqual(endpoint.handled, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+			});
 		});
 
-		test('a credential on another account than the request context throws before the socket exists', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const other_account_id = await create_account(db);
-			const session = await create_session(db, other_account_id);
-			const endpoint = create_endpoint(db);
-			// the credential resolves to one account, the request context names another
-			const c = await create_upgrade_context(db, other_account_id, session);
-			c.set(REQUEST_CONTEXT_KEY as never, (await account_context(db, account_id)) as never);
+		describe('the credential the upgrade resolves', () => {
+			test('a session is admitted from the credential the session leg resolved, and closeable by its hash', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+				// the upgrade reads the resolved credential, never the raw token the
+				// session middleware left
+				c.set(SESSION_TOKEN_KEY, null);
 
-			await assert_rejects(() => endpoint.create_events(c), /name different accounts/);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-		});
-	});
+				const socket = await open_socket(endpoint, c);
+				await socket.opening;
 
-	describe('a close during the upgrade', () => {
-		test('an account close while pending logs a credential revocation', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const recording = create_recording_log();
-			const endpoint = create_endpoint(db, { log: recording.log });
-			const c = await create_upgrade_context(db, account_id, session);
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+				assert.strictEqual(
+					endpoint.opened[0]!.identity.session_hash,
+					session.token_hash,
+					'registered under the hash the middleware resolved'
+				);
+				assert.strictEqual(
+					endpoint.registry.close_connections({
+						kind: 'session',
+						session_hash: session.token_hash
+					}),
+					1
+				);
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+			});
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.registry.close_connections({ kind: 'account', account_id });
-			stalled.release();
-			await socket.opening;
+			test('an upgrade with no resolved credential throws before the socket exists', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const endpoint = create_endpoint(db);
+				const c = create_context({
+					[REQUEST_CONTEXT_KEY]: await account_context(db, account_id)
+				});
 
-			assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
-		});
+				await assert_rejects(() => endpoint.create_events(c), /no resolved credential/);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+			});
 
-		test("the client's answer to a pending close keeps the refusal's reason", async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const recording = create_recording_log();
-			const endpoint = create_endpoint(db, { log: recording.log });
-			const c = await create_upgrade_context(db, account_id, session);
+			test('a credential on another account than the request context throws before the socket exists', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const other_account_id = await create_account(db);
+				const session = await create_session(db, other_account_id);
+				const endpoint = create_endpoint(db);
+				// the credential resolves to one account, the request context names another
+				const c = await create_upgrade_context(db, other_account_id, session);
+				c.set(REQUEST_CONTEXT_KEY as never, (await account_context(db, account_id)) as never);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.registry.close_connections({ kind: 'account', account_id });
-			// the client answers the close frame before the re-read returns, and
-			// its close event removes the registration
-			await socket.close();
-			stalled.release();
-			await socket.opening;
-
-			assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
-		});
-
-		test('a shutdown while pending logs the shutdown', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const recording = create_recording_log();
-			const endpoint = create_endpoint(db, { log: recording.log });
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.registry.close_all_connections();
-			await socket.close();
-			stalled.release();
-			await socket.opening;
-
-			assert.include(recording.infos, 'ws upgrade admission: closed by the shutdown while pending');
+				await assert_rejects(() => endpoint.create_events(c), /name different accounts/);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+			});
 		});
 
-		test('a revocation close reaches the pending connection, which is then refused', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
+		describe('a close during the upgrade', () => {
+			test('an account close while pending logs a credential revocation', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const recording = create_recording_log();
+				const endpoint = create_endpoint(db, { log: recording.log });
+				const c = await create_upgrade_context(db, account_id, session);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			// the close finds the pending registration while the session row is
-			// still there — an `admin_token_revoke_all` does exactly this. The
-			// re-read passes, so only admission can refuse.
-			assert.strictEqual(endpoint.registry.close_connections({ kind: 'account', account_id }), 1);
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'closed at once');
-			stalled.release();
-			await socket.opening;
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				endpoint.registry.close_connections({ kind: 'account', account_id });
+				stalled.release();
+				await socket.opening;
 
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'one close frame, not two');
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
+				assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+			});
 
-			await socket.send(echo_request(1, 'after refusal'));
-			assert.deepStrictEqual(endpoint.handled, []);
+			test("the client's answer to a pending close keeps the refusal's reason", async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const recording = create_recording_log();
+				const endpoint = create_endpoint(db, { log: recording.log });
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				endpoint.registry.close_connections({ kind: 'account', account_id });
+				// the client answers the close frame before the re-read returns, and
+				// its close event removes the registration
+				await socket.close();
+				stalled.release();
+				await socket.opening;
+
+				assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+			});
+
+			test('a shutdown while pending logs the shutdown', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const recording = create_recording_log();
+				const endpoint = create_endpoint(db, { log: recording.log });
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				endpoint.registry.close_all_connections();
+				await socket.close();
+				stalled.release();
+				await socket.opening;
+
+				assert.include(
+					recording.infos,
+					'ws upgrade admission: closed by the shutdown while pending'
+				);
+			});
+
+			test('a revocation close reaches the pending connection, which is then refused', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				// the close finds the pending registration while the session row is
+				// still there — an `admin_token_revoke_all` does exactly this. The
+				// re-read passes, so only admission can refuse.
+				assert.strictEqual(endpoint.registry.close_connections({ kind: 'account', account_id }), 1);
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'closed at once');
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE], 'one close frame, not two');
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+
+				await socket.send(echo_request(1, 'after refusal'));
+				assert.deepStrictEqual(endpoint.handled, []);
+			});
+
+			test('the client leaving during the upgrade admits nothing and sends no close', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				await socket.close();
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+				assert.deepStrictEqual(endpoint.closed, []);
+			});
 		});
 
-		test('the client leaving during the upgrade admits nothing and sends no close', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
+		describe('the per-account cap', () => {
+			test('a refused upgrade never evicts a live socket of the same account', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const live_session = await create_session(db, account_id);
+				const revoked_session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db, { max_connections_per_account: 1 });
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			await socket.close();
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			stalled.release();
-			await socket.opening;
+				const live = await open_socket(
+					endpoint,
+					await create_upgrade_context(db, account_id, live_session)
+				);
+				await live.opening;
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
 
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-			assert.deepStrictEqual(endpoint.closed, []);
-		});
-	});
+				const { socket, stalled } = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, revoked_session)
+				);
+				assert.deepStrictEqual(live.fake.closes, [], 'a pending registration evicts nothing');
+				assert.ok(
+					await query_session_revoke_for_account({ db }, revoked_session.token_hash, account_id)
+				);
+				stalled.release();
+				await socket.opening;
 
-	describe('the per-account cap', () => {
-		test('a refused upgrade never evicts a live socket of the same account', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const live_session = await create_session(db, account_id);
-			const revoked_session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db, { max_connections_per_account: 1 });
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.deepStrictEqual(live.fake.closes, [], 'the live socket keeps its slot');
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+				await live.send(echo_request(1, 'still here'));
+				assert.deepStrictEqual(endpoint.handled, ['still here']);
+			});
 
-			const live = await open_socket(
-				endpoint,
-				await create_upgrade_context(db, account_id, live_session)
-			);
-			await live.opening;
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
+			test('an admitted upgrade evicts the oldest at admission, not at registration', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const first_session = await create_session(db, account_id);
+				const second_session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db, { max_connections_per_account: 1 });
 
-			const { socket, stalled } = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, revoked_session)
-			);
-			assert.deepStrictEqual(live.fake.closes, [], 'a pending registration evicts nothing');
-			assert.ok(
-				await query_session_revoke_for_account({ db }, revoked_session.token_hash, account_id)
-			);
-			stalled.release();
-			await socket.opening;
+				const first = await open_socket(
+					endpoint,
+					await create_upgrade_context(db, account_id, first_session)
+				);
+				await first.opening;
 
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.deepStrictEqual(live.fake.closes, [], 'the live socket keeps its slot');
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-			await live.send(echo_request(1, 'still here'));
-			assert.deepStrictEqual(endpoint.handled, ['still here']);
-		});
+				const { socket, stalled } = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, second_session)
+				);
+				assert.deepStrictEqual(first.fake.closes, []);
+				stalled.release();
+				await socket.opening;
 
-		test('an admitted upgrade evicts the oldest at admission, not at registration', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const first_session = await create_session(db, account_id);
-			const second_session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db, { max_connections_per_account: 1 });
-
-			const first = await open_socket(
-				endpoint,
-				await create_upgrade_context(db, account_id, first_session)
-			);
-			await first.opening;
-
-			const { socket, stalled } = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, second_session)
-			);
-			assert.deepStrictEqual(first.fake.closes, []);
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(first.fake.closes, [
-				{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
-			]);
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-		});
-	});
-
-	describe('frames sent before admission', () => {
-		test('wait for admission, then dispatch in arrival order', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const sent = [
-				socket.send(mark_request(1, 'first')),
-				socket.send(mark_request(2, 'second')),
-				socket.send(mark_request(3, 'third')),
-				socket.send(echo_request(4, 'authenticated'))
-			];
-			// a `mark` dispatch reads nothing, so one run on the unverified
-			// credential would have reached its handler by the next macrotask
-			await wait();
-			assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches before admission');
-			assert.deepStrictEqual(socket.fake.sends, []);
-
-			stalled.release();
-			await socket.opening;
-			await Promise.all(sent);
-
-			// dispatched back to back in arrival order; the account-gated request
-			// resolves its account first, so it lands after the three that don't
-			assert.deepStrictEqual(endpoint.handled, ['first', 'second', 'third', 'authenticated']);
-			assert.deepStrictEqual(
-				parse_frames(socket.fake).map((frame) => frame.id),
-				[1, 2, 3, 4]
-			);
+				assert.deepStrictEqual(first.fake.closes, [
+					{ code: WS_CLOSE_CONNECTION_LIMIT, reason: WS_CLOSE_CONNECTION_LIMIT_REASON }
+				]);
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+			});
 		});
 
-		test('are dropped unread when the upgrade is refused', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
+		describe('frames sent before admission', () => {
+			test('wait for admission, then dispatch in arrival order', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const sent = [socket.send(echo_request(1, 'first')), socket.send(echo_request(2, 'second'))];
-			assert.ok(await query_session_revoke_for_account({ db }, session.token_hash, account_id));
-			stalled.release();
-			await socket.opening;
-			await Promise.all(sent);
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const sent = [
+					socket.send(mark_request(1, 'first')),
+					socket.send(mark_request(2, 'second')),
+					socket.send(mark_request(3, 'third')),
+					socket.send(echo_request(4, 'authenticated'))
+				];
+				// a `mark` dispatch reads nothing, so one run on the unverified
+				// credential would have reached its handler by the next macrotask
+				await wait();
+				assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches before admission');
+				assert.deepStrictEqual(socket.fake.sends, []);
 
-			assert.deepStrictEqual(endpoint.handled, []);
-			assert.deepStrictEqual(socket.fake.sends, []);
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-		});
+				stalled.release();
+				await socket.opening;
+				await Promise.all(sent);
 
-		test('are dropped when a revocation closes the pending connection', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
+				// dispatched back to back in arrival order; the account-gated request
+				// resolves its account first, so it lands after the three that don't
+				assert.deepStrictEqual(endpoint.handled, ['first', 'second', 'third', 'authenticated']);
+				assert.deepStrictEqual(
+					parse_frames(socket.fake).map((frame) => frame.id),
+					[1, 2, 3, 4]
+				);
+			});
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const sent = socket.send(echo_request(1, 'first'));
-			assert.strictEqual(
-				endpoint.registry.close_connections({ kind: 'session', session_hash: session.token_hash }),
-				1
-			);
-			// dropped at the close, without waiting for the re-read to return
-			await sent;
-			stalled.release();
-			await socket.opening;
+			test('are dropped unread when the upgrade is refused', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
 
-			assert.deepStrictEqual(endpoint.handled, []);
-			assert.deepStrictEqual(socket.fake.sends, []);
-		});
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const sent = [
+					socket.send(echo_request(1, 'first')),
+					socket.send(echo_request(2, 'second'))
+				];
+				assert.ok(await query_session_revoke_for_account({ db }, session.token_hash, account_id));
+				stalled.release();
+				await socket.opening;
+				await Promise.all(sent);
 
-		test('wait for on_socket_open as well, which runs only once admitted', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const order: Array<string> = [];
-			const hook_started = Promise.withResolvers<void>();
-			const hook = Promise.withResolvers<void>();
-			const endpoint = create_endpoint(db, {
-				on_socket_open: async (ctx) => {
-					order.push(`hook:start admitted=${endpoint.registry.is_registered(ctx.connection_id)}`);
-					hook_started.resolve();
-					await hook.promise;
-					order.push('hook:end');
+				assert.deepStrictEqual(endpoint.handled, []);
+				assert.deepStrictEqual(socket.fake.sends, []);
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+			});
+
+			test('are dropped when a revocation closes the pending connection', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const sent = socket.send(echo_request(1, 'first'));
+				assert.strictEqual(
+					endpoint.registry.close_connections({
+						kind: 'session',
+						session_hash: session.token_hash
+					}),
+					1
+				);
+				// dropped at the close, without waiting for the re-read to return
+				await sent;
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(endpoint.handled, []);
+				assert.deepStrictEqual(socket.fake.sends, []);
+			});
+
+			test('wait for on_socket_open as well, which runs only once admitted', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const order: Array<string> = [];
+				const hook_started = Promise.withResolvers<void>();
+				const hook = Promise.withResolvers<void>();
+				const endpoint = create_endpoint(db, {
+					on_socket_open: async (ctx) => {
+						order.push(`hook:start admitted=${endpoint.registry.is_registered(ctx.connection_id)}`);
+						hook_started.resolve();
+						await hook.promise;
+						order.push('hook:end');
+					}
+				});
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.deepStrictEqual(order, [], 'the hook does not run on a pending connection');
+				stalled.release();
+				// admitted, the hook now holds the open
+				await hook_started.promise;
+				// `mark`, which reads nothing: a dispatch that ran during the hook
+				// would have reached its handler by the next macrotask
+				const sent = socket.send(mark_request(1, 'during hook'));
+				await wait();
+				assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches while the hook runs');
+
+				hook.resolve();
+				await socket.opening;
+				await sent;
+
+				assert.deepStrictEqual(order, ['hook:start admitted=true', 'hook:end']);
+				assert.deepStrictEqual(endpoint.handled, ['during hook']);
+			});
+
+			test('one frame past MAX_PRE_ADMISSION_FRAMES closes the socket with 1008', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const sent: Array<Promise<void>> = [];
+				for (let i = 0; i < MAX_PRE_ADMISSION_FRAMES; i++) {
+					sent.push(socket.send(echo_request(i, `frame ${i}`)));
 				}
-			});
-			const c = await create_upgrade_context(db, account_id, session);
+				assert.deepStrictEqual(socket.fake.closes, [], 'the cap itself is admitted');
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.deepStrictEqual(order, [], 'the hook does not run on a pending connection');
-			stalled.release();
-			// admitted, the hook now holds the open
-			await hook_started.promise;
-			// `mark`, which reads nothing: a dispatch that ran during the hook
-			// would have reached its handler by the next macrotask
-			const sent = socket.send(mark_request(1, 'during hook'));
-			await wait();
-			assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches while the hook runs');
+				sent.push(socket.send(echo_request(MAX_PRE_ADMISSION_FRAMES, 'one too many')));
 
-			hook.resolve();
-			await socket.opening;
-			await sent;
+				assert.deepStrictEqual(socket.fake.closes, [
+					{ code: WS_CLOSE_POLICY_VIOLATION, reason: WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON }
+				]);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				stalled.release();
+				await socket.opening;
+				await Promise.all(sent);
 
-			assert.deepStrictEqual(order, ['hook:start admitted=true', 'hook:end']);
-			assert.deepStrictEqual(endpoint.handled, ['during hook']);
-		});
-
-		test('one frame past MAX_PRE_ADMISSION_FRAMES closes the socket with 1008', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const sent: Array<Promise<void>> = [];
-			for (let i = 0; i < MAX_PRE_ADMISSION_FRAMES; i++) {
-				sent.push(socket.send(echo_request(i, `frame ${i}`)));
-			}
-			assert.deepStrictEqual(socket.fake.closes, [], 'the cap itself is admitted');
-
-			sent.push(socket.send(echo_request(MAX_PRE_ADMISSION_FRAMES, 'one too many')));
-
-			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_POLICY_VIOLATION, reason: WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON }
-			]);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			stalled.release();
-			await socket.opening;
-			await Promise.all(sent);
-
-			assert.deepStrictEqual(endpoint.handled, [], 'the queued frames are dropped with the socket');
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-		});
-
-		test('an oversized frame closes the pending socket with 1009', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db, { max_message_bytes: 64 });
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			await socket.send(echo_request(1, 'x'.repeat(100)));
-
-			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_MESSAGE_TOO_BIG, reason: WS_CLOSE_MESSAGE_TOO_BIG_REASON }
-			]);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			stalled.release();
-			await socket.opening;
-
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.deepStrictEqual(endpoint.handled, []);
-		});
-	});
-
-	describe('the role re-read', () => {
-		/**
-		 * An account with an actor, a session, and a global admin grant, and the
-		 * upgrade context a role-gated endpoint sees: the acting actor's request
-		 * context, its grants read while the grant was active — what the gate in
-		 * front admitted on.
-		 */
-		const create_admin_upgrade = async (
-			db: Db,
-			grant: { scope_id?: Uuid } = {}
-		): Promise<{ account_id: Uuid; actor_id: Uuid; role_grant_id: Uuid; c: Context }> => {
-			const { account_id, actor_id } = await create_account_with_actor(db);
-			const session = await create_session(db, account_id);
-			const role_grant = await query_create_role_grant(
-				{ db },
-				{
-					actor_id,
-					role: ROLE_ADMIN,
-					scope_kind: grant.scope_id ? 'space' : null,
-					scope_id: grant.scope_id ?? null,
-					granted_by: null
-				}
-			);
-			const c = await create_upgrade_context(db, account_id, session);
-			const actor = await query_actor_by_id({ db }, actor_id);
-			assert.ok(actor);
-			const request_context = await build_request_context(
-				{ db },
-				(await account_context(db, account_id)).account,
-				actor
-			);
-			c.set(REQUEST_CONTEXT_KEY, request_context);
-			return { account_id, actor_id, role_grant_id: role_grant.id, c };
-		};
-
-		test('a held role is admitted, and the registration carries the endpoint roles', async () => {
-			const db = get_db();
-			const { account_id, c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const socket = await open_socket(endpoint, c);
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, [ROLE_ADMIN]);
-			// the role close reaches it: the role was recorded on the registration
-			assert.strictEqual(
-				endpoint.registry.close_connections({
-					kind: 'role',
-					account_id,
-					role: ROLE_ADMIN
-				}),
-				1
-			);
-			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-		});
-
-		test('a role revoked during the upgrade is closed with 4006 — the re-read alone', async () => {
-			const db = get_db();
-			const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			// the grant goes and *no* close is delivered — the shape of a role
-			// revocation whose close ran before the connection registered; the
-			// request context still lists the grant, as the gate saw it
-			assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-		});
-
-		test('a scoped grant of the role does not admit', async () => {
-			const db = get_db();
-			const { c } = await create_admin_upgrade(db, {
-				scope_id: '33333333-3333-4333-8333-333333333333' as Uuid
-			});
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const socket = await open_socket(endpoint, c);
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-		});
-
-		test('a role close while pending refuses with 4006, not a revocation', async () => {
-			const db = get_db();
-			const { account_id, c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(
-				endpoint.registry.close_connections({
-					kind: 'role',
-					account_id,
-					role: ROLE_ADMIN
-				}),
-				1
-			);
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-		});
-
-		test('a role close while pending logs a permission revocation', async () => {
-			const db = get_db();
-			const { account_id, c } = await create_admin_upgrade(db);
-			const recording = create_recording_log();
-			const endpoint = create_endpoint(db, {
-				required_roles: [ROLE_ADMIN],
-				log: recording.log
+				assert.deepStrictEqual(
+					endpoint.handled,
+					[],
+					'the queued frames are dropped with the socket'
+				);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
 			});
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.registry.close_connections({
-				kind: 'role',
-				account_id,
-				role: ROLE_ADMIN
+			test('an oversized frame closes the pending socket with 1009', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db, { max_message_bytes: 64 });
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				await socket.send(echo_request(1, 'x'.repeat(100)));
+
+				assert.deepStrictEqual(socket.fake.closes, [
+					{ code: WS_CLOSE_MESSAGE_TOO_BIG, reason: WS_CLOSE_MESSAGE_TOO_BIG_REASON }
+				]);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				stalled.release();
+				await socket.opening;
+
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.deepStrictEqual(endpoint.handled, []);
 			});
-			stalled.release();
-			await socket.opening;
-
-			assert.include(recording.infos, PERMISSION_REVOKED_WHILE_PENDING);
-			assert.notInclude(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
 		});
 
-		test('a failing role re-read refuses with 1011', async () => {
-			expect_logged_error(
-				'ws upgrade admission: credential, actor, or role re-check failed Error: synthetic role read failure'
-			);
-			const db = get_db();
-			const { c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const { socket, stalled } = await open_stalled(endpoint, c, is_role_grant_read);
-			stalled.fail(new Error('synthetic role read failure'));
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
-			]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-		});
-
-		test('an acting actor soft-deleted during the upgrade is closed with 4001', async () => {
-			const db = get_db();
-			const { actor_id, c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			// the actor's tombstone alone — its account, session, and grant are live
-			assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-		});
-
-		test('an ungated endpoint refuses an acting actor soft-deleted during the upgrade', async () => {
-			const db = get_db();
-			const { actor_id, c } = await create_admin_upgrade(db);
-			const endpoint = create_endpoint(db);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
-			stalled.release();
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
-			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.deepStrictEqual(endpoint.opened, []);
-		});
-
-		test('an ungated endpoint reads no role', async () => {
-			const db = get_db();
-			const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
-			assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
-			const endpoint = create_endpoint(db);
-
-			const socket = await open_socket(endpoint, c);
-			await socket.opening;
-
-			assert.deepStrictEqual(socket.fake.closes, []);
-			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, []);
-		});
-	});
-
-	describe('the shutdown hold', () => {
-		/**
-		 * A tracker that records each `accept` and `finish` on the real one,
-		 * so a case can read the order the admission's hold and a queued
-		 * frame's hold were taken and released in.
-		 */
-		const create_recording_tracker = (): { tracker: RequestTracker; events: Array<string> } => {
-			const inner = create_request_tracker();
-			const events: Array<string> = [];
-			let next = 0;
-			const tracker: RequestTracker = {
-				...inner,
-				accept: () => {
-					const accepted = inner.accept();
-					if (!accepted) return null;
-					const n = next++;
-					events.push(`accept ${n}`);
-					return {
-						finish: (flush) => {
-							events.push(`finish ${n}`);
-							accepted.finish(flush);
-						}
-					};
-				}
+		describe('the role re-read', () => {
+			/**
+			 * An account with an actor, a session, and a global admin grant, and the
+			 * upgrade context a role-gated endpoint sees: the acting actor's request
+			 * context, its grants read while the grant was active — what the gate in
+			 * front admitted on.
+			 */
+			const create_admin_upgrade = async (
+				db: Db,
+				grant: { scope_id?: Uuid } = {}
+			): Promise<{ account_id: Uuid; actor_id: Uuid; role_grant_id: Uuid; c: Context }> => {
+				const { account_id, actor_id } = await create_account_with_actor(db);
+				const session = await create_session(db, account_id);
+				const role_grant = await query_create_role_grant(
+					{ db },
+					{
+						actor_id,
+						role: ROLE_ADMIN,
+						scope_kind: grant.scope_id ? 'space' : null,
+						scope_id: grant.scope_id ?? null,
+						granted_by: null
+					}
+				);
+				const c = await create_upgrade_context(db, account_id, session);
+				const actor = await query_actor_by_id({ db }, actor_id);
+				assert.ok(actor);
+				const request_context = await build_request_context(
+					{ db },
+					(await account_context(db, account_id)).account,
+					actor
+				);
+				c.set(REQUEST_CONTEXT_KEY, request_context);
+				return { account_id, actor_id, role_grant_id: role_grant.id, c };
 			};
-			return { tracker, events };
-		};
 
-		test('the admission re-read is held on the tracker until admission ends', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const tracker = create_request_tracker();
-			const endpoint = create_endpoint(db, { request_tracker: tracker });
-			const c = await create_upgrade_context(db, account_id, session);
+			test('a held role is admitted, and the registration carries the endpoint roles', async () => {
+				const db = get_db();
+				const { account_id, c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(tracker.inflight_count(), 1, 'the stalled re-read is held');
+				const socket = await open_socket(endpoint, c);
+				await socket.opening;
 
-			stalled.release();
-			await socket.opening;
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-			assert.strictEqual(tracker.inflight_count(), 0, 'released once admitted');
-		});
-
-		test('on_socket_open is held too, and a hook that throws releases the hold', async () => {
-			expect_logged_error('on_socket_open failed — closing socket: Error: hook failed');
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const tracker = create_request_tracker();
-			const hook_started = Promise.withResolvers<void>();
-			const hook = Promise.withResolvers<void>();
-			const endpoint = create_endpoint(db, {
-				request_tracker: tracker,
-				on_socket_open: async () => {
-					hook_started.resolve();
-					await hook.promise;
-					throw new Error('hook failed');
-				}
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+				assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, [ROLE_ADMIN]);
+				// the role close reaches it: the role was recorded on the registration
+				assert.strictEqual(
+					endpoint.registry.close_connections({
+						kind: 'role',
+						account_id,
+						role: ROLE_ADMIN
+					}),
+					1
+				);
+				assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
 			});
-			const c = await create_upgrade_context(db, account_id, session);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			stalled.release();
-			await hook_started.promise;
-			assert.strictEqual(tracker.inflight_count(), 1, 'held while the hook runs');
+			test('a role revoked during the upgrade is closed with 4006 — the re-read alone', async () => {
+				const db = get_db();
+				const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
 
-			hook.resolve();
-			await socket.opening;
-			assert.deepStrictEqual(socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_SOCKET_OPEN_FAILED_REASON }
-			]);
-			assert.strictEqual(tracker.inflight_count(), 0, 'released after the hook threw');
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				// the grant goes and *no* close is delivered — the shape of a role
+				// revocation whose close ran before the connection registered; the
+				// request context still lists the grant, as the gate saw it
+				assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+				assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+			});
+
+			test('a scoped grant of the role does not admit', async () => {
+				const db = get_db();
+				const { c } = await create_admin_upgrade(db, {
+					scope_id: '33333333-3333-4333-8333-333333333333' as Uuid
+				});
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+				const socket = await open_socket(endpoint, c);
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+			});
+
+			test('a role close while pending refuses with 4006, not a revocation', async () => {
+				const db = get_db();
+				const { account_id, c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.strictEqual(
+					endpoint.registry.close_connections({
+						kind: 'role',
+						account_id,
+						role: ROLE_ADMIN
+					}),
+					1
+				);
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+			});
+
+			test('a role close while pending logs a permission revocation', async () => {
+				const db = get_db();
+				const { account_id, c } = await create_admin_upgrade(db);
+				const recording = create_recording_log();
+				const endpoint = create_endpoint(db, {
+					required_roles: [ROLE_ADMIN],
+					log: recording.log
+				});
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				endpoint.registry.close_connections({
+					kind: 'role',
+					account_id,
+					role: ROLE_ADMIN
+				});
+				stalled.release();
+				await socket.opening;
+
+				assert.include(recording.infos, PERMISSION_REVOKED_WHILE_PENDING);
+				assert.notInclude(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+			});
+
+			test('a failing role re-read refuses with 1011', async () => {
+				expect_logged_error(
+					'ws upgrade admission: credential, actor, or role re-check failed Error: synthetic role read failure'
+				);
+				const db = get_db();
+				const { c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+				const { socket, stalled } = await open_stalled(endpoint, c, is_role_grant_read);
+				stalled.fail(new Error('synthetic role read failure'));
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [
+					{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
+				]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+			});
+
+			test('an acting actor soft-deleted during the upgrade is closed with 4001', async () => {
+				const db = get_db();
+				const { actor_id, c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				// the actor's tombstone alone — its account, session, and grant are live
+				assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(endpoint.registry.pending_connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+			});
+
+			test('an ungated endpoint refuses an acting actor soft-deleted during the upgrade', async () => {
+				const db = get_db();
+				const { actor_id, c } = await create_admin_upgrade(db);
+				const endpoint = create_endpoint(db);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.ok(await query_actor_soft_delete({ db }, actor_id, null));
+				stalled.release();
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, [REVOKED_CLOSE]);
+				assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.deepStrictEqual(endpoint.opened, []);
+			});
+
+			test('an ungated endpoint reads no role', async () => {
+				const db = get_db();
+				const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
+				assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
+				const endpoint = create_endpoint(db);
+
+				const socket = await open_socket(endpoint, c);
+				await socket.opening;
+
+				assert.deepStrictEqual(socket.fake.closes, []);
+				assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, []);
+			});
 		});
 
-		test('a failed re-read, a refusal, and a close while pending each release the hold', async () => {
-			expect_logged_error(
-				'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
-			);
-			const db = get_db();
-			const account_id = await create_account(db);
-			const tracker = create_request_tracker();
-			const endpoint = create_endpoint(db, { request_tracker: tracker });
+		describe('the shutdown hold', () => {
+			/**
+			 * A tracker that records each `accept` and `finish` on the real one,
+			 * so a case can read the order the admission's hold and a queued
+			 * frame's hold were taken and released in.
+			 */
+			const create_recording_tracker = (): { tracker: RequestTracker; events: Array<string> } => {
+				const inner = create_request_tracker();
+				const events: Array<string> = [];
+				let next = 0;
+				const tracker: RequestTracker = {
+					...inner,
+					accept: () => {
+						const accepted = inner.accept();
+						if (!accepted) return null;
+						const n = next++;
+						events.push(`accept ${n}`);
+						return {
+							finish: (flush) => {
+								events.push(`finish ${n}`);
+								accepted.finish(flush);
+							}
+						};
+					}
+				};
+				return { tracker, events };
+			};
 
-			// the re-read throws
-			const failing = await create_session(db, account_id);
-			const failed = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, failing)
-			);
-			failed.stalled.fail(new Error('connection lost'));
-			await failed.socket.opening;
-			assert.deepStrictEqual(failed.socket.fake.closes, [
-				{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
-			]);
-			assert.strictEqual(tracker.inflight_count(), 0, 'released after a failed re-read');
+			test('the admission re-read is held on the tracker until admission ends', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const tracker = create_request_tracker();
+				const endpoint = create_endpoint(db, { request_tracker: tracker });
+				const c = await create_upgrade_context(db, account_id, session);
 
-			// the re-read refuses a revoked credential
-			const revoked = await create_session(db, account_id);
-			const refused = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, revoked)
-			);
-			await query_session_revoke_for_account({ db }, revoked.token_hash, account_id);
-			refused.stalled.release();
-			await refused.socket.opening;
-			assert.deepStrictEqual(refused.socket.fake.closes, [REVOKED_CLOSE]);
-			assert.strictEqual(tracker.inflight_count(), 0, 'released after a refusal');
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.strictEqual(tracker.inflight_count(), 1, 'the stalled re-read is held');
 
-			// a revocation's close reaches the pending entry, so `admit` refuses
-			const closed = await create_session(db, account_id);
-			const pending = await open_stalled(
-				endpoint,
-				await create_upgrade_context(db, account_id, closed)
-			);
-			endpoint.registry.close_connections({ kind: 'session', session_hash: closed.token_hash });
-			await pending.socket.close();
-			pending.stalled.release();
-			await pending.socket.opening;
-			assert.strictEqual(endpoint.registry.connection_count(), 0);
-			assert.strictEqual(tracker.inflight_count(), 0, 'released after a close while pending');
+				stalled.release();
+				await socket.opening;
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+				assert.strictEqual(tracker.inflight_count(), 0, 'released once admitted');
+			});
+
+			test('on_socket_open is held too, and a hook that throws releases the hold', async () => {
+				expect_logged_error('on_socket_open failed — closing socket: Error: hook failed');
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const tracker = create_request_tracker();
+				const hook_started = Promise.withResolvers<void>();
+				const hook = Promise.withResolvers<void>();
+				const endpoint = create_endpoint(db, {
+					request_tracker: tracker,
+					on_socket_open: async () => {
+						hook_started.resolve();
+						await hook.promise;
+						throw new Error('hook failed');
+					}
+				});
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				stalled.release();
+				await hook_started.promise;
+				assert.strictEqual(tracker.inflight_count(), 1, 'held while the hook runs');
+
+				hook.resolve();
+				await socket.opening;
+				assert.deepStrictEqual(socket.fake.closes, [
+					{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_SOCKET_OPEN_FAILED_REASON }
+				]);
+				assert.strictEqual(tracker.inflight_count(), 0, 'released after the hook threw');
+			});
+
+			test('a failed re-read, a refusal, and a close while pending each release the hold', async () => {
+				expect_logged_error(
+					'ws upgrade admission: credential, actor, or role re-check failed Error: connection lost'
+				);
+				const db = get_db();
+				const account_id = await create_account(db);
+				const tracker = create_request_tracker();
+				const endpoint = create_endpoint(db, { request_tracker: tracker });
+
+				// the re-read throws
+				const failing = await create_session(db, account_id);
+				const failed = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, failing)
+				);
+				failed.stalled.fail(new Error('connection lost'));
+				await failed.socket.opening;
+				assert.deepStrictEqual(failed.socket.fake.closes, [
+					{ code: WS_CLOSE_INTERNAL_ERROR, reason: WS_CLOSE_INTERNAL_ERROR_REASON }
+				]);
+				assert.strictEqual(tracker.inflight_count(), 0, 'released after a failed re-read');
+
+				// the re-read refuses a revoked credential
+				const revoked = await create_session(db, account_id);
+				const refused = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, revoked)
+				);
+				await query_session_revoke_for_account({ db }, revoked.token_hash, account_id);
+				refused.stalled.release();
+				await refused.socket.opening;
+				assert.deepStrictEqual(refused.socket.fake.closes, [REVOKED_CLOSE]);
+				assert.strictEqual(tracker.inflight_count(), 0, 'released after a refusal');
+
+				// a revocation's close reaches the pending entry, so `admit` refuses
+				const closed = await create_session(db, account_id);
+				const pending = await open_stalled(
+					endpoint,
+					await create_upgrade_context(db, account_id, closed)
+				);
+				endpoint.registry.close_connections({ kind: 'session', session_hash: closed.token_hash });
+				await pending.socket.close();
+				pending.stalled.release();
+				await pending.socket.opening;
+				assert.strictEqual(endpoint.registry.connection_count(), 0);
+				assert.strictEqual(tracker.inflight_count(), 0, 'released after a close while pending');
+			});
+
+			test("a queued frame's dispatch is held before the admission's hold is released", async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const { tracker, events } = create_recording_tracker();
+				const endpoint = create_endpoint(db, { request_tracker: tracker });
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				const sent = socket.send(mark_request(1, 'queued'));
+				stalled.release();
+				await socket.opening;
+				await sent;
+
+				assert.deepStrictEqual(endpoint.handled, ['queued']);
+				// the admission is 0, the frame 1: the frame is held before the
+				// admission lets go, so the tracker never reads empty between them
+				assert.deepStrictEqual(events.slice(0, 3), ['accept 0', 'accept 1', 'finish 0']);
+				assert.strictEqual(tracker.inflight_count(), 0);
+			});
+
+			test('a closed tracker holds nothing and admission runs as before', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const tracker = create_request_tracker();
+				tracker.close();
+				const endpoint = create_endpoint(db, { request_tracker: tracker });
+				const c = await create_upgrade_context(db, account_id, session);
+
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				assert.strictEqual(tracker.inflight_count(), 0);
+				stalled.release();
+				await socket.opening;
+				assert.strictEqual(endpoint.registry.connection_count(), 1);
+			});
 		});
 
-		test("a queued frame's dispatch is held before the admission's hold is released", async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const { tracker, events } = create_recording_tracker();
-			const endpoint = create_endpoint(db, { request_tracker: tracker });
-			const c = await create_upgrade_context(db, account_id, session);
+		describe('a pending connection is inert', () => {
+			test('no broadcast or account push reaches it, and none is replayed at admission', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await create_session(db, account_id);
+				const endpoint = create_endpoint(db);
+				const c = await create_upgrade_context(db, account_id, session);
 
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			const sent = socket.send(mark_request(1, 'queued'));
-			stalled.release();
-			await socket.opening;
-			await sent;
+				const { socket, stalled } = await open_stalled(endpoint, c);
+				endpoint.registry.broadcast(notification);
+				assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 0);
+				assert.deepStrictEqual(socket.fake.sends, []);
 
-			assert.deepStrictEqual(endpoint.handled, ['queued']);
-			// the admission is 0, the frame 1: the frame is held before the
-			// admission lets go, so the tracker never reads empty between them
-			assert.deepStrictEqual(events.slice(0, 3), ['accept 0', 'accept 1', 'finish 0']);
-			assert.strictEqual(tracker.inflight_count(), 0);
+				stalled.release();
+				await socket.opening;
+				assert.deepStrictEqual(socket.fake.sends, [], 'nothing was queued for it while pending');
+
+				assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 1);
+				assert.deepStrictEqual(socket.fake.sends, [JSON.stringify(notification)]);
+			});
 		});
-
-		test('a closed tracker holds nothing and admission runs as before', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const tracker = create_request_tracker();
-			tracker.close();
-			const endpoint = create_endpoint(db, { request_tracker: tracker });
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			assert.strictEqual(tracker.inflight_count(), 0);
-			stalled.release();
-			await socket.opening;
-			assert.strictEqual(endpoint.registry.connection_count(), 1);
-		});
-	});
-
-	describe('a pending connection is inert', () => {
-		test('no broadcast or account push reaches it, and none is replayed at admission', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await create_session(db, account_id);
-			const endpoint = create_endpoint(db);
-			const c = await create_upgrade_context(db, account_id, session);
-
-			const { socket, stalled } = await open_stalled(endpoint, c);
-			endpoint.registry.broadcast(notification);
-			assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 0);
-			assert.deepStrictEqual(socket.fake.sends, []);
-
-			stalled.release();
-			await socket.opening;
-			assert.deepStrictEqual(socket.fake.sends, [], 'nothing was queued for it while pending');
-
-			assert.strictEqual(endpoint.registry.send_to_account(account_id, notification), 1);
-			assert.deepStrictEqual(socket.fake.sends, [JSON.stringify(notification)]);
-		});
-	});
-});
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both',
+			credential_of_tombstoned_account:
+				'a test tombstones an account by query, its sessions and tokens left live'
+		}
+	}
+);

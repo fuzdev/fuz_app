@@ -128,9 +128,11 @@ import { create_test_extra_actor } from '../db_entities.ts';
 import {
 	create_test_account_with_credentials,
 	DEFAULT_TEST_KEEPER_ROLES,
-	mint_test_session
+	mint_test_session,
+	type TestAccountCredentials
 } from '../app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
+import { reset_auth_state } from '../db.ts';
 import { TESTING_ACTION_AUTH } from './spine_surface_constants.ts';
 
 /** Output shape for an individual seeded account (keeper or extra). */
@@ -140,6 +142,16 @@ const SeededAccountShape = object({
 	api_token: string,
 	session_cookie: string
 });
+type SeededAccount = Infer<typeof SeededAccountShape>;
+
+/**
+ * The wire shape of a seeded account — the credentials less the token's row
+ * id, which the Rust twin's reset doesn't answer.
+ */
+const to_seeded_account = ({
+	api_token_id: _api_token_id,
+	...seeded
+}: TestAccountCredentials): SeededAccount => seeded;
 
 /**
  * Restamps a seeded account's session at the wall clock, run right after the
@@ -895,12 +907,9 @@ export interface CreateTestingActionsOptions {
  * dispatcher. `_testing_drain_effects` drains `deps.request_tracker` and
  * `deps.audit`.
  *
- * The reset action's table-wipe list mirrors
- * `auth_integration_truncate_tables` from `testing/db.ts` — the
- * canonical "auth tables a between-test reset must clear" set.
- * `testing_reset_actions.coverage.test.ts` enforces the set-equality
- * invariant so a future auth migration that adds a table to that list
- * without updating this handler fails CI.
+ * The reset action's auth wipe is `reset_auth_state` from `testing/db.ts`,
+ * over `auth_integration_truncate_tables` — the one list of auth tables a
+ * between-test reset clears, which `describe_db` truncates too.
  */
 export const create_testing_actions = (
 	deps: AppDeps,
@@ -922,43 +931,24 @@ export const create_testing_actions = (
 			//    against this open transaction under the in-memory drivers.
 			if (reset_state) await reset_state(ctx.db);
 
-			// 2. Wipe every auth-namespace row. No keeper-preserve filter —
-			//    the fresh-keeper-per-test contract means mutation-cascade
-			//    tests (password change, revoke-all) and hardcoded-username
-			//    signup-uniqueness tests can't leak between cases.
-			//
-			//    `audit_log` has no FK to account so it wipes wholesale.
-			//    `role_grant_offer` + `invite` likewise (callers don't carry
-			//    state across resets). For account-FK tables we wipe rows
-			//    referencing actor/account first to satisfy FK order.
-			await ctx.db.query('DELETE FROM audit_log');
-			await ctx.db.query('DELETE FROM role_grant_offer');
-			await ctx.db.query('DELETE FROM invite');
-			await ctx.db.query('DELETE FROM api_token');
-			await ctx.db.query('DELETE FROM auth_session');
-			await ctx.db.query('DELETE FROM role_grant');
-			await ctx.db.query('DELETE FROM actor');
-			await ctx.db.query('DELETE FROM account');
+			// 2. Wipe every auth-namespace row and restore the singletons
+			//    (`app_settings` defaults, `bootstrap_lock` unset) — the same
+			//    reset `describe_db` and the in-process test backend run. No
+			//    keeper-preserve filter: the fresh-keeper-per-test contract
+			//    means mutation-cascade tests (password change, revoke-all) and
+			//    hardcoded-username signup-uniqueness tests can't leak between
+			//    cases.
+			await reset_auth_state(ctx.db);
 
-			// 3. Reset singleton `app_settings` to production defaults
-			//    (matches in-process `_build_test_backend` behavior in
-			//    `app_server.ts`). Tests that flipped `open_signup` mid-run
-			//    revert.
-			await ctx.db.query(
-				'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL ' +
-					'WHERE open_signup = true OR updated_at IS NOT NULL'
-			);
-
-			// 4. Flip `bootstrap_lock` to its post-bootstrap shape. Production
+			// 3. Flip `bootstrap_lock` to its post-bootstrap shape. Production
 			//    `bootstrap_account` flips this to `true` on success; the
 			//    in-process `bootstrap_test_keeper` mirrors the flip. We're
 			//    about to seed the keeper here, so the final state needs to
-			//    be `bootstrapped = true`. We don't need an intermediate flip
-			//    to `false` — nothing reads it between our DELETEs and the
-			//    UPDATE.
+			//    be `bootstrapped = true` — nothing reads it between the
+			//    reset and this UPDATE.
 			await ctx.db.query('UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1');
 
-			// 5. Seed the fresh keeper inline. Reuses the same primitive
+			// 4. Seed the fresh keeper inline. Reuses the same primitive
 			//    in-process tests use (`create_test_account_with_credentials`)
 			//    so cross-process and in-process write semantics stay in
 			//    parity — same hash, same account+actor+role_grants+
@@ -976,7 +966,7 @@ export const create_testing_actions = (
 			});
 			await ctx.db.query(RESET_SESSION_CLOCK_STAMP_SQL, [keeper.account.id]);
 
-			// 6. Refresh the daemon-token cache so subsequent daemon-token
+			// 5. Refresh the daemon-token cache so subsequent daemon-token
 			//    requests resolve to the freshly seeded keeper. The
 			//    middleware never re-reads the keeper, so the reset sets it —
 			//    after the commit, queued as
@@ -989,10 +979,10 @@ export const create_testing_actions = (
 				daemon_token_state.keeper_account_id = keeper_account_id;
 			});
 
-			// 7. Seed any caller-requested extras. These are bootstrap-time
+			// 6. Seed any caller-requested extras. These are bootstrap-time
 			//    secondaries — the bypass exists in the same cradle the
 			//    keeper does, not as a free-form runtime action.
-			const extras: Array<Awaited<ReturnType<typeof create_test_account_with_credentials>>> = [];
+			const extras: Array<SeededAccount> = [];
 			for (const spec of input.extra_accounts ?? []) {
 				const seeded = await create_test_account_with_credentials({
 					db: ctx.db,
@@ -1003,10 +993,10 @@ export const create_testing_actions = (
 					roles: spec.roles
 				});
 				await ctx.db.query(RESET_SESSION_CLOCK_STAMP_SQL, [seeded.account.id]);
-				extras.push(seeded);
+				extras.push(to_seeded_account(seeded));
 			}
 
-			// 8. Seed any additional keeper actors. Same bootstrap-cradle
+			// 7. Seed any additional keeper actors. Same bootstrap-cradle
 			//    bypass as extra_accounts — no production wire path mints a
 			//    second actor, so the multi-actor `acting` branches need this
 			//    direct insert. Order-preserving so the fixture can address
@@ -1020,7 +1010,7 @@ export const create_testing_actions = (
 				extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 			}
 
-			return { ...keeper, extra_accounts: extras, extra_actors };
+			return { ...to_seeded_account(keeper), extra_accounts: extras, extra_actors };
 		}),
 		rpc_action(testing_mint_session_action_spec, async (input, ctx) => {
 			const { session_cookie } = await mint_test_session({

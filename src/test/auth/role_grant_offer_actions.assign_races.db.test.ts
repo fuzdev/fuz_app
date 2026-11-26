@@ -210,76 +210,85 @@ const assert_actor_mismatch = (answer: Answer, label: string): void => {
 	);
 };
 
-describe_db('role_grant_assign authorized before its caller is removed', (get_db) => {
-	install_audit_drift_guard();
+describe_db(
+	'role_grant_assign authorized before its caller is removed',
+	(get_db) => {
+		install_audit_drift_guard();
 
-	test('an assign authorized before a delete of its caller is refused, writing nothing', async () => {
-		const gated = create_gated_db(get_db());
-		const s = await setup(gated);
-		try {
-			const held = gated.hold_begin();
-			const assigned = s.assign();
-			await held.reached;
-			assert_ok(await s.del(s.caller.account.id), 'the delete');
-			held.release();
-			assert_unauthenticated(await assigned, 'the assign by the deleted admin');
-			assert.strictEqual(await s.active_grants(), 0, 'no grant');
-			assert.strictEqual(await s.success_rows(), 0, 'no success row');
-			assert.strictEqual(await s.audit_rows(), 0, 'no audit row, failure rows included');
-		} finally {
-			await s.test_app.cleanup();
-		}
-	});
-
-	test('an assign authorized before its caller actor is tombstoned is refused, writing nothing', async () => {
-		const gated = create_gated_db(get_db());
-		const s = await setup(gated, [], {
-			actor_tombstone_disagrees_with_account:
-				'the caller actor is soft-deleted by hand, its account left live — a state no handler produces yet'
-		});
-		try {
-			const held = gated.hold_begin();
-			const assigned = s.assign();
-			await held.reached;
-			await s.db.query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [s.caller.actor.id]);
-			held.release();
-			assert_unauthenticated(await assigned, 'the assign by the tombstoned actor');
-			assert.strictEqual(await s.active_grants(), 0, 'no grant');
-			assert.strictEqual(await s.success_rows(), 0, 'no success row');
-			assert.strictEqual(await s.audit_rows(), 0, 'no audit row, failure rows included');
-		} finally {
-			await s.test_app.cleanup();
-		}
-	});
-
-	test('an admin assigns to its own account, by account and by actor', async () => {
-		const gated = create_gated_db(get_db());
-		const s = await setup(gated);
-		try {
-			// one id twice in the lock statement
-			for (const to_actor_id of [undefined, s.caller.actor.id]) {
-				const assigned = await s.call(
-					'role_grant_assign',
-					{
-						to_account_id: s.caller.account.id,
-						role: ROLE,
-						...(to_actor_id === undefined ? {} : { to_actor_id })
-					},
-					s.caller.create_session_headers()
-				);
-				assert_ok(assigned, `the self-assign, actor ${to_actor_id ?? 'resolved'}`);
+		test('an assign authorized before a delete of its caller is refused, writing nothing', async () => {
+			const gated = create_gated_db(get_db());
+			const s = await setup(gated);
+			try {
+				const held = gated.hold_begin();
+				const assigned = s.assign();
+				await held.reached;
+				assert_ok(await s.del(s.caller.account.id), 'the delete');
+				held.release();
+				assert_unauthenticated(await assigned, 'the assign by the deleted admin');
+				assert.strictEqual(await s.active_grants(), 0, 'no grant');
+				assert.strictEqual(await s.success_rows(), 0, 'no success row');
+				assert.strictEqual(await s.audit_rows(), 0, 'no audit row, failure rows included');
+			} finally {
+				await s.test_app.cleanup();
 			}
-			const held = await s.db.query<{ n: string }>(
-				`SELECT COUNT(*) AS n FROM role_grant
+		});
+
+		test('an assign authorized before its caller actor is tombstoned is refused, writing nothing', async () => {
+			const gated = create_gated_db(get_db());
+			const s = await setup(gated, [], {
+				actor_tombstone_disagrees_with_account:
+					'the caller actor is soft-deleted by hand, its account left live — a state no handler produces yet'
+			});
+			try {
+				const held = gated.hold_begin();
+				const assigned = s.assign();
+				await held.reached;
+				await s.db.query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [s.caller.actor.id]);
+				held.release();
+				assert_unauthenticated(await assigned, 'the assign by the tombstoned actor');
+				assert.strictEqual(await s.active_grants(), 0, 'no grant');
+				assert.strictEqual(await s.success_rows(), 0, 'no success row');
+				assert.strictEqual(await s.audit_rows(), 0, 'no audit row, failure rows included');
+			} finally {
+				await s.test_app.cleanup();
+			}
+		});
+
+		test('an admin assigns to its own account, by account and by actor', async () => {
+			const gated = create_gated_db(get_db());
+			const s = await setup(gated);
+			try {
+				// one id twice in the lock statement
+				for (const to_actor_id of [undefined, s.caller.actor.id]) {
+					const assigned = await s.call(
+						'role_grant_assign',
+						{
+							to_account_id: s.caller.account.id,
+							role: ROLE,
+							...(to_actor_id === undefined ? {} : { to_actor_id })
+						},
+						s.caller.create_session_headers()
+					);
+					assert_ok(assigned, `the self-assign, actor ${to_actor_id ?? 'resolved'}`);
+				}
+				const held = await s.db.query<{ n: string }>(
+					`SELECT COUNT(*) AS n FROM role_grant
 				 WHERE actor_id = $1 AND role = $2 AND revoked_at IS NULL`,
-				[s.caller.actor.id, ROLE]
-			);
-			assert.strictEqual(Number(held[0]!.n), 1, 'one grant, on the caller');
-		} finally {
-			await s.test_app.cleanup();
+					[s.caller.actor.id, ROLE]
+				);
+				assert.strictEqual(Number(held[0]!.n), 1, 'one grant, on the caller');
+			} finally {
+				await s.test_app.cleanup();
+			}
+		});
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both'
 		}
-	});
-});
+	}
+);
 
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 

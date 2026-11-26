@@ -486,28 +486,72 @@ export const create_pg_factory = (
 };
 
 /**
- * Auth table names in truncation order (children first for FK safety).
+ * The auth namespace's row tables, in an order a `DELETE` per table can run
+ * in: each table before the tables it references, and `role_grant_offer`
+ * ahead of `role_grant` (the two reference each other, and the offer's side
+ * is the one that blocks). `TRUNCATE … CASCADE` takes them in any order.
  *
- * Consumer projects can spread this into their own list and append app-specific tables.
+ * Excludes `audit_log` (`auth_integration_truncate_tables` adds it) and the
+ * singleton rows `app_settings` and `bootstrap_lock`, which a reset restores
+ * rather than empties (`reset_auth_singletons`). Consumer projects spread this
+ * into their own list and add their app tables.
  */
 export const auth_truncate_tables = [
+	'role_grant_offer',
 	'invite',
 	'api_token',
 	'auth_session',
 	'role_grant',
-	'role_grant_offer',
 	'actor',
 	'account'
 ];
 
 /**
- * Auth tables including `audit_log` — for integration tests that exercise
- * the full middleware stack (login, admin, rate limiting).
+ * Auth tables including `audit_log` — every auth namespace table with rows a
+ * test adds, what `reset_auth_state` empties. For suites that exercise the
+ * full middleware stack (login, admin, rate limiting).
  *
  * Separate from `auth_truncate_tables` because unit-level DB tests that don't
  * touch audit logging don't need to truncate it.
  */
 export const auth_integration_truncate_tables = [...auth_truncate_tables, 'audit_log'];
+
+/**
+ * Restore the auth namespace's singleton rows to their state on a fresh
+ * database with no account: `app_settings` at its defaults (signup closed, never
+ * updated) and `bootstrap_lock` not bootstrapped. Writes only a row that
+ * differs. What every between-test reset runs beside emptying the row tables,
+ * so a test that opens signup or bootstraps doesn't leak into the next.
+ *
+ * @param db - a database with the auth namespace migrated
+ * @mutates the `app_settings` and `bootstrap_lock` rows
+ */
+export const reset_auth_singletons = async (db: Db): Promise<void> => {
+	await db.query(
+		'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL ' +
+			'WHERE open_signup = true OR updated_at IS NOT NULL OR updated_by IS NOT NULL'
+	);
+	await db.query('UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true');
+};
+
+/**
+ * Reset the auth namespace to its fresh-database state: a `DELETE` per table
+ * of `auth_integration_truncate_tables`, in its order, then
+ * `reset_auth_singletons`. A `DELETE` rather than a `TRUNCATE`, so it runs
+ * inside a request's transaction without the table locks a `TRUNCATE` takes;
+ * it follows the referencing tables' `ON DELETE` actions, and refuses on a
+ * consumer foreign key with no action — empty those first. The
+ * `_testing_reset` backdoor's auth wipe.
+ *
+ * @param db - a database with the auth namespace migrated
+ * @mutates every auth row table and the singleton rows
+ */
+export const reset_auth_state = async (db: Db): Promise<void> => {
+	for (const table of auth_integration_truncate_tables) {
+		await db.query(`DELETE FROM ${table}`);
+	}
+	await reset_auth_singletons(db);
+};
 
 /**
  * Log factory status to console.

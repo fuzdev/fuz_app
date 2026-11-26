@@ -169,7 +169,7 @@ bearer auth) and the `transform_middleware` paragraph. The modules:
 - `auth/resolved_auth.ts` — `ResolvedAuth`, the resolved credential as one union on `credential_type`, carrying the account row the leg read (the authorization phase builds on it rather than reading again). `revalidate_resolved_auth` is the no-touch re-read a long-lived connection (WS, the audit stream) runs between registering pending and admitting.
 - `auth/credential_deadline.ts` — when a resolved credential stops authenticating, which an open WebSocket or audit stream closes at (expiry writes nothing a revocation listener hears). Survives host suspend and `setTimeout`'s ceiling; rules in its TSDoc.
 - `auth/bearer_auth.ts` — the soft-fail bearer leg; a request with any `Origin` or `Referer` line discards the token.
-- `auth/daemon_token_middleware.ts` — the daemon token **consumer** only, soft-fail on every non-success path. The producer (`write_daemon_token`, `start_daemon_token_rotation`) is in `testing/daemon_token_rotation.ts` behind the dev-env guard — no production assembly mints daemon tokens, as on the Rust spine.
+- `auth/daemon_token_middleware.ts` — the daemon token **consumer** only, soft-fail on every non-success path. The producer (`write_daemon_token`, `create_daemon_token_file`) is in `testing/daemon_token_file.ts` behind the dev-env guard — no production assembly mints daemon tokens, as on the Rust spine.
 
 ### Cell layer
 

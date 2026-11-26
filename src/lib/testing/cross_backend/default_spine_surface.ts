@@ -153,7 +153,7 @@ export const create_spine_surface_spec = (): AppSurfaceSpec =>
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints,
 		bootstrap: { mode: 'surface_only' },
-		// both spine binaries mount the daemon-token layer (the TS one rotates a
+		// both spine binaries mount the daemon-token layer (each writes a static
 		// token on disk); `GET /api/surface` stays off, the default on both
 		daemon_token: true
 	});

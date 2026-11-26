@@ -145,284 +145,293 @@ const open_stalled = async (
 	return { response, stalled };
 };
 
-describe_db('audit log stream admission', (get_db) => {
-	install_audit_drift_guard();
+describe_db(
+	'audit log stream admission',
+	(get_db) => {
+		install_audit_drift_guard();
 
-	test('a stalled request no revocation touches opens the stream', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
+		test('a stalled request no revocation touches opens the stream', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
 
-		const { response, stalled } = await open_stalled(h);
-		// broadcast while the stream is still pending — it must not be queued
-		h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'while_pending', params: {} });
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 200);
-		assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
-		assert.strictEqual(h.audit_sse.registry.count, 1, 'admitted');
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0);
-		const sse = create_sse_frame_reader(res.body!.getReader());
-		try {
-			assert.strictEqual((await sse.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
-			h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'after_admit', params: {} });
-			assert.deepStrictEqual(
-				JSON.parse((await sse.read_frame()).slice('data: '.length)),
-				{ method: 'after_admit', params: {} },
-				'the first data frame is the one sent after admission'
-			);
-		} finally {
-			await sse.cancel();
-		}
-	});
-
-	test('a session revoked during the request opens no stream — the re-read alone', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		// the row goes and *no* close is delivered — the shape of a revocation
-		// whose close ran before the stream registered and found nothing
-		await db.query(`DELETE FROM auth_session WHERE account_id = $1`, [h.admin.account.id]);
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 401);
-		assert.strictEqual((await res.json()).error, ERROR_AUTHENTICATION_REQUIRED);
-		assert.ok(
-			!res.headers.get('Content-Type')?.includes('text/event-stream'),
-			'a refusal is a JSON error, not a stream'
-		);
-		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened on the dead session');
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
-	});
-
-	test('a role revoked during the request opens no stream', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		// the grant goes and no close is delivered; the credential is still live
-		const grants = await query_role_grant_find_active_for_actor({ db }, h.admin.actor.id);
-		const admin_grant = grants.find((g) => g.role === ROLE_ADMIN)!;
-		await query_revoke_role_grant({ db }, admin_grant.id, h.admin.actor.id, null);
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 403);
-		assert.deepStrictEqual(await res.json(), {
-			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_roles: [ROLE_ADMIN]
-		});
-		assert.strictEqual(h.audit_sse.registry.count, 0);
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0);
-	});
-
-	/**
-	 * An actor soft-deleted under its live account keeps the account's session
-	 * and its own grant rows, so neither the credential nor the role re-read
-	 * refuses it — the acting-actor re-read does, as it does a WebSocket upgrade.
-	 */
-	test('an acting actor deleted during the request opens no stream', async () => {
-		const db = get_db();
-		const h = await create_harness(db, {
-			actor_tombstone_disagrees_with_account:
-				'the only actor of a live account is soft-deleted by hand — a state no handler produces yet'
-		});
-
-		const { response, stalled } = await open_stalled(h);
-		assert.ok(await query_actor_soft_delete({ db }, h.admin.actor.id, null));
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 401);
-		assert.deepStrictEqual(await res.json(), { error: ERROR_AUTHENTICATION_REQUIRED });
-		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened for the deleted actor');
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
-	});
-
-	test('a stream closed while pending ends after its connect comment', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		// a close reaches the registration while its session row is still there
-		// — an `admin_token_revoke_all` does exactly this. The re-reads pass,
-		// so only admission can refuse.
-		assert.strictEqual(
-			h.audit_sse.registry.close_by_identity(h.admin.account.id),
-			1,
-			'the close finds the pending registration'
-		);
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 200);
-		assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
-		assert.strictEqual(
-			await res.text(),
-			SSE_CONNECTED_COMMENT,
-			'the connect comment, then the end'
-		);
-		assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0);
-	});
-
-	test('a failing re-check opens no stream', async () => {
-		expect_logged_error('Unhandled handler error Error: connection lost');
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		stalled.fail(new Error('connection lost'));
-		const res = await response;
-
-		assert.strictEqual(res.status, 500);
-		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened unchecked');
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
-		assert.ok(
-			!h.infos.some((args) => args[0] === 'audit stream: re-read ended by the shutdown'),
-			'a failure outside the shutdown is not logged as the shutdown'
-		);
-	});
-
-	test('a stream that registers after the server started closing ends after its connect comment, unread', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-		// a request after the close starts is refused outright (503), so this
-		// one is accepted first and held in the session middleware's read
-		const middleware_read = h.stall_next_session_read();
-		const response = Promise.resolve(
-			h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
-		);
-		await middleware_read.reached;
-		const closing = h.test_app.cleanup();
-		assert.ok(h.audit_sse.registry.closing);
-
-		// would hold the handler's re-read, were there one
-		const stalled = h.stall_next_session_read();
-		try {
-			middleware_read.release();
-			const res = await Promise.race([response, stalled.reached.then(() => null)]);
-			assert.ok(res, 'a born-closed registration skips the re-read');
+			const { response, stalled } = await open_stalled(h);
+			// broadcast while the stream is still pending — it must not be queued
+			h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'while_pending', params: {} });
+			stalled.release();
+			const res = await response;
 
 			assert.strictEqual(res.status, 200);
 			assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
-			assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+			assert.strictEqual(h.audit_sse.registry.count, 1, 'admitted');
 			assert.strictEqual(h.audit_sse.registry.pending_count, 0);
+			const sse = create_sse_frame_reader(res.body!.getReader());
+			try {
+				assert.strictEqual((await sse.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
+				h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'after_admit', params: {} });
+				assert.deepStrictEqual(
+					JSON.parse((await sse.read_frame()).slice('data: '.length)),
+					{ method: 'after_admit', params: {} },
+					'the first data frame is the one sent after admission'
+				);
+			} finally {
+				await sse.cancel();
+			}
+		});
+
+		test('a session revoked during the request opens no stream — the re-read alone', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			const { response, stalled } = await open_stalled(h);
+			// the row goes and *no* close is delivered — the shape of a revocation
+			// whose close ran before the stream registered and found nothing
+			await db.query(`DELETE FROM auth_session WHERE account_id = $1`, [h.admin.account.id]);
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 401);
+			assert.strictEqual((await res.json()).error, ERROR_AUTHENTICATION_REQUIRED);
+			assert.ok(
+				!res.headers.get('Content-Type')?.includes('text/event-stream'),
+				'a refusal is a JSON error, not a stream'
+			);
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened on the dead session');
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
+		});
+
+		test('a role revoked during the request opens no stream', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			const { response, stalled } = await open_stalled(h);
+			// the grant goes and no close is delivered; the credential is still live
+			const grants = await query_role_grant_find_active_for_actor({ db }, h.admin.actor.id);
+			const admin_grant = grants.find((g) => g.role === ROLE_ADMIN)!;
+			await query_revoke_role_grant({ db }, admin_grant.id, h.admin.actor.id, null);
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 403);
+			assert.deepStrictEqual(await res.json(), {
+				error: ERROR_INSUFFICIENT_PERMISSIONS,
+				required_roles: [ROLE_ADMIN]
+			});
+			assert.strictEqual(h.audit_sse.registry.count, 0);
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0);
+		});
+
+		/**
+		 * An actor soft-deleted under its live account keeps the account's session
+		 * and its own grant rows, so neither the credential nor the role re-read
+		 * refuses it — the acting-actor re-read does, as it does a WebSocket upgrade.
+		 */
+		test('an acting actor deleted during the request opens no stream', async () => {
+			const db = get_db();
+			const h = await create_harness(db, {
+				actor_tombstone_disagrees_with_account:
+					'the only actor of a live account is soft-deleted by hand — a state no handler produces yet'
+			});
+
+			const { response, stalled } = await open_stalled(h);
+			assert.ok(await query_actor_soft_delete({ db }, h.admin.actor.id, null));
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 401);
+			assert.deepStrictEqual(await res.json(), { error: ERROR_AUTHENTICATION_REQUIRED });
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened for the deleted actor');
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
+		});
+
+		test('a stream closed while pending ends after its connect comment', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			const { response, stalled } = await open_stalled(h);
+			// a close reaches the registration while its session row is still there
+			// — an `admin_token_revoke_all` does exactly this. The re-reads pass,
+			// so only admission can refuse.
+			assert.strictEqual(
+				h.audit_sse.registry.close_by_identity(h.admin.account.id),
+				1,
+				'the close finds the pending registration'
+			);
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 200);
+			assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
 			assert.strictEqual(
 				await res.text(),
 				SSE_CONNECTED_COMMENT,
 				'the connect comment, then the end'
 			);
-		} finally {
-			stalled.release();
-			middleware_read.release();
-		}
-		await closing;
-	});
-
-	test('a shutdown during the re-read ends the stream after its connect comment, even when the re-read fails', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		// the close-all comes before the shutdown drain, which waits for the
-		// handler still in its re-read
-		const closing = h.test_app.cleanup();
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the close-all closed it pending');
-		// the re-read fails while the shutdown waits on it
-		stalled.fail(new Error('database closed'));
-		const res = await response;
-		await closing;
-
-		assert.strictEqual(res.status, 200, "the shutdown's answer, not a 500");
-		assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
-		assert.strictEqual(await res.text(), SSE_CONNECTED_COMMENT);
-		const logged = h.infos.find(
-			(args) => args[0] === 'audit stream: re-read ended by the shutdown'
-		);
-		assert.ok(logged, 'the interrupted re-read is logged at info');
-		assert.strictEqual(logged[1], h.admin.account.id);
-		assert(logged[2] instanceof Error);
-		assert.strictEqual(logged[2].message, 'database closed');
-	});
-
-	test('a logout during the request opens no stream', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
-
-		const { response, stalled } = await open_stalled(h);
-		const logout = await h.test_app.app.request('/api/account/logout', {
-			method: 'POST',
-			headers: h.admin.create_session_headers({ 'content-type': 'application/json' })
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0);
 		});
-		assert.strictEqual(logout.status, 200);
-		assert.strictEqual(
-			h.audit_sse.registry.pending_count,
-			0,
-			"the logout's close reached the pending registration"
-		);
-		stalled.release();
-		const res = await response;
 
-		assert.strictEqual(res.status, 401);
-		assert.strictEqual(h.audit_sse.registry.count, 0);
-	});
+		test('a failing re-check opens no stream', async () => {
+			expect_logged_error('Unhandled handler error Error: connection lost');
+			const db = get_db();
+			const h = await create_harness(db);
 
-	test('a client that leaves during the request opens no stream and evicts none', async () => {
-		const db = get_db();
-		const h = await create_harness(db);
+			const { response, stalled } = await open_stalled(h);
+			stalled.fail(new Error('connection lost'));
+			const res = await response;
 
-		// the session at its stream cap: one more admission would evict the oldest
-		const open_streams: Array<Response> = [];
-		for (let i = 0; i < AUDIT_LOG_SSE_MAX_PER_SCOPE; i++) {
-			open_streams.push(
-				await h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
+			assert.strictEqual(res.status, 500);
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened unchecked');
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
+			assert.ok(
+				!h.infos.some((args) => args[0] === 'audit stream: re-read ended by the shutdown'),
+				'a failure outside the shutdown is not logged as the shutdown'
 			);
-		}
-		assert.strictEqual(h.audit_sse.registry.count, AUDIT_LOG_SSE_MAX_PER_SCOPE);
-		const oldest = create_sse_frame_reader(open_streams[0]!.body!.getReader());
+		});
 
-		const stalled = h.stall();
-		const client = new AbortController();
-		const response = Promise.resolve(
-			h.test_app.app.request(STREAM_PATH, {
-				headers: h.admin.create_session_headers(),
-				signal: client.signal
-			})
-		);
-		await stalled.reached;
-		client.abort();
-		stalled.release();
-		const res = await response;
-
-		assert.strictEqual(res.status, 200);
-		assert.strictEqual(
-			await res.text(),
-			SSE_CONNECTED_COMMENT,
-			'the departed client gets a stream that is already over'
-		);
-		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'nothing left pending');
-		assert.strictEqual(
-			h.audit_sse.registry.count,
-			AUDIT_LOG_SSE_MAX_PER_SCOPE,
-			'the departed client holds no slot, and took none'
-		);
-		try {
-			assert.strictEqual((await oldest.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
-			h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'still_open', params: {} });
-			assert.deepStrictEqual(
-				JSON.parse((await oldest.read_frame()).slice('data: '.length)),
-				{ method: 'still_open', params: {} },
-				'the oldest stream was not evicted for it'
+		test('a stream that registers after the server started closing ends after its connect comment, unread', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+			// a request after the close starts is refused outright (503), so this
+			// one is accepted first and held in the session middleware's read
+			const middleware_read = h.stall_next_session_read();
+			const response = Promise.resolve(
+				h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
 			);
-		} finally {
-			await oldest.cancel();
-			for (const stream of open_streams.slice(1)) await stream.body?.cancel();
+			await middleware_read.reached;
+			const closing = h.test_app.cleanup();
+			assert.ok(h.audit_sse.registry.closing);
+
+			// would hold the handler's re-read, were there one
+			const stalled = h.stall_next_session_read();
+			try {
+				middleware_read.release();
+				const res = await Promise.race([response, stalled.reached.then(() => null)]);
+				assert.ok(res, 'a born-closed registration skips the re-read');
+
+				assert.strictEqual(res.status, 200);
+				assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
+				assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+				assert.strictEqual(h.audit_sse.registry.pending_count, 0);
+				assert.strictEqual(
+					await res.text(),
+					SSE_CONNECTED_COMMENT,
+					'the connect comment, then the end'
+				);
+			} finally {
+				stalled.release();
+				middleware_read.release();
+			}
+			await closing;
+		});
+
+		test('a shutdown during the re-read ends the stream after its connect comment, even when the re-read fails', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			const { response, stalled } = await open_stalled(h);
+			// the close-all comes before the shutdown drain, which waits for the
+			// handler still in its re-read
+			const closing = h.test_app.cleanup();
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the close-all closed it pending');
+			// the re-read fails while the shutdown waits on it
+			stalled.fail(new Error('database closed'));
+			const res = await response;
+			await closing;
+
+			assert.strictEqual(res.status, 200, "the shutdown's answer, not a 500");
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+			assert.strictEqual(await res.text(), SSE_CONNECTED_COMMENT);
+			const logged = h.infos.find(
+				(args) => args[0] === 'audit stream: re-read ended by the shutdown'
+			);
+			assert.ok(logged, 'the interrupted re-read is logged at info');
+			assert.strictEqual(logged[1], h.admin.account.id);
+			assert(logged[2] instanceof Error);
+			assert.strictEqual(logged[2].message, 'database closed');
+		});
+
+		test('a logout during the request opens no stream', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			const { response, stalled } = await open_stalled(h);
+			const logout = await h.test_app.app.request('/api/account/logout', {
+				method: 'POST',
+				headers: h.admin.create_session_headers({ 'content-type': 'application/json' })
+			});
+			assert.strictEqual(logout.status, 200);
+			assert.strictEqual(
+				h.audit_sse.registry.pending_count,
+				0,
+				"the logout's close reached the pending registration"
+			);
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 401);
+			assert.strictEqual(h.audit_sse.registry.count, 0);
+		});
+
+		test('a client that leaves during the request opens no stream and evicts none', async () => {
+			const db = get_db();
+			const h = await create_harness(db);
+
+			// the session at its stream cap: one more admission would evict the oldest
+			const open_streams: Array<Response> = [];
+			for (let i = 0; i < AUDIT_LOG_SSE_MAX_PER_SCOPE; i++) {
+				open_streams.push(
+					await h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
+				);
+			}
+			assert.strictEqual(h.audit_sse.registry.count, AUDIT_LOG_SSE_MAX_PER_SCOPE);
+			const oldest = create_sse_frame_reader(open_streams[0]!.body!.getReader());
+
+			const stalled = h.stall();
+			const client = new AbortController();
+			const response = Promise.resolve(
+				h.test_app.app.request(STREAM_PATH, {
+					headers: h.admin.create_session_headers(),
+					signal: client.signal
+				})
+			);
+			await stalled.reached;
+			client.abort();
+			stalled.release();
+			const res = await response;
+
+			assert.strictEqual(res.status, 200);
+			assert.strictEqual(
+				await res.text(),
+				SSE_CONNECTED_COMMENT,
+				'the departed client gets a stream that is already over'
+			);
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'nothing left pending');
+			assert.strictEqual(
+				h.audit_sse.registry.count,
+				AUDIT_LOG_SSE_MAX_PER_SCOPE,
+				'the departed client holds no slot, and took none'
+			);
+			try {
+				assert.strictEqual((await oldest.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
+				h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'still_open', params: {} });
+				assert.deepStrictEqual(
+					JSON.parse((await oldest.read_frame()).slice('data: '.length)),
+					{ method: 'still_open', params: {} },
+					'the oldest stream was not evicted for it'
+				);
+			} finally {
+				await oldest.cancel();
+				for (const stream of open_streams.slice(1)) await stream.body?.cancel();
+			}
+		});
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both'
 		}
-	});
-});
+	}
+);
 
 describe_db('audit log stream keep-alive', (get_db) => {
 	install_audit_drift_guard();

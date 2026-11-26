@@ -126,7 +126,7 @@ export interface BuiltTestingApp {
 	/** The assembled Hono app (HTTP routes, RPC, and WS endpoints already mounted). */
 	app: Hono;
 	/**
-	 * Tear down backend(s) + DB + any rotation on graceful shutdown. Called
+	 * Tear down backend(s) + DB + the daemon-token file on graceful shutdown. Called
 	 * after the listener stops accepting connections and before its drain is
 	 * awaited, so it must end live WebSockets (`AppServer.close` does).
 	 * Resolves what the shutdown gave up on — `AppServer.close`'s report — and
@@ -142,7 +142,7 @@ export interface StartTestingServerOptions {
 	/**
 	 * Daemon-info namespace — the app name the `daemon.json` is
 	 * written under (e.g. `'fuz_app_spine'`). The cross-process harness
-	 * reads the daemon token from the rotation file, not this; `daemon.json`
+	 * reads the daemon token from its token file, not this; `daemon.json`
 	 * is for stale-process detection + parity with production daemon
 	 * lifecycle.
 	 */

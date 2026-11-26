@@ -30,44 +30,53 @@ import { make_account } from './role_grant_offer_queries.fixtures.ts';
 
 const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
 
-describe_pg('query_count_active_accounts_with_global_role_locked', (get_db) => {
-	test('a second count waits on the rows the first locked, then counts one', async () => {
-		const db = get_db();
-		const one = await make_account(db, 'racing_admin_one');
-		const two = await make_account(db, 'racing_admin_two');
-		for (const a of [one, two]) {
-			await query_create_role_grant(
-				{ db },
-				{ actor_id: a.actor_id, role: ROLE_ADMIN, granted_by: null }
-			);
-		}
+describe_pg(
+	'query_count_active_accounts_with_global_role_locked',
+	(get_db) => {
+		test('a second count waits on the rows the first locked, then counts one', async () => {
+			const db = get_db();
+			const one = await make_account(db, 'racing_admin_one');
+			const two = await make_account(db, 'racing_admin_two');
+			for (const a of [one, two]) {
+				await query_create_role_grant(
+					{ db },
+					{ actor_id: a.actor_id, role: ROLE_ADMIN, granted_by: null }
+				);
+			}
 
-		const removed = create_deferred<void>();
-		const release_first = create_deferred<void>();
-		const first = db.transaction(async (tx) => {
-			assert.strictEqual(
-				await query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN),
-				2
-			);
-			assert.ok(await query_account_soft_delete({ db: tx }, two.account_id, null));
-			removed.resolve();
-			await release_first.promise;
-		});
-		await removed.promise;
-
-		let second_done = false;
-		const second = db
-			.transaction((tx) =>
-				query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN)
-			)
-			.finally(() => {
-				second_done = true;
+			const removed = create_deferred<void>();
+			const release_first = create_deferred<void>();
+			const first = db.transaction(async (tx) => {
+				assert.strictEqual(
+					await query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN),
+					2
+				);
+				assert.ok(await query_account_soft_delete({ db: tx }, two.account_id, null));
+				removed.resolve();
+				await release_first.promise;
 			});
-		await wait(300);
-		assert.isFalse(second_done, 'the second count waits on the first transaction');
+			await removed.promise;
 
-		release_first.resolve();
-		await first;
-		assert.strictEqual(await second, 1, 'after the first commits, one admin is left');
-	});
-});
+			let second_done = false;
+			const second = db
+				.transaction((tx) =>
+					query_count_active_accounts_with_global_role_locked({ db: tx }, ROLE_ADMIN)
+				)
+				.finally(() => {
+					second_done = true;
+				});
+			await wait(300);
+			assert.isFalse(second_done, 'the second count waits on the first transaction');
+
+			release_first.resolve();
+			await first;
+			assert.strictEqual(await second, 1, 'after the first commits, one admin is left');
+		});
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both'
+		}
+	}
+);

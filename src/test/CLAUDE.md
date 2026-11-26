@@ -204,7 +204,8 @@ the test helpers' route list.
 
 - DB tests use `describe_db` wrapper, not raw driver setup
 - `await_pending_effects: true` is set by `create_test_app`
-- `.db.test.ts` files that emit audit rows call `install_audit_drift_guard()` (`#lib/testing/audit_drift_guard.ts`) at the top of the `describe_db` block — audit validation and the emitter's pool write are fail-open in production, so without it a bad row is silent (../lib/testing/CLAUDE.md §`audit_drift_guard.ts`).
+- Audit validation and the emitter's pool write are fail-open in production, so a bad row is silent without the drift check: `create_test_app` runs it for an app built in a test, and a `.db.test.ts` block that emits audit rows any other way (its own deps, an app built in `beforeAll`) calls `install_audit_drift_guard()` (`#lib/testing/audit_drift_guard.ts`) at its top (../lib/testing/CLAUDE.md §`audit_drift_guard.ts`).
+- `describe_db` over the auth tables checks the database invariants after each test, `account_without_bootstrap` aside (query-level suites write accounts without a bootstrap), and stands aside for a test whose `create_test_app` app runs on its database. A suite that tombstones by query, or writes another state the spine never would, passes `exclude_db_invariants` with its reasons as `describe_db`'s third argument.
 - Every `unit` and `db` file runs under the logged-error gate (`logged_error_gate.ts`, a `setupFiles` entry of both): a test that logs an error fails unless it declares it — `expect_logged_error(pattern)` for one it provokes (asserted), `allow_logged_error(pattern, reason)` for a side effect of its setup (../lib/testing/CLAUDE.md §`logged_errors.ts`).
 - `seq` follows INSERT order, not commit order: a test that orders audit rows
   by `seq` across concurrent requests orders them by when each INSERT ran.

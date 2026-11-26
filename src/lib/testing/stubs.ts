@@ -21,37 +21,23 @@ import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
 import { create_realtime_notification_sender } from '../actions/notification_sender.ts';
-import type { BootstrapServerOptions } from '../server/app_server.ts';
+import type { AppServerOptions, BootstrapServerOptions } from '../server/app_server.ts';
+import { assemble_app_surface } from '../server/app_surface_assembly.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { AppBackend } from '../server/app_backend.ts';
 import { Db, no_nested_transaction } from '../db/db.ts';
-import {
-	attach_route_handler,
-	prefix_route_specs,
-	type RouteShape,
-	type RouteSpec
-} from '../http/route_spec.ts';
+import { attach_route_handler, type RouteShape, type RouteSpec } from '../http/route_spec.ts';
 import { route_raw, type RouteRaw } from '../http/route_result.ts';
 import { bootstrap_route_shape } from '../auth/bootstrap_route_schema.ts';
-import { create_rpc_endpoint } from '../actions/action_rpc.ts';
-import { create_surface_route_spec, type SurfaceRouteOptions } from '../server/surface_route.ts';
-import {
-	create_app_surface_spec,
-	type AppSurfaceSpec,
-	type RpcEndpointSpec
-} from '../http/surface.ts';
-import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import { type AppSurfaceSpec, type RpcEndpointSpec } from '../http/surface.ts';
+import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/audit_log_sse.ts';
 import { SseRegistry } from '../realtime/sse_registry.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import { BaseServerEnv } from '../server/env.ts';
 import {
 	AUTH_MIDDLEWARE_PATH,
 	ORIGIN_MIDDLEWARE_PATH,
-	assert_credential_routes_in_auth_scope,
-	assert_endpoint_in_auth_scope,
-	assert_middleware_stack_mounted,
 	assert_origin_carve_outs_valid,
 	freeze_origin_carve_outs
 } from '../auth/middleware.ts';
@@ -328,7 +314,10 @@ export const create_stub_api_middleware = (options?: {
  *
  * @param session_cookie_name - consumer's session cookie name (required — varies per app)
  */
-export const create_stub_app_server_context = (session_cookie_name: string): AppServerContext => {
+export const create_stub_app_server_context = (
+	session_cookie_name: string,
+	audit_sse: AuditLogSse | null = null
+): AppServerContext => {
 	const backend = create_stub_app_backend();
 	return {
 		deps: backend.deps,
@@ -342,7 +331,7 @@ export const create_stub_app_server_context = (session_cookie_name: string): App
 		signup_account_rate_limiter: null,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
-		audit_sse: null
+		audit_sse
 	};
 };
 
@@ -438,29 +427,24 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 */
 	max_body_size?: number | null;
 	/**
+	 * Symmetric with `AppServerOptions.audit_log_sse` — when set, the context's
+	 * `audit_sse` is a stub stream (`create_stub_audit_sse`, with `role` as its
+	 * `required_role`), so `require_audit_sse` passes in `create_route_specs`,
+	 * and the surface lists the audit event specs as the live server's does.
+	 */
+	audit_log_sse?: AppServerOptions['audit_log_sse'];
+	/**
+	 * Symmetric with `AppServerOptions.post_route_middleware` — listed in the
+	 * surface after the auth stack, as the live server lists it.
+	 */
+	post_route_middleware?: Array<MiddlewareSpec>;
+	/**
 	 * Symmetric with `AppServerOptions.host_gate` — `false` leaves out the host
 	 * gate's spec, so the stub surface matches a server built without it.
 	 * Defaults to `true`.
 	 */
 	host_gate?: boolean;
 }
-
-/**
- * Check that a WS endpoint spec carries its own `allowed_origins` — the only
- * way it resolves when no server list is given to default from.
- *
- * @throws Error when the spec declares no `allowed_origins`
- */
-const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSpec => {
-	if (!endpoint.allowed_origins) {
-		throw new Error(
-			`create_test_app_surface_spec: ws endpoint ${endpoint.path} has no allowed_origins — ` +
-				"pass the server's list as create_test_app_surface_spec's allowed_origins option, " +
-				'or set allowed_origins on the spec'
-		);
-	}
-	return endpoint;
-};
 
 /**
  * Create an `AppSurfaceSpec` for the standard testing suites.
@@ -472,114 +456,38 @@ const assert_self_resolved_ws_origins = (endpoint: WsEndpointSpec): WsEndpointSp
  * suites consume the spec object this function returns, not the JSON
  * file.
  *
- * Mirrors `create_app_server`'s route assembly, in its order: consumer
- * routes, then the factory-managed bootstrap routes, RPC endpoint routes, and
- * `GET /api/surface` (with `surface_route: true`), then surface
- * generation — including its
- * refusal of an `rpc_endpoints` or `ws_endpoints` path outside the auth
- * middleware's scope (`assert_endpoint_in_auth_scope`), of a route that
- * reads or mints a credential outside it
- * (`assert_credential_routes_in_auth_scope`), and of a
- * `transform_middleware` that doesn't keep the host gate, proxy and auth stack
- * mounted (`assert_middleware_stack_mounted`). The middleware list mirrors the
- * real one: the host gate's shape at `'*'` (unless `host_gate` is `false`), a
- * stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
- * `daemon_token` when `options.daemon_token` is set). If
- * `create_app_server` changes how it wires routes, update this helper
- * to stay in sync (single source of truth for all consumers). The body
- * limit's spec heads the list unless `max_body_size` is `null`, as it does on
- * the live server.
+ * Assembles through `assemble_app_surface`, the function `create_app_server`
+ * assembles its routes, middleware list and surface with, so the route order,
+ * the middleware list, the event specs and the assembly refusals are the live
+ * server's. What differs is only what runs: the middleware and bootstrap
+ * handlers are pass-through stubs, and the context is
+ * `create_stub_app_server_context`'s (with a stub audit stream when
+ * `audit_log_sse` is set). The server's config diagnostics (disabled rate
+ * limiters or body limit) and its WS mount checks are not reproduced.
  *
- * @param options - surface spec options
+ * @param options - surface spec options, each symmetric with its `AppServerOptions` field
  * @returns the surface spec for the standard suites
- * @throws Error when an endpoint path, or a route that reads or mints a
- *   credential, is outside `AUTH_MIDDLEWARE_PATH`, a
- *   `ws_endpoints` spec declares no `allowed_origins` and no `allowed_origins`
- *   option is given, or `transform_middleware` moves, drops, duplicates,
- *   reorders, wraps, or replaces the stub host gate, proxy or auth spec
+ * @throws Error when `assemble_app_surface` refuses the options: an endpoint
+ *   path, or a route that reads or mints a credential, outside
+ *   `AUTH_MIDDLEWARE_PATH`, a `ws_endpoints` spec with no `allowed_origins`
+ *   and no `allowed_origins` option, or a `transform_middleware` that moves,
+ *   drops, duplicates, reorders, wraps, or replaces the stub host gate, proxy
+ *   or auth spec
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
 ): AppSurfaceSpec => {
-	const ctx = create_stub_app_server_context(options.session_cookie_name);
-	const consumer_routes = options.create_route_specs(ctx);
-
-	// Auto-mount rpc endpoints (mirrors create_app_server) so consumer
-	// `create_route_specs` does not need to call `create_rpc_endpoint`.
-	const resolved_rpc_endpoints =
-		typeof options.rpc_endpoints === 'function'
-			? options.rpc_endpoints(ctx)
-			: options.rpc_endpoints;
-	const rpc_route_specs: Array<RouteSpec> =
-		resolved_rpc_endpoints?.flatMap((endpoint) => {
-			assert_endpoint_in_auth_scope('rpc_endpoints', endpoint.path);
-			return create_rpc_endpoint({
-				path: endpoint.path,
-				actions: endpoint.actions,
-				log: ctx.deps.log,
-				action_ip_rate_limiter: ctx.action_ip_rate_limiter,
-				action_account_rate_limiter: ctx.action_account_rate_limiter,
-				notification_sender: ctx.deps.notification_sender
-			});
-		}) ?? [];
-	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
-	// no `register_action_ws` call here, so no `upgrade_websocket` needed.
-	const declared_ws_endpoints =
-		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
-	const resolved_ws_endpoints = resolve_ws_endpoints(
-		options.allowed_origins
-			? declared_ws_endpoints
-			: declared_ws_endpoints?.map(assert_self_resolved_ws_origins),
-		// with no server list every spec carries its own, so the empty default never applies
-		{ allowed_origins: options.allowed_origins ?? [], rpc_endpoints: resolved_rpc_endpoints }
-	);
-	for (const endpoint of resolved_ws_endpoints ?? []) {
-		assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
-	}
-	// Bootstrap routes mirror `create_app_server`: mounted for `surface_only`
-	// and `live` modes; omitted for `disabled` / undefined. Surface generation
-	// uses an `available: false` placeholder regardless of mode — the handler
-	// short-circuits to 403 ALREADY_BOOTSTRAPPED, which is what surface tests
-	// assert on. A live token store is passed through for shape symmetry only.
-	const bootstrap_route_specs: Array<RouteSpec> =
-		options.bootstrap && options.bootstrap.mode !== 'disabled'
-			? prefix_route_specs(options.bootstrap.route_prefix ?? '/api/account', [
-					// Surface generation reads the route shape only — the live hono
-					// handler never runs here, so a stub stands in for it without
-					// pulling the in-process Hono app onto cross-process consumers.
-					attach_route_handler(bootstrap_route_shape, stub_handler)
-				])
-			: [];
-	for (const route of bootstrap_route_specs) {
-		assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
-	}
-	// the surface route mirrors `create_app_server`'s opt-in mount — its handler
-	// serves the surface generated below, backfilled into the same ref
-	const surface_ref: SurfaceRouteOptions = {
-		surface: {
-			middleware: [],
-			routes: [],
-			rpc_endpoints: [],
-			ws_endpoints: [],
-			env: [],
-			events: [],
-			diagnostics: []
-		}
-	};
-	const surface_route_specs: Array<RouteSpec> = options.surface_route
-		? [create_surface_route_spec(surface_ref)]
-		: [];
-	// `create_app_server`'s order: consumer routes, then the factory routes
-	const route_specs = [
-		...consumer_routes,
-		...bootstrap_route_specs,
-		...rpc_route_specs,
-		...surface_route_specs
-	];
-	// refused like `create_app_server` refuses it
-	assert_credential_routes_in_auth_scope(route_specs);
-
-	// mirrors `create_app_server`'s `[host_spec, proxy_spec, ...auth_middleware]`
+	const audit_sse = options.audit_log_sse
+		? {
+				...create_stub_audit_sse(),
+				...(typeof options.audit_log_sse === 'object' && options.audit_log_sse.role !== undefined
+					? { required_role: options.audit_log_sse.role }
+					: null)
+			}
+		: null;
+	const ctx = create_stub_app_server_context(options.session_cookie_name, audit_sse);
+	// the stack's shape: the host gate at `'*'`, a stub `trusted_proxy` at `'*'`,
+	// then the stub auth stack
 	const stack_specs: Array<MiddlewareSpec> = [
 		...(options.host_gate === false
 			? []
@@ -590,29 +498,32 @@ export const create_test_app_surface_spec = (
 			origin_carve_outs: options.origin_carve_outs
 		})
 	];
-	let middleware_specs = stack_specs;
-	if (options.transform_middleware) {
-		// the transform gets copies in a fresh array, so mutating what it was
-		// handed can't rewrite the originals the check matches against
-		middleware_specs = options.transform_middleware(stack_specs.map((spec) => ({ ...spec })));
-		assert_middleware_stack_mounted(stack_specs, middleware_specs);
-	}
-	// mirrors `create_app_server`'s body limit spec, ahead of the transformed stack
-	if (options.max_body_size !== null) {
-		middleware_specs = [
-			{ ...body_limit_middleware_shape, handler: create_stub_mw() },
-			...middleware_specs
-		];
-	}
-
-	const surface_spec = create_app_surface_spec({
-		middleware_specs,
-		route_specs,
-		env_schema: options.env_schema ?? BaseServerEnv,
-		event_specs: options.event_specs,
-		rpc_endpoints: resolved_rpc_endpoints,
-		ws_endpoints: resolved_ws_endpoints
-	});
-	surface_ref.surface = surface_spec.surface;
-	return surface_spec;
+	return assemble_app_surface({
+		context: ctx,
+		create_route_specs: options.create_route_specs,
+		// Surface generation reads the route shape only — the live handler never
+		// runs here, so a stub stands in for it without pulling the in-process
+		// Hono app onto cross-process consumers. Its `available: false` answer
+		// is the 403 the surface tests assert on, whatever the mode.
+		bootstrap:
+			options.bootstrap && options.bootstrap.mode !== 'disabled'
+				? {
+						route_prefix: options.bootstrap.route_prefix ?? '/api/account',
+						routes: [attach_route_handler(bootstrap_route_shape, stub_handler)]
+					}
+				: null,
+		rpc_endpoints: options.rpc_endpoints,
+		ws_endpoints: options.ws_endpoints,
+		allowed_origins: options.allowed_origins ?? null,
+		surface_route: options.surface_route ?? false,
+		stack_specs,
+		transform_middleware: options.transform_middleware,
+		body_limit_spec:
+			options.max_body_size === null
+				? null
+				: { ...body_limit_middleware_shape, handler: create_stub_mw() },
+		post_route_middleware: options.post_route_middleware,
+		env_schema: options.env_schema,
+		event_specs: options.event_specs
+	}).surface_spec;
 };

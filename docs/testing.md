@@ -121,6 +121,30 @@ export const db_factories: Array<DbFactory> = [default_factory, pg_factory];
 export const describe_db = create_describe_db(db_factories, TRUNCATE_TABLES);
 ```
 
+With the auth tables listed, `describe_db` also restores the auth singleton
+rows between tests (`reset_auth_singletons`: `app_settings` defaults,
+`bootstrap_lock` unset), and holds each test to the database invariants when
+it finishes, as `create_test_app` does — all but `account_without_bootstrap`,
+since query-level tests write accounts without a bootstrap
+(`include_db_invariants` checks it after all). A test that builds a
+`create_test_app` app on the suite's database is checked by the app, with the
+test's exclusions. A suite whose tests write other rows the spine never would
+— a tombstone by query — opts out per invariant with its reason:
+
+```typescript
+describe_db(
+	'account queries',
+	(get_db) => {
+		// …
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account: 'a test tombstones an actor by query'
+		}
+	}
+);
+```
+
 `pg_factory` auto-skips when `FUZ_TEST_POSTGRES_URL` is not set — the variable
 the Rust spine's `fuz_testing` reads too, naming a PostgreSQL server and a role
 with `CREATEDB` (`postgres://localhost/postgres`). The default factory
@@ -136,7 +160,8 @@ column under a GIN index — `audit_log.metadata` and `cell.data` in fuz_app's
 own schema — a pglet limit; PGlite and PostgreSQL take such a value. A test
 that writes one there sees the insert refused: a cell write fails, a success
 audit row's refused insert fails its request (a 500 that rolls the change
-back), and a failure audit row is dropped, which `install_audit_drift_guard`
+back), and a failure audit row is dropped, which the audit drift check
+(`create_test_app`'s, or `install_audit_drift_guard`)
 reports as a failed write. Keep such values shorter, or pin the test to
 `create_pglite_factory`.
 

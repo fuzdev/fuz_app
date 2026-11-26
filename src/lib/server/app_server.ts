@@ -20,10 +20,8 @@ import { create_sse_stream, type EventSpec } from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
 	create_sse_connection_closer,
-	audit_log_event_specs,
 	type AuditLogSse
 } from '../realtime/audit_log_sse.ts';
-import { BaseServerEnv } from './env.ts';
 import {
 	RateLimiter,
 	announce_rate_limiters_disabled,
@@ -49,50 +47,34 @@ import { get_request_path } from '../http/request_target.ts';
 import { log_startup_summary } from './startup.ts';
 import { create_app_error_handler } from './app_error_handler.ts';
 import {
-	create_app_surface_spec,
 	type AppSurfaceSpec,
 	type AppSurfaceDiagnostic,
 	type RpcEndpointSpec
 } from '../http/surface.ts';
 import { create_dev_route_error_check } from '../http/dev_route_error_check.ts';
 import { create_dev_set_cookie_check } from '../http/dev_set_cookie_check.ts';
-import {
-	apply_middleware_specs,
-	apply_route_specs,
-	prefix_route_specs,
-	type RouteSpec
-} from '../http/route_spec.ts';
+import { apply_middleware_specs, apply_route_specs, type RouteSpec } from '../http/route_spec.ts';
 import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import {
 	is_bootstrap_available,
 	create_bootstrap_route_specs,
 	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
-import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
+import { assemble_app_surface } from './app_surface_assembly.ts';
 import { ERROR_SERVICE_UNAVAILABLE } from '../http/error_schemas.ts';
 import {
 	create_request_tracker_view,
 	flush_request_effects,
 	type EffectErrorContext
 } from '../http/pending_effects.ts';
-import {
-	assert_credential_routes_in_auth_scope,
-	assert_endpoint_in_auth_scope,
-	assert_middleware_stack_mounted,
-	create_auth_middleware_specs
-} from '../auth/middleware.ts';
+import { create_auth_middleware_specs } from '../auth/middleware.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { create_body_limit_middleware_spec } from '../http/body_limit.ts';
 import { admit_origin_wildcards, ALLOWED_ORIGINS_VAR } from '../http/origin_wildcard.ts';
 import { create_host_gate_middleware_spec } from '../http/host.ts';
-import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_action_ws } from '../actions/register_action_ws.ts';
-import {
-	resolve_ws_endpoints,
-	type ResolvedWsEndpointSpec,
-	type WsEndpointSpec
-} from '../actions/ws_endpoint_spec.ts';
+import { type ResolvedWsEndpointSpec, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import { create_revocation_guard } from '../actions/connection_closer.ts';
 import type { ConnectionRegistry } from '../actions/connection_registry.ts';
 import { start_auth_cleanup, type AuthCleanupSchedule } from '../auth/cleanup.ts';
@@ -1058,13 +1040,6 @@ const assemble_app_server = async (
 		proxy_spec,
 		...auth_middleware
 	];
-	let middleware_specs = stack_specs;
-	if (options.transform_middleware) {
-		// the transform gets copies in a fresh array, so mutating what it was
-		// handed can't rewrite the originals the check matches against
-		middleware_specs = options.transform_middleware(stack_specs.map((spec) => ({ ...spec })));
-		assert_middleware_stack_mounted(stack_specs, middleware_specs);
-	}
 
 	// The daemon-token keeper, after the migrations and before the bootstrap
 	// check, as the Rust spine's boot runs `resolve_keeper_into`: a live
@@ -1098,20 +1073,7 @@ const assemble_app_server = async (
 				}
 			: { available: false };
 
-	// Surface route ref — factory manages the circular ref
-	const surface_ref: SurfaceRouteOptions = {
-		surface: {
-			middleware: [],
-			routes: [],
-			rpc_endpoints: [],
-			ws_endpoints: [],
-			env: [],
-			events: [],
-			diagnostics: []
-		}
-	};
-
-	// Route specs (consumer routes + factory-managed routes)
+	// The context the consumer's route and endpoint factories run against
 	const context: AppServerContext = {
 		deps,
 		backend,
@@ -1120,70 +1082,54 @@ const assemble_app_server = async (
 		...rate_limiters,
 		audit_sse
 	};
-	const consumer_routes = options.create_route_specs(context);
-
-	// Factory-managed routes appended after consumer routes
-	const factory_routes: Array<RouteSpec> = [];
 
 	// Bootstrap routes — mounted for 'surface_only' and 'live'; omitted for
 	// 'disabled' / undefined. The route handler short-circuits to 403 when
 	// `bootstrap_status.available === false`, which is the steady state for
 	// 'surface_only' and the post-bootstrap state for 'live'.
-	if (options.bootstrap && options.bootstrap.mode !== 'disabled') {
-		const bootstrap_routes = create_bootstrap_route_specs(deps, {
-			session_cookie_name: options.session_cookie_name,
-			bootstrap_status,
-			token_store: options.bootstrap.mode === 'live' ? options.bootstrap.token_store : null,
-			// a successful bootstrap sets its keeper here, after its commit
-			daemon_token_state: options.daemon_token_state ?? null,
-			bootstrap_ip_rate_limiter
-		});
-		const prefix = options.bootstrap.route_prefix ?? '/api/account';
-		const prefixed = prefix_route_specs(prefix, bootstrap_routes);
-		for (const route of prefixed) {
-			assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
-		}
-		factory_routes.push(...prefixed);
-	}
+	const bootstrap =
+		options.bootstrap && options.bootstrap.mode !== 'disabled'
+			? {
+					route_prefix: options.bootstrap.route_prefix ?? '/api/account',
+					routes: create_bootstrap_route_specs(deps, {
+						session_cookie_name: options.session_cookie_name,
+						bootstrap_status,
+						token_store: options.bootstrap.mode === 'live' ? options.bootstrap.token_store : null,
+						// a successful bootstrap sets its keeper here, after its commit
+						daemon_token_state: options.daemon_token_state ?? null,
+						bootstrap_ip_rate_limiter
+					})
+				}
+			: null;
 
-	// RPC endpoint auto-mount — resolve specs then append their routes so
-	// surface generation and live dispatch share one source of truth.
-	const resolved_rpc_endpoints =
-		typeof options.rpc_endpoints === 'function'
-			? options.rpc_endpoints(context)
-			: options.rpc_endpoints;
-	if (resolved_rpc_endpoints) {
-		for (const endpoint of resolved_rpc_endpoints) {
-			assert_endpoint_in_auth_scope('rpc_endpoints', endpoint.path);
-			factory_routes.push(
-				...create_rpc_endpoint({
-					path: endpoint.path,
-					actions: endpoint.actions,
-					log,
-					action_ip_rate_limiter,
-					action_account_rate_limiter,
-					notification_sender: deps.notification_sender
-				})
-			);
-		}
-	}
+	// Routes, middleware list and surface — shared with the test surface
+	// (`create_test_app_surface_spec`), so the two can't drift. The surface
+	// route, when mounted, serves the surface generated here.
+	const {
+		route_specs,
+		middleware_specs,
+		ws_endpoints: resolved_ws_endpoints,
+		surface_spec
+	} = assemble_app_surface({
+		context,
+		create_route_specs: options.create_route_specs,
+		bootstrap,
+		rpc_endpoints: options.rpc_endpoints,
+		ws_endpoints: options.ws_endpoints,
+		allowed_origins: options.allowed_origins,
+		surface_route: options.surface_route ?? false,
+		stack_specs,
+		transform_middleware: options.transform_middleware,
+		body_limit_spec,
+		post_route_middleware: options.post_route_middleware,
+		env_schema: options.env_schema,
+		event_specs: options.event_specs
+	});
 
-	// WS endpoint resolution — done here (alongside RPC) so the captured
-	// array threads into surface generation below. Actual mount happens
-	// after `apply_route_specs` because `register_action_ws` mutates the
-	// live Hono `app` (the `app.get(path, ...)` upgrade route with its
-	// origin / auth / scope / authorization / role chain), and `app` does not
-	// exist until the assembly phase below.
-	// A spec without `allowed_origins` takes the server's list, and one without
-	// `actions` the sole RPC endpoint's — resolved here, once, so the mount and
-	// the surface read the same values.
-	const resolved_ws_endpoints = resolve_ws_endpoints(
-		typeof options.ws_endpoints === 'function'
-			? options.ws_endpoints(context)
-			: options.ws_endpoints,
-		{ allowed_origins: options.allowed_origins, rpc_endpoints: resolved_rpc_endpoints }
-	);
-	// the endpoints to mount and the adapter helper they need — null when none resolve
+	// The WS endpoints to mount and the adapter helper they need — null when
+	// none resolve. The mount runs after `apply_route_specs` below, since
+	// `register_action_ws` mutates the live Hono `app`; the endpoints were
+	// resolved above, so the mount and the surface read the same values.
 	let ws_mount: {
 		endpoints: Array<ResolvedWsEndpointSpec>;
 		upgrade_websocket: UpgradeWebSocket;
@@ -1196,9 +1142,6 @@ const assemble_app_server = async (
 					"Pass the Hono adapter's upgradeWebSocket helper."
 			);
 		}
-		for (const endpoint of resolved_ws_endpoints) {
-			assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
-		}
 		ws_mount = { endpoints: resolved_ws_endpoints, upgrade_websocket };
 	}
 
@@ -1210,17 +1153,6 @@ const assemble_app_server = async (
 	if (audit_sse || ws_mount) {
 		releases.push(deps.audit.add_listener(create_revocation_guard(deps.connection_closer, log)));
 	}
-
-	// Surface route (opt-in)
-	if (options.surface_route) {
-		factory_routes.push(create_surface_route_spec(surface_ref));
-	}
-
-	const route_specs = [...consumer_routes, ...factory_routes];
-	// a route that reads or mints a credential outside the auth scope would
-	// skip session parsing or fall under an origin carve-out — consumer
-	// prefixes included (account and signup specs are relative)
-	assert_credential_routes_in_auth_scope(route_specs);
 
 	// WS path checks — pure data, so they run before anything mounts.
 	// `register_action_ws` mounts a `GET path` upgrade route: a duplicate
@@ -1271,26 +1203,6 @@ const assemble_app_server = async (
 		}
 	}
 
-	// Surface + logging — the body limit first, where it runs, ahead of the
-	// middleware specs
-	const surface_middleware = [
-		...(body_limit_spec ? [body_limit_spec] : []),
-		...middleware_specs,
-		...(options.post_route_middleware ?? [])
-	];
-	const all_event_specs = [
-		...(options.event_specs ?? []),
-		...(audit_sse ? audit_log_event_specs : [])
-	];
-	const surface_spec = create_app_surface_spec({
-		middleware_specs: surface_middleware,
-		route_specs,
-		env_schema: options.env_schema ?? BaseServerEnv,
-		event_specs: all_event_specs,
-		rpc_endpoints: resolved_rpc_endpoints,
-		ws_endpoints: resolved_ws_endpoints
-	});
-
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
 	const config_diagnostics = collect_config_diagnostics({
 		rate_limiter_mode,
@@ -1301,8 +1213,6 @@ const assemble_app_server = async (
 		surface_spec.surface.diagnostics = [...surface_spec.surface.diagnostics, ...config_diagnostics];
 	}
 
-	// Backfill the surface ref — factory owns this lifecycle
-	surface_ref.surface = surface_spec.surface;
 	log_startup_summary(surface_spec.surface, log, options.env_values);
 
 	// Hono app assembly, routing on the raw path: nothing is percent-decoded

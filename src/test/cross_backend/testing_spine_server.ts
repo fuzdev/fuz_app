@@ -35,7 +35,7 @@ import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { WS_RECEIVE_TIMEOUT_MAX } from '#lib/actions/register_action_ws.ts';
 import { ConnectionRegistry } from '#lib/actions/connection_registry.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
-import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
+import { create_daemon_token_file } from '#lib/testing/daemon_token_file.ts';
 import { load_env } from '#lib/env/load.ts';
 import { EnvStringbool } from '#lib/env/env_schemas.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
@@ -296,16 +296,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	await runtime.mkdir(dirname(daemon_token_path), { recursive: true });
 
 	// The daemon token is required — `_testing_reset` gates on the
-	// daemon-token credential, and the harness reads the token file to
-	// authenticate the keeper channel. It reads it once at spawn, and only one
-	// previous token stays valid, so the token is held static for the run with
-	// a long interval, as the Rust stub does by never rotating
-	// (≤ `setInterval`'s ~24.8-day max).
-	const daemon_token_rotation = await start_daemon_token_rotation(
+	// daemon-token credential, and the harness reads the token file once at
+	// spawn to authenticate the keeper channel. Static, as the Rust stub's is.
+	const daemon_token_file = await create_daemon_token_file(
 		runtime,
 		{ db: app_backend.deps.db },
-		{ token_path: daemon_token_path, rotation_interval_ms: 24 * 60 * 60 * 1000 },
-		log
+		daemon_token_path
 	);
 
 	// Created up front so the room registry below seats the connections the WS
@@ -397,7 +393,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// sender, which reaches `connection_registry` once `create_app_server`
 	// mounts it — driving `describe_role_grant_offer_notification_ws_tests`.
 	const full_mount = build_full_spine_mount(app_backend.deps, {
-		daemon_token_state: daemon_token_rotation.state,
+		daemon_token_state: daemon_token_file.state,
 		room_registry
 	});
 
@@ -418,7 +414,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		bootstrap_ip_rate_limiter,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
-		daemon_token_state: daemon_token_rotation.state,
+		daemon_token_state: daemon_token_file.state,
 		bootstrap: bootstrap_token_path
 			? {
 					mode: 'live',
@@ -511,7 +507,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	app_server.app.get(HEALTH_PATH, (c) => c.json({ status: 'ok' }));
 
 	const close = async (): Promise<ShutdownDrainGivenUp> => {
-		await daemon_token_rotation.stop();
+		await daemon_token_file.stop();
 		// closes the WS + SSE connections, then the DB
 		const given_up = await app_server.close();
 		// caller-injected limiters are the caller's to dispose

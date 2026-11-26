@@ -103,14 +103,42 @@ const setup = async (
 	return { test_app, gated };
 };
 
-describe_db('authorization phase: the carried account', (get_db) => {
-	test('an account-grain RPC call reads no account after the credential leg', async () => {
-		// `account_session_list`: account-grain, and its answer is the account's
-		// sessions, not the account
-		const { test_app, gated } = await setup(get_db());
-		try {
-			const user = await test_app.create_account({ username: 'carried_rpc' });
-			for (const headers of [user.create_session_headers(), user.create_bearer_headers()]) {
+describe_db(
+	'authorization phase: the carried account',
+	(get_db) => {
+		test('an account-grain RPC call reads no account after the credential leg', async () => {
+			// `account_session_list`: account-grain, and its answer is the account's
+			// sessions, not the account
+			const { test_app, gated } = await setup(get_db());
+			try {
+				const user = await test_app.create_account({ username: 'carried_rpc' });
+				for (const headers of [user.create_session_headers(), user.create_bearer_headers()]) {
+					const { answer, read_again } = await send_with_second_read_stalled(
+						gated,
+						get_db(),
+						user.account.id,
+						() =>
+							rpc_call({
+								app: test_app.app,
+								path: RPC_PATH,
+								method: 'account_session_list',
+								headers,
+								suppress_default_origin: 'authorization' in headers
+							})
+					);
+					assert.ok(!read_again, 'the authorization phase read the account again');
+					assert.ok(answer.ok, JSON.stringify(answer));
+					assert.ok(Array.isArray((answer.result as { sessions: unknown }).sessions));
+				}
+			} finally {
+				await test_app.cleanup();
+			}
+		});
+
+		test('an actor-grain RPC call reads no account after the credential leg', async () => {
+			const { test_app, gated } = await setup(get_db());
+			try {
+				const user = await test_app.create_account({ username: 'carried_actor' });
 				const { answer, read_again } = await send_with_second_read_stalled(
 					gated,
 					get_db(),
@@ -119,189 +147,172 @@ describe_db('authorization phase: the carried account', (get_db) => {
 						rpc_call({
 							app: test_app.app,
 							path: RPC_PATH,
-							method: 'account_session_list',
-							headers,
-							suppress_default_origin: 'authorization' in headers
+							method: 'role_grant_offer_list',
+							params: {},
+							headers: user.create_session_headers()
 						})
 				);
 				assert.ok(!read_again, 'the authorization phase read the account again');
 				assert.ok(answer.ok, JSON.stringify(answer));
-				assert.ok(Array.isArray((answer.result as { sessions: unknown }).sessions));
+			} finally {
+				await test_app.cleanup();
 			}
-		} finally {
-			await test_app.cleanup();
-		}
-	});
+		});
 
-	test('an actor-grain RPC call reads no account after the credential leg', async () => {
-		const { test_app, gated } = await setup(get_db());
-		try {
-			const user = await test_app.create_account({ username: 'carried_actor' });
-			const { answer, read_again } = await send_with_second_read_stalled(
-				gated,
-				get_db(),
-				user.account.id,
-				() =>
-					rpc_call({
+		test('a REST route reads no account after the credential leg', async () => {
+			const { test_app, gated } = await setup(get_db());
+			try {
+				const user = await test_app.create_account({ username: 'carried_rest' });
+				const { answer, read_again } = await send_with_second_read_stalled(
+					gated,
+					get_db(),
+					user.account.id,
+					async () =>
+						test_app.app.request('/api/account/logout', {
+							method: 'POST',
+							headers: {
+								...user.create_session_headers(),
+								'content-type': 'application/json',
+								origin: TEST_ORIGIN
+							},
+							body: 'null'
+						})
+				);
+				assert.ok(!read_again, 'the authorization phase read the account again');
+				assert.strictEqual(answer.status, 200, await answer.clone().text());
+			} finally {
+				await test_app.cleanup();
+			}
+		});
+
+		// The window, made exact: the account's actor list is the first read the
+		// authorization phase makes, held while the account is removed.
+		for (const removal of ['delete', 'purge'] as const) {
+			test(`an actor-grain call whose account is removed (${removal}) after the credential leg answers 401`, async () => {
+				// the delete leg tombstones by query, without the handler's cascade
+				const { test_app, gated } = await setup(
+					get_db(),
+					removal === 'delete'
+						? {
+								credential_of_tombstoned_account:
+									'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them'
+							}
+						: undefined
+				);
+				try {
+					const user = await test_app.create_account({ username: `removed_${removal}` });
+					const actor_list = gated.stall((sql) => /\bFROM actor WHERE account_id = \$1/.test(sql));
+					const answer = rpc_call({
 						app: test_app.app,
 						path: RPC_PATH,
 						method: 'role_grant_offer_list',
 						params: {},
 						headers: user.create_session_headers()
-					})
-			);
-			assert.ok(!read_again, 'the authorization phase read the account again');
-			assert.ok(answer.ok, JSON.stringify(answer));
-		} finally {
-			await test_app.cleanup();
+					});
+					await actor_list.reached;
+					if (removal === 'delete') {
+						await query_account_soft_delete({ db: get_db() }, user.account.id, null);
+						await get_db().query(`UPDATE actor SET deleted_at = NOW() WHERE account_id = $1`, [
+							user.account.id
+						]);
+					} else {
+						await query_purge_account({ db: get_db() }, user.account.id);
+					}
+					actor_list.release();
+					const result = await answer;
+					assert.ok(!result.ok, `${removal}: ${JSON.stringify(result)}`);
+					assert.strictEqual(result.status, 401, removal);
+					assert.deepStrictEqual(
+						result.error.data,
+						{ reason: ERROR_AUTHENTICATION_REQUIRED },
+						`${removal}: the dead credential's 401`
+					);
+				} finally {
+					await test_app.cleanup();
+				}
+			});
 		}
-	});
 
-	test('a REST route reads no account after the credential leg', async () => {
-		const { test_app, gated } = await setup(get_db());
-		try {
-			const user = await test_app.create_account({ username: 'carried_rest' });
-			const { answer, read_again } = await send_with_second_read_stalled(
-				gated,
-				get_db(),
-				user.account.id,
-				async () =>
-					test_app.app.request('/api/account/logout', {
-						method: 'POST',
-						headers: {
-							...user.create_session_headers(),
-							'content-type': 'application/json',
-							origin: TEST_ORIGIN
-						},
-						body: 'null'
-					})
-			);
-			assert.ok(!read_again, 'the authorization phase read the account again');
-			assert.strictEqual(answer.status, 200, await answer.clone().text());
-		} finally {
-			await test_app.cleanup();
-		}
-	});
-
-	// The window, made exact: the account's actor list is the first read the
-	// authorization phase makes, held while the account is removed.
-	for (const removal of ['delete', 'purge'] as const) {
-		test(`an actor-grain call whose account is removed (${removal}) after the credential leg answers 401`, async () => {
-			// the delete leg tombstones by query, without the handler's cascade
-			const { test_app, gated } = await setup(
-				get_db(),
+		// `account_verify` and `GET /account/status` answer with the account
+		// itself, so they read it again, live: one deleted or purged after the
+		// credential leg answers the dead credential's 401 there. The window is
+		// that second read, held while the account is removed.
+		for (const removal of ['delete', 'purge'] as const) {
+			// the delete tombstones by query, without the handler's cascade
+			const exclude_db_invariants: DbInvariantExclusions | undefined =
 				removal === 'delete'
 					? {
 							credential_of_tombstoned_account:
-								'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them'
+								'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them',
+							actor_tombstone_disagrees_with_account:
+								'the account is tombstoned by query, its actor left live — the handler tombstones it'
 						}
-					: undefined
-			);
-			try {
-				const user = await test_app.create_account({ username: `removed_${removal}` });
-				const actor_list = gated.stall((sql) => /\bFROM actor WHERE account_id = \$1/.test(sql));
-				const answer = rpc_call({
-					app: test_app.app,
-					path: RPC_PATH,
-					method: 'role_grant_offer_list',
-					params: {},
-					headers: user.create_session_headers()
-				});
-				await actor_list.reached;
-				if (removal === 'delete') {
-					await query_account_soft_delete({ db: get_db() }, user.account.id, null);
-					await get_db().query(`UPDATE actor SET deleted_at = NOW() WHERE account_id = $1`, [
-						user.account.id
-					]);
-				} else {
-					await query_purge_account({ db: get_db() }, user.account.id);
+					: undefined;
+			const remove = async (db: Db, account_id: string): Promise<void> => {
+				if (removal === 'delete') await query_account_soft_delete({ db }, account_id, null);
+				else await query_purge_account({ db }, account_id);
+			};
+			const with_second_read_held = async <T>(
+				gated: GatedDb,
+				account_id: string,
+				request: () => Promise<T>
+			): Promise<T> => {
+				const second_read = gated.stall(is_account_read, { skip: 1 });
+				const answer = request();
+				const first = await Promise.race([
+					answer.then(() => 'answered' as const),
+					second_read.reached.then(() => 'read_again' as const)
+				]);
+				if (first === 'read_again') await remove(get_db(), account_id);
+				second_read.release();
+				assert.strictEqual(first, 'read_again', 'the answer read the account again');
+				return answer;
+			};
+
+			test(`account_verify on an account removed (${removal}) after the credential leg answers 401`, async () => {
+				const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
+				try {
+					const user = await test_app.create_account({ username: `verify_${removal}` });
+					const answer = await with_second_read_held(gated, user.account.id, () =>
+						rpc_call({
+							app: test_app.app,
+							path: RPC_PATH,
+							method: 'account_verify',
+							headers: user.create_session_headers()
+						})
+					);
+					assert.ok(!answer.ok, JSON.stringify(answer));
+					assert.strictEqual(answer.status, 401);
+					assert.deepStrictEqual(answer.error.data, { reason: ERROR_AUTHENTICATION_REQUIRED });
+				} finally {
+					await test_app.cleanup();
 				}
-				actor_list.release();
-				const result = await answer;
-				assert.ok(!result.ok, `${removal}: ${JSON.stringify(result)}`);
-				assert.strictEqual(result.status, 401, removal);
-				assert.deepStrictEqual(
-					result.error.data,
-					{ reason: ERROR_AUTHENTICATION_REQUIRED },
-					`${removal}: the dead credential's 401`
-				);
-			} finally {
-				await test_app.cleanup();
-			}
-		});
+			});
+
+			test(`account status on an account removed (${removal}) after the credential leg answers 401`, async () => {
+				const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
+				try {
+					const user = await test_app.create_account({ username: `status_${removal}` });
+					const answer = await with_second_read_held(gated, user.account.id, async () =>
+						test_app.app.request('/api/account/status', { headers: user.create_session_headers() })
+					);
+					assert.strictEqual(answer.status, 401, await answer.clone().text());
+					assert.strictEqual(
+						((await answer.json()) as { error: string }).error,
+						ERROR_AUTHENTICATION_REQUIRED
+					);
+				} finally {
+					await test_app.cleanup();
+				}
+			});
+		}
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both',
+			credential_of_tombstoned_account:
+				'a test tombstones an account by query, its sessions and tokens left live'
+		}
 	}
-
-	// `account_verify` and `GET /account/status` answer with the account
-	// itself, so they read it again, live: one deleted or purged after the
-	// credential leg answers the dead credential's 401 there. The window is
-	// that second read, held while the account is removed.
-	for (const removal of ['delete', 'purge'] as const) {
-		// the delete tombstones by query, without the handler's cascade
-		const exclude_db_invariants: DbInvariantExclusions | undefined =
-			removal === 'delete'
-				? {
-						credential_of_tombstoned_account:
-							'the account is tombstoned by query, its sessions and tokens left live — the handler revokes them',
-						actor_tombstone_disagrees_with_account:
-							'the account is tombstoned by query, its actor left live — the handler tombstones it'
-					}
-				: undefined;
-		const remove = async (db: Db, account_id: string): Promise<void> => {
-			if (removal === 'delete') await query_account_soft_delete({ db }, account_id, null);
-			else await query_purge_account({ db }, account_id);
-		};
-		const with_second_read_held = async <T>(
-			gated: GatedDb,
-			account_id: string,
-			request: () => Promise<T>
-		): Promise<T> => {
-			const second_read = gated.stall(is_account_read, { skip: 1 });
-			const answer = request();
-			const first = await Promise.race([
-				answer.then(() => 'answered' as const),
-				second_read.reached.then(() => 'read_again' as const)
-			]);
-			if (first === 'read_again') await remove(get_db(), account_id);
-			second_read.release();
-			assert.strictEqual(first, 'read_again', 'the answer read the account again');
-			return answer;
-		};
-
-		test(`account_verify on an account removed (${removal}) after the credential leg answers 401`, async () => {
-			const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
-			try {
-				const user = await test_app.create_account({ username: `verify_${removal}` });
-				const answer = await with_second_read_held(gated, user.account.id, () =>
-					rpc_call({
-						app: test_app.app,
-						path: RPC_PATH,
-						method: 'account_verify',
-						headers: user.create_session_headers()
-					})
-				);
-				assert.ok(!answer.ok, JSON.stringify(answer));
-				assert.strictEqual(answer.status, 401);
-				assert.deepStrictEqual(answer.error.data, { reason: ERROR_AUTHENTICATION_REQUIRED });
-			} finally {
-				await test_app.cleanup();
-			}
-		});
-
-		test(`account status on an account removed (${removal}) after the credential leg answers 401`, async () => {
-			const { test_app, gated } = await setup(get_db(), exclude_db_invariants);
-			try {
-				const user = await test_app.create_account({ username: `status_${removal}` });
-				const answer = await with_second_read_held(gated, user.account.id, async () =>
-					test_app.app.request('/api/account/status', { headers: user.create_session_headers() })
-				);
-				assert.strictEqual(answer.status, 401, await answer.clone().text());
-				assert.strictEqual(
-					((await answer.json()) as { error: string }).error,
-					ERROR_AUTHENTICATION_REQUIRED
-				);
-			} finally {
-				await test_app.cleanup();
-			}
-		});
-	}
-});
+);

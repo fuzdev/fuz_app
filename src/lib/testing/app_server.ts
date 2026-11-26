@@ -50,8 +50,8 @@ import {
 	type AuditFactory
 } from '../server/app_backend.ts';
 import type { AppServerOptions } from '../server/app_server.ts';
-import { create_default_db_factory, type DbFactory } from './db.ts';
-import { token_scope_full } from '../auth/token_scope.ts';
+import { create_default_db_factory, reset_auth_singletons, type DbFactory } from './db.ts';
+import { token_scope_full, type TokenScope } from '../auth/token_scope.ts';
 import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 import { TEST_ORIGIN } from './test_origin.ts';
 import { create_request_tracker } from '../http/pending_effects.ts';
@@ -144,6 +144,24 @@ export interface CreateTestAccountWithCredentialsOptions {
 	roles?: Array<string>;
 	/** Optional email stored on the account row — exercises the username-or-email login lookup. */
 	email?: string;
+	/**
+	 * The scope the account's API token is minted with — `token_scope_full()`
+	 * when omitted; `token_scope_methods([...])` for a narrowed token, as
+	 * `account_token_create` stores one.
+	 */
+	api_token_scope?: TokenScope;
+}
+
+/** The credentials `create_test_account_with_credentials` minted. */
+export interface TestAccountCredentials {
+	account: { id: Uuid; username: string };
+	actor: { id: Uuid };
+	/** Raw API token for Bearer auth. */
+	api_token: string;
+	/** The API token's row id (`api_token.id`), for a test that reads or revokes it. */
+	api_token_id: string;
+	/** Signed session cookie value for cookie auth. */
+	session_cookie: string;
 }
 
 /**
@@ -163,12 +181,7 @@ export interface CreateTestAccountWithCredentialsOptions {
  */
 export const create_test_account_with_credentials = async (
 	options: CreateTestAccountWithCredentialsOptions
-): Promise<{
-	account: { id: Uuid; username: string };
-	actor: { id: Uuid };
-	api_token: string;
-	session_cookie: string;
-}> => {
+): Promise<TestAccountCredentials> => {
 	const {
 		db,
 		keyring,
@@ -176,7 +189,8 @@ export const create_test_account_with_credentials = async (
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
 		roles = [],
-		email
+		email,
+		api_token_scope = token_scope_full()
 	} = options;
 
 	const deps = { db };
@@ -196,14 +210,7 @@ export const create_test_account_with_credentials = async (
 
 	// Create API token (account-scoped — acting actor is per-request)
 	const { token: api_token, id: token_id, token_hash } = generate_api_token();
-	await query_create_api_token(
-		deps,
-		token_id,
-		account.id,
-		'test-cli',
-		token_hash,
-		token_scope_full()
-	);
+	await query_create_api_token(deps, token_id, account.id, 'test-cli', token_hash, api_token_scope);
 
 	// Create session (account-scoped — acting actor is per-request), through
 	// the production insert (`query_create_session`, the full lifetime on the
@@ -216,6 +223,7 @@ export const create_test_account_with_credentials = async (
 		account: { id: account.id, username: account.username },
 		actor: { id: actor.id },
 		api_token,
+		api_token_id: token_id,
 		session_cookie
 	};
 };
@@ -280,12 +288,7 @@ export const mint_test_session = async (
  */
 export const bootstrap_test_keeper = async (
 	options: CreateTestAccountWithCredentialsOptions
-): Promise<{
-	account: { id: Uuid; username: string };
-	actor: { id: Uuid };
-	api_token: string;
-	session_cookie: string;
-}> => {
+): Promise<TestAccountCredentials> => {
 	const result = await create_test_account_with_credentials({
 		...options,
 		roles: options.roles ?? [...DEFAULT_TEST_KEEPER_ROLES]
@@ -308,6 +311,8 @@ export interface TestAppServer extends AppBackend {
 	actor: { id: Uuid };
 	/** Raw API token for Bearer auth. */
 	api_token: string;
+	/** The API token's row id (`api_token.id`). */
+	api_token_id: string;
 	/** Signed session cookie value for cookie auth. */
 	session_cookie: string;
 	/** Keyring used for cookie signing — exposed for forging expired/tampered cookies in tests. */
@@ -382,9 +387,10 @@ interface BuildTestBackendOptions {
  * Backend-assembly path for `create_test_app_server`. Returns the raw
  * `AppBackend` + the keyring used to sign session cookies.
  *
- * Resets `app_settings` singleton row for caller-supplied DBs so prior
- * tests don't leak `open_signup`. Does NOT reset `bootstrap_lock` —
- * `create_test_app_server` lets `bootstrap_test_keeper` flip it.
+ * Resets the auth singleton rows of a caller-supplied database
+ * (`reset_auth_singletons`), so a prior test's `open_signup` doesn't leak;
+ * `create_test_app_server` then lets `bootstrap_test_keeper` set the
+ * `bootstrap_lock` again. The row tables are the caller's to reset.
  */
 const _build_test_backend = async (
 	options: BuildTestBackendOptions
@@ -413,10 +419,9 @@ const _build_test_backend = async (
 	let db_name: string;
 	let close_db: () => Promise<void>;
 	if (existing_db) {
-		// Reset singleton config row from a previous test (harmless on a fresh database).
-		await existing_db.query(
-			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL'
-		);
+		// the singleton rows a previous test left (a no-op on a fresh database);
+		// the keeper bootstrap below sets the lock again
+		await reset_auth_singletons(existing_db);
 		db = existing_db;
 		db_name = 'test';
 		// the caller owns a supplied database
@@ -475,7 +480,7 @@ const _build_test_backend = async (
  * @param options - the database, the keeper's credentials and roles, and the audit factory
  * @returns a `TestAppServer` ready for HTTP testing
  * @mutates the underlying database — when `db` is supplied, first resets the
- *   `app_settings` row (`open_signup`, `updated_at`, `updated_by`); in either
+ *   `app_settings` and `bootstrap_lock` rows (`reset_auth_singletons`); in either
  *   branch inserts an account, actor, role role_grants, API token, and session
  *   row, and flips `bootstrap_lock.bootstrapped` (`bootstrap_test_keeper`).
  */

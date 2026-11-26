@@ -117,6 +117,44 @@ export const register_db_invariants_check = (check: () => Promise<void>): boolea
 	return true;
 };
 
+/** The databases a test app checks when the test finishes, by test. */
+const app_checked_dbs: WeakMap<object, WeakSet<object>> = new WeakMap();
+
+/**
+ * Record that the current test's app checks `db` when the test finishes —
+ * what `create_test_app` calls, so a `describe_db` check over the same
+ * database stands aside for the app's, which carries the test's own
+ * exclusions. Does nothing outside a test.
+ *
+ * @param db - the database the app checks
+ * @nodocs
+ */
+export const note_app_checks_db_invariants = (db: object): void => {
+	const task = TestRunner.getCurrentTest();
+	if (!task) return;
+	let dbs = app_checked_dbs.get(task);
+	if (!dbs) {
+		dbs = new WeakSet();
+		app_checked_dbs.set(task, dbs);
+	}
+	dbs.add(db);
+};
+
+/**
+ * Whether an app built in `task` checks `db` when it finishes
+ * (`note_app_checks_db_invariants`), forgetting the record, so a retry of the
+ * test — vitest reuses its task — starts without it.
+ *
+ * @param task - the finished test
+ * @param db - the database to ask about
+ * @nodocs
+ */
+export const take_app_checks_db_invariants = (task: object, db: object): boolean => {
+	const dbs = app_checked_dbs.get(task);
+	app_checked_dbs.delete(task);
+	return dbs?.has(db) ?? false;
+};
+
 /** Whether `task` or any task under it failed. */
 const task_failed = (task: RunnerTask): boolean =>
 	task.result?.state === 'fail' || (task.type === 'suite' && task.tasks.some(task_failed));

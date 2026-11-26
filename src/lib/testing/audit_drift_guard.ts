@@ -49,8 +49,11 @@ import {
  * pool. Tests that exercise audit emits should fail loudly when any of these
  * happens.
  *
- * Call at the top of every `describe` / `describe_db` block that fires
- * audit writes through `deps.audit.emit`. Resets counters before each
+ * `create_test_app` runs the same check on its own for an app built in a
+ * test (reset at the test's first app, checked when the test finishes), so
+ * a suite over `create_test_app` needs no install. Call this at the top of
+ * a `describe` / `describe_db` block that fires audit writes some other way
+ * — through deps of its own, or an app built in `beforeAll`. Resets counters before each
  * test and asserts zero on completion. A test that makes a write fail on
  * purpose calls `reset_audit_write_failures` (`auth/audit_emitter.ts`) once
  * it has asserted the count, and one that writes a success row outside a
@@ -61,13 +64,20 @@ import {
  * the time the after-each check observes counter state.
  */
 export const install_audit_drift_guard = (): void => {
-	beforeEach(() => {
-		reset_audit_metadata_validation_failures();
-		reset_audit_unknown_event_type_failures();
-		reset_audit_write_failures();
-		reset_audit_success_outside_transaction();
-	});
+	beforeEach(reset_audit_drift_counters);
 	afterEach(assert_no_audit_drift);
+};
+
+/**
+ * Reset every process-wide audit counter `assert_no_audit_drift` checks —
+ * what `install_audit_drift_guard` runs before each test, and
+ * `create_test_app` at the first app a test builds.
+ */
+export const reset_audit_drift_counters = (): void => {
+	reset_audit_metadata_validation_failures();
+	reset_audit_unknown_event_type_failures();
+	reset_audit_write_failures();
+	reset_audit_success_outside_transaction();
 };
 
 /**

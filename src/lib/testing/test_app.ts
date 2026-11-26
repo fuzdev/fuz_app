@@ -17,6 +17,7 @@ import type { Hono } from 'hono';
 import { onTestFinished, TestRunner } from 'vitest';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import type { Uuid } from '../primitive_schemas.ts';
+import type { TokenScope } from '../auth/token_scope.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import {
 	create_app_server,
@@ -44,7 +45,12 @@ import {
 	type TestAppServerOptions
 } from './app_server.ts';
 import { close_after_error } from './close_after_error.ts';
-import { announce_db_invariant_exclusions, assert_db_invariants } from './db_invariants.ts';
+import {
+	announce_db_invariant_exclusions,
+	assert_db_invariants,
+	note_app_checks_db_invariants
+} from './db_invariants.ts';
+import { assert_no_audit_drift, reset_audit_drift_counters } from './audit_drift_guard.ts';
 import type { DbInvariantExclusions } from './db_invariant_queries.ts';
 
 /**
@@ -123,6 +129,15 @@ export interface TestAccount {
 }
 
 /**
+ * An account `TestApp.create_account` minted in process — a `TestAccount`
+ * with its API token's row id, which the cross-process fixtures don't carry.
+ */
+export interface TestAppAccount extends TestAccount {
+	/** The API token's row id (`api_token.id`), for a test that reads, narrows or revokes it. */
+	api_token_id: string;
+}
+
+/**
  * Args for `TestApp.create_account` — mint an additional account alongside the
  * keeper. Mirrors the cross-process `CreateTestAccountOptions` (the two
  * `create_account` paths share a shape so fixture call sites read identically),
@@ -134,6 +149,11 @@ export interface CreateTestAppAccountArgs {
 	roles?: Array<string>;
 	/** Optional email stored on the account row — exercises the username-or-email login lookup. */
 	email?: string;
+	/**
+	 * The API token's scope — full authority when omitted. In-process only:
+	 * the cross-process `create_account` mints full tokens.
+	 */
+	api_token_scope?: TokenScope;
 }
 
 /**
@@ -164,7 +184,7 @@ export interface TestApp {
 	/** Build request headers with the daemon token (keeper auth). */
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
-	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
+	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAppAccount>;
 	/**
 	 * Check the app's database against the auth-schema invariants now, less
 	 * `exclude_db_invariants` — what runs when the test that built the app
@@ -225,6 +245,9 @@ const test_app_options = (): Pick<
 	shutdown_drain_timeout_ms: TEST_SHUTDOWN_DRAIN_TIMEOUT_MS
 });
 
+/** The tests whose audit counters `create_test_app` has reset — once per run of a test. */
+const audit_drift_reset_tests: WeakSet<object> = new WeakSet();
+
 /** The error a test app's close that gave up throws, naming the report. */
 const format_close_given_up = (closer: string, given_up: ShutdownDrainGivenUp): string =>
 	`create_test_app: ${closer} gave up on work still in flight ${JSON.stringify(given_up)} — ` +
@@ -260,7 +283,10 @@ const create_bearer_headers_builder =
  * Built inside a running test (its body or a `beforeEach`), it registers one
  * hook for when the test finishes: the database invariant check (skipped when
  * the test already failed, as `register_db_invariants_check` does), then the
- * close. The close throws when it gave up on work still in flight, unless the
+ * close, then the audit drift check (`assert_no_audit_drift`, also skipped
+ * when the test failed) — the process-wide counters reset at the test's
+ * first app, so a test that fails an audit write on purpose resets its
+ * counter (`reset_audit_write_failures` and kin) once it has asserted it. The close throws when it gave up on work still in flight, unless the
  * test failed or closed the app itself (`cleanup`, or `server.close()`, whose
  * outcome is the test's). So an app built in a test lives only for that test.
  * Built in `beforeAll`, nothing is registered: the suite closes the app, and
@@ -283,6 +309,13 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		throw new Error(
 			'create_test_app: built in a concurrent test, whose finish would close the app under a sibling — build it in `beforeAll` and close it in `afterAll`'
 		);
+	}
+	// the audit counters are process-wide: reset at the test's first app, ahead
+	// of its assembly, so a second app in the same test doesn't hide what the
+	// first one counted
+	if (current_test && !audit_drift_reset_tests.has(current_test)) {
+		audit_drift_reset_tests.add(current_test);
+		reset_audit_drift_counters();
 	}
 	const { exclude_db_invariants } = options;
 	announce_db_invariant_exclusions(exclude_db_invariants, 'create_test_app');
@@ -340,7 +373,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 
 	const create_account = async (
 		account_options?: CreateTestAppAccountArgs
-	): Promise<TestAccount> => {
+	): Promise<TestAppAccount> => {
 		account_counter++;
 		const bootstrapped = await create_test_account_with_credentials({
 			db: test_server.deps.db,
@@ -349,7 +382,10 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 			username: account_options?.username ?? `test_user_${account_counter}`,
 			password_value: account_options?.password_value ?? DEFAULT_TEST_PASSWORD,
 			roles: account_options?.roles ?? [],
-			...(account_options?.email !== undefined && { email: account_options.email })
+			...(account_options?.email !== undefined && { email: account_options.email }),
+			...(account_options?.api_token_scope !== undefined && {
+				api_token_scope: account_options.api_token_scope
+			})
 		});
 
 		return {
@@ -382,7 +418,11 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	};
 	// one hook, so the check runs ahead of the close
 	if (current_test) {
+		// a `describe_db` check over the same database stands aside for this one
+		note_app_checks_db_invariants(test_server.deps.db);
 		onTestFinished(async ({ task }) => {
+			// vitest reuses the task on a retry or repeat, which resets afresh
+			audit_drift_reset_tests.delete(task);
 			const failed = task.result?.state === 'fail';
 			// the close runs whatever the check found; a violation is the report
 			let violation: { error: unknown } | null = null;
@@ -406,6 +446,15 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 				await release_db();
 			} catch (error) {
 				errors.push(error);
+			}
+			// after the close, which drains the audit writes still in flight; a
+			// test that fails a write on purpose resets its counter once asserted
+			if (!failed) {
+				try {
+					assert_no_audit_drift();
+				} catch (error) {
+					errors.unshift(error);
+				}
 			}
 			if (errors.length === 1) throw errors[0];
 			if (errors.length > 1) throw new AggregateError(errors, to_error_message(errors[0]));

@@ -2,8 +2,8 @@
  * Daemon token middleware — the credential **consumer**.
  *
  * Validates a presented `X-Daemon-Token` and resolves the keeper account.
- * The producer half (rotation + file persistence) lives in
- * `testing/daemon_token_rotation.ts` behind the dev-env guard: no production
+ * The producer half (a static token and its file) lives in
+ * `testing/daemon_token_file.ts` behind the dev-env guard: no production
  * assembly mints daemon tokens — the credential's only remaining role is the
  * cross-process test harness's keeper channel — mirroring the Rust spine,
  * whose producer is confined to `fuz_testing`.
@@ -38,7 +38,7 @@ import {
  *
  * There is exactly one keeper account (the bootstrap account). Run once by
  * `create_app_server` at assembly for a daemon-token state with no keeper
- * (and by `start_daemon_token_rotation`) — the result is cached in
+ * (and by `create_daemon_token_file`) — the result is cached in
  * `DaemonTokenState.keeper_account_id`, which a live bootstrap sets after its
  * commit and nothing re-reads per request (a keeper seeded by another process
  * needs a restart, as on the Rust spine). The acting actor is resolved

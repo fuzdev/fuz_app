@@ -2,8 +2,8 @@
  * Daemon token primitives — schema, generation, and validation.
  *
  * Pure auth operations with no I/O or state management.
- * The middleware, rotation, and persistence logic lives in
- * `auth/daemon_token_middleware.ts`.
+ * The middleware lives in `auth/daemon_token_middleware.ts`; the test-only
+ * producer that writes the token file in `testing/daemon_token_file.ts`.
  *
  * @module
  */
@@ -38,7 +38,8 @@ export type DaemonToken = Infer<typeof DaemonToken>;
 export const DAEMON_TOKEN_HEADER = 'X-Daemon-Token';
 
 /**
- * Mutable runtime state for daemon token rotation.
+ * Mutable runtime state for the daemon token — the token, static for the
+ * server's life, and the keeper it authenticates as.
  *
  * This is runtime state (not `AppDeps` or `*Options`) — it changes during
  * operation. Created at server startup, passed to the middleware factory.
@@ -46,9 +47,9 @@ export const DAEMON_TOKEN_HEADER = 'X-Daemon-Token';
 export interface DaemonTokenState {
 	/** Current valid token. */
 	current_token: string;
-	/** Previous token, still valid during the race window. `null` before first rotation. */
+	/** Always `null` from the test-only producer; kept for the validator's shape. */
 	previous_token: string | null;
-	/** When the last rotation occurred. */
+	/** When the token was minted. */
 	rotated_at: Date;
 	/**
 	 * The account ID of the keeper: resolved by `create_app_server` at

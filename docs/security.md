@@ -529,7 +529,7 @@ The keeper credential, `X-Daemon-Token`:
   (rotated_at, version) without changing every reader; matched by the Rust
   spine writer (`fuz_testing::write_token_file`) for wire parity
 - **The producer is test-only on both spines.** No production assembly mints
-  daemon tokens: the TS writer lives in `testing/daemon_token_rotation.ts`
+  daemon tokens: the TS writer lives in `testing/daemon_token_file.ts`
   behind the dev-env guard (importing it in a production bundle throws), and
   the Rust writer lives in `fuz_testing`, which a release audit keeps out of
   every production binary. The credential's only remaining role is the
@@ -544,8 +544,8 @@ The keeper credential, `X-Daemon-Token`:
 - **Mode `0600` is applied at creation.** The test-only producer writes the
   file via `write_file_atomic` with a unique exclusive temp and mode `0600`,
   so it never exists group/other-readable, whatever the umask
-- Token rotated every 30 seconds (configurable); the previous token is also
-  accepted to cover the rotation race window
+- The token is static for the server's life; the harness reads the file once
+  at spawn
 - Both the REST guard composition
   (`require_credential_types(['daemon_token'])` +
   `require_role(['keeper'])`) and the RPC dispatcher's post-authorization auth
@@ -952,7 +952,7 @@ revocation the re-read sees.
   also closes the connections of the expired rows it deletes, after the
   delete commits (`src/lib/auth/CLAUDE.md` §Cleanup); an expired API token's
   row isn't swept, and its connections close at their deadline.
-- Rotating the daemon token closes nothing: the token has no row and no
+- A new daemon token (a restart) closes nothing: the token has no row and no
   revocation event, so a connection opened on an earlier token keeps running.
 - A revocation made by code that neither queues a close nor emits an audit
   event closes nothing — a consumer's own handler deleting a session row, or a

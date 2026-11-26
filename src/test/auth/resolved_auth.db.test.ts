@@ -99,260 +99,275 @@ const resolve_daemon_token = (account_id: string): ResolvedAuth => ({
 	credential_deadline: null
 });
 
-describe_db('revalidate_resolved_auth', (get_db) => {
-	describe('session', () => {
-		test('a live session revalidates', async () => {
-			const db = get_db();
-			const resolved = await resolve_session(db, await create_account(db));
+describe_db(
+	'revalidate_resolved_auth',
+	(get_db) => {
+		describe('session', () => {
+			test('a live session revalidates', async () => {
+				const db = get_db();
+				const resolved = await resolve_session(db, await create_account(db));
 
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-		});
-
-		test('a revoked session does not revalidate', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const resolved = await resolve_session(db, account_id);
-
-			assert.ok(await query_session_revoke_for_account({ db }, resolved.session_hash, account_id));
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-		});
-
-		test('an expired session does not revalidate', async () => {
-			const db = get_db();
-			const resolved = await resolve_session(db, await create_account(db));
-
-			await db.query(`UPDATE auth_session SET expires_at = NOW() - INTERVAL '1 second'`);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-		});
-
-		test('a session now owned by another account does not revalidate', async () => {
-			const db = get_db();
-			const resolved = await resolve_session(db, await create_account(db));
-			const other_account_id = await create_account(db);
-
-			await db.query(`UPDATE auth_session SET account_id = $1 WHERE id = $2`, [
-				other_account_id,
-				resolved.session_hash
-			]);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-		});
-
-		test('revoking another session leaves this one valid', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const resolved = await resolve_session(db, account_id);
-			const other = await resolve_session(db, account_id);
-
-			assert.ok(await query_session_revoke_for_account({ db }, other.session_hash, account_id));
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-			assert.strictEqual(await revalidate_resolved_auth({ db }, other), false);
-		});
-	});
-
-	describe('api token', () => {
-		test('a live api token revalidates', async () => {
-			const db = get_db();
-			const resolved = await resolve_api_token(db, await create_account(db));
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-		});
-
-		test('an unexpired ttl token revalidates', async () => {
-			const db = get_db();
-			const resolved = await resolve_api_token(
-				db,
-				await create_account(db),
-				new Date(Date.now() + HOUR_MS)
-			);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-		});
-
-		test('a revoked api token does not revalidate', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const resolved = await resolve_api_token(db, account_id);
-			const other = await resolve_api_token(db, account_id);
-
-			assert.ok(
-				await query_revoke_api_token_for_account({ db }, resolved.api_token_id, account_id)
-			);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-			assert.strictEqual(
-				await revalidate_resolved_auth({ db }, other),
-				true,
-				'revoking one token leaves the other valid'
-			);
-		});
-
-		test('an expired api token does not revalidate', async () => {
-			const db = get_db();
-			const resolved = await resolve_api_token(db, await create_account(db));
-
-			await db.query(`UPDATE api_token SET expires_at = NOW() - INTERVAL '1 second'`);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-			assert.strictEqual(
-				await query_api_token_live_account({ db }, resolved.api_token_id),
-				undefined,
-				'the by-id read applies the same liveness predicate as the validate read'
-			);
-		});
-
-		test('an api token now owned by another account does not revalidate', async () => {
-			const db = get_db();
-			const resolved = await resolve_api_token(db, await create_account(db));
-			const other_account_id = await create_account(db);
-
-			await db.query(`UPDATE api_token SET account_id = $1 WHERE id = $2`, [
-				other_account_id,
-				resolved.api_token_id
-			]);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
-			assert.strictEqual(
-				await query_api_token_live_account({ db }, resolved.api_token_id),
-				other_account_id
-			);
-		});
-	});
-
-	describe('account-wide revocations', () => {
-		test('a password change invalidates sessions and tokens', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await resolve_session(db, account_id);
-			const token = await resolve_api_token(db, account_id);
-
-			// what the `/password` route does once the new hash is stored
-			await query_session_revoke_all_for_account({ db }, account_id);
-			await query_revoke_all_api_tokens_for_account({ db }, account_id);
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, session), false);
-			assert.strictEqual(await revalidate_resolved_auth({ db }, token), false);
-		});
-
-		test('a soft-deleted account invalidates every credential, rows intact', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await resolve_session(db, account_id);
-			const token = await resolve_api_token(db, account_id);
-			const daemon = resolve_daemon_token(account_id);
-			for (const resolved of [session, token, daemon]) {
 				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-			}
+			});
 
-			// the tombstone alone — the session and token rows are still there
-			assert.ok(await query_account_soft_delete({ db }, account_id, null));
+			test('a revoked session does not revalidate', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const resolved = await resolve_session(db, account_id);
 
-			for (const resolved of [session, token, daemon]) {
+				assert.ok(
+					await query_session_revoke_for_account({ db }, resolved.session_hash, account_id)
+				);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
+			});
+
+			test('an expired session does not revalidate', async () => {
+				const db = get_db();
+				const resolved = await resolve_session(db, await create_account(db));
+
+				await db.query(`UPDATE auth_session SET expires_at = NOW() - INTERVAL '1 second'`);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
+			});
+
+			test('a session now owned by another account does not revalidate', async () => {
+				const db = get_db();
+				const resolved = await resolve_session(db, await create_account(db));
+				const other_account_id = await create_account(db);
+
+				await db.query(`UPDATE auth_session SET account_id = $1 WHERE id = $2`, [
+					other_account_id,
+					resolved.session_hash
+				]);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
+			});
+
+			test('revoking another session leaves this one valid', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const resolved = await resolve_session(db, account_id);
+				const other = await resolve_session(db, account_id);
+
+				assert.ok(await query_session_revoke_for_account({ db }, other.session_hash, account_id));
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+				assert.strictEqual(await revalidate_resolved_auth({ db }, other), false);
+			});
+		});
+
+		describe('api token', () => {
+			test('a live api token revalidates', async () => {
+				const db = get_db();
+				const resolved = await resolve_api_token(db, await create_account(db));
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+			});
+
+			test('an unexpired ttl token revalidates', async () => {
+				const db = get_db();
+				const resolved = await resolve_api_token(
+					db,
+					await create_account(db),
+					new Date(Date.now() + HOUR_MS)
+				);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+			});
+
+			test('a revoked api token does not revalidate', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const resolved = await resolve_api_token(db, account_id);
+				const other = await resolve_api_token(db, account_id);
+
+				assert.ok(
+					await query_revoke_api_token_for_account({ db }, resolved.api_token_id, account_id)
+				);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
 				assert.strictEqual(
-					await revalidate_resolved_auth({ db }, resolved),
-					false,
-					`${resolved.credential_type} on a soft-deleted account`
+					await revalidate_resolved_auth({ db }, other),
+					true,
+					'revoking one token leaves the other valid'
 				);
-			}
-		});
-	});
-
-	describe('daemon token', () => {
-		test('a daemon token revalidates on its keeper account alone', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-
-			assert.strictEqual(
-				await revalidate_resolved_auth({ db }, resolve_daemon_token(account_id)),
-				true
-			);
-		});
-
-		test('a daemon token on an account that is gone does not revalidate', async () => {
-			const db = get_db();
-
-			assert.strictEqual(
-				await revalidate_resolved_auth(
-					{ db },
-					resolve_daemon_token('00000000-0000-4000-8000-000000000000')
-				),
-				false
-			);
-		});
-	});
-
-	describe('no side effects', () => {
-		test('the re-check does not touch the api token', async () => {
-			const db = get_db();
-			const resolved = await resolve_api_token(db, await create_account(db));
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-
-			const row = await db.query_one<{ last_used_at: unknown; last_used_ip: unknown }>(
-				`SELECT last_used_at, last_used_ip FROM api_token WHERE id = $1`,
-				[resolved.api_token_id]
-			);
-			assert.deepStrictEqual(row, { last_used_at: null, last_used_ip: null });
-		});
-
-		test('the re-check leaves the session row unchanged', async () => {
-			const db = get_db();
-			const resolved = await resolve_session(db, await create_account(db));
-			const read_row = (): Promise<unknown> =>
-				db.query_one(
-					`SELECT id, account_id, expires_at::text, created_at::text FROM auth_session WHERE id = $1`,
-					[resolved.session_hash]
-				);
-			const before = await read_row();
-
-			assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
-
-			assert.deepStrictEqual(await read_row(), before);
-		});
-
-		test('the re-check writes nothing — every statement is a read', async () => {
-			const db = get_db();
-			const account_id = await create_account(db);
-			const session = await resolve_session(db, account_id);
-			const token = await resolve_api_token(db, account_id);
-			const statements: Array<string> = [];
-			const recording = new Db({
-				client: {
-					query: (text, values) => {
-						statements.push(text);
-						return db.client.query(text, values);
-					}
-				},
-				transaction: (fn) => db.transaction(fn)
 			});
 
-			for (const resolved of [session, token, resolve_daemon_token(account_id)]) {
-				assert.strictEqual(await revalidate_resolved_auth({ db: recording }, resolved), true);
-			}
+			test('an expired api token does not revalidate', async () => {
+				const db = get_db();
+				const resolved = await resolve_api_token(db, await create_account(db));
 
-			assert.ok(statements.length > 0);
-			for (const statement of statements) {
-				assert.match(statement.trim(), /^SELECT\b/, statement);
-			}
-		});
-	});
+				await db.query(`UPDATE api_token SET expires_at = NOW() - INTERVAL '1 second'`);
 
-	describe('failure', () => {
-		test('a failing query propagates — the caller fails closed', async () => {
-			const db = get_db();
-			const resolved = await resolve_session(db, await create_account(db));
-			const failing = new Db({
-				client: {
-					query: () => Promise.reject(new Error('connection lost'))
-				},
-				transaction: (fn) => db.transaction(fn)
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
+				assert.strictEqual(
+					await query_api_token_live_account({ db }, resolved.api_token_id),
+					undefined,
+					'the by-id read applies the same liveness predicate as the validate read'
+				);
 			});
 
-			const error = await assert_rejects(() => revalidate_resolved_auth({ db: failing }, resolved));
-			assert.match(error.message, /connection lost/);
+			test('an api token now owned by another account does not revalidate', async () => {
+				const db = get_db();
+				const resolved = await resolve_api_token(db, await create_account(db));
+				const other_account_id = await create_account(db);
+
+				await db.query(`UPDATE api_token SET account_id = $1 WHERE id = $2`, [
+					other_account_id,
+					resolved.api_token_id
+				]);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), false);
+				assert.strictEqual(
+					await query_api_token_live_account({ db }, resolved.api_token_id),
+					other_account_id
+				);
+			});
 		});
-	});
-});
+
+		describe('account-wide revocations', () => {
+			test('a password change invalidates sessions and tokens', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await resolve_session(db, account_id);
+				const token = await resolve_api_token(db, account_id);
+
+				// what the `/password` route does once the new hash is stored
+				await query_session_revoke_all_for_account({ db }, account_id);
+				await query_revoke_all_api_tokens_for_account({ db }, account_id);
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, session), false);
+				assert.strictEqual(await revalidate_resolved_auth({ db }, token), false);
+			});
+
+			test('a soft-deleted account invalidates every credential, rows intact', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await resolve_session(db, account_id);
+				const token = await resolve_api_token(db, account_id);
+				const daemon = resolve_daemon_token(account_id);
+				for (const resolved of [session, token, daemon]) {
+					assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+				}
+
+				// the tombstone alone — the session and token rows are still there
+				assert.ok(await query_account_soft_delete({ db }, account_id, null));
+
+				for (const resolved of [session, token, daemon]) {
+					assert.strictEqual(
+						await revalidate_resolved_auth({ db }, resolved),
+						false,
+						`${resolved.credential_type} on a soft-deleted account`
+					);
+				}
+			});
+		});
+
+		describe('daemon token', () => {
+			test('a daemon token revalidates on its keeper account alone', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+
+				assert.strictEqual(
+					await revalidate_resolved_auth({ db }, resolve_daemon_token(account_id)),
+					true
+				);
+			});
+
+			test('a daemon token on an account that is gone does not revalidate', async () => {
+				const db = get_db();
+
+				assert.strictEqual(
+					await revalidate_resolved_auth(
+						{ db },
+						resolve_daemon_token('00000000-0000-4000-8000-000000000000')
+					),
+					false
+				);
+			});
+		});
+
+		describe('no side effects', () => {
+			test('the re-check does not touch the api token', async () => {
+				const db = get_db();
+				const resolved = await resolve_api_token(db, await create_account(db));
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+
+				const row = await db.query_one<{ last_used_at: unknown; last_used_ip: unknown }>(
+					`SELECT last_used_at, last_used_ip FROM api_token WHERE id = $1`,
+					[resolved.api_token_id]
+				);
+				assert.deepStrictEqual(row, { last_used_at: null, last_used_ip: null });
+			});
+
+			test('the re-check leaves the session row unchanged', async () => {
+				const db = get_db();
+				const resolved = await resolve_session(db, await create_account(db));
+				const read_row = (): Promise<unknown> =>
+					db.query_one(
+						`SELECT id, account_id, expires_at::text, created_at::text FROM auth_session WHERE id = $1`,
+						[resolved.session_hash]
+					);
+				const before = await read_row();
+
+				assert.strictEqual(await revalidate_resolved_auth({ db }, resolved), true);
+
+				assert.deepStrictEqual(await read_row(), before);
+			});
+
+			test('the re-check writes nothing — every statement is a read', async () => {
+				const db = get_db();
+				const account_id = await create_account(db);
+				const session = await resolve_session(db, account_id);
+				const token = await resolve_api_token(db, account_id);
+				const statements: Array<string> = [];
+				const recording = new Db({
+					client: {
+						query: (text, values) => {
+							statements.push(text);
+							return db.client.query(text, values);
+						}
+					},
+					transaction: (fn) => db.transaction(fn)
+				});
+
+				for (const resolved of [session, token, resolve_daemon_token(account_id)]) {
+					assert.strictEqual(await revalidate_resolved_auth({ db: recording }, resolved), true);
+				}
+
+				assert.ok(statements.length > 0);
+				for (const statement of statements) {
+					assert.match(statement.trim(), /^SELECT\b/, statement);
+				}
+			});
+		});
+
+		describe('failure', () => {
+			test('a failing query propagates — the caller fails closed', async () => {
+				const db = get_db();
+				const resolved = await resolve_session(db, await create_account(db));
+				const failing = new Db({
+					client: {
+						query: () => Promise.reject(new Error('connection lost'))
+					},
+					transaction: (fn) => db.transaction(fn)
+				});
+
+				const error = await assert_rejects(() =>
+					revalidate_resolved_auth({ db: failing }, resolved)
+				);
+				assert.match(error.message, /connection lost/);
+			});
+		});
+	},
+	{
+		exclude_db_invariants: {
+			actor_tombstone_disagrees_with_account:
+				'a test tombstones an actor or account by query, without the account delete that tombstones both',
+			credential_of_tombstoned_account:
+				'a test tombstones an account by query, its sessions and tokens left live'
+		}
+	}
+);

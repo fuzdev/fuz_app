@@ -4,21 +4,32 @@
  * @module
  */
 
-import { test, assert, beforeAll, beforeEach, afterAll } from 'vitest';
+import { test, assert, beforeAll, beforeEach, afterAll, describe } from 'vitest';
 import { array, object, string, void as fuz_void } from '@fuzdev/fuz_schema/schema.ts';
+import type { EventSpec } from '#lib/realtime/sse.ts';
+import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 
 import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_types.ts';
 import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { token_scope_full, token_scope_methods } from '#lib/auth/token_scope.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
-import { create_app_server } from '#lib/server/app_server.ts';
+import {
+	APP_SERVER_RATE_LIMITER_KEYS,
+	collect_config_diagnostics,
+	create_app_server,
+	type ConfigDiagnosticsInput
+} from '#lib/server/app_server.ts';
+import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import {
 	create_test_app_server,
 	create_loopback_app_server_options
 } from '#lib/testing/app_server.ts';
-import { create_test_app } from '#lib/testing/test_app.ts';
-import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
-import type { AppSurface } from '#lib/http/surface.ts';
+import { create_test_app, type SuiteAppOptions } from '#lib/testing/test_app.ts';
+import {
+	create_test_app_surface_spec,
+	type CreateTestAppSurfaceSpecOptions
+} from '#lib/testing/stubs.ts';
 import { auth_truncate_tables } from '#lib/testing/db.ts';
 import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 
@@ -92,6 +103,27 @@ test('works with create_app_server', async () => {
 	assert.strictEqual(body.status, 'ok');
 });
 
+test('the keeper and each created account carry their API token row id and scope', async () => {
+	const test_app = await create_test_app({ session_cookie_name, db, create_route_specs: () => [] });
+	const read_token = (id: string) =>
+		db.query_one<{ account_id: string; scope: unknown }>(
+			'SELECT account_id, scope FROM api_token WHERE id = $1',
+			[id]
+		);
+
+	const keeper_row = await read_token(test_app.backend.api_token_id);
+	assert.ok(keeper_row);
+	assert.strictEqual(keeper_row.account_id, test_app.backend.account.id);
+	assert.deepEqual(keeper_row.scope, token_scope_full());
+
+	const scope = token_scope_methods(['account_verify']);
+	const narrowed = await test_app.create_account({ api_token_scope: scope });
+	const narrowed_row = await read_token(narrowed.api_token_id);
+	assert.ok(narrowed_row);
+	assert.strictEqual(narrowed_row.account_id, narrowed.account.id);
+	assert.deepEqual(narrowed_row.scope, scope);
+});
+
 // --- create_test_app: top-level `rpc_endpoints` option (15g) ---------------
 
 const widget_list_spec: RequestResponseActionSpec = {
@@ -128,52 +160,184 @@ test('create_test_app forwards top-level rpc_endpoints to create_app_server', as
 	}
 });
 
-// the stub surface is what the surface-derived suites probe, so it must list
-// the routes the live server mounts — same order, auth, and error schemas
-// (middleware errors merge into every route under their path)
-const route_shape = (surface: AppSurface) =>
-	surface.routes.map((r) => ({
-		method: r.method,
-		path: r.path,
-		auth: r.auth,
-		error_schemas: r.error_schemas,
-		applicable_middleware: r.applicable_middleware
-	}));
+// The live server and the stub surface assemble through one function
+// (`assemble_app_surface`), so for each option the two must produce the same
+// surface — every field but the server's config diagnostics, which only the
+// server adds.
+const shared_surface_options = {
+	session_cookie_name,
+	create_route_specs: () => [create_health_route_spec()],
+	rpc_endpoints: [{ path: '/api/rpc', actions: widget_actions }],
+	bootstrap: { mode: 'surface_only' as const },
+	// what `create_test_app` passes (`create_loopback_app_server_options`)
+	env_schema: object({})
+};
 
-for (const surface_route of [undefined, false, true] as const) {
-	test(`create_test_app_surface_spec routes match create_test_app's (surface_route: ${surface_route})`, async () => {
-		const shared = {
-			session_cookie_name,
-			create_route_specs: () => [create_health_route_spec()],
-			rpc_endpoints: [{ path: '/api/rpc', actions: widget_actions }],
-			bootstrap: { mode: 'surface_only' as const }
-		};
+const post_route_spec: MiddlewareSpec = {
+	name: 'post_route',
+	path: '*',
+	handler: async (_c, next) => next()
+};
+const added_layer: MiddlewareSpec = {
+	name: 'added_layer',
+	path: '/api/*',
+	handler: async (_c, next) => next()
+};
+
+const create_null_rate_limiters = (): ConfigDiagnosticsInput['rate_limiters'] =>
+	Object.fromEntries(
+		APP_SERVER_RATE_LIMITER_KEYS.map((key) => [key, null])
+	) as ConfigDiagnosticsInput['rate_limiters'];
+
+/** The `AppServerOptions` both entry points take, keyed by what each case varies. */
+type SurfaceCaseOptions = Pick<
+	CreateTestAppSurfaceSpecOptions & SuiteAppOptions,
+	| 'surface_route'
+	| 'audit_log_sse'
+	| 'post_route_middleware'
+	| 'origin_carve_outs'
+	| 'transform_middleware'
+	| 'max_body_size'
+	| 'host_gate'
+	| 'event_specs'
+	| 'ws_endpoints'
+>;
+
+/** One parity case: the shared options, and what only one entry point takes. */
+interface SurfaceCase {
+	options: SurfaceCaseOptions;
+	/** `create_test_app`'s top-level options, passed to the stub surface too. */
+	top?: Pick<CreateTestAppSurfaceSpecOptions, 'rpc_endpoints' | 'bootstrap'>;
+	/** Passed to the stub surface alone — the server's list where the server reads it. */
+	stub_only?: Pick<CreateTestAppSurfaceSpecOptions, 'allowed_origins'>;
+}
+
+const widget_event: EventSpec = {
+	method: 'widget_changed',
+	params: object({ id: string }),
+	description: 'A widget changed',
+	channel: 'widgets'
+};
+
+const surface_cases: Array<[label: string, surface_case: SurfaceCase]> = [
+	['defaults', { options: {} }],
+	['surface_route false', { options: { surface_route: false } }],
+	['surface_route true', { options: { surface_route: true } }],
+	['audit_log_sse true', { options: { audit_log_sse: true } }],
+	['audit_log_sse with a role', { options: { audit_log_sse: { role: ROLE_KEEPER } } }],
+	['post_route_middleware', { options: { post_route_middleware: [post_route_spec] } }],
+	[
+		'origin_carve_outs',
+		{
+			options: {
+				origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }]
+			}
+		}
+	],
+	[
+		'transform_middleware',
+		{ options: { transform_middleware: (specs) => [...specs, added_layer] } }
+	],
+	['max_body_size null', { options: { max_body_size: null } }],
+	['host_gate false', { options: { host_gate: false } }],
+	['event_specs', { options: { event_specs: [widget_event] } }],
+	[
+		'ws_endpoints taking the server origins',
+		{
+			options: { ws_endpoints: [{ path: '/api/ws' }] },
+			stub_only: { allowed_origins: create_loopback_app_server_options().allowed_origins }
+		}
+	],
+	[
+		'ws_endpoints carrying their own origins',
+		{
+			options: {
+				ws_endpoints: [
+					{ path: '/api/ws', allowed_origins: create_loopback_app_server_options().allowed_origins }
+				]
+			}
+		}
+	],
+	[
+		'function-form rpc_endpoints',
+		{
+			options: {},
+			top: { rpc_endpoints: () => [{ path: '/api/rpc', actions: widget_actions }] }
+		}
+	],
+	[
+		'bootstrap route_prefix',
+		{ options: {}, top: { bootstrap: { mode: 'surface_only', route_prefix: '/api/auth' } } }
+	],
+	[
+		'every option at once',
+		{
+			options: {
+				surface_route: true,
+				audit_log_sse: true,
+				post_route_middleware: [post_route_spec],
+				origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }],
+				transform_middleware: (specs) => [added_layer, ...specs],
+				max_body_size: null,
+				host_gate: false,
+				event_specs: [widget_event],
+				ws_endpoints: [{ path: '/api/ws' }]
+			},
+			stub_only: { allowed_origins: create_loopback_app_server_options().allowed_origins }
+		}
+	]
+];
+
+describe('create_test_app_surface_spec matches the live server surface', () => {
+	test.each(surface_cases)('%s', async (_label, { options, top, stub_only }) => {
 		const test_app = await create_test_app({
-			...shared,
+			...shared_surface_options,
+			...top,
 			db,
-			app_options: surface_route === undefined ? undefined : { surface_route }
+			app_options: {
+				...options,
+				...(options.ws_endpoints && { upgrade_websocket: create_stub_upgrade().upgradeWebSocket })
+			}
 		});
 		try {
 			const stub_surface = create_test_app_surface_spec({
-				...shared,
-				surface_route,
+				...shared_surface_options,
+				...top,
+				...options,
+				...stub_only,
 				// `create_test_app` always passes a `daemon_token_state`
 				daemon_token: true
 			}).surface;
-			assert.deepStrictEqual(route_shape(stub_surface), route_shape(test_app.surface));
+			const live = test_app.surface;
+			// the server appends its config diagnostics after the spec-level ones
+			const config_diagnostics = collect_config_diagnostics({
+				rate_limiter_mode: 'disabled_for_testing',
+				// read only in the `'enforced'` mode
+				rate_limiters: create_null_rate_limiters(),
+				max_body_size: options.max_body_size
+			});
 			assert.deepStrictEqual(
-				stub_surface.middleware.map((m) => m.name),
-				test_app.surface.middleware.map((m) => m.name)
+				{ ...stub_surface, diagnostics: [...stub_surface.diagnostics, ...config_diagnostics] },
+				live
+			);
+			// the cases reach what they vary
+			assert.strictEqual(
+				live.routes.some((r) => r.path === '/api/surface'),
+				options.surface_route === true
 			);
 			assert.strictEqual(
-				stub_surface.routes.some((r) => r.path === '/api/surface'),
-				surface_route === true
+				live.events.some((e) => e.channel === 'audit_log'),
+				options.audit_log_sse !== undefined
 			);
+			assert.strictEqual(live.ws_endpoints.length, options.ws_endpoints?.length ?? 0);
+			if (top?.bootstrap && 'route_prefix' in top.bootstrap) {
+				assert.ok(live.routes.some((r) => r.path === '/api/auth/bootstrap'));
+			}
 		} finally {
 			await test_app.cleanup();
 		}
 	});
-}
+});
 
 // `backend.deps.audit` closes over the threaded `audit_log_config`.
 // Emit-time validation behavior of the threaded config is covered by
