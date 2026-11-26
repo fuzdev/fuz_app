@@ -114,12 +114,6 @@ export const POSTGRES_ONLY_PROJECTS: ReadonlySet<CrossProjectName> = new Set([
 	'cross_backend_parity'
 ]);
 
-/**
- * The env var that turns the cross projects on: `vite.config.ts` defines them
- * only when it is `1`, and `run_cross.ts` sets it for each invocation.
- */
-export const CROSS_BACKEND_ENV = 'FUZ_TEST_CROSS_BACKEND';
-
 /** The single-backend projects' test files. */
 const CROSS_BACKEND_TESTS = ['src/test/cross_backend/*.cross.test.ts'];
 

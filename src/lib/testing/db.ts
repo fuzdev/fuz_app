@@ -242,6 +242,34 @@ export const set_default_db_factory = (
 };
 
 /**
+ * Refuse the default database in a unit project, so a test that opens one
+ * without the `.db.test.ts` suffix fails naming the fix, rather than starting
+ * its own WASM instance in a parallel worker — slow, and outside whatever
+ * setup the `db` project gives its databases. Call it at the top of a vitest
+ * `setupFiles` module of the unit project, which runs ahead of every test
+ * file's imports.
+ *
+ * It installs a builder (`set_default_db_factory`) whose factories refuse in
+ * `create()`, not when built: modules build default factories at import
+ * (`testing/app_server.ts`'s no-`db` fallback), and a unit test may import
+ * them without opening a database.
+ *
+ * @returns the builder this replaced, so a caller can put it back
+ */
+export const install_unit_db_guard = (): DbFactoryBuilder | null =>
+	set_default_db_factory(() => ({
+		name: 'unit-refused',
+		skip: false,
+		create: () =>
+			Promise.reject(
+				new Error(
+					'a database was opened from the unit project — name the test file `*.db.test.ts` so it runs in the `db` project'
+				)
+			),
+		close: () => Promise.resolve()
+	}));
+
+/**
  * Create the default in-memory database factory for tests: pglet-wasm, or the
  * builder `set_default_db_factory` installed.
  *

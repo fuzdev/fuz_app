@@ -78,6 +78,7 @@ import {
 } from '../../auth/credential_type_schema.ts';
 import { PROTOCOL_ACTION_METHODS } from '../../actions/action_codegen.ts';
 import { generate_valid_body } from '../schema_generators.ts';
+import { assert_skip_entries_known } from '../integration_helpers.ts';
 import type { ConformanceCase, ConformancePrincipal } from './conformance_case.ts';
 
 /**
@@ -112,7 +113,10 @@ export interface RpcAuthConformanceOptions {
 	 * the factory form into this). Omitted, only declared methods get rows.
 	 */
 	readonly live_rpc_endpoints?: ReadonlyArray<RpcEndpointSpec>;
-	/** Methods to leave out, beyond the protocol actions always skipped. */
+	/**
+	 * Methods to leave out, beyond the protocol actions always skipped. An
+	 * entry naming no method on the declared or live endpoints throws.
+	 */
 	readonly skip_methods?: ReadonlyArray<string>;
 }
 
@@ -146,17 +150,25 @@ const format_auth = (auth: RouteAuth): string => JSON.stringify(auth);
  * @param options - the declared surface, the live mount, and any methods to skip
  * @returns the conformance rows, grouped by method in declaration order, then
  *   live-mount order
+ * @throws Error on a `skip_methods` entry naming no method on the endpoints
  */
 export const generate_rpc_auth_conformance_cases = (
 	options: RpcAuthConformanceOptions
 ): Array<ConformanceCase> => {
-	const skip = new Set(options.skip_methods);
-	const seen: Set<string> = new Set();
-	const cases: Array<ConformanceCase> = [];
 	const endpoints = [
 		...options.surface_source.rpc_endpoints,
 		...(options.live_rpc_endpoints ?? [])
 	];
+	assert_skip_entries_known(
+		'generate_rpc_auth_conformance_cases',
+		'skip_methods',
+		options.skip_methods,
+		new Set(endpoints.flatMap((e) => e.actions.map((a) => a.spec.method))),
+		'a method on the declared or live RPC endpoints'
+	);
+	const skip = new Set(options.skip_methods);
+	const seen: Set<string> = new Set();
+	const cases: Array<ConformanceCase> = [];
 	for (const endpoint of endpoints) {
 		for (const action of endpoint.actions) {
 			const { method, auth, input } = action.spec;

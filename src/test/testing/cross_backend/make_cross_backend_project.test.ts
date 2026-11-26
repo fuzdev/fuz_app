@@ -7,14 +7,19 @@
  * spawned-backend invariants (`isolate: false`, `fileParallelism: false`)
  * are fixed, and both timeouts are **always** emitted so a consumer's root
  * `testTimeout` / `hookTimeout` can never leak a 5 s budget into a suite
- * that spawns a backend.
+ * that spawns a backend. Also `cross_backend_enabled`, the gate every
+ * consumer's `vite.config.ts` reads.
  *
  * @module
  */
 
 import { describe, test, assert } from 'vitest';
 
-import { make_cross_backend_project } from '#lib/testing/cross_backend/make_cross_backend_project.ts';
+import {
+	cross_backend_enabled,
+	FUZ_TEST_CROSS_BACKEND_ENV,
+	make_cross_backend_project
+} from '#lib/testing/cross_backend/make_cross_backend_project.ts';
 
 const GLOBAL_SETUP = './src/test/cross_backend/global_setup.ts';
 
@@ -80,5 +85,26 @@ describe('make_cross_backend_project', () => {
 		exclude.push('mutated');
 		assert.deepStrictEqual(project.include, ['a']);
 		assert.deepStrictEqual(project.exclude, ['b']);
+	});
+});
+
+describe('cross_backend_enabled', () => {
+	const with_value = (value: string | undefined) => ({ [FUZ_TEST_CROSS_BACKEND_ENV]: value });
+
+	test('on only for 1', () => {
+		assert.isTrue(cross_backend_enabled(with_value('1')));
+	});
+
+	test('off unset, empty or 0', () => {
+		assert.isFalse(cross_backend_enabled({}));
+		assert.isFalse(cross_backend_enabled(with_value(undefined)));
+		assert.isFalse(cross_backend_enabled(with_value('')));
+		assert.isFalse(cross_backend_enabled(with_value('0')));
+	});
+
+	test('any other value throws, naming it', () => {
+		for (const value of ['true', 'yes', '2', ' 1']) {
+			assert.throws(() => cross_backend_enabled(with_value(value)), `got '${value}'`);
+		}
 	});
 });

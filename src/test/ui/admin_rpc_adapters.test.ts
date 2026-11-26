@@ -16,6 +16,7 @@
 import { describe, test, assert, vi, afterEach, beforeEach, type MockInstance } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_stub_api, rpc_error } from '#lib/testing/stub_api.ts';
 
 import {
 	create_admin_rpc_adapters,
@@ -259,27 +260,16 @@ describe('create_admin_rpc_adapters — app_settings mappings', () => {
 
 describe('create_admin_rpc_adapters — error propagation', () => {
 	test('thrown errors propagate to the adapter caller', async () => {
-		const err = Object.assign(new Error('not authorized'), {
-			code: -32002,
-			data: { reason: 'role_grant_offer_not_authorized' }
+		const err = rpc_error('role_grant_offer_not_authorized');
+		const api = create_stub_api<AdminRpcApi>({
+			role_grant_offer_create: () => Promise.reject(err)
 		});
-		const api = new Proxy(
-			{},
-			{
-				get: () => async () => {
-					throw err;
-				}
-			}
-		) as unknown as AdminRpcApi;
 		const { admin_accounts } = create_admin_rpc_adapters(api);
 		const caught = await assert_rejects(() =>
 			admin_accounts.create_role_grant({ to_account_id: acct_id, role: 'admin' })
 		);
 		assert.strictEqual(caught, err);
-		assert.strictEqual(
-			(caught as Error & { data: { reason: string } }).data.reason,
-			'role_grant_offer_not_authorized'
-		);
+		assert.deepEqual((caught as typeof err).data, { reason: 'role_grant_offer_not_authorized' });
 	});
 });
 

@@ -80,6 +80,7 @@ const derive = (
 	assert.throws(
 		() =>
 			describe_spine_cross_suites(handle, {
+				expected_skips: {},
 				...options,
 				exclude: Object.fromEntries(
 					SUITE_NAMES.filter((n) => n !== name && !(n in UNEXCLUDABLE_SPINE_SUITES)).map((n) => [

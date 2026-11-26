@@ -34,10 +34,11 @@ import '../assert_dev_env.ts';
  * - `expected_skips` declares the gated skips the backend owes — the cases a
  *   suite skips because the backend lacks what they gate on (`test_if`), and
  *   the suites skipped for an undeclared backdoor — each by its name path with
- *   a required reason. When given, a closing test (`check_declared_skips`)
- *   fails on a gated skip it doesn't list and on an entry whose test runs or
- *   that names no test, so a skip is never only a skipped line in the report.
- *   An `exclude` entry declares its suite's skip itself.
+ *   a required reason. Required — `{}` declares that the backend owes none — so
+ *   a closing test (`check_declared_skips`) always fails on a gated skip it
+ *   doesn't list and on an entry whose test runs or that names no test, and a
+ *   skip is never only a skipped line in the report. An `exclude` entry
+ *   declares its suite's skip itself.
  * - `overrides` replaces a suite's derived options, field by field (a shallow
  *   merge over what the handle gives) — a role list the backend's WS upgrade
  *   requires, an `xfail` for a tracked divergence, a narrower capability set.
@@ -627,12 +628,12 @@ export interface SpineCrossSuitesOptions {
 	 * The gated skips this backend owes — each test a suite registers skipped
 	 * because the backend lacks what it gates on (`test_if`, a suite skipped
 	 * for an undeclared backdoor), by its name path below the calling suite,
-	 * with a non-empty reason. When given, a closing test
+	 * with a non-empty reason; `{}` when the backend owes none. A closing test
 	 * (`check_declared_skips`) fails on a gated skip not listed here, and on
 	 * an entry whose test runs or that names no test. An `exclude`d suite's
-	 * skip is declared by its `exclude` entry. Omitted, no skip is checked.
+	 * skip is declared by its `exclude` entry.
 	 */
-	readonly expected_skips?: Readonly<Record<string, string>>;
+	readonly expected_skips: Readonly<Record<string, string>>;
 	/** Per-suite option overrides, a shallow merge over what the handle gives. */
 	readonly overrides?: SuiteOverrides;
 	/** The roles the role-shaped suites use, when the backend lacks the spine's own. */
@@ -679,7 +680,7 @@ export interface SpineCrossSuitesOptions {
 interface SuiteContext {
 	readonly handle: ReconstructedBootstrappedBackendHandle;
 	readonly config: CrossSuiteHandleOptions;
-	readonly options: SpineCrossSuitesOptions;
+	readonly options: SpineSuiteRegistrationOptions;
 	/** A `setup_test` from the base setup options plus this suite's seeding. */
 	readonly setup: (seed?: CrossProcessSetupOptions) => SetupTest;
 	/**
@@ -1487,7 +1488,7 @@ const to_backdoor_skips = (
  * is registered.
  */
 const validate_spine_cross_suites_options = (
-	options: SpineCrossSuitesOptions,
+	options: SpineSuiteRegistrationOptions,
 	declared: ReadonlyArray<string>,
 	backdoor_skips: ReadonlyMap<SuiteName, string>,
 	capabilities: BackendCapabilities,
@@ -1944,6 +1945,18 @@ export interface SpineSuiteRegistration {
 }
 
 /**
+ * `register_spine_suites`' options: `describe_spine_cross_suites`' with
+ * `expected_skips` optional, since a runner over a subset of the suites
+ * (fuz_app's transcript differential) holds the gated skips itself. Given,
+ * they are checked as the one call checks them.
+ *
+ * @internal Used by fuz_app's transcript differential — not stable API.
+ */
+export type SpineSuiteRegistrationOptions = Omit<SpineCrossSuitesOptions, 'expected_skips'> & {
+	readonly expected_skips?: Readonly<Record<string, string>>;
+};
+
+/**
  * `describe_spine_cross_suites` over a chosen set of suites, each suite's
  * `setup_test` passed through a wrapper — so another runner over the suites
  * (fuz_app's transcript differential) builds every suite's options as the
@@ -1959,7 +1972,7 @@ export interface SpineSuiteRegistration {
  */
 export const register_spine_suites = (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: SpineCrossSuitesOptions,
+	options: SpineSuiteRegistrationOptions,
 	registration: SpineSuiteRegistration
 ): void => {
 	const run = to_registered_names(registration.names);
@@ -2055,7 +2068,7 @@ const to_registered_names = (
  *
  * @param handle - the backend, as `inject_backend_handle()` returns it
  * @param options - the declared surface, plus excludes, case exclusions and overrides
- * @throws Error - on an exclude or `expected_skips` entry with no reason, an unknown suite name, a suite
+ * @throws Error - on a missing `expected_skips`, an exclude or `expected_skips` entry with no reason, an unknown suite name, a suite
  *   both excluded and overridden, an excluded `UNEXCLUDABLE_SPINE_SUITES` suite
  *   (or one of its cases, or an override changing the declaration it checks), an exclude,
  *   override or `exclude_cases` entry for a suite that skips itself or isn't
@@ -2069,6 +2082,12 @@ export const describe_spine_cross_suites = (
 	handle: ReconstructedBootstrappedBackendHandle,
 	options: SpineCrossSuitesOptions
 ): void => {
+	// required by the type; an untyped or cast caller would skip the check silently
+	if ((options.expected_skips as unknown) === undefined) {
+		throw new Error(
+			'describe_spine_cross_suites: expected_skips is required — `{}` declares no gated skip'
+		);
+	}
 	register_spine_suites(handle, options, {});
 };
 

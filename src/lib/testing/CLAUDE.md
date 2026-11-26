@@ -186,6 +186,45 @@ measures one. Hono-free, imported by the cross-process token suite.
 - `RecordedClose` — `ConnectionCloseTarget | {kind: 'all'}`.
 - `RecordingCloser` — `{closer, calls}`.
 
+### `action_spec_invariants.ts` — `describe_action_spec_invariants`
+
+`describe_action_spec_invariants({specs, method_enum?, collections?})` — the
+registry invariants every consumer's action specs hold, in a
+`describe('action spec invariants')`: methods unique; `method_enum` (the
+generated `ActionMethod`, anything with a `def` array) naming exactly the
+specs' methods; `collections` (the generated `ActionSpecs`) holding exactly
+the specs, each by identity; every input accepting `{}` also accepting
+`undefined` (codegen types such an input optional), the
+`empty_input_handler_guarded` inputs exempt and held to accepting `{}` and
+refusing `undefined`. The two input checks together hold codegen's
+`action_input_is_optional` to the schema. Pass the registry the frontend
+client carries, protocol specs included. fuz_app's own:
+`src/test/auth/action_spec_input_invariants.test.ts`.
+
+### `stub_api.ts` + `mock_websocket.ts` — frontend doubles
+
+- `create_stub_api<TApi>(methods)` — a Proxy holding only `methods` (typed
+  `Partial<TApi>`), typed as the whole API; calling any other method throws
+  `create_stub_api: unexpected call to '<name>'`. `then`, `toJSON` and symbol
+  keys read `undefined`, so awaiting it is no call and `JSON.stringify` doesn't
+  throw. For a `ThrowingApi` or any
+  `*Rpc` adapter object a state class takes.
+- `rpc_error(reason, code?)` — what a `ThrowingApi` call throws for a refusal:
+  `to_rpc_call_error` (`actions/rpc_client.ts`, the one `create_throwing_api`
+  throws through) over `{code, message: reason, data: {reason}}`, `code`
+  defaulting to `JSONRPC_ERROR_CODES.forbidden`. Reject a stubbed method with it.
+- `MockWebSocket` / `install_mock_websocket()` — a `WebSocket` the test plays
+  the server for (`fire_open`, `fire_message`, `fire_close(code, reason)`,
+  `fire_error`; `sent`, `close_code`, `close_reason`, `close_throws`); like a
+  browser's, `close(code, reason)` leaves it `CLOSING` and fires no close
+  event until the test fires one, and throws an `InvalidAccessError`
+  `DOMException` for a code other than 1000 or 3000–4999. The install swaps it in as
+  `globalThis.WebSocket` and returns `{instances, last(), throw_on_construct,
+  restore()}`, a record of its own. Run the real `FrontendWebsocketClient`
+  (or a client over it) on it rather than a fake client: the close-code rules,
+  queue and reconnect then come along instead of being re-encoded.
+  `src/test/actions/socket.svelte.test.ts` is the client's suite over it.
+
 ## Database — `db.ts` + `describe_db.ts`
 
 Factory builders for parameterized DB tests. Consumer projects pass their
@@ -197,6 +236,7 @@ factories accept any migration namespace set.
 - `create_default_db_factory(init_schema)` — the default in-memory factory: pglet-wasm, or the builder `set_default_db_factory` installed before it was built. What fuz_app's own helpers fall back to (`create_test_app_server`, `describe_rate_limiting_tests`, `describe_sse_route_tests`).
 - `create_pglet_wasm_factory(init_schema)` / `create_pglite_factory(init_schema)` — pin pglet-wasm (`@fuzdev/pglet-wasm`, created with `PGLET_COERCION`) or PGlite; each needs its optional peer installed; `skip: false`. See WASM caching below.
 - `set_default_db_factory(create_factory | null)` — install a `DbFactoryBuilder` for `create_default_db_factory`, so suites written against the default run on another driver without being edited (`create_pglite_factory` to run them on PGlite); returns the builder it replaced, so a caller can put it back. Install from a `db`-project `setupFiles` entry, before any factory is built (../../../docs/testing.md §Switching the default driver). Injected rather than selected here: a driver it can wrap may live in test-side code this shipped module can't import (fuz_app's `pglet-server`). fuz_app's own switch is `src/test/db_default.ts` (`FUZ_TEST_DB_DEFAULT`).
+- `install_unit_db_guard()` — the misnamed-DB-test guard: installs (`set_default_db_factory`) a builder whose factories refuse `create()` with the fix (name the file `*.db.test.ts`), so a test opening the default database in a unit project fails rather than starting a WASM instance in a parallel worker. Call it from the unit project's `setupFiles` module (fuz_app's: `src/test/unit_db_guard.ts`). Refuses in `create()`, not when built, since modules build default factories at import.
 - `create_pg_factory(init_schema, postgres_url, {suite})` — PostgreSQL; `skip: true` when `postgres_url` is unset (callers pass `process.env[FUZ_TEST_POSTGRES_URL_ENV]`; the factory reads no env). `postgres_url` names a server and a role with `CREATEDB` and is only the admin connection: each `create()` creates `fuz_testing_<suite>_<pid>_<thread id>_<n>` from `template0` (the thread id keeps names apart under a threads pool), opens production's pool on it and runs `init_schema`; `close()` ends the pool and drops it `WITH (FORCE)` — the Rust spine's `fuz_testing` prefix and drop (its names carry no thread id). `suite` is lowercase ASCII, digits and `_`, starting with a letter, at most 24 bytes. A role without `CREATEDB` fails saying so; an unreachable server names the variable. A run killed before its `close()` leaves `fuz_testing_*` databases — drop them by that prefix.
 - `FUZ_TEST_POSTGRES_URL_ENV` (`'FUZ_TEST_POSTGRES_URL'`) — the one variable that turns on the PostgreSQL leg, the TS harness's and the Rust spine's. `TEST_DATABASE_PREFIX` (`fuz_testing_`), `create_test_postgres_database(postgres_url, name)` / `drop_test_postgres_database(postgres_url, name)` (from `template0`; `IF EXISTS … WITH (FORCE)`, retrying the passing refusals `42501` and `55006` as Rust does) and `assert_test_database_name_part` are the pieces it and `cross_backend/test_database.ts` share; a test needing a scratch database of its own uses them too.
 - `auth_truncate_tables` — the auth namespace's row tables in an order a `DELETE` per table runs in (`role_grant_offer` ahead of `role_grant`, the cycle's blocking side). Excludes `audit_log` and the singleton rows.
@@ -673,7 +713,12 @@ Every suite's skip list is checked the same way, by
 `assert_skip_entries_known(owner, field, entries, known, noun)`
 (`integration_helpers.ts`): the round trip's `skip_routes`, the RPC round
 trip's `skip_methods`, data exposure's `skip_routes` (its suite and both
-`assert_*` helpers) and the adversarial suites'. A stale entry would skip
+`assert_*` helpers), the adversarial suites', and the `skip_methods` of
+`create_rpc_envelope_cases` (against its endpoint),
+`generate_rpc_auth_conformance_cases` (declared and live endpoints) and
+`describe_rpc_adversarial_cross_tests` (the methods at its `rpc_path`,
+declared or live-mounted, each endpoint's envelope cases then given the
+entries it carries). A stale entry would skip
 whatever takes the name next, and a typo would skip nothing.
 
 A test whose subject is missing reports a skip with its reason — never a pass
@@ -1303,7 +1348,7 @@ suites' shared options minus their in-process-only knobs
 One call that runs every shipped single-backend cross suite against one
 spawned backend: `describe_spine_cross_suites(handle, {surface_source,
 session_cookie_name, rpc_endpoints, live_rpc_endpoints?, roles?, setup?, exclude?,
-exclude_cases?, expected_skips?, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
+exclude_cases?, expected_skips, overrides?, suite_roles?, ws_required_roles?, rpc_success_fixtures?,
 rpc_skip_methods?, rpc_input_overrides?, rpc_max_body_bytes?, ws_max_message_bytes?})`.
 `live_rpc_endpoints` is the backend's whole live mount; given, `rpc_adversarial`
 also walks the methods it keeps off the declared surface. `rpc_input_overrides`
@@ -1370,9 +1415,12 @@ here never reaches it.
   owes — the cases a suite skips because the backend lacks what they gate on
   (`test_if`) and the suites skipped for an undeclared backdoor (their line
   under `SPINE_SUITES_SKIPPED_TITLE`), each by its name path below the calling
-  suite with a required reason. Given, the call ends with
+  suite with a required reason. Required — `{}` declares the backend owes none,
+  and a call without it throws — so the call always ends with
   `check_declared_skips` over them, an `exclude`d suite's line declared by its
-  `exclude` entry; omitted, no skip is checked. fuz_app's own call keys the
+  `exclude` entry. `register_spine_suites` takes it optional
+  (`SpineSuiteRegistrationOptions`): the transcript differential runs a subset
+  and holds the skips itself. fuz_app's own call keys the
   list by backend name, so a capability flipped by mistake fails rather than
   declaring its own skip.
 - **`overrides`** — `SuiteOverrides`: per suite a `Partial` of its options, or a function of the derived options returning one (`SuiteOverride`), shallow-merged over the derived ones — a role list, an `xfail`, `ws: undefined` to drop optional socket cases. Every option a suite requires must survive the merge non-empty, or the call throws naming suite and key. The unexcludable suites take only what `check_unexcludable_override` allows, so an option added later is refused until classified.
@@ -1697,6 +1745,25 @@ Conventions that hold across them:
 
 ### Cross-process plumbing (consumed by `*.cross.test.ts` suites)
 
+- `testing/cross_backend/make_cross_backend_project.ts` (config time, no
+  production guard) — `make_cross_backend_project({name, global_setup,
+  include?, exclude?, group_order?, test_timeout?, hook_timeout?})`, one vitest
+  project per backend, and `cross_backend_enabled(env?)`, the gate every
+  `vite.config.ts` puts the projects behind: `FUZ_TEST_CROSS_BACKEND`
+  (`FUZ_TEST_CROSS_BACKEND_ENV`) `1` runs them, unset, empty or `0` doesn't,
+  and any other value throws rather than guess.
+- **Ports.** Each spawned backend binds a fixed port, unique across the repos
+  so any of them run at once. Pick a new one outside these:
+
+  | repo | ports |
+  | --- | --- |
+  | fuz_app | 1177–1194 except 1179 (`src/test/cross_backend/cross_backend_projects.ts`) |
+  | fuz_forge | 14041 Node, 14042 Bun, 14141 Rust, 14051 / 14151 the login-security pair |
+  | zzz | 4462–4465 |
+  | forum.fuz.dev | 14241 |
+  | cord | 14261 |
+  | visionesdelcaribe.org | 14341 |
+
 - `testing/cross_backend/backend_config.ts` — `BackendConfig` +
   `BackendBootstrapConfig` interfaces. Consumer factories
   (`node_backend_config()`, `rust_backend_config()`,
@@ -1742,7 +1809,7 @@ Conventions that hold across them:
   `auth/daemon_token_middleware.ts`.
 - `testing/cross_backend/create_cross_backend_global_setup.ts` —
   `create_cross_backend_global_setup({configs, derive_name?, provide_key?,
-  databases?, before_spawn?})`, the single-backend `globalSetup` maker:
+  databases?, before_spawn?, cargo_binaries?})`, the single-backend `globalSetup` maker:
   the backend name derived from the vitest project name selects a config,
   which is spawned, bootstrapped and provided. `before_spawn` (by backend
   name; a key naming no config, an inherited one included, throws at
@@ -1753,9 +1820,14 @@ Conventions that hold across them:
   PostgreSQL database under `FUZ_TEST_POSTGRES_URL`; `null` for
   PostgreSQL-only), then its config factory gets the database's URL
   (`'memory://'` for a backend `databases` doesn't name), then the spawn. The
-  teardown closes the database after the backend's. A second argument
-  (`CrossBackendGlobalSetupDeps`) swaps the database opener, the spawn and the
-  PostgreSQL server, for testing the setup itself.
+  teardown closes the database after the backend's. `cargo_binaries` (by
+  backend name, each a `CargoBinaryOptions`) is the Rust backend's shape in
+  one entry: it is the `before_spawn` hook `prepare_cargo_binary(binary)` and
+  the `databases` entry `{workspace_dir, profile}` of the same binary; a name
+  in it and in `databases` or `before_spawn` throws. It is the shape every
+  consumer's Rust backend has. A second argument
+  (`CrossBackendGlobalSetupDeps`) swaps the database opener, the spawn, the
+  Cargo build and the PostgreSQL server, for testing the setup itself.
 - `testing/cross_backend/test_database.ts` — the database a spawned backend
   runs over: `open_test_database({name, postgres_url, pglet_server_bin})` →
   `TestDatabase` (`{url, engine, empty(), close()}`). Without `postgres_url`,
@@ -1785,8 +1857,8 @@ Conventions that hold across them:
   path alone, for a config's `start_command` — under the `target_directory`
   `cargo metadata` reports (memoized per process per workspace), in the
   profile's directory (`to_cargo_profile_dir`: `dev` → `debug`;
-  `to_cargo_binary_path` reads it from the metadata JSON). Run as
-  `create_cross_backend_global_setup`'s `before_spawn` hook, the build happens
+  `to_cargo_binary_path` reads it from the metadata JSON). Run by
+  `create_cross_backend_global_setup` (`cargo_binaries`), the build happens
   before the spawn's startup window, with its output shown. fuz_app's own stub
   rebuild (`rebuild_rust_spine_stub`) is built on it.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.

@@ -323,6 +323,20 @@ export type ThrowingApi<TApi> = {
 };
 
 /**
+ * The `Error` a `ThrowingApi` call throws for a JSON-RPC error: the error's
+ * `message`, with only its `code` and `data` copied on, so an attacker-shaped
+ * error can't overwrite `name` or `stack`. Catch blocks read
+ * `err.data?.reason`.
+ *
+ * @param error - the JSON-RPC error the call answered
+ * @returns the error to throw
+ */
+export const to_rpc_call_error = (
+	error: JsonrpcErrorObject
+): Error & Pick<JsonrpcErrorObject, 'code' | 'data'> =>
+	Object.assign(new Error(error.message), { code: error.code, data: error.data });
+
+/**
  * Wrap a typed RPC client so every call resolves to its unwrapped value or
  * throws an `Error` carrying the JSON-RPC `{code, message, data?}` shape.
  *
@@ -337,9 +351,9 @@ export type ThrowingApi<TApi> = {
  * inspects `result` shape at call-time and only unwraps when it sees a
  * Result. Non-object returns pass through unchanged.
  *
- * Only `{code, data}` cross onto the thrown Error — `name` / `stack` are
- * left as the Error's own properties so attacker-shaped `result.error`
- * payloads cannot overwrite them.
+ * Only `{code, data}` cross onto the thrown Error (`to_rpc_call_error`) —
+ * `name` / `stack` are left as the Error's own properties so attacker-shaped
+ * `result.error` payloads cannot overwrite them.
  *
  * Recommended consumer convention: `create_frontend_rpc_client` ships
  * both shapes by default — `api` (throwing) for hot-path call sites and
@@ -372,11 +386,7 @@ export const create_throwing_api = <TApi extends object>(api_result: TApi): Thro
 					const r = result as { ok?: unknown; value?: unknown; error?: unknown };
 					if (r.ok === true) return r.value;
 					if (r.ok === false && r.error && typeof r.error === 'object') {
-						const e = r.error as JsonrpcErrorObject;
-						throw Object.assign(new Error(e.message), {
-							code: e.code,
-							data: e.data
-						});
+						throw to_rpc_call_error(r.error as JsonrpcErrorObject);
 					}
 					return result;
 				};

@@ -92,6 +92,7 @@ import {
 import { PROTOCOL_ACTION_METHODS } from '../../actions/action_codegen.ts';
 import { TESTING_METHOD_PREFIX } from '../surface_invariants.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
+import { assert_skip_entries_known } from '../integration_helpers.ts';
 import {
 	assert_rpc_envelope_refusal,
 	create_rpc_envelope_cases,
@@ -116,7 +117,10 @@ export interface RpcAdversarialCrossTestOptions extends RpcPathCrossSuiteOptions
 	 * through both groups too. Omitted, only declared methods run.
 	 */
 	readonly live_rpc_endpoints?: ReadonlyArray<RpcEndpointSpec>;
-	/** Methods to leave out, beyond the protocol actions always skipped. */
+	/**
+	 * Methods to leave out, beyond the protocol actions always skipped. An
+	 * entry naming no method at `rpc_path`, declared or live-mounted, throws.
+	 */
 	readonly skip_methods?: ReadonlyArray<string>;
 	/**
 	 * Valid params per method (method name → params) to build its params cases
@@ -246,6 +250,7 @@ const to_off_surface = (
  * Run the cross-process malformed-envelope and invalid-params suite.
  *
  * @param options - the fixture, the declared surface and live mount, the RPC path, and methods to skip
+ * @throws Error on a `skip_methods` entry naming no method at the RPC path
  */
 export const describe_rpc_adversarial_cross_tests = (
 	options: RpcAdversarialCrossTestOptions
@@ -269,6 +274,22 @@ export const describe_rpc_adversarial_cross_tests = (
 				options.live_rpc_endpoints
 			)
 		: null;
+	// one check over both endpoints, each then handed the entries it carries
+	const skip_on = (e: AppSurfaceRpcEndpoint): Array<string> | undefined => {
+		const names = new Set(e.methods.map((m) => m.name));
+		return options.skip_methods?.filter((method) => names.has(method));
+	};
+	if (endpoint) {
+		assert_skip_entries_known(
+			'describe_rpc_adversarial_cross_tests',
+			'skip_methods',
+			options.skip_methods,
+			new Set(
+				[endpoint, off_surface?.endpoint].flatMap((e) => e?.methods.map((m) => m.name) ?? [])
+			),
+			`a method at '${rpc_path}', declared or live-mounted`
+		);
+	}
 
 	describe('RPC adversarial envelopes (cross-process)', () => {
 		if (!endpoint || !endpoint_spec) {
@@ -277,7 +298,7 @@ export const describe_rpc_adversarial_cross_tests = (
 			});
 			return;
 		}
-		const cases = create_rpc_envelope_cases(endpoint, { skip_methods: options.skip_methods });
+		const cases = create_rpc_envelope_cases(endpoint, { skip_methods: skip_on(endpoint) });
 		test('the envelope cases cover the endpoint', () => {
 			// both halves need a read and a mutation to choose; a surface
 			// lacking either loses cases silently otherwise
@@ -303,7 +324,7 @@ export const describe_rpc_adversarial_cross_tests = (
 	if (off_surface) {
 		describe('RPC adversarial envelopes, live-mounted methods off the declared surface (cross-process)', () => {
 			for (const c of create_rpc_envelope_cases(off_surface.endpoint, {
-				skip_methods: options.skip_methods
+				skip_methods: skip_on(off_surface.endpoint)
 			})) {
 				test(c.name, async () => {
 					const fixture = await setup_test();

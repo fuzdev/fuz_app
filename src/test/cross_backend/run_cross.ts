@@ -68,9 +68,9 @@ import {
 	prepare_pglet_server_binary
 } from '#lib/testing/cross_backend/test_database.ts';
 import { FUZ_TEST_POSTGRES_URL_ENV } from '#lib/testing/db.ts';
+import { FUZ_TEST_CROSS_BACKEND_ENV } from '#lib/testing/cross_backend/make_cross_backend_project.ts';
 
 import {
-	CROSS_BACKEND_ENV,
 	CROSS_BACKEND_PROJECTS,
 	POSTGRES_ONLY_PROJECTS,
 	type CrossProjectName
@@ -273,7 +273,7 @@ const postgres_url = process.env[FUZ_TEST_POSTGRES_URL_ENV] || undefined;
 rebuild_rust_spine_stub({ crate: RUST_SPINE_STUB_CRATE });
 const env: NodeJS.ProcessEnv = {
 	...process.env,
-	[CROSS_BACKEND_ENV]: '1',
+	[FUZ_TEST_CROSS_BACKEND_ENV]: '1',
 	[NO_REBUILD_ENV]: '1',
 	// on PostgreSQL no project spawns a pglet server
 	...(postgres_url
@@ -283,7 +283,7 @@ const env: NodeJS.ProcessEnv = {
 
 // the `db` step, only on PostgreSQL: the caller's env without the cross switch
 const db_postgres_env: NodeJS.ProcessEnv = { ...process.env };
-delete db_postgres_env[CROSS_BACKEND_ENV];
+delete db_postgres_env[FUZ_TEST_CROSS_BACKEND_ENV];
 
 /** The projects not run: the PostgreSQL-only ones, without a PostgreSQL server. */
 const not_run = CROSS_BACKEND_PROJECTS.map((project) => project.name).filter(

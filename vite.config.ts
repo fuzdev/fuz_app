@@ -10,11 +10,11 @@ import { vite_plugin_fuz_css } from '@fuzdev/fuz_css/vite_plugin_fuz_css.ts';
 import svelte_docinfo from 'svelte-docinfo/vite.js';
 import { vite_plugin_pkg_json } from '@fuzdev/fuz_ui/vite_plugin_pkg_json.ts';
 
-import { make_cross_backend_project } from './src/lib/testing/cross_backend/make_cross_backend_project.ts';
 import {
-	CROSS_BACKEND_ENV,
-	CROSS_BACKEND_PROJECTS
-} from './src/test/cross_backend/cross_backend_projects.ts';
+	cross_backend_enabled,
+	make_cross_backend_project
+} from './src/lib/testing/cross_backend/make_cross_backend_project.ts';
+import { CROSS_BACKEND_PROJECTS } from './src/test/cross_backend/cross_backend_projects.ts';
 
 const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 
@@ -42,8 +42,8 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
  * awaits each project's `globalSetup` in turn. `npm run test:cross`
  * (`src/test/cross_backend/run_cross.ts`) gets the concurrency by running each
  * project in a `vitest` invocation of its own, at once, behind one summary.
+ * The gate is the shipped `cross_backend_enabled`, every consumer's too.
  */
-const cross_backend_enabled = process.env[CROSS_BACKEND_ENV] === '1';
 
 export default defineConfig({
 	server: {
@@ -107,7 +107,7 @@ export default defineConfig({
 					sequence: { groupOrder: 2 }
 				}
 			},
-			...(cross_backend_enabled ? CROSS_BACKEND_PROJECTS.map(make_cross_backend_project) : [])
+			...(cross_backend_enabled() ? CROSS_BACKEND_PROJECTS.map(make_cross_backend_project) : [])
 		]
 	}
 });

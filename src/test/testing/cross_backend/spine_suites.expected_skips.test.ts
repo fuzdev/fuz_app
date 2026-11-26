@@ -99,11 +99,22 @@ describe('a backdoor skip left undeclared', () => {
 	check.fails = true;
 });
 
-describe('no expected_skips, no check', () => {
-	describe_spine_cross_suites(handle, { exclude } as unknown as SpineCrossSuitesOptions);
-
-	test('registers no closing check', (ctx) => {
-		const names = ctx.task.suite!.tasks.map((t) => t.name);
-		assert.notInclude(names, DECLARED_SKIPS_CHECK_NAME);
+describe('expected_skips is required', () => {
+	test('a call without it throws, so no gated skip goes unchecked', () => {
+		assert.throws(
+			() => describe_spine_cross_suites(handle, { exclude } as unknown as SpineCrossSuitesOptions),
+			/expected_skips is required/
+		);
 	});
+});
+
+describe('an empty expected_skips still checks', () => {
+	describe_spine_cross_suites(handle, {
+		exclude,
+		expected_skips: {}
+	} as unknown as SpineCrossSuitesOptions);
+	const check = TestRunner.getCurrentSuite().tasks.at(-1);
+	assert.ok(check?.type === 'test' && check.name === DECLARED_SKIPS_CHECK_NAME);
+	// every backdoor skip is undeclared
+	check.fails = true;
 });

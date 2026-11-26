@@ -13,6 +13,7 @@ import { assert, describe, test, vi } from 'vitest';
 
 import {
 	describe_spine_cross_suites,
+	SPINE_SUITES_SKIPPED_TITLE,
 	SUITE_NAMES,
 	UNEXCLUDABLE_SPINE_SUITES,
 	type SpineCrossSuitesOptions
@@ -35,13 +36,18 @@ vi.mock('#lib/testing/cross_backend/testing_backdoor.ts', async (import_original
 	}
 }));
 
-/** The suites that skip themselves on a backend declaring only the shared backdoors. */
-const SELF_SKIPPING = [
-	'credential_conformance',
-	'credential_deadline',
-	'origin_conformance',
-	'ws_outbound_overflow'
+/** The suites that skip themselves on a backend declaring only the shared backdoors, each with the backdoor it needs. */
+const SELF_SKIPPING_BACKDOORS: Array<[name: string, backdoor: string]> = [
+	['credential_conformance', '_testing_credential_read'],
+	['credential_deadline', '_testing_shorten_credential_expiry'],
+	['origin_conformance', '_testing_origin_check'],
+	['ws_outbound_overflow', '_testing_flood_notifications']
 ];
+const SELF_SKIPPING = SELF_SKIPPING_BACKDOORS.map(([name]) => name);
+
+/** A self-skipping suite's line, as `describe_spine_cross_suites` names it. */
+const skip_line = (name: string, backdoor: string): string =>
+	`${name}: needs \`${backdoor}\`, which capabilities.testing_backdoors doesn't declare`;
 
 const capabilities = {
 	ws: false,
@@ -60,25 +66,21 @@ describe('a backend declaring only the shared backdoors', () => {
 			).map((n) => [n, 'not under test'])
 		),
 		// an override keeping the derived capabilities passes through
-		overrides: { testing_backdoor: { extra_methods: [{ method: '_testing_consumer_seam' }] } }
+		overrides: { testing_backdoor: { extra_methods: [{ method: '_testing_consumer_seam' }] } },
+		expected_skips: Object.fromEntries(
+			SELF_SKIPPING_BACKDOORS.map(([name, backdoor]) => [
+				`${SPINE_SUITES_SKIPPED_TITLE} > ${skip_line(name, backdoor)}`,
+				'no such backdoor here'
+			])
+		)
 	} as unknown as SpineCrossSuitesOptions);
 
 	test('skips each suite needing an undeclared backdoor, naming it', (ctx) => {
-		const skipped = ctx.task.suite!.tasks.find(
-			(t) => t.name === 'spine cross suites excluded on this backend'
-		);
+		const skipped = ctx.task.suite!.tasks.find((t) => t.name === SPINE_SUITES_SKIPPED_TITLE);
 		assert.ok(skipped?.type === 'suite');
 		const names = skipped.tasks.map((t) => t.name);
-		for (const [name, backdoor] of [
-			['credential_conformance', '_testing_credential_read'],
-			['credential_deadline', '_testing_shorten_credential_expiry'],
-			['origin_conformance', '_testing_origin_check'],
-			['ws_outbound_overflow', '_testing_flood_notifications']
-		]) {
-			assert.include(
-				names,
-				`${name}: needs \`${backdoor}\`, which capabilities.testing_backdoors doesn't declare`
-			);
+		for (const [name, backdoor] of SELF_SKIPPING_BACKDOORS) {
+			assert.include(names, skip_line(name, backdoor));
 		}
 		for (const task of skipped.tasks) assert.strictEqual(task.mode, 'skip', task.name);
 		assert.include(names, 'ready: not under test', 'the excludes stay beside them');

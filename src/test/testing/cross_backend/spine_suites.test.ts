@@ -348,7 +348,7 @@ describe('describe_spine_cross_suites option validation', () => {
 	const handle = {
 		config: { capabilities: { testing_backdoors: [] }, env: {} }
 	} as unknown as ReconstructedBootstrappedBackendHandle;
-	const base = {} as SpineCrossSuitesOptions;
+	const base = { expected_skips: {} } as unknown as SpineCrossSuitesOptions;
 	const call = (options: Partial<SpineCrossSuitesOptions>) => () =>
 		describe_spine_cross_suites(handle, { ...base, ...options });
 
@@ -456,7 +456,7 @@ const HARNESS_ONLY: ReadonlyArray<TestingBackdoorMethod> = [
 ];
 
 describe('describe_spine_cross_suites backdoor declaration', () => {
-	const base = {} as SpineCrossSuitesOptions;
+	const base = { expected_skips: {} } as unknown as SpineCrossSuitesOptions;
 	const call =
 		(handle: ReconstructedBootstrappedBackendHandle, options: Partial<SpineCrossSuitesOptions>) =>
 		() =>
@@ -601,7 +601,10 @@ describe('describe_spine_cross_suites backdoor declaration', () => {
 describe('describe_spine_cross_suites exclude_cases validation', () => {
 	const handle = handle_declaring(HARNESS_ONLY);
 	const call = (options: Partial<SpineCrossSuitesOptions>) => () =>
-		describe_spine_cross_suites(handle, options as SpineCrossSuitesOptions);
+		describe_spine_cross_suites(handle, {
+			expected_skips: {},
+			...options
+		} as SpineCrossSuitesOptions);
 
 	test('an unknown suite is refused', () => {
 		assert.throws(
@@ -656,7 +659,8 @@ describe('describe_spine_cross_suites required options', () => {
 					'not under test'
 				])
 			),
-			overrides
+			overrides,
+			expected_skips: {}
 		}) as unknown as SpineCrossSuitesOptions;
 
 	test('an override that clears a required option throws, naming suite and key', () => {
@@ -752,7 +756,8 @@ describe('describe_spine_cross_suites unexcludable overrides', () => {
 		() =>
 			describe_spine_cross_suites(h, {
 				exclude: exclude(keep),
-				overrides
+				overrides,
+				expected_skips: {}
 			} as SpineCrossSuitesOptions);
 
 	test('an override changing a probed flag is refused', () => {

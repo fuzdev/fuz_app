@@ -22,9 +22,8 @@ import '../assert_dev_env.ts';
  *
  * export default create_cross_backend_global_setup({
  *   configs: {node: () => node_backend_config(), rust: (database_url) => rust_backend_config(database_url)},
- *   // the Rust backend's database, its pglet server built in the backend's own Cargo workspace
- *   databases: {rust: MY_CARGO_BINARY},
- *   before_spawn: {rust: () => prepare_cargo_binary(MY_CARGO_BINARY)},
+ *   // the Rust backend, built before its spawn, over a pglet server built in its Cargo workspace
+ *   cargo_binaries: {rust: MY_CARGO_BINARY},
  * });
  * ```
  *
@@ -40,6 +39,7 @@ import '../assert_dev_env.ts';
 import type { TestProject } from 'vitest/node';
 
 import type { BackendConfig } from './backend_config.ts';
+import { prepare_cargo_binary, type CargoBinaryOptions } from './cargo_binary.ts';
 import { bootstrap_backend } from './bootstrap_backend.ts';
 import { FUZ_TEST_POSTGRES_URL_ENV } from '../db.ts';
 import { serialize_bootstrapped_handle } from './setup.ts';
@@ -100,6 +100,15 @@ export interface CrossBackendGlobalSetupOptions {
 	 * backend; a key naming no config throws.
 	 */
 	readonly before_spawn?: Readonly<Record<string, () => unknown>>;
+	/**
+	 * The backends built by Cargo, by backend name — the shape every Rust
+	 * backend takes: each is built before its spawn (`prepare_cargo_binary`, as
+	 * a `before_spawn` hook) and runs over a database of its own, a
+	 * `pglet_server` built in the binary's workspace and profile (as a
+	 * `databases` entry) or PostgreSQL under `FUZ_TEST_POSTGRES_URL`. A name
+	 * here and in `databases` or `before_spawn`, or naming no config, throws.
+	 */
+	readonly cargo_binaries?: Readonly<Record<string, CargoBinaryOptions>>;
 }
 
 /**
@@ -111,12 +120,15 @@ export interface CrossBackendGlobalSetupOptions {
 export interface CrossBackendGlobalSetupDeps {
 	readonly open_test_database: typeof open_test_database;
 	readonly bootstrap_backend: typeof bootstrap_backend;
+	/** Builds a `cargo_binaries` entry. */
+	readonly prepare_cargo_binary: (options: CargoBinaryOptions) => unknown;
 	readonly postgres_url: () => string | undefined;
 }
 
 const default_cross_backend_global_setup_deps: CrossBackendGlobalSetupDeps = {
 	open_test_database,
 	bootstrap_backend,
+	prepare_cargo_binary,
 	postgres_url: () => process.env[FUZ_TEST_POSTGRES_URL_ENV]
 };
 
@@ -124,9 +136,10 @@ const default_cross_backend_global_setup_deps: CrossBackendGlobalSetupDeps = {
  * Build a vitest `globalSetup` default export. Returns the
  * `(project) => teardown` function vitest 4 expects.
  *
- * @param options - the configs, the databases, and what runs before the spawn
- * @param deps - the database opener, the spawn and the PostgreSQL server, the shipped ones by default
- * @throws Error when a `before_spawn` or `databases` key names no config, and
+ * @param options - the configs, the databases, what runs before the spawn, and the Cargo-built backends
+ * @param deps - the database opener, the spawn, the Cargo build and the PostgreSQL server, the shipped ones by default
+ * @throws Error when a `before_spawn`, `databases` or `cargo_binaries` key names no config, or a
+ *   `cargo_binaries` key is also a `databases` or `before_spawn` key, and
  *   from the setup when a backend's config ignores the database provisioned for it
  */
 export const create_cross_backend_global_setup = (
@@ -134,14 +147,16 @@ export const create_cross_backend_global_setup = (
 		configs,
 		derive_name = (project_name) => project_name.replace(DEFAULT_PROJECT_NAME_PREFIX, ''),
 		provide_key = 'backend_handle',
-		databases = {},
-		before_spawn = {}
+		databases: declared_databases = {},
+		before_spawn: declared_before_spawn = {},
+		cargo_binaries = {}
 	}: CrossBackendGlobalSetupOptions,
 	deps: CrossBackendGlobalSetupDeps = default_cross_backend_global_setup_deps
 ): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	for (const [option, keyed] of [
-		['before_spawn', before_spawn],
-		['databases', databases]
+		['before_spawn', declared_before_spawn],
+		['databases', declared_databases],
+		['cargo_binaries', cargo_binaries]
 	] as const) {
 		for (const name of Object.keys(keyed)) {
 			if (!Object.hasOwn(configs, name)) {
@@ -151,6 +166,23 @@ export const create_cross_backend_global_setup = (
 				);
 			}
 		}
+	}
+	const databases: Record<string, PgletServerBinaryOptions | null> = { ...declared_databases };
+	const before_spawn: Record<string, () => unknown> = { ...declared_before_spawn };
+	for (const [name, binary] of Object.entries(cargo_binaries)) {
+		for (const [option, keyed] of [
+			['databases', declared_databases],
+			['before_spawn', declared_before_spawn]
+		] as const) {
+			if (Object.hasOwn(keyed, name)) {
+				throw new Error(
+					`create_cross_backend_global_setup: '${name}' is in both cargo_binaries and ${option} — ` +
+						'cargo_binaries gives it both'
+				);
+			}
+		}
+		databases[name] = { workspace_dir: binary.workspace_dir, profile: binary.profile };
+		before_spawn[name] = () => deps.prepare_cargo_binary(binary);
 	}
 	return async (project) => {
 		const name = derive_name(project.name);

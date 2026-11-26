@@ -16,6 +16,7 @@ import {
 } from '#lib/ui/role_grant_offers_state.svelte.ts';
 import type { RoleGrantOfferAcceptOutput } from '#lib/auth/role_grant_offer_action_specs.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
+import { create_stub_api } from '#lib/testing/stub_api.ts';
 import RoleGrantOfferInboxHarness from './RoleGrantOfferInboxHarness.svelte';
 import { make_offer } from './role_grant_offer_fixtures.ts';
 import { make_deferred } from './async_test_helpers.ts';
@@ -54,15 +55,11 @@ const incoming_offer = (id: string) =>
 
 const mount_inbox = async (rpc: Partial<RoleGrantOffersRpc>): Promise<HTMLElement> => {
 	const state = new RoleGrantOffersState({
-		rpc: {
+		rpc: create_stub_api<RoleGrantOffersRpc>({
 			list: async () => ({ offers: [] }),
 			history: async () => ({ offers: [] }),
-			create: () => Promise.reject(new Error('not stubbed')),
-			accept: () => Promise.reject(new Error('not stubbed')),
-			decline: () => Promise.reject(new Error('not stubbed')),
-			retract: () => Promise.reject(new Error('not stubbed')),
 			...rpc
-		},
+		}),
 		account_id: () => RECIPIENT_ID,
 		actor_id: () => null
 	});

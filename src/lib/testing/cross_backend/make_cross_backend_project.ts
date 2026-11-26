@@ -10,7 +10,7 @@
  * Consumers compose these into their `vite.config.ts`:
  *
  * ```ts
- * const cross_backend_projects = process.env.FUZ_TEST_CROSS_BACKEND
+ * const cross_backend_projects = cross_backend_enabled()
  *   ? [
  *       make_cross_backend_project({name: 'cross_backend_ts_node', global_setup: GLOBAL_SETUP}),
  *       make_cross_backend_project({name: 'cross_backend_rust', global_setup: GLOBAL_SETUP}),
@@ -27,6 +27,32 @@
  *
  * @module
  */
+
+/**
+ * The env var that turns the cross-backend projects on, `1` to run them — the
+ * one gate `cross_backend_enabled` reads.
+ */
+export const FUZ_TEST_CROSS_BACKEND_ENV = 'FUZ_TEST_CROSS_BACKEND';
+
+/**
+ * Whether the cross-backend projects run: `FUZ_TEST_CROSS_BACKEND` is `1`.
+ * Unset, empty or `0` is off; any other value throws, so a `true` or a typo
+ * neither runs the projects nor silently skips them.
+ *
+ * @param env - the environment to read, default `process.env`
+ * @returns `true` when the projects run
+ * @throws Error naming the value when it is neither on nor off
+ */
+export const cross_backend_enabled = (
+	env: Readonly<Record<string, string | undefined>> = process.env
+): boolean => {
+	const value = env[FUZ_TEST_CROSS_BACKEND_ENV];
+	if (value === '1') return true;
+	if (value === undefined || value === '' || value === '0') return false;
+	throw new Error(
+		`${FUZ_TEST_CROSS_BACKEND_ENV} must be '1' to run the cross-backend projects, or unset, '' or '0' — got '${value}'`
+	);
+};
 
 /** Default test-file globs — the convention is `src/test/cross_backend/*.cross.test.ts`. */
 const DEFAULT_INCLUDE: ReadonlyArray<string> = ['src/test/cross_backend/*.cross.test.ts'];

@@ -23,6 +23,7 @@ import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_JSON_BODY } from '../http/
 import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
 import { TESTING_METHOD_PREFIX } from './surface_invariants.ts';
 import { assert_jsonrpc_error_response } from './rpc_helpers.ts';
+import { assert_skip_entries_known } from './integration_helpers.ts';
 import {
 	generate_input_test_cases,
 	type InputTestCase,
@@ -66,7 +67,10 @@ export interface RpcEnvelopeCase {
 
 /** Options for `create_rpc_envelope_cases`. */
 export interface RpcEnvelopeCaseOptions {
-	/** Method names never chosen as a case's method. */
+	/**
+	 * Method names never chosen as a case's method. An entry naming no method
+	 * on the endpoint throws.
+	 */
 	readonly skip_methods?: ReadonlyArray<string>;
 }
 
@@ -120,11 +124,19 @@ export const rpc_get_side_effects_reason = (method: string): string =>
  * @param endpoint - the endpoint from the generated surface
  * @param options - methods never chosen
  * @returns the cases, in a fixed order
+ * @throws Error on a `skip_methods` entry naming no method on the endpoint
  */
 export const create_rpc_envelope_cases = (
 	endpoint: AppSurfaceRpcEndpoint,
 	options: RpcEnvelopeCaseOptions = {}
 ): Array<RpcEnvelopeCase> => {
+	assert_skip_entries_known(
+		'create_rpc_envelope_cases',
+		'skip_methods',
+		options.skip_methods,
+		new Set(endpoint.methods.map((m) => m.name)),
+		`a method on the endpoint at '${endpoint.path}'`
+	);
 	const skip = new Set(options.skip_methods);
 	const eligible = endpoint.methods.filter(
 		(m) =>

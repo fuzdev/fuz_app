@@ -17,14 +17,14 @@ import {
 	spine_rpc_endpoints,
 	spine_roles
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
-import type { SpineCrossSuitesOptions } from '#lib/testing/cross_backend/spine_suites.ts';
+import type { SpineSuiteRegistrationOptions } from '#lib/testing/cross_backend/spine_suites.ts';
 
 /**
  * Build the spine's suite options, fresh per call.
  *
  * @returns the options every spine runner shares, no excludes, overrides or declared skips
  */
-export const create_spine_cross_suites_options = (): SpineCrossSuitesOptions => ({
+export const create_spine_cross_suites_options = (): SpineSuiteRegistrationOptions => ({
 	surface_source: create_spine_surface_spec(),
 	session_cookie_name: SESSION_COOKIE_NAME,
 	rpc_endpoints: spine_rpc_endpoints,

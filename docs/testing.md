@@ -68,7 +68,9 @@ test: {
 			test: {
 				name: 'unit',
 				include: ['src/test/**/*.test.ts'],
-				exclude: ['src/test/**/*.db.test.ts']
+				exclude: ['src/test/**/*.db.test.ts'],
+				// a module calling `install_unit_db_guard()` from `testing/db.ts`
+				setupFiles: ['./src/test/unit_db_guard.ts']
 			}
 		},
 		{
@@ -86,6 +88,10 @@ test: {
 
 Under `isolate: false` a module-level `vi.mock()` leaks across files; avoid it
 in `.db.test.ts` files, or pair it with `vi.restoreAllMocks()` in `afterEach`.
+
+The unit project's `install_unit_db_guard()` (`testing/db.ts`) makes a test
+that opens the default database without the `.db.test.ts` suffix fail, naming
+the fix, instead of starting a WASM instance in a parallel worker.
 
 ## DB Fixture Setup
 
@@ -929,6 +935,48 @@ Every exported suite and helper, with its module and options, is in
 ../src/lib/testing/CLAUDE.md, whose headings are the index; each option's
 rules are in its TSDoc.
 
+### Action spec registry invariants
+
+One call holds your registry to the invariants every registry shares —
+methods unique, the generated enum and collections matching the specs, an
+input accepting `{}` also accepting `undefined`:
+
+```ts
+// action_specs.test.ts
+import { describe_action_spec_invariants } from '@fuzdev/fuz_app/testing/action_spec_invariants.ts';
+
+import { ActionSpecs, action_specs } from '#lib/action_collections.ts';
+import { ActionMethod } from '#lib/action_metatypes.ts';
+
+describe_action_spec_invariants({
+	specs: action_specs, // the registry the frontend client carries, protocol specs included
+	method_enum: ActionMethod,
+	collections: ActionSpecs
+});
+```
+
+### Frontend doubles
+
+A state class takes its RPC as an object; give it `create_stub_api`
+(`testing/stub_api.ts`), which holds only the methods the test drives and
+throws naming any other one called, and reject with `rpc_error(reason,
+code?)`, the error the throwing client throws for a refusal:
+
+```ts
+const state = new MyState({
+	api: create_stub_api<ThrowingApi<FrontendActionsApi>>({
+		thing_create: () => Promise.reject(rpc_error(ERROR_THING_NAME_INVALID))
+	})
+});
+```
+
+A client that opens its own sockets runs over `install_mock_websocket()`
+(`testing/mock_websocket.ts`) in a `beforeEach`, `restore()` in the
+`afterEach`; the test plays the server through `last().fire_open()`,
+`fire_message`, `fire_close(code, reason)`. Run the real
+`FrontendWebsocketClient` on it rather than a fake client, so its close-code
+rules and reconnects aren't re-encoded in the test.
+
 ### Cross-Impl Schema Parity
 
 For a dual-impl consumer running two backend implementations against one
@@ -1080,7 +1128,17 @@ fresh per-test keeper. Build each project with
 `make_cross_backend_project` (`testing/cross_backend/make_cross_backend_project.ts`):
 the shared suites need its longer `testTimeout` / `hookTimeout` — a case often
 starts with a full `_testing_reset` over a real socket, which vitest's
-defaults don't cover — and set no timeout of their own.
+defaults don't cover — and set no timeout of their own. Gate the projects on
+`cross_backend_enabled()` from the same module, so `FUZ_TEST_CROSS_BACKEND=1`
+means the same in every repo (a value other than `1`, unset, empty or `0`
+throws):
+
+```ts
+// vite.config.ts
+const cross_backend_projects = cross_backend_enabled()
+	? [make_cross_backend_project({ name: 'cross_backend_rust', global_setup: GLOBAL_SETUP })]
+	: [];
+```
 
 ```ts
 // global_setup.ts — one backend per vitest project, provided as `backend_handle`
@@ -1089,9 +1147,9 @@ import { MY_CARGO_BINARY, node_backend_config, rust_backend_config } from './my_
 
 export default create_cross_backend_global_setup({
 	configs: { node: () => node_backend_config(), rust: rust_backend_config },
-	// the Rust backend's own database: a `pglet_server` built in its Cargo workspace,
-	// or a PostgreSQL database under `FUZ_TEST_POSTGRES_URL`
-	databases: { rust: MY_CARGO_BINARY }
+	// the Rust backend, built before its spawn, over its own database: a `pglet_server`
+	// built in its Cargo workspace, or a PostgreSQL database under `FUZ_TEST_POSTGRES_URL`
+	cargo_binaries: { rust: MY_CARGO_BINARY }
 });
 ```
 
@@ -1106,7 +1164,8 @@ every fuz_util `Logger` is off), and — given
 directory from — the directory `spawn_backend` reads the token from.
 
 A Rust backend's database is the harness's to provision, never a URL the
-config names: `databases` opens one per backend before its config is built
+config names: `databases` (which `cargo_binaries` fills from the binary's
+workspace and profile) opens one per backend before its config is built
 (`open_test_database`, `testing/cross_backend/test_database.ts`) and the
 config factory takes its URL. By default it is a native `pglet_server` of its
 own (pglet speaks the Postgres wire protocol, so the binary connects as to
@@ -1126,7 +1185,7 @@ A Rust backend spawns its built binary, not `cargo run`: a build inside the
 spawn runs in the startup window, where a cold one can time out, and its output
 is hidden in the spawn's stderr tail. `prepare_cargo_binary`
 (`testing/cross_backend/cargo_binary.ts`) builds it first with its output shown,
-as the `before_spawn` hook, and the config names the binary
+as the `before_spawn` hook `cargo_binaries` adds, and the config names the binary
 `resolve_cargo_binary_path` reports (`CARGO_TARGET_DIR` honoured).
 `FUZ_TESTING_NO_REBUILD=1` skips the build (§Rebuild-by-default workflow):
 
@@ -1149,7 +1208,7 @@ export const MY_CARGO_BINARY = {
 export const rust_backend_config = (database_url: string): BackendConfig =>
 	make_default_rust_backend_config({
 		name: 'rust',
-		port: 14141,
+		port: 14901, // one no other repo's backend binds (the table in src/lib/testing/CLAUDE.md)
 		start_command: [resolve_cargo_binary_path(MY_CARGO_BINARY)],
 		database_url,
 		daemon_token_dir_env: 'MY_APP_DAEMON_TOKEN_DIR',
@@ -1160,14 +1219,12 @@ export const rust_backend_config = (database_url: string): BackendConfig =>
 	});
 
 // global_setup.ts
-import { prepare_cargo_binary } from '@fuzdev/fuz_app/testing/cross_backend/cargo_binary.ts';
 import { create_cross_backend_global_setup } from '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
 import { MY_CARGO_BINARY, rust_backend_config } from './my_backend_config.ts';
 
 export default create_cross_backend_global_setup({
 	configs: { rust: rust_backend_config },
-	databases: { rust: MY_CARGO_BINARY },
-	before_spawn: { rust: () => prepare_cargo_binary(MY_CARGO_BINARY) }
+	cargo_binaries: { rust: MY_CARGO_BINARY }
 });
 ```
 
@@ -1187,6 +1244,8 @@ describe_spine_cross_suites(handle, {
 	exclude: {
 		actor_lookup: 'no actor_lookup resolver mounted'
 	},
+	// required: `{}` declares this backend owes no gated skip
+	expected_skips: {},
 	// the WS upgrade requires admin: the suites' socket accounts hold it, and
 	// revoking it closes the socket
 	ws_required_roles: [ROLE_ADMIN]
@@ -1242,8 +1301,8 @@ options, each with its rules in its TSDoc there:
   }
   ```
 
-- `expected_skips` — the gated skips the backend owes, by name path, held by
-  `check_declared_skips`, so a skip nobody declared (a capability flipped by
+- `expected_skips` (required) — the gated skips the backend owes, by name
+  path, `{}` for none, held by `check_declared_skips`, so a skip nobody declared (a capability flipped by
   mistake, a suite gating on a new flag) fails the run, as does an entry
   whose test now runs. Write the list out per backend — derived from the
   capabilities, it would declare a mistaken flag's skips for it. A suite

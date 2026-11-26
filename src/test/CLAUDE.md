@@ -69,7 +69,7 @@ drops it on `close()`; a killed run leaves `fuz_testing_*` databases to drop
 by that prefix. pglet-wasm migrates once per `init_schema` and forks that
 base per `create()`; pglite and pglet-server reset the `public` schema +
 re-migrate per `create()` and share one instance per driver for the run. The `unit` project's `setupFiles` entry,
-`unit_db_guard.ts`, installs a default factory whose `create()` throws, so a
+`unit_db_guard.ts`, calls the shipped `install_unit_db_guard` (`testing/db.ts`), a default factory whose `create()` throws, so a
 test that opens a database without the `.db.test.ts` suffix fails loudly
 rather than running on its own instance outside these switches.
 
@@ -386,7 +386,7 @@ alike; the cell suites' in-process legs share `create_cell_parity_setup`
   common path is `npm run test:cross:rust-spine-stub` with no manual setup.
 
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
-behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
+behind `FUZ_TEST_CROSS_BACKEND=1` (the shipped `cross_backend_enabled`) and excluded from a bare `gro test` (they
 spawn external backends). They are listed in
 `cross_backend/cross_backend_projects.ts`, whose `CROSS_PROJECT_RESOURCES`
 table holds each one's ports, databases and backend names — every

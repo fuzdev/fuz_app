@@ -4,7 +4,7 @@
  * Tests for `FrontendWebsocketClient` — reactive WebSocket client with
  * auto-reconnect and session-revocation handling.
  *
- * Replaces `globalThis.WebSocket` with `MockWebSocket` to drive events
+ * Replaces `globalThis.WebSocket` with `MockWebSocket` (`install_mock_websocket`) to drive events
  * programmatically; uses fake timers for reconnect-backoff assertions.
  *
  * @module
@@ -49,98 +49,22 @@ import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts'
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { create_jsonrpc_request } from '#lib/http/jsonrpc_helpers.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
+import {
+	install_mock_websocket,
+	MockWebSocket,
+	type MockWebSocketInstall
+} from '#lib/testing/mock_websocket.ts';
 
-// --- mock WebSocket ---
+let sockets: MockWebSocketInstall;
 
-type Listener = (event: any) => void;
-
-class MockWebSocket {
-	static CONNECTING = 0;
-	static OPEN = 1;
-	static CLOSING = 2;
-	static CLOSED = 3;
-
-	static instances: Array<MockWebSocket> = [];
-	static throw_on_construct = false;
-
-	url: string;
-	readyState: number = MockWebSocket.CONNECTING;
-	sent: Array<string> = [];
-	close_code: number | null = null;
-	close_throws = false;
-
-	#listeners: Map<string, Set<Listener>> = new Map();
-
-	constructor(url: string) {
-		if (MockWebSocket.throw_on_construct) {
-			throw new Error('mock construct failure');
-		}
-		this.url = url;
-		MockWebSocket.instances.push(this);
-	}
-
-	addEventListener(type: string, listener: Listener): void {
-		if (!this.#listeners.has(type)) this.#listeners.set(type, new Set());
-		this.#listeners.get(type)!.add(listener);
-	}
-
-	removeEventListener(type: string, listener: Listener): void {
-		this.#listeners.get(type)?.delete(listener);
-	}
-
-	dispatch(type: string, event: any): void {
-		const handlers = this.#listeners.get(type);
-		if (!handlers) return;
-		for (const handler of handlers) handler(event);
-	}
-
-	send(data: string): void {
-		this.sent.push(data);
-	}
-
-	close(code: number = DEFAULT_CLOSE_CODE): void {
-		if (this.close_throws) throw new Error('mock close failure');
-		this.close_code = code;
-		this.readyState = MockWebSocket.CLOSED;
-	}
-
-	fire_open(): void {
-		this.readyState = MockWebSocket.OPEN;
-		this.dispatch('open', new Event('open'));
-	}
-
-	fire_close(code: number = DEFAULT_CLOSE_CODE, reason: string = ''): void {
-		this.readyState = MockWebSocket.CLOSED;
-		// CloseEvent isn't consistent across environments — pass a duck-typed object.
-		this.dispatch('close', { code, reason, wasClean: code === DEFAULT_CLOSE_CODE });
-	}
-
-	fire_error(): void {
-		this.dispatch('error', new Event('error'));
-	}
-
-	fire_message(data: string): void {
-		this.dispatch('message', { data } as MessageEvent);
-	}
-}
-
-const last_ws = (): MockWebSocket => {
-	const ws = MockWebSocket.instances.at(-1);
-	if (!ws) throw new Error('no WebSocket constructed');
-	return ws;
-};
-
-let original_ws: typeof globalThis.WebSocket;
+const last_ws = (): MockWebSocket => sockets.last();
 
 beforeEach(() => {
-	MockWebSocket.instances = [];
-	MockWebSocket.throw_on_construct = false;
-	original_ws = globalThis.WebSocket;
-	globalThis.WebSocket = MockWebSocket as unknown as typeof globalThis.WebSocket;
+	sockets = install_mock_websocket();
 });
 
 afterEach(() => {
-	globalThis.WebSocket = original_ws;
+	sockets.restore();
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
@@ -184,7 +108,7 @@ describe('constructor', () => {
 	test('does not open socket on construction', () => {
 		// eslint-disable-next-line no-new
 		new FrontendWebsocketClient(TEST_URL);
-		assert.strictEqual(MockWebSocket.instances.length, 0);
+		assert.strictEqual(sockets.instances.length, 0);
 	});
 });
 
@@ -193,7 +117,7 @@ describe('connect', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();
 
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(last_ws().url, TEST_URL);
 		assert.strictEqual(client.status, 'connecting');
 		assert.strictEqual(client.ws, last_ws() as unknown as WebSocket);
@@ -219,7 +143,7 @@ describe('connect', () => {
 		const removeSpy = vi.spyOn(first, 'removeEventListener');
 
 		client.connect();
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.notStrictEqual(last_ws(), first);
 		// prior live socket is closed with normal-closure to prevent a leak
 		assert.strictEqual(first.close_code, DEFAULT_CLOSE_CODE);
@@ -234,7 +158,7 @@ describe('connect', () => {
 
 	test('constructor failure transitions to closed and schedules reconnect', () => {
 		vi.useFakeTimers();
-		MockWebSocket.throw_on_construct = true;
+		sockets.throw_on_construct = true;
 		const log = { error: vi.fn() } as any;
 		const client = new FrontendWebsocketClient(TEST_URL, { log });
 
@@ -248,15 +172,15 @@ describe('connect', () => {
 		assert.strictEqual(log.error.mock.calls.length, 1);
 
 		// recover on next timer tick
-		MockWebSocket.throw_on_construct = false;
+		sockets.throw_on_construct = false;
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(client.status, 'connecting');
 	});
 
 	test('repeated construct failures grow the backoff', () => {
 		vi.useFakeTimers();
-		MockWebSocket.throw_on_construct = true;
+		sockets.throw_on_construct = true;
 		const log = { error: vi.fn() } as any;
 		const client = new FrontendWebsocketClient(TEST_URL, { log });
 
@@ -282,7 +206,7 @@ describe('connect', () => {
 		);
 
 		// still no sockets constructed (all throws)
-		assert.strictEqual(MockWebSocket.instances.length, 0);
+		assert.strictEqual(sockets.instances.length, 0);
 		assert.strictEqual(log.error.mock.calls.length, 3);
 	});
 });
@@ -322,7 +246,7 @@ describe('disconnect', () => {
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
 
 		// no new socket opened after disconnect
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(client.status, 'closed');
 	});
 
@@ -575,7 +499,7 @@ describe('error handlers', () => {
 		assert.strictEqual(client.status, 'connected');
 		assert.strictEqual(client.reconnect_count, 0);
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 });
 
@@ -592,7 +516,7 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.strictEqual(client.status, 'connecting');
 	});
 
@@ -611,7 +535,7 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.last_close_code, WS_CLOSE_GOING_AWAY);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.strictEqual(client.status, 'connecting');
 	});
 
@@ -632,7 +556,7 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.last_close_code, WS_CLOSE_OUTBOUND_OVERFLOW);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.strictEqual(client.status, 'connecting');
 	});
 
@@ -694,7 +618,7 @@ describe('auto-reconnect', () => {
 
 		assert.strictEqual(client.status, 'closed');
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 
 	test('reconnect config overrides individual fields', () => {
@@ -716,7 +640,7 @@ describe('session revocation', () => {
 		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
 		assert.strictEqual(client.status, 'closed');
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 
 	test('subsequent connect() is a no-op after revocation', () => {
@@ -725,7 +649,7 @@ describe('session revocation', () => {
 		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
 
 		client.connect();
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(client.status, 'closed');
 	});
 
@@ -744,7 +668,7 @@ describe('session revocation', () => {
 		assert.strictEqual(client.status, 'closed');
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 });
 
@@ -805,12 +729,12 @@ describe('permission revoked', () => {
 
 		// a reconnect would be refused at the role gate
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(client.status, 'closed');
 
 		// an explicit connect() reopens — `connect` is not a no-op as after 4001
 		client.connect();
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.strictEqual(client.status, 'connecting');
 	});
 
@@ -827,7 +751,7 @@ describe('permission revoked', () => {
 		assert.strictEqual(client.status, 'closed');
 		assert.strictEqual(client.reconnect_count, 0);
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 
 	test('rejects in-flight and queued requests with forbidden', async () => {
@@ -872,7 +796,7 @@ describe('connection limit', () => {
 
 		// reconnecting would supersede the newer socket in turn
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 		assert.strictEqual(client.status, 'closed');
 	});
 
@@ -885,7 +809,7 @@ describe('connection limit', () => {
 		assert.strictEqual(client.superseded, true);
 
 		client.connect();
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		assert.strictEqual(client.superseded, false);
 		assert.strictEqual(client.status, 'connecting');
 		last_ws().fire_open();
@@ -895,7 +819,7 @@ describe('connection limit', () => {
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.status, 'reconnecting');
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 3);
+		assert.strictEqual(sockets.instances.length, 3);
 	});
 
 	test('a connection-limit close during a reconnect loop cancels it', () => {
@@ -917,7 +841,7 @@ describe('connection limit', () => {
 		assert.strictEqual(client.current_reconnect_delay, 0);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 
 	test('only the connection-limit close sets superseded', () => {
@@ -1010,11 +934,11 @@ describe('manual connect while reconnect is pending', () => {
 
 		// Manual connect while timer is pending should cancel it, not race.
 		client.connect();
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 
 		// Advance past where the original timer would have fired — no third socket.
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 });
 
@@ -1182,7 +1106,7 @@ describe('set_reconnect', () => {
 
 		// Advancing by the new target fires reconnect; original 4000ms-left schedule is gone.
 		vi.advanceTimersByTime(500);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 
 	test('longer new delay does not extend in-flight wait', () => {
@@ -1197,7 +1121,7 @@ describe('set_reconnect', () => {
 		assert.strictEqual(client.current_reconnect_delay, 1000);
 
 		vi.advanceTimersByTime(1000);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 
 	test('new target already past elapsed reconnects immediately', () => {
@@ -1212,7 +1136,7 @@ describe('set_reconnect', () => {
 
 		// Reconnect fires on next tick.
 		vi.advanceTimersByTime(0);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 	});
 
 	test('policy change with no pending timer only affects future schedules', () => {
@@ -1241,7 +1165,7 @@ describe('set_reconnect', () => {
 		assert.strictEqual(client.current_reconnect_delay, 0);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 
 	test('turning reconnect on after off does not synthesize a reconnect', () => {
@@ -1256,7 +1180,7 @@ describe('set_reconnect', () => {
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
 		assert.strictEqual(client.status, 'closed');
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 
 	test('null/true restore defaults (missing fields = defaults, not keep-current)', () => {
@@ -1295,7 +1219,7 @@ describe('set_reconnect', () => {
 		// Should not re-enable reconnects or open new sockets.
 		client.set_reconnect({ delay: 100 });
 		vi.advanceTimersByTime(1000);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 });
 
@@ -1751,7 +1675,7 @@ describe('durable queue', () => {
 		const p2 = client.request<string>('b', {});
 
 		// nothing sent yet — no socket constructed
-		assert.strictEqual(MockWebSocket.instances.length, 0);
+		assert.strictEqual(sockets.instances.length, 0);
 
 		client.connect();
 		last_ws().fire_open();
@@ -1904,11 +1828,11 @@ describe('durable queue', () => {
 
 		// User issues a request mid-reconnect — queued because not connected.
 		const p = client.request<string>('delayed', {});
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 
 		// Reconnect fires; second socket opens and the queued request lands.
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 		last_ws().fire_open();
 		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
@@ -2328,7 +2252,7 @@ describe('cancel_reconnect', () => {
 
 		// No new socket opens even after the original delay would have elapsed.
 		vi.advanceTimersByTime(10_000);
-		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(sockets.instances.length, 1);
 	});
 
 	test('does not disable auto-reconnect for future closes', () => {
@@ -2564,7 +2488,7 @@ describe('full lifecycle', () => {
 		assert.strictEqual(client.status, 'reconnecting');
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
-		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(sockets.instances.length, 2);
 
 		// new socket opens; counter resets; message handler still wired
 		last_ws().fire_open();

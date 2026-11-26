@@ -48,6 +48,7 @@ const recording_deps = (
 		calls.push(`spawn ${config.env.DATABASE_URL}`);
 		return Promise.reject(new Error(SPAWN_STOPPED));
 	},
+	prepare_cargo_binary: (options) => calls.push(`cargo build ${options.package}`),
 	postgres_url: () => postgres_url
 });
 
@@ -67,6 +68,7 @@ const run_to_stopped_spawn = async (
 };
 
 const PGLET_SERVER = { workspace_dir: '/nonexistent/workspace', profile: 'cross-test' };
+const CARGO_BINARY = { ...PGLET_SERVER, package: 'testing_server', bin: 'testingd' };
 
 describe('create_cross_backend_global_setup', () => {
 	test('a before_spawn hook or database naming no config throws, prototype keys included', () => {
@@ -88,6 +90,53 @@ describe('create_cross_backend_global_setup', () => {
 				new RegExp(`databases names '${name}'`)
 			);
 		}
+	});
+
+	test('a cargo_binaries entry naming no config, or also in databases or before_spawn, throws', () => {
+		assert.throws(
+			() =>
+				create_cross_backend_global_setup({
+					configs: { rust: unused_config },
+					cargo_binaries: { rsut: CARGO_BINARY }
+				}),
+			/cargo_binaries names 'rsut'/
+		);
+		assert.throws(
+			() =>
+				create_cross_backend_global_setup({
+					configs: { rust: unused_config },
+					cargo_binaries: { rust: CARGO_BINARY },
+					databases: { rust: null }
+				}),
+			/'rust' is in both cargo_binaries and databases/
+		);
+		assert.throws(
+			() =>
+				create_cross_backend_global_setup({
+					configs: { rust: unused_config },
+					cargo_binaries: { rust: CARGO_BINARY },
+					before_spawn: { rust: () => undefined }
+				}),
+			/'rust' is in both cargo_binaries and before_spawn/
+		);
+	});
+
+	test('a cargo_binaries entry builds the binary, then opens its pglet database', async () => {
+		const calls: Array<string> = [];
+		const setup = create_cross_backend_global_setup(
+			{
+				configs: { rust: stub_config, rust_proxy: stub_config },
+				cargo_binaries: { rust: CARGO_BINARY, rust_proxy: CARGO_BINARY }
+			},
+			recording_deps(calls)
+		);
+		await run_to_stopped_spawn(setup, 'cross_backend_rust_proxy');
+		assert.deepStrictEqual(calls, [
+			'cargo build testing_server',
+			'open rust_proxy on pglet',
+			'spawn postgres://test/rust_proxy',
+			'close rust_proxy'
+		]);
 	});
 
 	test('a project deriving a prototype key finds no config', async () => {
