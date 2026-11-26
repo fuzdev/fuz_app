@@ -53,6 +53,15 @@ import type { WebsocketConnection } from './transports_ws.ts';
 
 /** Default WebSocket close code (normal closure). */
 export const DEFAULT_CLOSE_CODE = 1000;
+
+/**
+ * Whether a browser's `WebSocket.close` accepts `code`: 1000 or 3000–4999
+ * (the WebSockets Standard's `close()` steps throw `InvalidAccessError`
+ * otherwise). Non-integers are refused too: WebIDL would round them, and
+ * `last_close_code` would then differ from the code the server received.
+ */
+const is_client_close_code = (code: number): boolean =>
+	Number.isInteger(code) && (code === DEFAULT_CLOSE_CODE || (code >= 3000 && code <= 4999));
 /** Base reconnect delay in ms. */
 export const DEFAULT_RECONNECT_DELAY = 1000;
 /** Max reconnect delay in ms (cap on exponential backoff). */
@@ -519,11 +528,19 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * backoff counters. Puts the client in `closed` status; call `connect()` to
 	 * reopen. Safe to call more than once.
 	 *
+	 * @param code - the close code sent to the server: 1000 or an integer in
+	 *   3000–4999, the codes a browser's `WebSocket.close` accepts
+	 * @throws Error for any other `code`, before any state changes — a browser
+	 *   refuses it mid-teardown, after the listeners are dropped, which would
+	 *   leave the socket open and untracked
 	 * @mutates this - clears `ws`, heartbeat, and reconnect timers; sets
 	 *   `status` to `closed`; rejects every pending and queued request with
 	 *   `service_unavailable`
 	 */
 	disconnect(code: number = DEFAULT_CLOSE_CODE): void {
+		if (!is_client_close_code(code)) {
+			throw new Error(`invalid close code ${code}: must be 1000 or an integer in 3000-4999`);
+		}
 		this.#cancel_reconnect();
 		this.#cancel_heartbeat();
 		this.#teardown(code);

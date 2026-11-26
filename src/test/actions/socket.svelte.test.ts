@@ -235,6 +235,44 @@ describe('disconnect', () => {
 		assert.strictEqual(ws.close_code, 4000);
 	});
 
+	test('accepts the boundary codes a browser accepts', () => {
+		for (const code of [1000, 3000, 4999]) {
+			const client = new FrontendWebsocketClient(TEST_URL);
+			client.connect();
+			last_ws().fire_open();
+			const ws = last_ws();
+
+			client.disconnect(code);
+			assert.strictEqual(ws.close_code, code);
+			assert.strictEqual(client.last_close_code, code);
+		}
+	});
+
+	test('throws on a code a browser refuses, before any state changes', () => {
+		for (const code of [1001, 1006, 2999, 5000, 0, -1, 65536, 3000.5, NaN]) {
+			const log = { error: vi.fn() } as any;
+			const client = new FrontendWebsocketClient(TEST_URL, { log });
+			client.connect();
+			last_ws().fire_open();
+			const ws = last_ws();
+
+			assert.throws(() => client.disconnect(code), /invalid close code/);
+
+			// the socket is still open and still tracked
+			assert.strictEqual(client.ws, ws as any);
+			assert.strictEqual(client.status, 'connected');
+			assert.strictEqual(ws.readyState, MockWebSocket.OPEN);
+			assert.isNull(ws.close_code);
+			assert.isNull(client.last_close_code);
+			assert.strictEqual(log.error.mock.calls.length, 0);
+
+			// a server close still reaches the client's listeners
+			ws.fire_close(1006);
+			assert.strictEqual(client.last_close_code, 1006);
+			client.disconnect();
+		}
+	});
+
 	test('cancels pending reconnect', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL);
