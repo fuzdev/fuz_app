@@ -146,9 +146,6 @@ export interface CreateTestAccountWithCredentialsOptions {
 	email?: string;
 }
 
-/** Alias for the keeper-flavored call site. Same shape. */
-export type BootstrapTestKeeperOptions = CreateTestAccountWithCredentialsOptions;
-
 /**
  * Create a test account with credentials. Use for additional accounts
  * minted alongside the keeper (e.g. `TestApp.create_account` for
@@ -282,7 +279,7 @@ export const mint_test_session = async (
  *   API token/session_cookie rows AND flips `bootstrap_lock.bootstrapped`.
  */
 export const bootstrap_test_keeper = async (
-	options: BootstrapTestKeeperOptions
+	options: CreateTestAccountWithCredentialsOptions
 ): Promise<{
 	account: { id: Uuid; username: string };
 	actor: { id: Uuid };

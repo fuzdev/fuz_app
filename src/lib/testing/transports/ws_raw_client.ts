@@ -24,7 +24,7 @@ import { connect } from 'node:net';
 /** RFC 6455 opcode of a text frame. */
 export const RAW_WS_OPCODE_TEXT = 0x1;
 /** RFC 6455 opcode of a close frame. */
-export const RAW_WS_OPCODE_CLOSE = 0x8;
+const RAW_WS_OPCODE_CLOSE = 0x8;
 
 /**
  * The headers that make a request a WebSocket upgrade, for a probe of what a

@@ -29,7 +29,7 @@ import {
 } from '#lib/testing/schema_introspect.ts';
 import { diff_schema_snapshots } from '#lib/testing/schema_parity.ts';
 import { create_testing_schema_snapshot_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 import type { Db } from '#lib/db/db.ts';
 
 import { create_test_action_context } from '../auth/rpc_test_helpers.ts';
@@ -150,7 +150,7 @@ describe_db('query_schema_snapshot', (get_db) => {
 		const db = get_db();
 		const { handler } = create_testing_schema_snapshot_action();
 		const result = await Promise.resolve(
-			handler({}, { ...create_test_action_context(create_test_request_context()), db })
+			handler({}, { ...create_test_action_context(create_test_context()), db })
 		).then(
 			(value: unknown) => ({ ok: true as const, value }),
 			(error: unknown) => ({ ok: false as const, error })

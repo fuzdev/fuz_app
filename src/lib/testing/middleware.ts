@@ -118,7 +118,7 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 
 // --- Mock builders ---
 
-/** Mocks bundle returned by `create_bearer_auth_mocks`. */
+/** The mocks `create_bearer_auth_test_app` configures and returns, per test case. */
 export interface BearerAuthMocks {
 	mock_validate: ReturnType<typeof vi.fn>;
 	/** `query_api_token_touch` — the usage record a token that authenticated gets. */
@@ -144,7 +144,7 @@ const STUB_DEPS: QueryDeps = { db: {} as any };
  *   `account_queries`, and `role_grant_queries` — each call resets and re-binds
  *   every spy in the bundle, so cases run in sequence without bleeding state.
  */
-export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
+const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthMocks => {
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_touch = vi.mocked(query_api_token_touch);
 	const mock_find_by_id = vi.mocked(query_account_by_id);

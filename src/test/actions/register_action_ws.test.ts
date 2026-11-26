@@ -1160,7 +1160,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		await first.on_close();
 		assert.strictEqual(closed.length, 1);
 		assert.strictEqual(closed[0]!.connection_id, opened[0]!.connection_id);
-		assert.strictEqual(closed[0]!.identity.account_id, 'acc_1');
+		assert.strictEqual(closed[0]!.identity.account_id, 'acct-test');
 		assert.strictEqual(opened[0]!.signal.aborted, true);
 		assert.strictEqual(registry.connection_count(), 1);
 		assert.strictEqual(opened[1]!.signal.aborted, false);
@@ -1199,7 +1199,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		assert.deepStrictEqual(infos, []);
 		await open_socket(stub);
 		assert.deepStrictEqual(infos, [
-			['ws: connection cap closed oldest', { account_id: 'acc_1', closed: 1, max: 1 }]
+			['ws: connection cap closed oldest', { account_id: 'acct-test', closed: 1, max: 1 }]
 		]);
 	});
 
@@ -1366,7 +1366,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		const ctx = captured as SocketOpenContext;
 		assert.strictEqual(typeof ctx.connection_id, 'string');
 		assert.ok(ctx.connection_id.length > 0);
-		assert.strictEqual(ctx.identity.account_id, 'acc_1'); // from create_fake_hono_context
+		assert.strictEqual(ctx.identity.account_id, 'acct-test'); // create_test_account's default id, from create_fake_hono_context
 		assert.strictEqual(typeof ctx.identity.session_hash, 'string'); // session credential
 		assert.strictEqual(ctx.identity.api_token_id, null);
 		assert.strictEqual(typeof ctx.notify, 'function');
@@ -1506,7 +1506,7 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		// connection already gone from the registry
 		assert.strictEqual(typeof close_seen_connection_id, 'string');
 		assert.strictEqual(close_seen_connection_id, open_seen_connection_id);
-		assert.strictEqual(close_seen_account_id, 'acc_1');
+		assert.strictEqual(close_seen_account_id, 'acct-test');
 		assert.strictEqual(transport_ready_inside_close, false);
 		assert.strictEqual(h.registry.connection_count() > 0, false);
 	});
@@ -1552,14 +1552,17 @@ describe('register_action_ws socket lifecycle hooks', () => {
 
 		await h.on_open();
 		// audit guard path — clears identity map and calls ws.close()
-		const closed = h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		const closed = h.registry.close_connections({
+			kind: 'account',
+			account_id: 'acct-test' as never
+		});
 		assert.strictEqual(closed, 1);
 		assert.strictEqual(h.registry.connection_count() > 0, false); // identity map already cleared
 		// Hono would fire onClose in response to ws.close(); simulate that.
 		await h.on_close();
 
 		// Identity still valid inside the hook despite registry having been wiped.
-		assert.strictEqual(close_identity_account, 'acc_1');
+		assert.strictEqual(close_identity_account, 'acct-test');
 	});
 
 	test('on_socket_close error is logged and swallowed (registry still cleans up)', async () => {
@@ -1759,7 +1762,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		assert.strictEqual(h.fake.sends.length, 1);
 
 		assert.strictEqual(
-			h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			h.registry.close_connections({ kind: 'account', account_id: 'acct-test' as never }),
 			1
 		);
 		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
@@ -1776,7 +1779,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	test('an oversized frame on a revoked socket sends no second close', async () => {
 		const { h, runs } = await build_counting_harness({ max_message_bytes: 256 });
 		await h.on_open();
-		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acct-test' as never });
 		assert.strictEqual(h.fake.closes.length, 1);
 
 		await h.on_message({
@@ -1980,7 +1983,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const signal = await started.promise;
 		assert.strictEqual(signal.aborted, false);
 
-		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acct-test' as never });
 		// no `on_close` yet — the close handshake has not landed
 		assert.strictEqual(signal.aborted, true);
 
@@ -2286,7 +2289,7 @@ describe('register_action_ws receive timeout', () => {
 		// revocation lands in between
 		const opening = h.on_open();
 		assert.strictEqual(
-			h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never }),
+			h.registry.close_connections({ kind: 'account', account_id: 'acct-test' as never }),
 			1
 		);
 		await opening;
@@ -2308,7 +2311,7 @@ describe('register_action_ws receive timeout', () => {
 			receive_timeout: 200
 		});
 		const opening = h.on_open();
-		h.registry.close_connections({ kind: 'account', account_id: 'acc_1' as never });
+		h.registry.close_connections({ kind: 'account', account_id: 'acct-test' as never });
 		await opening;
 
 		await h.on_close();

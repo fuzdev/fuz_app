@@ -32,7 +32,7 @@ import {
 const PROTOCOL_METHODS: ReadonlySet<string> = new Set(PROTOCOL_ACTION_METHODS);
 
 /** The request id every envelope case sends where it sends one. */
-export const RPC_ENVELOPE_PROBE_ID = 'envelope_probe';
+const RPC_ENVELOPE_PROBE_ID = 'envelope_probe';
 
 /**
  * One malformed-envelope request and the refusal it owes.
@@ -74,7 +74,7 @@ export interface RpcEnvelopeCaseOptions {
  * The JSON values that are neither an object nor `null`, one per JSON type —
  * what a `GET` `?params=` can carry that no input schema admits.
  */
-export const RPC_NON_OBJECT_PARAMS: ReadonlyArray<string> = ['42', '[1]', '"x"', 'true'];
+const RPC_NON_OBJECT_PARAMS: ReadonlyArray<string> = ['42', '[1]', '"x"', 'true'];
 
 const BACKSLASH = String.fromCharCode(92);
 
@@ -106,8 +106,8 @@ export const rpc_get_side_effects_reason = (method: string): string =>
  * needs an account. `_testing_*` and protocol methods are never chosen. A case
  * whose method the endpoint lacks is left out.
  *
- * Every read (`side_effects: false`) gets a `GET` with each of
- * `RPC_NON_OBJECT_PARAMS` → `invalid_params`: the query string is no envelope,
+ * Every read (`side_effects: false`) gets a `GET` with each non-object
+ * `params` value (`42`, `[1]`, `"x"`, `true`) → `invalid_params`: the query string is no envelope,
  * so the dispatcher's params validation is what refuses it.
  *
  * Three cases pin an order against auth, sent with no credential: a `GET` of

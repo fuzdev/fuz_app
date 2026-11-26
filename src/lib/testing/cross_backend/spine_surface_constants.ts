@@ -32,7 +32,7 @@ import type { RouteAuth } from '../../http/auth_shape.ts';
  * fence on the backdoor surface (these actions run direct DB writes the
  * production wire never exposes), so every `_testing_*` spec references this
  * one const rather than re-declaring it — a single source of truth the gate test
- * (`testing_actions_auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
+ * (`testing_reset_actions.auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
  * / shared `AuthSpec` in `fuz_testing`.
  */
 export const TESTING_ACTION_AUTH = {

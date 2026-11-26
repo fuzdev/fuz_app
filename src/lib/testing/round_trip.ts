@@ -33,6 +33,8 @@ import { needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts
 import type { TestAccount } from './test_app.ts';
 import {
 	assert_response_matches_spec,
+	assert_skip_entries_known,
+	test_or_skip,
 	is_credential_type_refusal,
 	is_unauthenticated_refusal,
 	pick_auth_headers,
@@ -50,6 +52,7 @@ import {
 } from './schema_generators.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -65,7 +68,11 @@ export interface RoundTripTestOptions {
 	 * TS by the consumer; same shape for in-process and cross-process tests.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Routes to skip, in `'METHOD /path'` format. */
+	/**
+	 * Routes to skip, in `'METHOD /path'` format, each registered as a skipped
+	 * test. An entry naming no route on the surface, or a `raw_body` route
+	 * (skipped already), throws at collection.
+	 */
 	skip_routes?: Array<string>;
 	/** Override generated bodies for specific routes (`'METHOD /path'` → body). */
 	input_overrides?: Map<string, Record<string, unknown>>;
@@ -147,13 +154,48 @@ export const assert_route_authenticated = (
  * 4. Fire the request through the principal's transport (`to_principal_transport`)
  *    and validate the response
  *
- * SSE routes are skipped by Content-Type sniff. Routes returning non-2xx
- * with valid input are still validated against their declared error schemas.
+ * `raw_body` routes and `skip_routes` entries register as skipped tests, and
+ * a route that answers an SSE stream (Content-Type sniff) skips at run time.
+ * Routes returning non-2xx with valid input are still validated against their
+ * declared error schemas.
+ *
+ * @throws Error at collection when a `skip_routes` entry names no route on
+ *   the surface, or names a `raw_body` route
  */
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const describe_time_specs = options.surface_source.route_specs;
 	const route_error_maps = options.surface_source.route_error_maps;
 	const skip_set = new Set(options.skip_routes);
+	assert_skip_entries_known(
+		'describe_round_trip_validation',
+		'skip_routes',
+		skip_set,
+		new Set(describe_time_specs.map(format_route_key)),
+		'a route on the surface'
+	);
+	// Raw-byte / streaming routes (git smart-HTTP, binary upload/download)
+	// can't be round-tripped — no meaningful body to synthesize, no JSON
+	// shape to assert — so they're skipped by the spec marker rather than
+	// making every consumer hand-list them, and a hand-listed one is refused
+	// as redundant. Skips are registered as skipped tests, never as passes.
+	const driven_specs: Array<RouteSpec> = [];
+	const skipped_specs: Array<{ spec: RouteSpec; reason: string }> = [];
+	for (const spec of describe_time_specs) {
+		const route_key = format_route_key(spec);
+		if (spec.raw_body) {
+			if (skip_set.has(route_key)) {
+				throw new Error(
+					`describe_round_trip_validation: skip_routes names '${route_key}', which is ` +
+						'redundant — the suite skips raw_body routes itself'
+				);
+			}
+			skipped_specs.push({ spec, reason: 'raw_body: no JSON body to synthesize or assert' });
+		} else if (skip_set.has(route_key)) {
+			skipped_specs.push({ spec, reason: 'in skip_routes' });
+		} else {
+			driven_specs.push(spec);
+		}
+	}
 
 	describe('round-trip validation', () => {
 		let fixture: TestFixture;
@@ -193,14 +235,12 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			}
 		};
 
-		test.each(describe_time_specs)('$method $path produces schema-valid response', async (spec) => {
+		for (const { spec, reason } of skipped_specs) {
+			test.skip(`${spec.method} ${spec.path} produces schema-valid response (${reason})`, () => {});
+		}
+
+		test.for(driven_specs)('$method $path produces schema-valid response', async (spec, ctx) => {
 			const route_key = format_route_key(spec);
-			if (skip_set.has(route_key)) return;
-			// Raw-byte / streaming routes (git smart-HTTP, binary upload/download)
-			// can't be round-tripped — no meaningful body to synthesize, no JSON
-			// shape to assert. Auto-skip by the spec marker rather than making
-			// every consumer hand-list them in `skip_routes`.
-			if (spec.raw_body) return;
 
 			const url = resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
 
@@ -239,6 +279,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 
 			if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
 				await res.body?.cancel();
+				ctx.skip('answered an SSE stream, which has no JSON body to validate');
 				return;
 			}
 
@@ -266,53 +307,56 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			}
 		});
 
-		test('declared success fixtures produce schema-valid success bodies', async () => {
-			const success_fixtures = options.success_fixtures;
-			if (!success_fixtures || success_fixtures.size === 0) return;
-			for (const [route_key, build] of success_fixtures) {
-				const space = route_key.indexOf(' ');
-				const method = route_key.slice(0, space);
-				const path = route_key.slice(space + 1);
-				const spec = describe_time_specs.find((s) => s.method === method && s.path === path);
-				assert.ok(spec, `success_fixtures references unknown route '${route_key}'`);
+		const success_fixtures = options.success_fixtures;
+		test_or_skip(
+			'declared success fixtures produce schema-valid success bodies',
+			success_fixtures?.size ? null : 'no success_fixtures declared',
+			async () => {
+				for (const [route_key, build] of success_fixtures ?? []) {
+					const space = route_key.indexOf(' ');
+					const method = route_key.slice(0, space);
+					const path = route_key.slice(space + 1);
+					const spec = describe_time_specs.find((s) => s.method === method && s.path === path);
+					assert.ok(spec, `success_fixtures references unknown route '${route_key}'`);
 
-				const seeded = await build(fixture);
-				const url =
-					seeded.url ??
-					resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
-				const body = seeded.body;
-				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+					const seeded = await build(fixture);
+					const url =
+						seeded.url ??
+						resolve_valid_path(spec.path, spec.params, options.param_values?.[route_key]);
+					const body = seeded.body;
+					const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
 
-				const transport = to_principal_transport(pick_auth_principal(spec.auth), fixture);
-				const res = await transport(url, {
-					method: spec.method,
-					headers: { ...headers, 'content-type': to_route_content_type(spec) },
-					...(body ? { body: JSON.stringify(body) } : {})
-				});
+					const transport = to_principal_transport(pick_auth_principal(spec.auth), fixture);
+					const res = await transport(url, {
+						method: spec.method,
+						headers: { ...headers, 'content-type': to_route_content_type(spec) },
+						...(body ? { body: JSON.stringify(body) } : {})
+					});
 
-				try {
-					assert.ok(
-						res.ok,
-						`success fixture expected a 2xx response, got status ${res.status}: ${await res
-							.clone()
-							.text()
-							.catch(() => '<unreadable>')}`
-					);
-					await assert_response_matches_spec(
-						describe_time_specs,
-						spec.method,
-						url,
-						res,
-						route_error_maps
-					);
-				} catch (e) {
-					throw new Error(
-						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${
-							(e as Error).message
-						}`
-					);
+					try {
+						assert.ok(
+							res.ok,
+							`success fixture expected a 2xx response, got status ${res.status}: ${await res
+								.clone()
+								.text()
+								.catch(() => '<unreadable>')}`
+						);
+						await assert_response_matches_spec(
+							describe_time_specs,
+							spec.method,
+							url,
+							res,
+							route_error_maps
+						);
+					} catch (e) {
+						throw new Error(
+							`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${
+								(e as Error).message
+							}`
+						);
+					}
 				}
 			}
-		});
+		);
 	});
 };

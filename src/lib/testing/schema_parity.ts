@@ -474,7 +474,7 @@ export const diff_migration_trackers = (
  * Render migration-tracker diffs as a human-readable multi-line string.
  * Empty diffs produce an empty string.
  */
-export const format_migration_tracker_diffs = (
+const format_migration_tracker_diffs = (
 	diffs: ReadonlyArray<MigrationTrackerDiff>,
 	labels: SchemaDiffLabels = {}
 ): string => {

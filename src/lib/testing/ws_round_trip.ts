@@ -64,16 +64,15 @@ import {
 import { create_test_resolved_auth } from './resolved_auth.ts';
 import type { BuiltinCredentialType } from '../auth/credential_type_schema.ts';
 import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
-import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
+import { create_test_context } from './entities.ts';
 import {
-	WS_CLIENT_DEFAULT_TIMEOUT_MS,
+	create_ws_waiters,
 	deliver_inbound,
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
-	type WsRequestResponder,
-	type WsWaiter
+	type WsRequestResponder
 } from './transports/ws_client.ts';
 
 // ---------------------------------------------------------------------
@@ -163,7 +162,7 @@ export const create_fake_ws = (options?: CreateFakeWsOptions): FakeWs => {
 /** Options for `create_fake_hono_context`. */
 export interface FakeHonoContextOptions {
 	credential_type: BuiltinCredentialType;
-	/** A single role to grant via `create_test_request_context`. */
+	/** A single role to grant via `create_test_context`. */
 	role?: string;
 	/** The raw session token a `session` credential carries. Default `'s1'`. */
 	auth_session_id?: string;
@@ -184,7 +183,8 @@ export interface FakeHonoContextOptions {
  * context surface is simulated.
  */
 export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context => {
-	const request_context = opts.request_context ?? build_simple_request_context(opts.role);
+	const request_context =
+		opts.request_context ?? create_test_context(opts.role ? [{ role: opts.role }] : []);
 	const auth_session_id =
 		opts.credential_type === 'session' ? (opts.auth_session_id ?? 's1') : null;
 	const vars: Record<string, unknown> = {
@@ -427,17 +427,6 @@ const build_multi_role_request_context = (
 };
 
 /**
- * Stub `RequestContext` for single-role or public fakes. Hardcoded
- * ids (`acc_1` / `act_1`) mirror `create_test_request_context` in
- * `testing/auth_apps.ts`.
- */
-const build_simple_request_context = (role?: string): RequestContext => ({
-	account: create_test_account({ id: 'acc_1', username: 'testuser' }),
-	actor: create_test_actor({ id: 'act_1', account_id: 'acc_1', name: 'testuser' }),
-	role_grants: role ? [create_test_role_grant({ id: 'perm_1', actor_id: 'act_1', role })] : []
-});
-
-/**
  * Create a WebSocket test harness for the given specs + handlers.
  *
  * Registers against a throwaway Hono app with a fake
@@ -525,20 +514,20 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			get: (key: string) => ctx_store.get(key)
 		} as unknown as Context;
 
-		const received: Array<unknown> = [];
-		const waiters: Array<WsWaiter> = [];
 		// Reply path for a server-initiated request — assigned to the
 		// client→server send below once `send_impl` exists. A `let` (not a
 		// direct `send_impl` reference) keeps the `WSContext.send` closure
 		// TDZ-safe; it stays a no-op until a responder + server-initiated
 		// request are both in play (deferred for the in-process TS server).
 		let reply_to_server: (message: unknown) => void = () => {};
-		// Resolvers awaiting a server-initiated close — fired by the
-		// `WSContext.close` callback below so `wait_for_close` resolves
+		// The close waiters are resolved by the `WSContext.close` callback
+		// below (`resolve_close`), so `wait_for_close` resolves
 		// whether the dispatcher (e.g. an auth-guard revocation) or the
 		// test closed the socket.
-		const close_waiters: Array<() => void> = [];
 		let is_closed = false;
+		const { received, waiters, wait_for, wait_for_close, resolve_close } = create_ws_waiters(
+			() => is_closed
+		);
 		let close_code: number | null = null;
 		let close_reason: string | null = null;
 
@@ -560,7 +549,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				is_closed = true;
 				close_code = code ?? 1000;
 				close_reason = reason ?? '';
-				for (const resolve of close_waiters.splice(0)) resolve();
+				resolve_close();
 				const close_event = new Event('close') as CloseEvent;
 				Object.defineProperties(close_event, {
 					code: { value: code ?? 1000, writable: false },
@@ -586,33 +575,6 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		// onOpen is typed as `void` by Hono but `register_action_ws`
 		// returns a promise when `on_socket_open` does async bootstrap.
 		await (events.onOpen?.(new Event('open'), ws) as Promise<void> | void);
-
-		const wait_for_impl = <T>(
-			predicate: (msg: unknown) => boolean,
-			timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS
-		): Promise<T> => {
-			for (const msg of received) {
-				if (predicate(msg)) return Promise.resolve(msg as T);
-			}
-			return new Promise<T>((resolve, reject) => {
-				const waiter = {
-					predicate,
-					resolve: (msg: unknown) => {
-						clearTimeout(timer);
-						resolve(msg as T);
-					}
-				};
-				const timer = setTimeout(() => {
-					// Drop the waiter on timeout — without this, a later `send`
-					// would still iterate it and the `waiters` array would grow
-					// across timed-out waits.
-					const i = waiters.indexOf(waiter);
-					if (i >= 0) waiters.splice(i, 1);
-					reject(new Error(`wait_for timed out after ${timeout_ms}ms`));
-				}, timeout_ms);
-				waiters.push(waiter);
-			});
-		};
 
 		const send_impl = async (message: unknown): Promise<void> => {
 			if (is_closed) throw new Error('send after close');
@@ -642,7 +604,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				timeout_ms?: number
 			): Promise<R> {
 				await send_impl(create_jsonrpc_request(method, params as never, id));
-				const msg = await wait_for_impl<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
+				const msg = await wait_for<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
 					is_response_for(id),
 					timeout_ms
 				);
@@ -663,22 +625,8 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			get close_reason() {
 				return close_reason;
 			},
-			wait_for: wait_for_impl,
-			wait_for_close: (timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS): Promise<boolean> => {
-				if (is_closed) return Promise.resolve(true);
-				return new Promise<boolean>((resolve) => {
-					const on_close = (): void => {
-						clearTimeout(timer);
-						resolve(true);
-					};
-					const timer = setTimeout(() => {
-						const i = close_waiters.indexOf(on_close);
-						if (i >= 0) close_waiters.splice(i, 1);
-						resolve(false);
-					}, timeout_ms);
-					close_waiters.push(on_close);
-				});
-			}
+			wait_for,
+			wait_for_close
 		};
 	};
 

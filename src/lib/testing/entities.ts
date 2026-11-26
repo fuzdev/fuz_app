@@ -102,10 +102,12 @@ export const create_test_role_grant = (overrides?: TestRoleGrantOverrides): Role
 
 /**
  * Create a test `RequestActorContext` (a `RequestContext` with a resolved
- * actor) with role_grants from partial overrides.
+ * actor) with role_grants from partial overrides — none by default, so a
+ * test that needs a role names it (`[{role: ROLE_ADMIN}]`). The account,
+ * actor and each grant share the `create_test_*` default ids.
  */
 export const create_test_context = (
-	role_grants: Array<TestRoleGrantOverrides> = [{}]
+	role_grants: Array<TestRoleGrantOverrides> = []
 ): RequestActorContext => ({
 	account: create_test_account(),
 	actor: create_test_actor(),

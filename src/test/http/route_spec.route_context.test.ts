@@ -34,7 +34,7 @@ import {
 	TEST_CONTEXT_PRESET,
 	TEST_CONTEXT_PRESET_KEY
 } from '#lib/hono_context.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { ERROR_INTERNAL_ERROR, REST_ROW_NOT_FOUND } from '#lib/http/error_schemas.ts';
 import { query_first, type QueryPairsRead } from '#lib/http/request_target.ts';
@@ -46,7 +46,7 @@ const query_of = (route: { query_pairs: QueryPairsRead }, name: string): string 
 
 const log = new Logger('test', { level: 'off' });
 
-const request_context = create_test_request_context('admin');
+const request_context = create_test_context([{ role: 'admin' }]);
 const resolved = create_test_resolved_auth({
 	credential_type: 'session',
 	account: request_context.account

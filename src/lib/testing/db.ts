@@ -276,7 +276,7 @@ export const TEST_DATABASE_PREFIX = 'fuz_testing_';
  * name past 63 bytes, and `fuz_testing_`, `_<pid>`, `_<thread id>` and `_<n>`
  * take the rest. The Rust spine's `SUITE_NAME_LENGTH_MAX`.
  */
-export const TEST_SUITE_NAME_LENGTH_MAX = 24;
+const TEST_SUITE_NAME_LENGTH_MAX = 24;
 
 /** Lowercase ASCII, digits and `_`, starting with a letter — a name PostgreSQL keeps as written. */
 const TEST_DATABASE_NAME_PART = /^[a-z][a-z0-9_]*$/;
@@ -391,8 +391,7 @@ export const drop_test_postgres_database = async (
 export interface PgFactoryOptions {
 	/**
 	 * Names the factory's databases, `fuz_testing_<suite>_<pid>_<thread id>_<n>` —
-	 * lowercase ASCII, digits and `_`, starting with a letter, at most
-	 * `TEST_SUITE_NAME_LENGTH_MAX` bytes.
+	 * lowercase ASCII, digits and `_`, starting with a letter, at most 24 bytes.
 	 */
 	readonly suite: string;
 }

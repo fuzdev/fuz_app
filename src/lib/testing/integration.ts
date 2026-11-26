@@ -1477,21 +1477,28 @@ export const describe_standard_integration_tests = (
 			});
 		});
 
+		// Signup is optional, and `invite_create` lives on the RPC surface, so
+		// consumers that don't wire signup or the admin RPC actions can't
+		// exercise invites — sections 14 and 15 report a skip with the reason
+		// rather than pass without asserting.
+		const signup_route = route_specs.find(
+			(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth)
+		);
+		const invite_create_wired =
+			find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method) !== undefined;
+		const signup_invite_skip_reason = !signup_route
+			? 'no public `POST .../signup` route on the surface (signup is optional)'
+			: `no \`${invite_create_action_spec.method}\` RPC action wired, so invites can't be created`;
+
 		// --- 14. Signup invite edge cases ---
 
 		describe('signup invite edge cases', () => {
-			test('signup with non-matching email cannot claim another email invite', async () => {
+			test('signup with non-matching email cannot claim another email invite', async (ctx) => {
+				if (!signup_route || !invite_create_wired) {
+					ctx.skip(signup_invite_skip_reason);
+					return;
+				}
 				const fixture = await options.setup_test();
-
-				const signup_route = route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth)
-				);
-				if (!signup_route) return; // signup is optional
-
-				// `invite_create` lives on the RPC surface; consumers that don't
-				// wire admin RPC actions can't exercise invites — skip the test
-				// rather than fail.
-				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// Drive the admin-gated `invite_create` over the fixture's
 				// session. In both modes the fixture is the fresh keeper,
@@ -1544,18 +1551,12 @@ export const describe_standard_integration_tests = (
 		// --- 15. Signup response body identity ---
 
 		describe('signup response body identity', () => {
-			test('no-invite and conflict failure responses are structurally identical', async () => {
+			test('no-invite and conflict failure responses are structurally identical', async (ctx) => {
+				if (!signup_route || !invite_create_wired) {
+					ctx.skip(signup_invite_skip_reason);
+					return;
+				}
 				const fixture = await options.setup_test();
-
-				// Find signup route (POST ending in /signup, public)
-				const signup_route = route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth)
-				);
-				if (!signup_route) return; // signup is optional
-
-				// `invite_create` lives on the RPC surface; consumers that don't
-				// wire admin RPC actions can't exercise invites.
-				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
 				// Drive admin-gated calls over the fixture's session — see the
 				// previous test's comment for the in-process / cross-process

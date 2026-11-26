@@ -85,7 +85,8 @@ export interface AdversarialTestOptions {
 	 * hatch every sibling suite carries. Reach for it only when a route
 	 * cannot be driven generically at all (a handler needing real seeded
 	 * state, a path segment no schema can describe); a route whose params
-	 * merely have a format is handled by the synthesizer.
+	 * merely have a format is handled by the synthesizer. An entry naming no
+	 * route on the surface throws at collection.
 	 */
 	skip_routes?: Array<string>;
 	/**
@@ -111,7 +112,11 @@ export interface AdversarialTestOptions {
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs, route_error_maps } = build();
-	const is_skipped = create_route_skip_filter(options.skip_routes);
+	const is_skipped = create_route_skip_filter(
+		'describe_adversarial_auth',
+		options.skip_routes,
+		surface.routes
+	);
 	const protected_routes = filter_protected_routes(surface).filter((r) => !is_skipped(r));
 
 	if (protected_routes.length === 0) return;

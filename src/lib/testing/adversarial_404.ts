@@ -49,7 +49,11 @@ import {
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs, route_error_maps } = build();
-	const is_skipped = create_route_skip_filter(options.skip_routes);
+	const is_skipped = create_route_skip_filter(
+		'describe_adversarial_404',
+		options.skip_routes,
+		surface.routes
+	);
 
 	// Build spec lookup for schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();

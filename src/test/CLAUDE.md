@@ -78,7 +78,7 @@ FUZ_TEST_DB_DEFAULT=pglite npx vitest run --project db
 FUZ_TEST_DB_DEFAULT=pglet-server PGLET_SERVER_BIN=/path/to/pglet_server npx vitest run --project db
 ```
 
-The four-driver set's pglite leg and `testing/test_db.db.test.ts` (whose subject is the
+The four-driver set's pglite leg and `testing/db.db.test.ts` (whose subject is the
 factories) pin PGlite with `create_pglite_factory`, as does
 `testing/schema_introspect.pglite.db.test.ts` (index modifiers in the schema
 snapshot, which pglet's `indexdef` leaves out). A few files build their
@@ -271,8 +271,8 @@ runs cross-process only:
 | `role_grant_participation` | `cross_backend/conformance_participation.db.test.ts` |
 | `rpc_adversarial` | `describe_rpc_attack_surface_tests` runs the same cases |
 | `simple_request` | `auth/simple_request_parity.db.test.ts` |
-| `standard` | the in-process suites it runs (`testing/integration_tests.db.test.ts` for the middleware gates) |
-| `standard_auth` | the in-process suites it runs (`testing/integration_tests.db.test.ts`, `cross_backend/admin_integration_spine.db.test.ts`) |
+| `standard` | the in-process suites it runs (`testing/integration.db.test.ts` for the middleware gates) |
+| `standard_auth` | the in-process suites it runs (`testing/integration.db.test.ts`, `cross_backend/admin_integration_spine.db.test.ts`) |
 | `testing_backdoor` | `cross_backend/testing_backdoor_parity.db.test.ts` |
 | `token_lifetime` | `cross_backend/token_lifetime_parity.db.test.ts` |
 | `transport_composition` | `auth/transport_composition_parity.db.test.ts` (the upgrade rows skip) |

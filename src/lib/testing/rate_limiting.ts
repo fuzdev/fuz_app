@@ -28,7 +28,7 @@ import { parse_or_throw } from '@fuzdev/fuz_schema/schema.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { RateLimiter } from '../rate_limiter.ts';
-import { REST_RATE_LIMIT_EXCEEDED } from '../http/error_schemas.ts';
+import { REST_INVALID_CREDENTIALS, REST_RATE_LIMIT_EXCEEDED } from '../http/error_schemas.ts';
 import { create_test_app, type SuiteAppOptions } from './test_app.ts';
 import { create_test_request_headers } from './test_origin.ts';
 import {
@@ -74,13 +74,36 @@ export interface RateLimitingTestOptions {
 }
 
 /**
+ * Assert a login under the limit answered the credential refusal, not a 429
+ * and not anything else — a crash or a validation error would otherwise pass
+ * as "not rate limited".
+ */
+const assert_login_refused = async (res: Response, label: string): Promise<void> => {
+	const body: unknown = await res.json().catch(() => undefined);
+	assert.strictEqual(
+		res.status,
+		REST_INVALID_CREDENTIALS.status,
+		`${label}: expected the ${REST_INVALID_CREDENTIALS.status} credential refusal, got ` +
+			`${res.status} ${JSON.stringify(body)}`
+	);
+	parse_or_throw(REST_INVALID_CREDENTIALS.schema, body);
+};
+
+/**
  * Standard rate limiting integration test suite.
  *
  * Creates 2 test groups:
  * 1. IP rate limiting on login — fires `max_attempts + 1` login requests,
- *    verifies the last returns 429 with a valid `REST_RATE_LIMIT_EXCEEDED` body.
+ *    verifies the last returns 429 with a valid `REST_RATE_LIMIT_EXCEEDED` body
+ *    and that another client IP (by `X-Forwarded-For` through the test app's
+ *    trusted loopback proxy, unless `app_options.proxy` replaces it) still
+ *    gets the credential refusal.
  * 2. Per-account rate limiting on login — fires `max_attempts + 1` login
- *    requests with the same username, verifies the last returns 429.
+ *    requests with the same username, verifies the last returns 429 and that
+ *    a different username still gets the credential refusal.
+ *
+ * Every request under the limit must answer the 401
+ * `REST_INVALID_CREDENTIALS` refusal, so a crash can't pass as "not limited".
  *
  * There is deliberately no bearer-auth group: the bearer path carries no rate
  * limiter on either spine, because an API token's entropy — not throttling —
@@ -132,11 +155,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							}),
 							body: JSON.stringify({ username: 'nonexistent', password: 'wrong' })
 						});
-						assert.notStrictEqual(
-							res.status,
-							429,
-							`Request ${i + 1}/${max_attempts} should not be rate limited`
-						);
+						await assert_login_refused(res, `request ${i + 1}/${max_attempts}`);
 					}
 
 					// The next request should be rate limited
@@ -155,6 +174,21 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						'Expected positive retry_after'
 					);
 					assert_rate_limit_retry_after_header(blocked_res, body);
+
+					// Another client IP, through the test app's trusted loopback proxy,
+					// has a window of its own. Skipped when the consumer replaces the
+					// proxy, which may not trust the loopback hop.
+					if (options.app_options?.proxy === undefined) {
+						const other_ip_res = await test_app.app.request(login_route.path, {
+							method: 'POST',
+							headers: create_test_request_headers({
+								'content-type': 'application/json',
+								'x-forwarded-for': '203.0.113.7'
+							}),
+							body: JSON.stringify({ username: 'nonexistent', password: 'wrong' })
+						});
+						await assert_login_refused(other_ip_res, 'a different client IP');
+					}
 				} finally {
 					login_ip_rate_limiter.dispose();
 				}
@@ -198,11 +232,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							}),
 							body: JSON.stringify({ username: target_username, password: 'wrong' })
 						});
-						assert.notStrictEqual(
-							res.status,
-							429,
-							`Request ${i + 1}/${max_attempts} should not be rate limited`
-						);
+						await assert_login_refused(res, `request ${i + 1}/${max_attempts}`);
 					}
 
 					// The next request for the same username should be rate limited
@@ -230,11 +260,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						}),
 						body: JSON.stringify({ username: 'different_user', password: 'wrong' })
 					});
-					assert.notStrictEqual(
-						other_res.status,
-						429,
-						'Different username should not be rate limited'
-					);
+					await assert_login_refused(other_res, 'a different username');
 				} finally {
 					login_account_rate_limiter.dispose();
 				}

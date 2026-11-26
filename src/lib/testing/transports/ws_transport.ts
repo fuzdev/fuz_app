@@ -23,14 +23,13 @@ import type { ClientRequest, IncomingMessage } from 'node:http';
 import { WebSocket, type RawData } from 'ws';
 
 import {
-	WS_CLIENT_DEFAULT_TIMEOUT_MS,
+	create_ws_waiters,
 	deliver_inbound,
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
-	type WsRequestResponder,
-	type WsWaiter
+	type WsRequestResponder
 } from './ws_client.ts';
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
@@ -146,7 +145,6 @@ export const create_ws_transport = async (
 	options: WsTransportOptions
 ): Promise<WsTransportClient> => {
 	const { base_url, ws_path, cookies, origin, default_timeout_ms, on_request } = options;
-	const default_timeout = default_timeout_ms ?? WS_CLIENT_DEFAULT_TIMEOUT_MS;
 
 	const ws_url = `${base_url.replace(/^http/i, 'ws')}${ws_path}`;
 	const headers: Record<string, string> = { ...options.headers };
@@ -158,9 +156,8 @@ export const create_ws_transport = async (
 		origin: origin === null ? undefined : (origin ?? base_url)
 	});
 
-	const received: Array<unknown> = [];
-	const waiters: Array<WsWaiter> = [];
-	let close_resolvers: Array<() => void> = [];
+	const { received, waiters, wait_for, wait_for_close, next_close, resolve_close } =
+		create_ws_waiters(() => socket.readyState === WebSocket.CLOSED, default_timeout_ms);
 	let close_error: Error | null = null;
 
 	socket.on('message', (data: RawData) => {
@@ -188,8 +185,7 @@ export const create_ws_transport = async (
 	socket.on('close', (code: number, reason: Buffer) => {
 		close_code = code;
 		close_reason = reason.toString('utf-8');
-		for (const resolve of close_resolvers) resolve();
-		close_resolvers = [];
+		resolve_close();
 	});
 
 	// Wait for the upgrade to complete (or fail) before resolving the
@@ -242,46 +238,6 @@ export const create_ws_transport = async (
 	const is_closed = (): boolean =>
 		socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED;
 
-	const wait_for_close = (timeout_ms = default_timeout): Promise<boolean> => {
-		if (socket.readyState === WebSocket.CLOSED) return Promise.resolve(true);
-		return new Promise<boolean>((resolve) => {
-			const on_close = (): void => {
-				clearTimeout(timer);
-				resolve(true);
-			};
-			const timer = setTimeout(() => {
-				const i = close_resolvers.indexOf(on_close);
-				if (i >= 0) close_resolvers.splice(i, 1);
-				resolve(false);
-			}, timeout_ms);
-			close_resolvers.push(on_close);
-		});
-	};
-
-	const wait_for_impl = <T>(
-		predicate: (msg: unknown) => boolean,
-		timeout_ms = default_timeout
-	): Promise<T> => {
-		for (const msg of received) {
-			if (predicate(msg)) return Promise.resolve(msg as T);
-		}
-		return new Promise<T>((resolve, reject) => {
-			const waiter = {
-				predicate,
-				resolve: (msg: unknown) => {
-					clearTimeout(timer);
-					resolve(msg as T);
-				}
-			};
-			const timer = setTimeout(() => {
-				const i = waiters.indexOf(waiter);
-				if (i >= 0) waiters.splice(i, 1);
-				reject(new Error(`wait_for timed out after ${timeout_ms}ms`));
-			}, timeout_ms);
-			waiters.push(waiter);
-		});
-	};
-
 	const send_text_impl = async (text: string): Promise<void> => {
 		if (is_closed() || socket.readyState !== WebSocket.OPEN) throw new Error('send after close');
 		socket.send(text);
@@ -307,7 +263,7 @@ export const create_ws_transport = async (
 			timeout_ms?: number
 		): Promise<R> {
 			await send_impl(create_jsonrpc_request(method, params as never, id));
-			const msg = await wait_for_impl<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
+			const msg = await wait_for<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
 				is_response_for(id),
 				timeout_ms
 			);
@@ -321,11 +277,11 @@ export const create_ws_transport = async (
 		async close(code, reason) {
 			if (!is_closed()) socket.close(code, reason);
 			if (socket.readyState !== WebSocket.CLOSED) {
-				await new Promise<void>((resolve) => close_resolvers.push(resolve));
+				await next_close();
 			}
 			if (close_error) throw close_error;
 		},
-		wait_for: wait_for_impl,
+		wait_for,
 		wait_for_close
 	};
 };

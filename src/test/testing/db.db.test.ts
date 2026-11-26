@@ -1,5 +1,5 @@
 /**
- * Tests for backend_test_db - test database factory builders.
+ * Tests for `testing/db.ts` — the test database factory builders.
  *
  * @module
  */

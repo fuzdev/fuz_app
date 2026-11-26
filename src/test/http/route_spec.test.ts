@@ -50,7 +50,7 @@ import {
 	TEST_CONTEXT_PRESET_KEY
 } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 import {
 	REST_INVALID_CREDENTIALS,
 	REST_RATE_LIMIT_EXCEEDED,
@@ -156,7 +156,7 @@ describe('apply_route_specs', () => {
 		const app = new Hono();
 		// Set request context before the route
 		app.use('/*', async (c, next) => {
-			const ctx = create_test_request_context();
+			const ctx = create_test_context();
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
@@ -208,7 +208,7 @@ describe('apply_route_specs', () => {
 	test('auth role returns 403 when wrong role', async () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			const ctx = create_test_request_context('viewer');
+			const ctx = create_test_context([{ role: 'viewer' }]);
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
@@ -241,7 +241,7 @@ describe('apply_route_specs', () => {
 	test('auth role passes with correct role', async () => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			const ctx = create_test_request_context('admin');
+			const ctx = create_test_context([{ role: 'admin' }]);
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({ credential_type: 'session', account: ctx.account })
@@ -284,7 +284,7 @@ describe('auth.required_scope', () => {
 	): Hono => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
-			const ctx = create_test_request_context(role);
+			const ctx = create_test_context([{ role }]);
 			(c as any).set(
 				RESOLVED_AUTH_KEY,
 				create_test_resolved_auth({
@@ -338,7 +338,7 @@ describe('auth.required_scope', () => {
 		const build_account_only_app = (scope: TokenScope): Hono => {
 			const app = new Hono();
 			app.use('/*', async (c, next) => {
-				const ctx = create_test_request_context();
+				const ctx = create_test_context();
 				(c as any).set(
 					RESOLVED_AUTH_KEY,
 					create_test_resolved_auth({

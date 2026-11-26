@@ -716,15 +716,17 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 		// --- Signup route ---
 
 		describe('signup audit events', () => {
-			test('signup produces signup event', async () => {
+			// signup is optional — consumers that don't wire `POST /signup` (e.g.
+			// admin-only apps) see this audit check skipped with the reason;
+			// signup completeness for surfaces that DO wire it is still asserted
+			// by COVERED_EVENT_TYPES below. Mirrors `integration.ts`'s signup gate.
+			const signup_route = find_auth_route(route_specs, '/signup', 'POST');
+			test('signup produces signup event', async (ctx) => {
+				if (!signup_route) {
+					ctx.skip('no `POST .../signup` route on the surface (signup is optional)');
+					return;
+				}
 				const fixture = await options.setup_test();
-
-				// signup is optional — consumers that don't wire `POST /signup` (e.g.
-				// admin-only apps) skip this audit check; signup completeness for
-				// surfaces that DO wire it is still asserted by COVERED_EVENT_TYPES
-				// below. Mirrors `integration.ts`'s signup-block presence-gate.
-				const signup_route = find_auth_route(route_specs, '/signup', 'POST');
-				if (!signup_route) return;
 
 				const observer = await create_admin_observer(fixture);
 

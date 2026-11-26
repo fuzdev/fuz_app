@@ -23,7 +23,7 @@ import { test, assert } from 'vitest';
 import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 
 const source_path = fileURLToPath(
-	new URL('../../lib/testing/cross_backend/testing_reset_actions.ts', import.meta.url)
+	new URL('../../../lib/testing/cross_backend/testing_reset_actions.ts', import.meta.url)
 );
 
 test('DELETE FROM targets match auth_integration_truncate_tables', () => {

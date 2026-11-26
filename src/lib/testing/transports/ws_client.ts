@@ -199,6 +199,94 @@ const answer_request = async (
  */
 export const WS_CLIENT_DEFAULT_TIMEOUT_MS = 1000;
 
+/**
+ * The receive-side state both `WsClient` impls share: the inbound log and
+ * pending `wait_for`s (`deliver_inbound`'s `received` and `waiters`), and the
+ * close waiters the impl's close handler resolves.
+ */
+export interface WsWaiters {
+	/** Every inbound message, in order — what `WsClient.messages` returns. */
+	readonly received: Array<unknown>;
+	/** The pending `wait_for`s, which `deliver_inbound` resolves. */
+	readonly waiters: Array<WsWaiter>;
+	/** `WsClient.wait_for`: an already-received match first, else the next one. */
+	wait_for: <T = unknown>(predicate: (msg: unknown) => boolean, timeout_ms?: number) => Promise<T>;
+	/** `WsClient.wait_for_close`: `true` once closed, `false` on timeout. */
+	wait_for_close: (timeout_ms?: number) => Promise<boolean>;
+	/** Resolve when `resolve_close` next runs, with no timeout. */
+	next_close: () => Promise<void>;
+	/** Resolve every close waiter — called from the impl's close handler. */
+	resolve_close: () => void;
+}
+
+/**
+ * Create the shared receive-side state for a `WsClient` impl. A timed-out
+ * waiter is dropped, so a later message doesn't iterate it and the lists
+ * don't grow across timed-out waits.
+ *
+ * @param is_closed - whether the socket is closed already, read by `wait_for_close`
+ * @param default_timeout_ms - the timeout when a call passes none
+ */
+export const create_ws_waiters = (
+	is_closed: () => boolean,
+	default_timeout_ms: number = WS_CLIENT_DEFAULT_TIMEOUT_MS
+): WsWaiters => {
+	const received: Array<unknown> = [];
+	const waiters: Array<WsWaiter> = [];
+	const close_waiters: Array<() => void> = [];
+
+	const wait_for = <T = unknown>(
+		predicate: (msg: unknown) => boolean,
+		timeout_ms = default_timeout_ms
+	): Promise<T> => {
+		for (const msg of received) {
+			if (predicate(msg)) return Promise.resolve(msg as T);
+		}
+		return new Promise<T>((resolve, reject) => {
+			const waiter: WsWaiter = {
+				predicate,
+				resolve: (msg: unknown) => {
+					clearTimeout(timer);
+					resolve(msg as T);
+				}
+			};
+			const timer = setTimeout(() => {
+				const i = waiters.indexOf(waiter);
+				if (i >= 0) waiters.splice(i, 1);
+				reject(new Error(`wait_for timed out after ${timeout_ms}ms`));
+			}, timeout_ms);
+			waiters.push(waiter);
+		});
+	};
+
+	const wait_for_close = (timeout_ms = default_timeout_ms): Promise<boolean> => {
+		if (is_closed()) return Promise.resolve(true);
+		return new Promise<boolean>((resolve) => {
+			const on_close = (): void => {
+				clearTimeout(timer);
+				resolve(true);
+			};
+			const timer = setTimeout(() => {
+				const i = close_waiters.indexOf(on_close);
+				if (i >= 0) close_waiters.splice(i, 1);
+				resolve(false);
+			}, timeout_ms);
+			close_waiters.push(on_close);
+		});
+	};
+
+	return {
+		received,
+		waiters,
+		wait_for,
+		wait_for_close,
+		next_close: () => new Promise<void>((resolve) => close_waiters.push(resolve)),
+		resolve_close: () => {
+			for (const resolve of close_waiters.splice(0)) resolve();
+		}
+	};
+};
+
 /** A test WS client: send requests, inspect / await incoming messages. */
 export interface WsClient {
 	/**

@@ -13,7 +13,7 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_serve_fact_route_spec } from '#lib/server/serve_fact_route.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 import {
 	emit_route_response,
 	prepare_route_response,
@@ -33,7 +33,7 @@ describe('create_serve_fact_route_spec handler re-check', () => {
 		app.get(spec.path, async (c) => {
 			const result = await spec.handler({
 				params: { hash: `blake3:${'0'.repeat(64)}` },
-				auth: create_test_request_context()
+				auth: create_test_context()
 			} as unknown as RouteContext);
 			return emit_route_response(
 				c,

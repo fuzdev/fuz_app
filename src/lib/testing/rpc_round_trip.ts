@@ -27,7 +27,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { describe, test, beforeAll, assert } from 'vitest';
+import { describe, beforeAll, assert } from 'vitest';
 
 import { check_db_invariants_and_close_after_all } from './db_invariants.ts';
 import { is, parse } from '@fuzdev/fuz_schema/schema.ts';
@@ -42,7 +42,13 @@ import { jsonrpc_error_code_to_http_status } from '../http/jsonrpc_errors.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../http/error_schemas.ts';
 import type { TestAccount } from './test_app.ts';
 import { generate_valid_body } from './schema_generators.ts';
-import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
+import type {
+	AppSurfaceSpec,
+	AppSurfaceRpcEndpoint,
+	AppSurfaceRpcMethod,
+	RpcEndpointSpec
+} from '../http/surface.ts';
+import type { RpcAction } from '../actions/action_types.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -54,6 +60,8 @@ import {
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import {
+	assert_skip_entries_known,
+	test_or_skip,
 	is_credential_type_refusal,
 	is_unauthenticated_refusal,
 	pick_auth_principal,
@@ -89,7 +97,10 @@ export interface RpcRoundTripTestOptions {
 	 * dispatch goes through whatever the backend was started with).
 	 */
 	rpc_endpoints: RpcEndpointsSuiteOption;
-	/** Methods to skip, by name (e.g., `'zap_plan'`). */
+	/**
+	 * Methods to skip, by name (e.g., `'zap_plan'`). An entry naming no method
+	 * on the RPC endpoints throws at collection.
+	 */
 	skip_methods?: Array<string>;
 	/** Override generated params for specific methods (method name → params). */
 	input_overrides?: Map<string, Record<string, unknown>>;
@@ -331,6 +342,36 @@ const assert_rpc_refusal = (
 	assert_jsonrpc_error_response(body);
 };
 
+/** An RPC method the round trip drives: on a setup endpoint and the surface, not skipped. */
+interface DrivableRpcMethod {
+	path: string;
+	action: RpcAction;
+	surface_method: AppSurfaceRpcMethod;
+}
+
+/**
+ * The methods the round trip's POST and GET tests drive, in endpoint order:
+ * each on a setup endpoint whose path the surface lists, named by the
+ * surface, and not in `skip_methods`.
+ */
+const collect_drivable_rpc_methods = (
+	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,
+	surface_rpc_endpoints: ReadonlyArray<AppSurfaceRpcEndpoint>,
+	skip_set: ReadonlySet<string>
+): Array<DrivableRpcMethod> => {
+	const drivable: Array<DrivableRpcMethod> = [];
+	for (const ep of rpc_endpoints) {
+		const surface_ep = surface_rpc_endpoints.find((e) => e.path === ep.path);
+		if (!surface_ep) continue;
+		for (const action of ep.actions) {
+			if (skip_set.has(action.spec.method)) continue;
+			const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
+			if (surface_method) drivable.push({ path: ep.path, action, surface_method });
+		}
+	}
+	return drivable;
+};
+
 /**
  * Run schema-driven round-trip validation for RPC endpoints.
  *
@@ -352,6 +393,9 @@ const assert_rpc_refusal = (
  * `timeout`) passes as a refusal. A method the suite can't drive generically
  * goes in `skip_methods`; one whose generated params can't reach its handler
  * gets an `input_overrides` entry.
+ *
+ * @throws Error at collection when a `skip_methods` entry names no method on
+ *   the RPC endpoints
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);
@@ -365,6 +409,22 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 		options.session_cookie_name
 	);
 	const surface_rpc_endpoints = options.surface_source.surface.rpc_endpoints;
+	assert_skip_entries_known(
+		'describe_rpc_round_trip_tests',
+		'skip_methods',
+		skip_set,
+		new Set(rpc_endpoints_for_setup.flatMap((ep) => ep.actions.map((a) => a.spec.method))),
+		'a method on the RPC endpoints'
+	);
+
+	// the methods the POST and GET tests drive — on a setup endpoint and the
+	// surface, not skipped — one list, so a test with none reports a skip
+	const drivable = collect_drivable_rpc_methods(
+		rpc_endpoints_for_setup,
+		surface_rpc_endpoints,
+		skip_set
+	);
+	const drivable_reads = drivable.filter((d) => !d.action.spec.side_effects);
 
 	describe('RPC round-trip validation', () => {
 		let fixture: TestFixture;
@@ -385,17 +445,11 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 			});
 		});
 
-		test('all RPC methods produce valid JSON-RPC responses (POST)', async () => {
-			for (const ep_spec of rpc_endpoints_for_setup) {
-				const surface_ep = surface_rpc_endpoints.find((e) => e.path === ep_spec.path);
-				if (!surface_ep) continue;
-
-				for (const action of ep_spec.actions) {
-					if (skip_set.has(action.spec.method)) continue;
-
-					const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
-					if (!surface_method) continue;
-
+		test_or_skip(
+			'all RPC methods produce valid JSON-RPC responses (POST)',
+			drivable.length === 0 ? 'no RPC method to drive' : null,
+			async () => {
+				for (const { path, action, surface_method } of drivable) {
 					const override = options.input_overrides?.get(action.spec.method);
 					const params = override ?? generate_valid_body(action.spec.input) ?? null;
 
@@ -415,7 +469,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					const init = create_rpc_post_init(action.spec.method, params);
 					Object.assign(init.headers as Record<string, string>, headers);
 
-					const res = await to_principal_transport(principal, fixture)(ep_spec.path, init);
+					const res = await to_principal_transport(principal, fixture)(path, init);
 					const body = await read_rpc_body(res);
 
 					try {
@@ -433,20 +487,13 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					}
 				}
 			}
-		});
+		);
 
-		test('all read RPC methods produce valid JSON-RPC responses (GET)', async () => {
-			for (const ep_spec of rpc_endpoints_for_setup) {
-				const surface_ep = surface_rpc_endpoints.find((e) => e.path === ep_spec.path);
-				if (!surface_ep) continue;
-
-				const read_actions = ep_spec.actions.filter((a) => !a.spec.side_effects);
-				for (const action of read_actions) {
-					if (skip_set.has(action.spec.method)) continue;
-
-					const surface_method = surface_ep.methods.find((m) => m.name === action.spec.method);
-					if (!surface_method) continue;
-
+		test_or_skip(
+			'all read RPC methods produce valid JSON-RPC responses (GET)',
+			drivable_reads.length === 0 ? 'no `side_effects: false` RPC method to drive' : null,
+			async () => {
+				for (const { path, action, surface_method } of drivable_reads) {
 					const override = options.input_overrides?.get(action.spec.method);
 					const params = override ?? generate_valid_body(action.spec.input) ?? undefined;
 
@@ -457,7 +504,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						admin_account
 					);
 
-					const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
+					const url = create_rpc_get_url(path, action.spec.method, params);
 					const res = await to_principal_transport(principal, fixture)(url, { headers });
 					const body = await read_rpc_body(res);
 
@@ -476,48 +523,51 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					}
 				}
 			}
-		});
+		);
 
-		test('declared success fixtures produce schema-valid success bodies', async () => {
-			const success_fixtures = options.success_fixtures;
-			if (!success_fixtures || success_fixtures.size === 0) return;
-			for (const [method, build] of success_fixtures) {
-				const located = find_rpc_action(rpc_endpoints_for_setup, method);
-				assert.ok(located, `success_fixtures references unknown RPC method '${method}'`);
-				const surface = find_rpc_method(surface_rpc_endpoints, method);
-				assert.ok(surface, `success_fixtures method '${method}' missing from generated surface`);
+		const success_fixtures = options.success_fixtures;
+		test_or_skip(
+			'declared success fixtures produce schema-valid success bodies',
+			success_fixtures?.size ? null : 'no success_fixtures declared',
+			async () => {
+				for (const [method, build] of success_fixtures ?? []) {
+					const located = find_rpc_action(rpc_endpoints_for_setup, method);
+					assert.ok(located, `success_fixtures references unknown RPC method '${method}'`);
+					const surface = find_rpc_method(surface_rpc_endpoints, method);
+					assert.ok(surface, `success_fixtures method '${method}' missing from generated surface`);
 
-				const fixture_case = await build(fixture);
-				const picked = pick_rpc_auth(surface.method_spec, fixture, authed_account, admin_account);
-				const headers = fixture_case.headers ?? picked.headers;
-				const init = create_rpc_post_init(method, fixture_case.params);
-				Object.assign(init.headers as Record<string, string>, headers);
+					const fixture_case = await build(fixture);
+					const picked = pick_rpc_auth(surface.method_spec, fixture, authed_account, admin_account);
+					const headers = fixture_case.headers ?? picked.headers;
+					const init = create_rpc_post_init(method, fixture_case.params);
+					Object.assign(init.headers as Record<string, string>, headers);
 
-				// a fixture's own headers carry a session cookie, sent with no jar so
-				// the keeper's can't stand in for one they lack
-				const transport = fixture_case.headers
-					? fixture.fresh_transport()
-					: to_principal_transport(picked.principal, fixture);
-				const res = await transport(located.path, init);
-				const body = await read_rpc_body(res);
-				try {
-					assert_method_implemented(method, body);
-					assert_not_crash(method, res.status, body, 'success');
-					assert.ok(
-						res.ok,
-						`success fixture expected a success response, got status ${
-							res.status
-						}: ${JSON.stringify(body)}`
-					);
-					assert_jsonrpc_success_response(body, located.action.spec.output);
-				} catch (e) {
-					throw new Error(
-						`RPC success-fixture failed for ${method} (status ${res.status}): ${
-							(e as Error).message
-						}`
-					);
+					// a fixture's own headers carry a session cookie, sent with no jar so
+					// the keeper's can't stand in for one they lack
+					const transport = fixture_case.headers
+						? fixture.fresh_transport()
+						: to_principal_transport(picked.principal, fixture);
+					const res = await transport(located.path, init);
+					const body = await read_rpc_body(res);
+					try {
+						assert_method_implemented(method, body);
+						assert_not_crash(method, res.status, body, 'success');
+						assert.ok(
+							res.ok,
+							`success fixture expected a success response, got status ${
+								res.status
+							}: ${JSON.stringify(body)}`
+						);
+						assert_jsonrpc_success_response(body, located.action.spec.output);
+					} catch (e) {
+						throw new Error(
+							`RPC success-fixture failed for ${method} (status ${res.status}): ${
+								(e as Error).message
+							}`
+						);
+					}
 				}
 			}
-		});
+		);
 	});
 };

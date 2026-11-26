@@ -45,8 +45,7 @@ import {
 } from '#lib/hono_context.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { BuiltinCredentialType } from '#lib/auth/credential_type_schema.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
-import { create_test_actor } from '#lib/testing/entities.ts';
+import { create_test_actor, create_test_context } from '#lib/testing/entities.ts';
 import { jsonrpc_errors, JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { token_scope_methods, type TokenScope } from '#lib/auth/token_scope.ts';
 import {
@@ -134,7 +133,7 @@ const create_test_app = (
 		notification_sender,
 		endpoint_log
 	}: {
-		auth_context?: ReturnType<typeof create_test_request_context>;
+		auth_context?: ReturnType<typeof create_test_context>;
 		credential_type?: BuiltinCredentialType;
 		token_scope?: TokenScope;
 		action_ip_rate_limiter?: RateLimiter;
@@ -324,7 +323,7 @@ describe('POST dispatcher', () => {
 					handler: (input: any) => ({ id: `created-${input.name}` })
 				}
 			],
-			{ auth_context: create_test_request_context() }
+			{ auth_context: create_test_context() }
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -353,7 +352,7 @@ describe('POST dispatcher', () => {
 		]);
 		const ok_app = create_test_app(
 			[{ spec: create_post_spec(), handler: (input: any) => ({ id: `created-${input.name}` }) }],
-			{ auth_context: create_test_request_context() }
+			{ auth_context: create_test_context() }
 		);
 		const post = (target: Hono) =>
 			target.request('/api/rpc', {
@@ -467,7 +466,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
-			{ auth_context: create_test_request_context() } // no admin role
+			{ auth_context: create_test_context() } // no admin role
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -497,7 +496,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
-			{ auth_context: create_test_request_context() } // no admin role
+			{ auth_context: create_test_context() } // no admin role
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -520,7 +519,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
-			{ auth_context: create_test_request_context() } // no admin role
+			{ auth_context: create_test_context() } // no admin role
 		);
 		const res = await app.request('/api/rpc', {
 			method: 'POST',
@@ -540,7 +539,7 @@ describe('POST dispatcher', () => {
 	 */
 	test('the token-scope gate precedes input validation', async () => {
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context(),
+			auth_context: create_test_context(),
 			credential_type: 'api_token',
 			token_scope: token_scope_methods(['thing_list'])
 		});
@@ -558,7 +557,7 @@ describe('POST dispatcher', () => {
 
 	test('returns invalid_params for schema-invalid params', async () => {
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context()
+			auth_context: create_test_context()
 		});
 
 		const res = await app.request('/api/rpc', {
@@ -574,7 +573,7 @@ describe('POST dispatcher', () => {
 
 	test('handler receives ActionContext with auth', async () => {
 		let received_auth: unknown;
-		const test_ctx = create_test_request_context();
+		const test_ctx = create_test_context();
 		const app = create_test_app(
 			[
 				{
@@ -982,7 +981,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: () => ({ id: '1' }) }],
-			{ auth_context: create_test_request_context() } // no keeper role
+			{ auth_context: create_test_context() } // no keeper role
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -1009,7 +1008,7 @@ describe('POST dispatcher', () => {
 		};
 		const app = create_test_app(
 			[{ spec: keeper_spec, handler: (input: any) => ({ id: input.name }) }],
-			{ auth_context: create_test_request_context('keeper'), credential_type: 'daemon_token' }
+			{ auth_context: create_test_context([{ role: 'keeper' }]), credential_type: 'daemon_token' }
 		);
 
 		const res = await app.request('/api/rpc', {
@@ -1035,7 +1034,7 @@ describe('POST dispatcher', () => {
 			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context('keeper'),
+			auth_context: create_test_context([{ role: 'keeper' }]),
 			credential_type: 'session'
 		});
 
@@ -1062,7 +1061,7 @@ describe('POST dispatcher', () => {
 			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context('keeper'),
+			auth_context: create_test_context([{ role: 'keeper' }]),
 			credential_type: 'api_token'
 		});
 
@@ -1089,7 +1088,7 @@ describe('POST dispatcher', () => {
 			input: object({ name: string, acting: ActingActor })
 		};
 		const app = create_test_app([{ spec: keeper_spec, handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context(),
+			auth_context: create_test_context(),
 			credential_type: 'daemon_token'
 		});
 
@@ -1176,7 +1175,7 @@ describe('GET dispatcher', () => {
 				{ spec: create_get_spec(), handler: () => ({ items: [] }) },
 				{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }
 			],
-			{ auth_context: create_test_request_context() }
+			{ auth_context: create_test_context() }
 		);
 		for (const url of [
 			'/api/rpc?method=thing_list&id=1',
@@ -1208,7 +1207,7 @@ describe('GET dispatcher', () => {
 					}
 				}
 			],
-			{ auth_context: create_test_request_context() }
+			{ auth_context: create_test_context() }
 		);
 		const res = await app.request('/api/rpc?method=thing_list&id=1');
 		assert.strictEqual(res.status, 500);
@@ -1305,7 +1304,7 @@ describe('GET dispatcher', () => {
 
 	test('rejects side_effects:true actions', async () => {
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }], {
-			auth_context: create_test_request_context()
+			auth_context: create_test_context()
 		});
 
 		const res = await app.request('/api/rpc?method=thing_create&id=1');
@@ -1832,7 +1831,7 @@ describe('rate limit', () => {
 
 	test('account limiter blocks once exhausted', async () => {
 		const limiter = make_limiter(2);
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		const app = create_test_app(
 			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
 			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
@@ -1860,18 +1859,18 @@ describe('rate limit', () => {
 
 	test('per-account isolation — separate budgets', async () => {
 		const limiter = make_limiter(1);
-		// Account-keyed rate limiting hashes on `account.id`. `create_test_request_context()`
+		// Account-keyed rate limiting hashes on `account.id`. `create_test_context()`
 		// returns the shared default account; build a second context with a
 		// distinct account so the two contexts hash to different buckets.
-		const actor_a = create_test_request_context();
-		const base_b = create_test_request_context();
+		const actor_a = create_test_context();
+		const base_b = create_test_context();
 		const actor_b = {
 			...base_b,
 			account: { ...base_b.account, id: 'acc_2' as Uuid, username: 'beta' },
 			actor: create_test_actor({ id: 'act_2', account_id: 'acc_2' })
 		};
 
-		const make_app = (auth_context: ReturnType<typeof create_test_request_context>) =>
+		const make_app = (auth_context: ReturnType<typeof create_test_context>) =>
 			create_test_app([{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }], {
 				auth_context,
 				credential_type: 'session',
@@ -1907,7 +1906,7 @@ describe('rate limit', () => {
 
 	test('action without rate_limit is unaffected', async () => {
 		const limiter = make_limiter(1);
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		// post_spec has no rate_limit set
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }], {
 			auth_context,
@@ -1930,7 +1929,7 @@ describe('rate limit', () => {
 	});
 
 	test('null limiter skips check (silent partial enforcement)', async () => {
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		// no limiter wired — declared `rate_limit: 'account'` is silently a no-op
 		const app = create_test_app(
 			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
@@ -1960,7 +1959,7 @@ describe('rate limit', () => {
 	// rather than slipping past on a cheap 400.
 	test('malformed params still charge the budget — third call is rate_limited', async () => {
 		const limiter = make_limiter(2);
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		const app = create_test_app(
 			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
 			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
@@ -1988,7 +1987,7 @@ describe('rate limit', () => {
 
 	test('__proto__ params charge the budget — the second call is rate_limited', async () => {
 		const limiter = make_limiter(1);
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		const app = create_test_app(
 			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
 			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
@@ -2009,7 +2008,7 @@ describe('rate limit', () => {
 
 	test('malformed params on a non-limited spec are still invalid_params', async () => {
 		const limiter = make_limiter(1);
-		const auth_context = create_test_request_context();
+		const auth_context = create_test_context();
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }], {
 			auth_context,
 			credential_type: 'session',

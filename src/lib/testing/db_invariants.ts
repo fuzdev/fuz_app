@@ -131,11 +131,16 @@ const task_failed = (task: RunnerTask): boolean =>
  * afterAll(async ({}, suite) => {
  * 	try {
  * 		await check_db_invariants_after_suite(suite, test_app);
- * 	} finally {
- * 		await test_app.cleanup();
+ * 	} catch (error) {
+ * 		return close_after_error(() => test_app.cleanup(), error);
  * 	}
+ * 	await test_app.cleanup();
  * });
  * ```
+ *
+ * Not `try`/`finally`: a cleanup that throws there replaces the violation.
+ * `close_after_error` rethrows the violation, aggregated with a failing
+ * cleanup's error.
  *
  * @param suite - the describe's task, the `afterAll` hook's second argument
  * @param fixture - the shared fixture or test app, `null` or `undefined` until built

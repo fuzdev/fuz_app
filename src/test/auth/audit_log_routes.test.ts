@@ -16,7 +16,7 @@ import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import type { RouteContext } from '#lib/http/route_spec.ts';
 import { create_audit_log_sse } from '#lib/realtime/audit_log_sse.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -28,7 +28,7 @@ describe('audit log stream handler', () => {
 		assert.ok(spec);
 		// A pre-baked context (so the re-reads are skipped) whose `open_sse`
 		// throws, as building the stream's response would.
-		const request_context = create_test_request_context(ROLE_ADMIN);
+		const request_context = create_test_context([{ role: ROLE_ADMIN }]);
 		const route = {
 			auth: request_context,
 			credential: create_test_resolved_auth({

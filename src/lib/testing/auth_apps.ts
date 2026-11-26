@@ -34,19 +34,11 @@ import {
 	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
 import { create_test_resolved_auth } from './resolved_auth.ts';
+import { assert_skip_entries_known } from './integration_helpers.ts';
 import { create_stub_db } from './stubs.ts';
 import { create_sse_stream } from '../realtime/sse.ts';
 import { flush_request_effects } from '../http/pending_effects.ts';
-import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
-
-/**
- * Create a mock `RequestContext` with optional role role_grant.
- */
-export const create_test_request_context = (role?: string): RequestContext => ({
-	account: create_test_account({ id: 'acc_1', username: 'testuser' }),
-	actor: create_test_actor({ id: 'act_1', account_id: 'acc_1', name: 'testuser' }),
-	role_grants: role ? [create_test_role_grant({ id: 'perm_1', actor_id: 'act_1', role })] : []
-});
+import { create_test_context } from './entities.ts';
 
 /**
  * Create a Hono test app from route specs with optional auth context. Each
@@ -127,21 +119,21 @@ export const create_auth_test_apps = (
 ): AuthTestApps => {
 	const by_role = new Map<string, Hono>();
 	for (const role of roles) {
-		by_role.set(role, create_test_app_from_specs(route_specs, create_test_request_context(role)));
+		by_role.set(role, create_test_app_from_specs(route_specs, create_test_context([{ role }])));
 	}
 	const by_credential_type = new Map<BuiltinCredentialType, Hono>(
 		BUILTIN_CREDENTIAL_TYPES.map((credential_type) => [
 			credential_type,
 			create_test_app_from_specs(
 				route_specs,
-				create_test_request_context(ROLE_KEEPER),
+				create_test_context([{ role: ROLE_KEEPER }]),
 				credential_type
 			)
 		])
 	);
 	return {
 		public: create_test_app_from_specs(route_specs),
-		authed: create_test_app_from_specs(route_specs, create_test_request_context()),
+		authed: create_test_app_from_specs(route_specs, create_test_context()),
 		keeper: by_credential_type.get(CREDENTIAL_TYPE_DAEMON_TOKEN)!,
 		by_credential_type,
 		by_role
@@ -200,10 +192,24 @@ export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
  * Build the skip predicate an adversarial suite applies from its
  * `skip_routes` option — routes named in `'METHOD /path'` form, the surface
  * key. `undefined` skips nothing.
+ *
+ * @param owner - the suite the option belongs to, for the error message
+ * @param skip_routes - the suite's `skip_routes`
+ * @param routes - every route on the surface the suite runs against
+ * @throws Error when an entry names no route in `routes`
  */
 export const create_route_skip_filter = (
-	skip_routes: Array<string> | undefined
+	owner: string,
+	skip_routes: Array<string> | undefined,
+	routes: ReadonlyArray<{ method: string; path: string }>
 ): ((route: { method: string; path: string }) => boolean) => {
 	const skip_set = new Set(skip_routes);
+	assert_skip_entries_known(
+		owner,
+		'skip_routes',
+		skip_set,
+		new Set(routes.map(format_route_key)),
+		'a route on the surface'
+	);
 	return (route) => skip_set.has(format_route_key(route));
 };

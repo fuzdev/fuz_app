@@ -30,12 +30,9 @@ import {
 	type RouteAuth
 } from '../http/auth_shape.ts';
 import { JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
-import {
-	create_auth_test_apps,
-	create_test_app_from_specs,
-	create_test_request_context,
-	select_auth_app
-} from './auth_apps.ts';
+import { create_auth_test_apps, create_test_app_from_specs, select_auth_app } from './auth_apps.ts';
+import { create_test_context } from './entities.ts';
+import { ROLE_KEEPER } from '../auth/role_schema.ts';
 import { generate_valid_body } from './schema_generators.ts';
 import type { RpcAction } from '../actions/action_types.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -288,12 +285,12 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 					describe('keeper rejects non-daemon credentials', () => {
 						const session_app = create_test_app_from_specs(
 							route_specs,
-							create_test_request_context('keeper'),
+							create_test_context([{ role: ROLE_KEEPER }]),
 							'session'
 						);
 						const api_token_app = create_test_app_from_specs(
 							route_specs,
-							create_test_request_context('keeper'),
+							create_test_context([{ role: ROLE_KEEPER }]),
 							'api_token'
 						);
 
@@ -530,11 +527,15 @@ const format_auth = (auth: RouteAuth): string => {
  * 2. Adversarial envelopes — malformed JSON-RPC requests
  * 3. Adversarial params — schema-invalid params per method
  *
- * Skips silently when `surface.rpc_endpoints` is empty.
+ * Registers one skipped test, naming the reason, when `surface.rpc_endpoints`
+ * is empty.
  */
 export const describe_rpc_attack_surface_tests = (options: RpcAttackSurfaceOptions): void => {
 	const { surface } = options.build();
-	if (surface.rpc_endpoints.length === 0) return;
+	if (surface.rpc_endpoints.length === 0) {
+		test.skip('RPC attack surface (no RPC endpoints declared)', () => {});
+		return;
+	}
 
 	describe_rpc_auth(options);
 	describe_rpc_adversarial_envelopes(options);

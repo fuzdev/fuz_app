@@ -18,8 +18,8 @@ import {
 	TEST_CLIENT_IP,
 	type BearerAuthTestCase
 } from '#lib/testing/middleware.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import {
+	create_test_context,
 	create_test_account,
 	create_test_raw_api_token,
 	create_test_validated_api_token
@@ -57,7 +57,7 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 	{
 		name: 'session already set — skips bearer auth, preserves original context',
 		headers: { Authorization: `Bearer ${TOKEN}` },
-		pre_context: create_test_request_context('admin'),
+		pre_context: create_test_context([{ role: 'admin' }]),
 		expected_status: 'next',
 		validate_expectation: 'not_called',
 		assert_context_preserved: true

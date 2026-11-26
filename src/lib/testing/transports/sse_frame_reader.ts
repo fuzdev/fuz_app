@@ -14,7 +14,7 @@ import '../assert_dev_env.ts';
  */
 
 /** Default per-read / wait-for-close timeout. */
-export const SSE_FRAME_READ_TIMEOUT_MS = 2000;
+const SSE_FRAME_READ_TIMEOUT_MS = 2000;
 
 /** Frame-level reader returned by `create_sse_frame_reader`. */
 export interface SseFrameReader {
@@ -29,7 +29,7 @@ export interface SseFrameReader {
 	 * stream closes within `timeout_ms`, `false` on timeout.
 	 */
 	wait_for_close: (timeout_ms?: number) => Promise<boolean>;
-	/** Cancel the underlying reader. Safe to call when already closed. */
+	/** Cancel the underlying reader and release its lock. Safe to call when already closed. */
 	cancel: () => Promise<void>;
 }
 
@@ -39,7 +39,10 @@ export interface SseFrameReader {
  * Preserves bytes past a frame terminator in an internal buffer for the next
  * `read_frame`. `read_frame` and `wait_for_close` both race each underlying
  * read against `timeout_ms` so a misbehaving stream surfaces as a failure
- * rather than a vitest hang.
+ * rather than a vitest hang. A timed-out read is kept in flight and the next
+ * call awaits it, so no chunk is lost and the stream stays usable after a
+ * timeout — a `wait_for_close` that answers `false` leaves it open, as a
+ * `WsClient` socket's does. Each timer is cleared once its race settles.
  */
 export const create_sse_frame_reader = (
 	reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -48,20 +51,55 @@ export const create_sse_frame_reader = (
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let closed = false;
+	// The read in flight. A read that loses the race to its timeout stays
+	// pending until a pump consumes its result, and the next pump awaits that
+	// same read rather than starting a second one — so no chunk is lost and
+	// the stream stays usable after a timed-out wait, as a `WsClient` socket
+	// does.
+	let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+
+	const cancel = async (): Promise<void> => {
+		try {
+			await reader.cancel();
+		} catch {
+			// already closed
+		}
+		try {
+			reader.releaseLock();
+		} catch {
+			// already released
+		}
+	};
 
 	// Race a single read against a timeout — vitest would otherwise hang on a
 	// stalled stream. Returns false when the stream ended.
 	const pump_once = async (timeout_ms: number): Promise<boolean> => {
+		if (!pending) {
+			pending = reader.read();
+			// a read nobody awaits any more (its race timed out, then the stream
+			// errored) raises no unhandled rejection
+			pending.catch(() => {});
+		}
+		const read = pending;
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		const timeout = new Promise<{ timed_out: true }>((resolve) => {
-			setTimeout(() => resolve({ timed_out: true }), timeout_ms);
+			timer = setTimeout(() => resolve({ timed_out: true }), timeout_ms);
 		});
-		const result = await Promise.race<ReadableStreamReadResult<Uint8Array> | { timed_out: true }>([
-			reader.read(),
-			timeout
-		]);
+		let result: ReadableStreamReadResult<Uint8Array> | { timed_out: true };
+		try {
+			result = await Promise.race([read, timeout]);
+		} catch (e) {
+			if (pending === read) pending = null;
+			throw e;
+		} finally {
+			clearTimeout(timer);
+		}
 		if ('timed_out' in result) {
 			throw new Error(`SSE read timed out after ${timeout_ms}ms`);
 		}
+		// a concurrent pump awaiting the same read consumed its result already
+		if (pending !== read) return !closed;
+		pending = null;
 		if (result.done) {
 			closed = true;
 			return false;
@@ -95,14 +133,6 @@ export const create_sse_frame_reader = (
 			} catch {
 				return false;
 			}
-		}
-	};
-
-	const cancel = async (): Promise<void> => {
-		try {
-			await reader.cancel();
-		} catch {
-			// already closed
 		}
 	};
 

@@ -15,8 +15,8 @@ fuz_app ships composable suites covering the auth surface: attack surface
 (standard and admin), rate limiting, round-trip validation for routes and RPC
 methods, SSE, adversarial headers, and data exposure. Attack surface suites
 are fast (stub-based, no database). Integration suites assemble a full Hono
-app over an in-memory database (pglet by default) and make real requests. The
-RPC suites skip silently when no RPC endpoints are declared.
+app over an in-memory database (pglet by default) and make real requests. With
+no RPC endpoints declared, the RPC suites report a skip naming the reason.
 
 The same suite bodies also run **cross-process**, against a spawned backend
 over real HTTP — a Rust spine server or a TS spine binary — described by a
@@ -762,7 +762,6 @@ describe_round_trip_validation({
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs
 	}),
-	skip_routes: ['GET /api/subscribe'], // skip SSE routes
 	input_overrides: new Map([
 		['POST /api/things', { name: 'test_thing' }] // override generated body
 	])
@@ -770,8 +769,17 @@ describe_round_trip_validation({
 ```
 
 Routes answering non-2xx to valid input (a 404 for a nonexistent UUID param)
-are validated against their declared error schemas. SSE routes are skipped —
-wire them through `describe_sse_route_tests` below.
+are validated against their declared error schemas. A route answering an SSE
+stream, and a `raw_body` route, skips itself — wire SSE routes through
+`describe_sse_route_tests` below.
+
+Skip lists (`skip_routes`, `skip_methods`, and the cross-backend
+`round_trip_skip_routes` / `data_exposure_skip_routes` / `rpc_skip_methods`
+they forward to) throw at collection on an entry naming nothing on the
+surface or, for the round trip, a `raw_body` route it skips itself, so a
+renamed route can't leave a stale entry behind. A test whose subject a consumer doesn't wire (signup, an
+RPC action, a route) reports a skip with the reason, never a pass that
+asserted nothing.
 `describe_rpc_round_trip_tests` (`testing/rpc_round_trip.ts`) is the same for
 RPC methods, over `POST` and `GET`, and takes the same helper output.
 
@@ -818,7 +826,9 @@ revocation handlers close its streams, or a guard is wired into
 `on_audit_event` as above. Either way the route subscribes with
 `{scope: session_hash, groups: [account_id]}` so `close_by_identity` can
 match. Pass `assert_closes_on_revoke: false` per route to skip that assertion
-while the gap stays visible.
+while the gap stays visible — and for a route opened by the keeper's daemon
+token or with no credential, which no session revoke closes; the suite throws
+naming the option when such a route leaves it on.
 
 ## Error Coverage Tracking
 

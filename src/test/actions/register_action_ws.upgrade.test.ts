@@ -30,7 +30,7 @@ import { create_test_resolved_auth } from '#lib/testing/resolved_auth.ts';
 import { token_scope_denied_body, token_scope_methods } from '#lib/auth/token_scope.ts';
 import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
-import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 
 /** Parse an allowlist the test knows is valid. */
 const parse_origins = (raw: string): Array<RegExp> => {
@@ -62,7 +62,7 @@ const build_app = (opts: BuildOptions = {}) => {
 
 	app.use('*', async (c, next) => {
 		if (authenticated) {
-			const ctx = create_test_request_context(role);
+			const ctx = create_test_context(role ? [{ role }] : []);
 			c.set(REQUEST_CONTEXT_KEY, ctx);
 			// a scope belongs to an API token alone
 			c.set(

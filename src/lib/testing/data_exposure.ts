@@ -48,6 +48,7 @@ import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
+	assert_skip_entries_known,
 	collect_json_keys_recursive,
 	is_unauthenticated_refusal,
 	pick_auth_headers,
@@ -213,6 +214,23 @@ const collect_output_property_names = (
 	)
 });
 
+// an entry naming no output on the surface throws, checked against every
+// output's key (not the filtered `entries`), so one skip list serves both
+// schema-level asserts and the runtime groups
+const assert_output_skip_routes_known = (
+	owner: string,
+	all_entries: Array<OutputSchemaEntry>,
+	skip_routes: Iterable<string> | undefined
+): void => {
+	assert_skip_entries_known(
+		owner,
+		'skip_routes',
+		skip_routes,
+		new Set(all_entries.map((e) => e.key)),
+		'a route, RPC or WebSocket output on the surface'
+	);
+};
+
 const assert_output_entries_exclude = (
 	entries: Array<OutputSchemaEntry>,
 	fields: ReadonlyArray<string>,
@@ -250,14 +268,21 @@ const assert_output_entries_exclude = (
  * @param sensitive_fields - field names no output may carry
  * @param skip_routes - outputs to skip: `'METHOD /path'` for a route, `'/path method_name'` for an RPC or WS method, `'/path method_name params'` for pushed params
  * @throws Error when an output schema can't be written as JSON Schema on either side
+ * @throws Error when a `skip_routes` entry names no output on the surface
  */
 export const assert_output_schemas_no_sensitive_fields = (
 	surface_source: AppSurfaceSpec,
 	sensitive_fields: ReadonlyArray<string> = sensitive_field_blocklist,
 	skip_routes?: ReadonlyArray<string>
 ): void => {
+	const entries = collect_output_schema_entries(surface_source);
+	assert_output_skip_routes_known(
+		'assert_output_schemas_no_sensitive_fields',
+		entries,
+		skip_routes
+	);
 	assert_output_entries_exclude(
-		collect_output_schema_entries(surface_source),
+		entries,
 		sensitive_fields,
 		skip_routes,
 		'output schema contains sensitive field'
@@ -277,19 +302,20 @@ export const assert_output_schemas_no_sensitive_fields = (
  * @param admin_only_fields - field names no non-admin route output may carry
  * @param skip_routes - routes to skip, as `'METHOD /path'`
  * @throws Error when an output schema can't be written as JSON Schema on either side
+ * @throws Error when a `skip_routes` entry names no output on the surface
  */
 export const assert_non_admin_schemas_no_admin_fields = (
 	surface_source: AppSurfaceSpec,
 	admin_only_fields: ReadonlyArray<string> = admin_only_field_blocklist,
 	skip_routes?: ReadonlyArray<string>
 ): void => {
+	const entries = collect_output_schema_entries(surface_source);
+	assert_output_skip_routes_known('assert_non_admin_schemas_no_admin_fields', entries, skip_routes);
 	assert_output_entries_exclude(
 		// TODO: replace name-matching with schema identity — flag a non-admin output
 		// (route, RPC, or WS) that embeds `AdminAccountJson`, `InviteJson`, or
 		// `AppSettingsJson`, which would also cover RPC and WS outputs
-		collect_output_schema_entries(surface_source).filter(
-			(entry) => !entry.elevated && entry.kind === 'route'
-		),
+		entries.filter((entry) => !entry.elevated && entry.kind === 'route'),
 		admin_only_fields,
 		skip_routes,
 		'non-admin output schema contains admin-only field'
@@ -315,6 +341,7 @@ export interface DataExposureTestOptions {
 	 * Routes to skip, in `'METHOD /path'` format, and RPC or WebSocket method
 	 * outputs to skip in the schema-level checks, as `'/path method_name'`
 	 * (`'/path method_name params'` for params the server pushes over WebSocket).
+	 * An entry naming nothing on the surface throws at collection.
 	 */
 	skip_routes?: Array<string>;
 	/**
@@ -338,6 +365,9 @@ export interface DataExposureTestOptions {
  *    nothing
  * 3. Cross-privilege — admin routes return 403 for non-admin, error responses
  *    contain no sensitive fields
+ *
+ * @throws Error at collection when a `skip_routes` entry names no route, RPC
+ *   or WebSocket output on the surface
  */
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
 	const { surface, route_specs } = options.surface_source;
@@ -346,6 +376,11 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 		admin_only_fields = admin_only_field_blocklist
 	} = options;
 	const skip_set = new Set(options.skip_routes);
+	assert_output_skip_routes_known(
+		'describe_data_exposure_tests',
+		collect_output_schema_entries(options.surface_source),
+		skip_set
+	);
 
 	describe('data exposure — schema-level', () => {
 		test('no sensitive fields in any output schema', () => {

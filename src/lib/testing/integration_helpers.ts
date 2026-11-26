@@ -6,7 +6,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { assert } from 'vitest';
+import { assert, test, type TestFunction } from 'vitest';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
@@ -123,6 +123,48 @@ export const find_auth_route = (
 		);
 	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
+};
+
+/**
+ * Refuse a skip-list entry that names nothing on the surface, at collection.
+ * A route, method or output renamed or removed would otherwise leave its
+ * entry behind to skip whatever takes the name next, and a typo would skip
+ * nothing while reading as a skip.
+ *
+ * @param owner - the suite or helper the option belongs to, for the message
+ * @param field - the option's name
+ * @param entries - the skip list, `undefined` for none
+ * @param known - every key an entry may name
+ * @param noun - what a key names, e.g. `'a route on the surface'`
+ * @throws Error on the first entry not in `known`
+ */
+export const assert_skip_entries_known = (
+	owner: string,
+	field: string,
+	entries: Iterable<string> | undefined,
+	known: ReadonlySet<string>,
+	noun: string
+): void => {
+	if (!entries) return;
+	for (const entry of entries) {
+		if (!known.has(entry)) {
+			throw new Error(`${owner}: ${field} names '${entry}', which is not ${noun}`);
+		}
+	}
+};
+
+/**
+ * Register `fn` as a test, or, when `skip_reason` is a string, as a skipped
+ * test named with the reason — so a test whose subject is missing, known at
+ * collection, reports a skip with its reason rather than passing empty.
+ *
+ * @param name - the test name
+ * @param skip_reason - why the test can't run, or `null` to run it
+ * @param fn - the test body
+ */
+export const test_or_skip = (name: string, skip_reason: string | null, fn: TestFunction): void => {
+	if (skip_reason === null) test(name, fn);
+	else test.skip(`${name} (${skip_reason})`, fn);
 };
 
 /**

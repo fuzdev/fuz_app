@@ -25,7 +25,7 @@ import {
 import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import { auth_truncate_tables } from '#lib/testing/db.ts';
 
-import { default_db_factory } from '../db_fixture.ts';
+import { default_db_factory } from '../../db_fixture.ts';
 import { expect_logged_error } from '#lib/testing/logged_errors.ts';
 
 const session_cookie_name = 'test_session';

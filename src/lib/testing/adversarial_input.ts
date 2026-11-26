@@ -65,7 +65,11 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs, route_error_maps } = build();
-	const is_skipped = create_route_skip_filter(options.skip_routes);
+	const is_skipped = create_route_skip_filter(
+		'describe_adversarial_input',
+		options.skip_routes,
+		surface.routes
+	);
 
 	const routes_with_input = filter_routes_with_input(surface).filter((r) => !is_skipped(r));
 	const routes_with_params = filter_routes_with_params(surface).filter((r) => !is_skipped(r));

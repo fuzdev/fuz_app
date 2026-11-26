@@ -19,6 +19,7 @@ import { describe, test, beforeAll, afterAll, assert } from 'vitest';
 import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
+import type { RouteAuth } from '../http/auth_shape.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { SSE_CONNECTED_COMMENT } from '../realtime/sse_constants.ts';
@@ -36,7 +37,12 @@ import { check_db_invariants_after_suite } from './db_invariants.ts';
 import { create_default_db_factory, type DbFactory } from './db.ts';
 import { init_test_auth_schema } from './app_server.ts';
 import { close_after_error } from './close_after_error.ts';
-import { find_route_spec, pick_auth_headers } from './integration_helpers.ts';
+import {
+	find_route_spec,
+	pick_auth_principal,
+	to_principal_headers,
+	type AuthPrincipal
+} from './integration_helpers.ts';
 import {
 	rpc_call,
 	require_rpc_endpoint_path,
@@ -66,7 +72,10 @@ export interface SseRouteTestSpec {
 	 * Whether to assert the stream closes after `session_revoke_all`.
 	 * Default `true`. Set `false` for endpoints whose registry no revocation
 	 * reaches — neither joined to the backend's closer nor guarded (leaves a
-	 * TODO to fix, rather than silently passing).
+	 * TODO to fix, rather than silently passing), and for a route opened by
+	 * the keeper's daemon token or with no credential, which no session revoke
+	 * closes — the test throws naming this option when such a route leaves it
+	 * `true`.
 	 */
 	assert_closes_on_revoke?: boolean;
 }
@@ -244,8 +253,20 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 						const spec = find_route_spec(test_app.route_specs, 'GET', route_config.path);
 						assert.ok(spec, `no route spec for GET ${route_config.path}`);
 
-						account = pick_account_for_auth(spec, test_app, authed_account, admin_account);
-						const headers = pick_auth_headers(spec, test_app, authed_account, admin_account);
+						// one principal picks both the stream's credential and the account
+						// whose sessions are revoked, so the revoke reaches the stream
+						const principal = pick_sse_route_principal(
+							`GET ${route_config.path}`,
+							spec.auth,
+							route_config.assert_closes_on_revoke !== false
+						);
+						account = to_principal_account(principal, test_app, authed_account, admin_account);
+						const headers = to_principal_headers(
+							principal,
+							test_app,
+							authed_account,
+							admin_account
+						);
 
 						const res = await test_app.app.request(route_config.path, {
 							method: 'GET',
@@ -314,26 +335,58 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 };
 
 /**
- * Pick the TestAccount that matches the route's auth type.
+ * The principal `describe_sse_route_tests` opens a route's stream as —
+ * `pick_auth_principal`'s, except that a route admitting both the keeper's
+ * daemon token and a session is opened with a session, since only a
+ * session's revoke closes the stream.
  *
- * Needed so the test can revoke the right account's sessions. Mirrors the
- * fallthrough order of `pick_auth_headers` — routes with `role: admin` get
- * the admin account; `authenticated` gets the authed account; stricter auth
- * (keeper, other roles) uses the bootstrapped keeper account.
+ * @param label - the route, for the error
+ * @param auth - the route's auth
+ * @param assert_closes_on_revoke - whether the test revokes the stream's sessions
+ * @returns the principal
+ * @throws Error when the revoke is asserted and the stream opens as the
+ *   daemon token or with no credential, which no session revoke closes
  */
-const pick_account_for_auth = (
-	spec: RouteSpec,
+export const pick_sse_route_principal = (
+	label: string,
+	auth: RouteAuth,
+	assert_closes_on_revoke: boolean
+): AuthPrincipal => {
+	let principal = pick_auth_principal(auth);
+	if (principal === 'daemon_token' && auth.credential_types?.includes('session')) {
+		const { credential_types: _, ...session_auth } = auth;
+		principal = pick_auth_principal(session_auth);
+	}
+	if (assert_closes_on_revoke && (principal === 'daemon_token' || principal === 'public')) {
+		throw new Error(
+			`${label}: the stream opens as the ${principal} principal, which no session revoke ` +
+				'can close — set `assert_closes_on_revoke: false`'
+		);
+	}
+	return principal;
+};
+
+/**
+ * The `TestAccount` a principal calls as, so the test revokes the sessions of
+ * the account whose credential opened the stream. The keeper's principals,
+ * and `'public'`, map to the bootstrapped account.
+ */
+const to_principal_account = (
+	principal: AuthPrincipal,
 	test_app: TestApp,
 	authed_account: TestAccount,
 	admin_account: TestAccount
 ): TestAccount => {
-	const { auth } = spec;
-	if (auth.roles?.includes(ROLE_ADMIN)) return admin_account;
-	if (auth.account === 'required' && !auth.roles?.length && !auth.credential_types?.length) {
-		return authed_account;
+	switch (principal) {
+		case 'admin':
+			return admin_account;
+		case 'authed':
+			return authed_account;
+		case 'public':
+		case 'daemon_token':
+		case 'keeper':
+			return bootstrap_as_account(test_app);
 	}
-	// keeper / other-role / public — bootstrapped account
-	return bootstrap_as_account(test_app);
 };
 
 /**

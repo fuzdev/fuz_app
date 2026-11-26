@@ -103,14 +103,20 @@ export const create_throwing_stub = <T = any>(label: string): T =>
  * but whose return values don't matter. Unlike the explicit method listing,
  * this auto-updates when interfaces change.
  *
- * @param label - descriptive name for debug purposes
+ * A proxy can't tell a method from a plain property, so every property not in
+ * `overrides` reads as a no-op async function — pass a non-function property
+ * (a string, a count) in `overrides`. `toJSON` returns `"[noop_stub:label]"`,
+ * so a serialized stub names itself, as `create_throwing_stub`'s does.
+ *
+ * @param label - descriptive name, carried by the stub's serialized form
  * @param overrides - explicit properties to set (e.g. `{sign: ...}` on a keyring)
  */
-export const create_noop_stub = <T = any>(_label: string, overrides?: Record<string, unknown>): T =>
+export const create_noop_stub = <T = any>(label: string, overrides?: Record<string, unknown>): T =>
 	new Proxy({ ...(overrides ?? {}) } as any, {
 		get: (target, prop) => {
 			if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
-			if (typeof prop === 'symbol' || prop === 'then' || prop === 'toJSON') return undefined;
+			if (prop === 'toJSON') return () => `[noop_stub:${label}]`;
+			if (typeof prop === 'symbol' || prop === 'then') return undefined;
 			return async () => undefined;
 		}
 	}) as T;
@@ -120,6 +126,11 @@ export const stub: any = create_throwing_stub('stub');
 
 /**
  * Create a stub `Db` for handler tests that use `apply_route_specs` with declarative transactions.
+ *
+ * A no-op stub, not a throwing one: every query answers with no rows, so a
+ * handler that reaches the database runs on as though its tables were empty
+ * rather than failing the test. Use a real database (`create_describe_db`)
+ * where a query's answer matters.
  *
  * Returns a real `Db` instance with:
  * - `query` returns empty rows (safety net for unmocked query functions)

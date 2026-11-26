@@ -757,15 +757,24 @@ export const describe_standard_admin_integration_tests = (
 		// --- 7. Audit log completeness ---
 
 		describe('audit log completeness', () => {
-			test('auth mutations each produce at least one audit event', async () => {
+			// skipped with the reason when a required route is missing (a consumer
+			// may not wire all routes). Token creation goes through the
+			// `account_token_create` RPC — always wired because `rpc_endpoints` is
+			// required at the suite level.
+			const login_route = find_auth_route(route_specs, '/login', 'POST');
+			const logout_route = find_auth_route(route_specs, '/logout', 'POST');
+			const password_route = find_auth_route(route_specs, '/password', 'POST');
+			const missing_routes = [
+				login_route ? null : 'POST .../login',
+				logout_route ? null : 'POST .../logout',
+				password_route ? null : 'POST .../password'
+			].filter((r) => r !== null);
+			test('auth mutations each produce at least one audit event', async (ctx) => {
+				if (!login_route || !logout_route || !password_route) {
+					ctx.skip(`missing auth route(s) on the surface: ${missing_routes.join(', ')}`);
+					return;
+				}
 				const fixture = await options.setup_test();
-				const login_route = find_auth_route(route_specs, '/login', 'POST');
-				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
-				const password_route = find_auth_route(route_specs, '/password', 'POST');
-				// skip if required routes are missing (consumer may not wire all routes).
-				// Token creation goes through `account_token_create` RPC — always wired
-				// because `rpc_endpoints` is required at the suite level.
-				if (!login_route || !logout_route || !password_route) return;
 
 				const user_two = await fixture.create_account({ username: 'audit_user' });
 
